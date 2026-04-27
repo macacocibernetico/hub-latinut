@@ -247,22 +247,25 @@ let allRows = [], currentView = 'alertas', modalData = {}, currentLang = 'en';
 // ─── COLUMNAS ────────────────────────────────────────────────────────────────
 // A=0 Negocio, B=1 Tns, C=2 Product, D=3 Packing, E=4 Lots
 // F=5 Containers, G=6 Booking, H=7 BL, I=8 Shipping Line, J=9 Vessel
-// K=10 vacía, L=11 Consolidación, M=12 ETD, N=13 ETA, O=14 Port
-// P=15 DOCUMENTOS, Q=16 LOMBARD, R=17 CLIENTE_ENV, S=18 TELEX, T=19 Exporter
-// U=20 Invoice Prov, V=21 Contract Prov, W=22 Price FCA, X=23 Total Prov
-// Y=24 Customer, Z=25 Invoice Cliente, AA=26 Contract, AB=27 Price
-// AC=28 Flete, AD=29 Total CFR, AE=30 INCOTERM
-// AF=31 Invoice FC Servicios, AG=32 Price FC Servicios
+// K=10 Consolidación, L=11 ETD, M=12 ETA, N=13 Port
+// O=14 DOCUMENTOS, P=15 ENVIO A LOMBARD, Q=16 ENVIO AL CLIENTE, R=17 TELEX
+// S=18 Exporter, T=19 Invoice FC Planta, U=20 Contract, V=21 Price FCA, W=22 Total
+// X=23 Customer, Y=24 Invoice FC Lombard, Z=25 Contract, AA=26 Price
+// AB=27 Flete, AC=28 Total CFR, AD=29 INCOTERM
+// AE=30 Invoice FC Servicios, AF=31 Price FC Servicios
+// AG=32 Valor Total, AH=33 Px Final x Tn, AI=34 Comisión de Venta
+// AM=38 FC Flete, AN=39 FC Courier, AO=40 Proveedor, AP=41 Importe
+// AQ=42 Courier, AR=43 Total, AS=44 Fecha pago forwarder
 // AT=45 Pagaré Enviado, AU=46 Pagaré Firmado
 // AV=47 Fecha estimada cobro, AW=48 Fecha de cobro real
 const COL = {
   NEGOCIO:0, TNS:1, PRODUCT:2, PACKING:3, LOTS:4,
   CONTAINERS:5, BOOKING:6, BL:7, SHIPPING:8, VESSEL:9,
-  CONSOLIDACION:11, ETD:12, ETA:13, PORT:14,
-  DOCUMENTOS:15, LOMBARD:16, CLIENTE_ENV:17, TELEX:18, EXPORTER:19,
+  CONSOLIDACION:10, ETD:11, ETA:12, PORT:13,
+  DOCUMENTOS:14, LOMBARD:15, CLIENTE_ENV:16, TELEX:17, EXPORTER:18,
   CUSTOMER:23,
   INVOICE_CLIENTE:24,
-  PRICE_CFR:26, TOTAL_CFR:28, INCOTERM:29,
+  TOTAL_CFR:28, INCOTERM:29,
   INVOICE_FC_SERV:30,
   PAGARE_ENVIADO:45, PAGARE_FIRMADO:46,
   FECHA_EST_COBRO:47,
