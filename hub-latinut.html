@@ -1,0 +1,892 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>HUB LATINUT</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=DM+Mono:ital,wght@0,400;0,500;1,400&family=Syne:wght@400;600;700;800&display=swap');
+:root {
+  --bg:#0d0d0d; --bg2:#141414; --bg3:#1c1c1c; --bg4:#222;
+  --border:#252525; --border2:#333;
+  --text:#ebebeb; --muted:#666; --muted2:#999;
+  --accent:#c8f050; --accent-dim:#8aac2a;
+  --danger:#ff4f4f; --warn:#ffaa22; --ok:#3dd68c; --info:#4d9fff;
+  --font:'Syne',sans-serif; --mono:'DM Mono',monospace;
+}
+*{box-sizing:border-box;margin:0;padding:0;}
+body{background:var(--bg);color:var(--text);font-family:var(--font);min-height:100vh;font-size:14px;line-height:1.5;}
+a{color:inherit;text-decoration:none;}
+button{font-family:var(--font);cursor:pointer;border:none;background:none;}
+
+/* LAYOUT */
+.shell{display:flex;min-height:100vh;}
+.sidebar{width:220px;min-height:100vh;background:var(--bg2);border-right:1px solid var(--border);display:flex;flex-direction:column;padding:0;position:fixed;top:0;left:0;z-index:10;}
+.main{margin-left:220px;flex:1;padding:0;display:flex;flex-direction:column;}
+
+/* SIDEBAR */
+.logo{padding:24px 20px 20px;border-bottom:1px solid var(--border);}
+.logo-text{font-size:18px;font-weight:800;letter-spacing:-.5px;color:var(--accent);}
+.logo-sub{font-size:10px;color:var(--muted2);letter-spacing:2px;text-transform:uppercase;margin-top:2px;}
+.nav{padding:16px 0;flex:1;}
+.nav-section{padding:0 12px;margin-bottom:4px;}
+.nav-label{font-size:9px;letter-spacing:2px;text-transform:uppercase;color:var(--muted);padding:8px 8px 4px;}
+.nav-item{display:flex;align-items:center;gap:10px;padding:8px 10px;border-radius:6px;color:var(--muted2);font-size:13px;font-weight:600;cursor:pointer;transition:all .15s;}
+.nav-item:hover{background:var(--bg3);color:var(--text);}
+.nav-item.active{background:var(--accent);color:#0d0d0d;}
+.nav-item .icon{width:16px;text-align:center;font-size:13px;}
+.nav-badge{margin-left:auto;background:var(--danger);color:#fff;font-size:10px;font-family:var(--mono);padding:1px 6px;border-radius:10px;font-weight:500;}
+.nav-badge.warn{background:var(--warn);}
+.sidebar-footer{padding:16px;border-top:1px solid var(--border);}
+.sheet-status{font-size:11px;color:var(--muted);font-family:var(--mono);}
+.sheet-dot{display:inline-block;width:6px;height:6px;border-radius:50%;background:var(--ok);margin-right:6px;}
+.sheet-dot.err{background:var(--danger);}
+.sheet-dot.loading{background:var(--warn);}
+
+/* TOPBAR */
+.topbar{display:flex;align-items:center;justify-content:space-between;padding:16px 28px;border-bottom:1px solid var(--border);background:var(--bg);position:sticky;top:0;z-index:5;}
+.topbar-title{font-size:20px;font-weight:700;}
+.topbar-right{display:flex;align-items:center;gap:12px;}
+.btn{display:inline-flex;align-items:center;gap:6px;padding:7px 14px;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer;transition:all .15s;border:1px solid var(--border2);background:var(--bg3);color:var(--text);}
+.btn:hover{background:var(--bg4);}
+.btn.primary{background:var(--accent);color:#0d0d0d;border-color:var(--accent);}
+.btn.primary:hover{background:var(--accent-dim);}
+.btn.danger{background:transparent;border-color:var(--danger);color:var(--danger);}
+.last-sync{font-size:11px;color:var(--muted);font-family:var(--mono);}
+
+/* CONTENT */
+.content{padding:24px 28px;flex:1;}
+
+/* STATS ROW */
+.stats-row{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:24px;}
+.stat-card{background:var(--bg2);border:1px solid var(--border);border-radius:10px;padding:16px 18px;}
+.stat-label{font-size:10px;letter-spacing:1.5px;text-transform:uppercase;color:var(--muted2);margin-bottom:8px;}
+.stat-value{font-size:28px;font-weight:700;font-family:var(--mono);line-height:1;}
+.stat-sub{font-size:11px;color:var(--muted2);margin-top:4px;}
+.stat-card.alert-card{border-color:var(--danger);background:rgba(255,79,79,.06);}
+.stat-card.warn-card{border-color:var(--warn);background:rgba(255,170,34,.06);}
+
+/* ALERTS SECTION */
+.section-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;}
+.section-title{font-size:13px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;color:var(--muted2);}
+.section-count{font-family:var(--mono);font-size:11px;color:var(--muted);}
+
+/* ALERT CARDS */
+.alert-list{display:flex;flex-direction:column;gap:10px;margin-bottom:28px;}
+.alert-item{background:var(--bg2);border:1px solid var(--border);border-radius:10px;padding:16px 18px;display:flex;align-items:flex-start;gap:14px;transition:border-color .15s;}
+.alert-item:hover{border-color:var(--border2);}
+.alert-item.critical{border-left:3px solid var(--danger);}
+.alert-item.warning{border-left:3px solid var(--warn);}
+.alert-item.info{border-left:3px solid var(--info);}
+.alert-dot{width:8px;height:8px;border-radius:50%;margin-top:5px;flex-shrink:0;}
+.alert-dot.critical{background:var(--danger);}
+.alert-dot.warning{background:var(--warn);}
+.alert-dot.info{background:var(--info);}
+.alert-body{flex:1;}
+.alert-title{font-size:13px;font-weight:600;margin-bottom:3px;}
+.alert-meta{font-size:11px;color:var(--muted2);font-family:var(--mono);margin-bottom:8px;}
+.alert-tags{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px;}
+.tag{font-size:10px;font-family:var(--mono);padding:2px 8px;border-radius:4px;font-weight:500;}
+.tag.customer{background:rgba(77,159,255,.12);color:var(--info);}
+.tag.vessel{background:rgba(61,214,140,.1);color:var(--ok);}
+.tag.port{background:rgba(200,240,80,.1);color:var(--accent);}
+.tag.days-red{background:rgba(255,79,79,.12);color:var(--danger);}
+.tag.days-warn{background:rgba(255,170,34,.12);color:var(--warn);}
+.tag.days-ok{background:rgba(61,214,140,.1);color:var(--ok);}
+.alert-actions{display:flex;gap:8px;flex-wrap:wrap;}
+.action-btn{font-size:11px;font-weight:600;padding:5px 12px;border-radius:5px;cursor:pointer;transition:all .15s;font-family:var(--font);border:1px solid;}
+.action-btn.mail{background:rgba(200,240,80,.1);color:var(--accent);border-color:rgba(200,240,80,.3);}
+.action-btn.mail:hover{background:rgba(200,240,80,.2);}
+.action-btn.secondary{background:var(--bg3);color:var(--muted2);border-color:var(--border2);}
+.action-btn.secondary:hover{color:var(--text);}
+.action-btn.danger{background:rgba(255,79,79,.1);color:var(--danger);border-color:rgba(255,79,79,.3);}
+.action-btn.danger:hover{background:rgba(255,79,79,.2);}
+.alert-right{text-align:right;flex-shrink:0;}
+.days-badge{font-size:22px;font-weight:800;font-family:var(--mono);line-height:1;}
+.days-badge.red{color:var(--danger);}
+.days-badge.warn{color:var(--warn);}
+.days-badge.ok{color:var(--ok);}
+.days-label{font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:1px;margin-top:2px;}
+
+/* TABLE */
+.table-wrap{background:var(--bg2);border:1px solid var(--border);border-radius:10px;overflow:hidden;margin-bottom:28px;}
+.table-top{display:flex;align-items:center;justify-content:space-between;padding:14px 18px;border-bottom:1px solid var(--border);}
+.table-filters{display:flex;gap:8px;}
+.filter-chip{font-size:11px;font-family:var(--mono);padding:4px 10px;border-radius:4px;border:1px solid var(--border2);cursor:pointer;background:var(--bg3);color:var(--muted2);transition:all .15s;}
+.filter-chip.active{background:var(--accent);color:#0d0d0d;border-color:var(--accent);}
+table{width:100%;border-collapse:collapse;}
+thead th{font-size:10px;text-transform:uppercase;letter-spacing:1.5px;color:var(--muted);font-weight:600;padding:10px 14px;text-align:left;border-bottom:1px solid var(--border);white-space:nowrap;}
+tbody tr{border-bottom:1px solid var(--border);transition:background .1s;}
+tbody tr:last-child{border-bottom:none;}
+tbody tr:hover{background:rgba(255,255,255,.02);}
+td{padding:11px 14px;font-size:12px;vertical-align:middle;}
+td.mono{font-family:var(--mono);font-size:11px;}
+.doc-status{display:inline-flex;align-items:center;gap:5px;font-size:11px;font-family:var(--mono);}
+.doc-dot{width:6px;height:6px;border-radius:50%;}
+.doc-dot.red{background:var(--danger);}
+.doc-dot.green{background:var(--ok);}
+.doc-text{color:var(--muted2);font-size:10px;max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.pagare-status{font-size:10px;font-family:var(--mono);}
+.pagare-status.enviado{color:var(--ok);}
+.pagare-status.pendiente{color:var(--warn);}
+.row-action{font-size:10px;color:var(--muted);cursor:pointer;padding:3px 8px;border:1px solid var(--border);border-radius:4px;font-family:var(--font);font-weight:600;transition:all .15s;}
+.row-action:hover{border-color:var(--accent);color:var(--accent);}
+
+/* MODAL */
+.modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:100;display:flex;align-items:center;justify-content:center;backdrop-filter:blur(4px);}
+.modal-overlay.hidden{display:none;}
+.modal{background:var(--bg2);border:1px solid var(--border2);border-radius:14px;width:540px;max-width:95vw;padding:0;overflow:hidden;}
+.modal-header{padding:20px 24px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;}
+.modal-title{font-size:15px;font-weight:700;}
+.modal-close{font-size:20px;color:var(--muted);cursor:pointer;line-height:1;}
+.modal-body{padding:20px 24px;}
+.mail-field{margin-bottom:14px;}
+.mail-label{font-size:10px;text-transform:uppercase;letter-spacing:1.5px;color:var(--muted2);margin-bottom:6px;font-weight:600;}
+.mail-value{font-size:12px;font-family:var(--mono);color:var(--text);background:var(--bg3);padding:8px 12px;border-radius:6px;border:1px solid var(--border2);}
+.mail-textarea{width:100%;background:var(--bg3);border:1px solid var(--border2);border-radius:6px;color:var(--text);font-family:var(--mono);font-size:12px;padding:10px 12px;resize:vertical;min-height:120px;line-height:1.6;}
+.mail-textarea:focus{outline:none;border-color:var(--accent);}
+.modal-footer{padding:16px 24px;border-top:1px solid var(--border);display:flex;justify-content:flex-end;gap:10px;}
+
+/* CONFIG SCREEN */
+.config-section{background:var(--bg2);border:1px solid var(--border);border-radius:10px;padding:20px;margin-bottom:16px;}
+.config-title{font-size:13px;font-weight:700;margin-bottom:4px;}
+.config-desc{font-size:12px;color:var(--muted2);margin-bottom:16px;}
+.config-field{margin-bottom:12px;}
+.config-label{font-size:11px;color:var(--muted2);margin-bottom:4px;font-weight:600;}
+.config-input{width:100%;background:var(--bg3);border:1px solid var(--border2);border-radius:6px;color:var(--text);font-family:var(--mono);font-size:12px;padding:8px 12px;}
+.config-input:focus{outline:none;border-color:var(--accent);}
+.config-save{display:flex;justify-content:flex-end;margin-top:8px;}
+
+/* SPINNER / EMPTY */
+.spinner{display:flex;align-items:center;justify-content:center;padding:60px;color:var(--muted);font-size:13px;gap:10px;}
+.spin{width:16px;height:16px;border:2px solid var(--border2);border-top-color:var(--accent);border-radius:50%;animation:spin .7s linear infinite;}
+@keyframes spin{to{transform:rotate(360deg);}}
+.empty{padding:48px;text-align:center;color:var(--muted);font-size:13px;}
+.empty-icon{font-size:32px;margin-bottom:12px;}
+
+/* RESPONSIVE */
+@media(max-width:768px){
+  .sidebar{transform:translateX(-220px);transition:transform .25s;}
+  .sidebar.open{transform:translateX(0);}
+  .main{margin-left:0;}
+  .stats-row{grid-template-columns:1fr 1fr;}
+  .mobile-toggle{display:flex;}
+}
+.mobile-toggle{display:none;align-items:center;justify-content:center;width:36px;height:36px;border-radius:6px;background:var(--bg3);border:1px solid var(--border2);cursor:pointer;font-size:16px;}
+.overlay-close{display:none;position:fixed;inset:0;z-index:9;}
+</style>
+</head>
+<body>
+<div class="shell">
+<!-- SIDEBAR -->
+<aside class="sidebar" id="sidebar">
+  <div class="logo">
+    <div class="logo-text">LATINUT</div>
+    <div class="logo-sub">Hub de Control</div>
+  </div>
+  <nav class="nav">
+    <div class="nav-section">
+      <div class="nav-label">Operaciones</div>
+      <div class="nav-item active" onclick="showView('alertas')">
+        <span class="icon">⚡</span> Alertas
+        <span class="nav-badge" id="badge-alertas">0</span>
+      </div>
+      <div class="nav-item" onclick="showView('cargas')">
+        <span class="icon">📦</span> Cargas AXT
+      </div>
+    </div>
+    <div class="nav-section">
+      <div class="nav-label">Finanzas</div>
+      <div class="nav-item" onclick="showView('cobranza')">
+        <span class="icon">💰</span> Cobranza
+        <span class="nav-badge warn" id="badge-cobranza">0</span>
+      </div>
+      <div class="nav-item" onclick="showView('pagares')">
+        <span class="icon">📄</span> Pagarés
+      </div>
+    </div>
+    <div class="nav-section">
+      <div class="nav-label">Sistema</div>
+      <div class="nav-item" onclick="showView('config')">
+        <span class="icon">⚙</span> Configuración
+      </div>
+    </div>
+  </nav>
+  <div class="sidebar-footer">
+    <div class="sheet-status">
+      <span class="sheet-dot" id="sheet-dot"></span>
+      <span id="sheet-status-text">Cargando...</span>
+    </div>
+  </div>
+</aside>
+<div class="overlay-close" id="overlay-close" onclick="closeSidebar()"></div>
+
+<!-- MAIN -->
+<main class="main">
+  <div class="topbar">
+    <div style="display:flex;align-items:center;gap:12px;">
+      <span class="mobile-toggle" onclick="toggleSidebar()">☰</span>
+      <span class="topbar-title" id="view-title">Alertas</span>
+    </div>
+    <div class="topbar-right">
+      <span class="last-sync" id="last-sync">—</span>
+      <button class="btn primary" onclick="loadData()">↻ Sincronizar</button>
+    </div>
+  </div>
+
+  <div class="content" id="content">
+    <div class="spinner"><div class="spin"></div> Cargando datos...</div>
+  </div>
+</main>
+</div>
+
+<!-- MODAL MAIL -->
+<div class="modal-overlay hidden" id="mail-modal">
+  <div class="modal">
+    <div class="modal-header">
+      <span class="modal-title" id="modal-title">Crear borrador de mail</span>
+      <span class="modal-close" onclick="closeModal()">×</span>
+    </div>
+    <div class="modal-body">
+      <div class="mail-field">
+        <div class="mail-label">Para</div>
+        <div class="mail-value" id="modal-to">—</div>
+      </div>
+      <div class="mail-field">
+        <div class="mail-label">CC</div>
+        <div class="mail-value" id="modal-cc">—</div>
+      </div>
+      <div class="mail-field">
+        <div class="mail-label">Asunto</div>
+        <div class="mail-value" id="modal-subject">—</div>
+      </div>
+      <div class="mail-field">
+        <div class="mail-label">Cuerpo</div>
+        <textarea class="mail-textarea" id="modal-body" rows="6"></textarea>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn" onclick="closeModal()">Cancelar</button>
+      <button class="btn primary" onclick="sendDraft()">✉ Crear borrador en Gmail</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// ─── CONFIGURACIÓN ───────────────────────────────────────────────────────────
+const CFG_KEY = 'hub_latinut_config';
+let cfg = JSON.parse(localStorage.getItem(CFG_KEY) || '{}');
+
+// Defaults
+const DEFAULT_CFG = {
+  sheetId: '',
+  sheetName: 'Hoja 1',
+  apiKey: '',
+  clientId: '',
+  alerta_dias: 10
+};
+cfg = { ...DEFAULT_CFG, ...cfg };
+
+// ─── ESTADO ──────────────────────────────────────────────────────────────────
+let allRows = [];
+let currentView = 'alertas';
+let modalData = {};
+let gapiReady = false;
+
+// ─── COLUMNAS (índice 0-based) ────────────────────────────────────────────────
+// A=0 Negocio, B=1 Tns, C=2 Product, D=3 Packing, E=4 Lots
+// F=5 (vacía), G=6 Containers, H=7 Booking, I=8 BL, J=9 Shipping Line
+// K=10 Vessel, L=11 Consolidación, M=12 ETD, N=13 ETA, O=14 Port
+// P=15 DOCUMENTOS, Q=16 ENVIO A LOMBARD, R=17 ENVIO AL CLIENTE, S=18 TELEX
+// T=19 Exporter, U=20 Invoice Proveedor, V=21 Contract (prov), W=22 Price FCA
+// X=23 Total (prov), Y=24 Customer, Z=25 Invoice (cliente), AA=26 Contract (cli)
+// AB=27 Price, AC=28 Flete, AD=29 Total CFR, AE=30 INCOTERM
+// AF=31 Invoice, AG=32 Price, (AH=33, AI=34 vacías)
+// AM=38 FC Flete, AN=39 FC Courier, AO=40 proveedor, AP=41 importe usd/fcl
+// AQ=42 courier, AR=43 total, AS=44 fecha pago forwarder
+// AT=45 Enviado (pagaré), AU=46 Firmado, AV=47 Fecha estimada cobro, AW=48 Fecha de cobro
+// AX=49 Fecha FC, AY=50 N° de Fc, AZ=51 Monto FC, BA=52 Fecha pago FC
+// BB=53 Dias p/ pagar, BC=54 C-, BD=55 CONSOL-ETD, BE=56 COM.EUROPA
+// BF=57 Mes Consolidación, BG=58 FECHA EST O REAL COBRO, BH=59 año ETD, BI=60 Semana Cons
+
+const COL = {
+  NEGOCIO: 0, TNS: 1, PRODUCT: 2, LOTS: 4,
+  CONTAINERS: 6, BL: 8, SHIPPING: 9, VESSEL: 10,
+  ETD: 12, ETA: 13, PORT: 14,
+  DOCUMENTOS: 15, LOMBARD: 16, CLIENTE_ENV: 17, TELEX: 18,
+  EXPORTER: 19,
+  CUSTOMER: 24,
+  PRICE_CFR: 27, TOTAL_CFR: 29, INCOTERM: 30,
+  PAGARE_ENVIADO: 45, PAGARE_FIRMADO: 46,
+  FECHA_EST_COBRO: 47,   // AV
+  FECHA_COBRO: 48,       // AW
+  FECHA_FC: 49, NUM_FC: 50, MONTO_FC: 51, FECHA_PAGO_FC: 52,
+  DIAS_PAGAR: 53
+};
+
+// ─── UTILIDADES ───────────────────────────────────────────────────────────────
+function parseDate(val) {
+  if (!val) return null;
+  // Google Sheets puede devolver DD/MM/YYYY o YYYY-MM-DD
+  let d = null;
+  if (/^\d{1,2}\/\d{1,2}\/\d{4}$/.test(val)) {
+    const [dd, mm, yy] = val.split('/');
+    d = new Date(yy, mm - 1, dd);
+  } else if (/^\d{4}-\d{2}-\d{2}/.test(val)) {
+    d = new Date(val);
+  } else {
+    d = new Date(val);
+  }
+  return isNaN(d) ? null : d;
+}
+
+function daysFrom(dateVal) {
+  const d = parseDate(dateVal);
+  if (!d) return null;
+  const diff = d - new Date();
+  return Math.round(diff / 86400000);
+}
+
+function fmtDate(val) {
+  const d = parseDate(val);
+  if (!d) return val || '—';
+  return d.toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit', year: '2-digit' });
+}
+
+function isClosed(row) {
+  const av = (row[COL.FECHA_EST_COBRO] || '').trim().toUpperCase();
+  const aw = (row[COL.FECHA_COBRO] || '').trim();
+  return av === 'SI' && aw !== '';
+}
+
+function daysClass(n) {
+  if (n === null) return '';
+  if (n <= 0) return 'red';
+  if (n <= 7) return 'red';
+  if (n <= 14) return 'warn';
+  return 'ok';
+}
+
+function tagDays(n, label) {
+  const c = daysClass(n);
+  return `<span class="tag days-${c}">${label}</span>`;
+}
+
+// ─── CARGA DE DATOS ───────────────────────────────────────────────────────────
+async function loadData() {
+  if (!cfg.sheetId || !cfg.apiKey) {
+    showConfigPrompt();
+    return;
+  }
+  setSheetStatus('loading', 'Sincronizando...');
+  try {
+    const range = encodeURIComponent(`${cfg.sheetName}!A4:BI`);
+    const url = `https://sheets.googleapis.com/v4/spreadsheets/${cfg.sheetId}/values/${range}?key=${cfg.apiKey}`;
+    const r = await fetch(url);
+    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    const data = await r.json();
+    allRows = (data.values || []).filter(row => row[COL.NEGOCIO] && !isClosed(row));
+    setSheetStatus('ok', `${allRows.length} cargas activas`);
+    document.getElementById('last-sync').textContent = 'Sync ' + new Date().toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' });
+    updateBadges();
+    renderView(currentView);
+  } catch (e) {
+    setSheetStatus('err', 'Error de conexión');
+    console.error(e);
+  }
+}
+
+function setSheetStatus(state, text) {
+  const dot = document.getElementById('sheet-dot');
+  dot.className = 'sheet-dot' + (state === 'err' ? ' err' : state === 'loading' ? ' loading' : '');
+  document.getElementById('sheet-status-text').textContent = text;
+}
+
+// ─── ALERTAS ─────────────────────────────────────────────────────────────────
+function getAlerts() {
+  const alerts = [];
+  const today = new Date();
+
+  allRows.forEach((row, idx) => {
+    const eta = parseDate(row[COL.ETA]);
+    const daysToETA = eta ? Math.round((eta - today) / 86400000) : null;
+    const customer = row[COL.CUSTOMER] || '—';
+    const vessel = row[COL.VESSEL] || '—';
+    const port = row[COL.PORT] || '—';
+    const bl = row[COL.BL] || '—';
+    const product = row[COL.PRODUCT] || '—';
+    const negocio = row[COL.NEGOCIO] || '—';
+
+    // Alerta ETA ≤ 10 días (configurable)
+    if (daysToETA !== null && daysToETA <= cfg.alerta_dias) {
+      const level = daysToETA <= 0 ? 'critical' : daysToETA <= 7 ? 'critical' : 'warning';
+      const etaLabel = daysToETA < 0 ? `Llegó hace ${Math.abs(daysToETA)}d` : daysToETA === 0 ? 'Llega HOY' : `Llega en ${daysToETA}d`;
+      alerts.push({
+        level, daysToETA, rowIdx: idx,
+        title: `Arribo próximo — ${customer}`,
+        meta: `BL: ${bl}  ·  ${fmtDate(row[COL.ETA])}`,
+        tags: [
+          { label: customer, cls: 'customer' },
+          { label: vessel, cls: 'vessel' },
+          { label: port, cls: 'port' },
+          { label: etaLabel, cls: 'days-' + daysClass(daysToETA) }
+        ],
+        detail: { negocio, product, bl, vessel, port, eta: row[COL.ETA], customer },
+        actions: [
+          { label: '✉ Reclamo de pago', type: 'mail', mailType: 'reclamo_pago' },
+          { label: '✉ Envío docs', type: 'mail', mailType: 'envio_docs' },
+          { label: '✉ Shipment Advice', type: 'mail', mailType: 'shipment_advice' }
+        ]
+      });
+    }
+
+    // Docs incompletos + ETA próximo
+    const docs = (row[COL.DOCUMENTOS] || '').trim();
+    if (docs && docs.toLowerCase() !== 'si' && daysToETA !== null && daysToETA <= 20) {
+      alerts.push({
+        level: 'warning', rowIdx: idx,
+        title: `Docs pendientes — ${customer}`,
+        meta: `BL: ${bl}  ·  ETA: ${fmtDate(row[COL.ETA])}`,
+        tags: [
+          { label: customer, cls: 'customer' },
+          { label: product, cls: 'vessel' }
+        ],
+        docsText: docs,
+        actions: [
+          { label: '✉ Solicitar docs', type: 'mail', mailType: 'solicitar_docs' }
+        ]
+      });
+    }
+
+    // Pagaré no enviado + ETA < 30 días
+    const pagEnv = (row[COL.PAGARE_ENVIADO] || '').trim().toUpperCase();
+    if (pagEnv !== 'SI' && daysToETA !== null && daysToETA <= 30) {
+      alerts.push({
+        level: 'info', rowIdx: idx,
+        title: `Pagaré pendiente de envío — ${customer}`,
+        meta: `BL: ${bl}  ·  ETA: ${fmtDate(row[COL.ETA])}`,
+        tags: [{ label: customer, cls: 'customer' }, { label: 'Pagaré no enviado', cls: 'days-warn' }],
+        actions: [
+          { label: '✉ Solicitar pagaré', type: 'mail', mailType: 'solicitar_pagare' }
+        ]
+      });
+    }
+
+    // Cobranza próxima a vencer (fecha estimada cobro en ≤ 14 días)
+    const fechaEst = row[COL.FECHA_EST_COBRO];
+    const dFechaCobro = daysFrom(fechaEst);
+    if (dFechaCobro !== null && dFechaCobro <= 14 && dFechaCobro >= -30) {
+      const level2 = dFechaCobro <= 0 ? 'critical' : 'warning';
+      alerts.push({
+        level: level2, rowIdx: idx,
+        title: `Cobro estimado — ${customer}`,
+        meta: `Fecha est.: ${fmtDate(fechaEst)}  ·  BL: ${bl}`,
+        tags: [
+          { label: customer, cls: 'customer' },
+          { label: dFechaCobro <= 0 ? `Vencido hace ${Math.abs(dFechaCobro)}d` : `En ${dFechaCobro}d`, cls: 'days-' + daysClass(dFechaCobro) }
+        ],
+        actions: [
+          { label: '✉ Reclamo de cobro', type: 'mail', mailType: 'reclamo_cobro' }
+        ]
+      });
+    }
+  });
+
+  // Ordenar: critical primero
+  return alerts.sort((a, b) => {
+    const order = { critical: 0, warning: 1, info: 2 };
+    return (order[a.level] || 2) - (order[b.level] || 2);
+  });
+}
+
+function updateBadges() {
+  const alerts = getAlerts();
+  const crit = alerts.filter(a => a.level === 'critical' || a.level === 'warning').length;
+  document.getElementById('badge-alertas').textContent = crit || '';
+  const cobros = allRows.filter(r => {
+    const d = daysFrom(r[COL.FECHA_EST_COBRO]);
+    return d !== null && d <= 14;
+  }).length;
+  document.getElementById('badge-cobranza').textContent = cobros || '';
+}
+
+// ─── RENDERS ──────────────────────────────────────────────────────────────────
+function showView(view) {
+  currentView = view;
+  document.querySelectorAll('.nav-item').forEach(el => el.classList.remove('active'));
+  const titles = { alertas: 'Alertas', cargas: 'Cargas AXT', cobranza: 'Cobranza', pagares: 'Pagarés', config: 'Configuración' };
+  document.getElementById('view-title').textContent = titles[view] || view;
+  // Highlight nav
+  document.querySelectorAll('.nav-item').forEach(el => {
+    if (el.getAttribute('onclick') && el.getAttribute('onclick').includes(`'${view}'`)) el.classList.add('active');
+  });
+  renderView(view);
+  if (window.innerWidth <= 768) closeSidebar();
+}
+
+function renderView(view) {
+  if (view === 'alertas') renderAlertas();
+  else if (view === 'cargas') renderCargas();
+  else if (view === 'cobranza') renderCobranza();
+  else if (view === 'pagares') renderPagares();
+  else if (view === 'config') renderConfig();
+}
+
+// ── ALERTAS VIEW ──
+function renderAlertas() {
+  const alerts = getAlerts();
+  const active = allRows.length;
+  const critCount = alerts.filter(a => a.level === 'critical').length;
+  const warnCount = alerts.filter(a => a.level === 'warning').length;
+  const proxETA = allRows.filter(r => { const d = daysFrom(r[COL.ETA]); return d !== null && d <= 7; }).length;
+
+  let html = `
+  <div class="stats-row">
+    <div class="stat-card">
+      <div class="stat-label">Cargas activas</div>
+      <div class="stat-value">${active}</div>
+      <div class="stat-sub">AXT Solutions</div>
+    </div>
+    <div class="stat-card alert-card">
+      <div class="stat-label">Alertas críticas</div>
+      <div class="stat-value" style="color:var(--danger)">${critCount}</div>
+      <div class="stat-sub">Requieren acción urgente</div>
+    </div>
+    <div class="stat-card warn-card">
+      <div class="stat-label">Advertencias</div>
+      <div class="stat-value" style="color:var(--warn)">${warnCount}</div>
+      <div class="stat-sub">A monitorear</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">ETA próximos 7d</div>
+      <div class="stat-value" style="color:var(--info)">${proxETA}</div>
+      <div class="stat-sub">Arribar esta semana</div>
+    </div>
+  </div>`;
+
+  if (alerts.length === 0) {
+    html += `<div class="empty"><div class="empty-icon">✓</div>Sin alertas activas. Todo en orden.</div>`;
+  } else {
+    html += `<div class="section-header"><span class="section-title">Requieren atención</span><span class="section-count">${alerts.length} alertas</span></div>`;
+    html += `<div class="alert-list">`;
+    alerts.forEach((a, i) => {
+      const tagsHtml = (a.tags || []).map(t => `<span class="tag ${t.cls}">${t.label}</span>`).join('');
+      const actionsHtml = (a.actions || []).map(act => {
+        const cls = act.mailType ? 'mail' : 'secondary';
+        return `<button class="action-btn ${cls}" onclick="openMailModal(${a.rowIdx},'${act.mailType}')">${act.label}</button>`;
+      }).join('');
+      const daysNum = a.daysToETA !== undefined ? a.daysToETA : null;
+      const rightHtml = daysNum !== null ? `
+        <div class="alert-right">
+          <div class="days-badge ${daysClass(daysNum)}">${daysNum < 0 ? '+' + Math.abs(daysNum) : daysNum}</div>
+          <div class="days-label">días para ETA</div>
+        </div>` : '';
+      const docsHtml = a.docsText ? `<div class="doc-text" style="margin-bottom:8px;font-family:var(--mono);font-size:11px;color:var(--warn);">📋 ${a.docsText}</div>` : '';
+      html += `
+      <div class="alert-item ${a.level}">
+        <div class="alert-dot ${a.level}"></div>
+        <div class="alert-body">
+          <div class="alert-title">${a.title}</div>
+          <div class="alert-meta">${a.meta}</div>
+          <div class="alert-tags">${tagsHtml}</div>
+          ${docsHtml}
+          <div class="alert-actions">${actionsHtml}</div>
+        </div>
+        ${rightHtml}
+      </div>`;
+    });
+    html += `</div>`;
+  }
+  document.getElementById('content').innerHTML = html;
+}
+
+// ── CARGAS VIEW ──
+function renderCargas() {
+  const active = allRows;
+  if (!active.length) {
+    document.getElementById('content').innerHTML = `<div class="empty"><div class="empty-icon">📦</div>Sin cargas activas cargadas. Sincronizá primero.</div>`;
+    return;
+  }
+  let html = `
+  <div class="table-wrap">
+    <div class="table-top">
+      <span style="font-size:13px;font-weight:700;">${active.length} cargas activas</span>
+      <div class="table-filters">
+        <span class="filter-chip active" onclick="filterCargas(this,'')">Todas</span>
+      </div>
+    </div>
+    <div style="overflow-x:auto;">
+    <table>
+      <thead>
+        <tr>
+          <th>Negocio</th><th>BL</th><th>Customer</th><th>Vessel</th>
+          <th>ETA</th><th>Días</th><th>Docs</th><th>Pagaré</th><th>Cobro Est.</th><th></th>
+        </tr>
+      </thead>
+      <tbody>`;
+  active.forEach((row, idx) => {
+    const days = daysFrom(row[COL.ETA]);
+    const dc = daysClass(days);
+    const pagEnv = (row[COL.PAGARE_ENVIADO] || '').trim().toUpperCase();
+    const pagFirm = (row[COL.PAGARE_FIRMADO] || '').trim().toUpperCase();
+    const pagStatus = pagFirm === 'SI' ? '<span class="pagare-status enviado">Firmado</span>' :
+                      pagEnv === 'SI' ? '<span class="pagare-status enviado">Enviado</span>' :
+                      '<span class="pagare-status pendiente">Pendiente</span>';
+    const docs = (row[COL.DOCUMENTOS] || '').trim();
+    const docsColor = docs.toUpperCase() === 'SI' ? 'green' : 'red';
+    const docsLabel = docs.toUpperCase() === 'SI' ? 'Completo' : docs || 'Pendiente';
+    html += `
+      <tr>
+        <td class="mono">${row[COL.NEGOCIO] || '—'}</td>
+        <td class="mono">${(row[COL.BL] || '—').substring(0, 20)}</td>
+        <td>${row[COL.CUSTOMER] || '—'}</td>
+        <td style="color:var(--muted2)">${(row[COL.VESSEL] || '—').substring(0, 16)}</td>
+        <td class="mono">${fmtDate(row[COL.ETA])}</td>
+        <td><span style="color:var(--${dc === 'red' ? 'danger' : dc === 'warn' ? 'warn' : 'ok'});font-family:var(--mono);font-weight:600">${days !== null ? days + 'd' : '—'}</span></td>
+        <td>
+          <div class="doc-status">
+            <div class="doc-dot ${docsColor}"></div>
+            <span class="doc-text" title="${docsLabel}">${docsLabel}</span>
+          </div>
+        </td>
+        <td>${pagStatus}</td>
+        <td class="mono" style="color:var(--muted2)">${fmtDate(row[COL.FECHA_EST_COBRO])}</td>
+        <td><button class="row-action" onclick="openMailModal(${idx},'reclamo_pago')">✉</button></td>
+      </tr>`;
+  });
+  html += `</tbody></table></div></div>`;
+  document.getElementById('content').innerHTML = html;
+}
+
+// ── COBRANZA VIEW ──
+function renderCobranza() {
+  const rows = allRows.filter(r => {
+    const d = daysFrom(r[COL.FECHA_EST_COBRO]);
+    return d !== null;
+  }).sort((a, b) => (daysFrom(a[COL.FECHA_EST_COBRO]) || 9999) - (daysFrom(b[COL.FECHA_EST_COBRO]) || 9999));
+
+  if (!rows.length) {
+    document.getElementById('content').innerHTML = `<div class="empty"><div class="empty-icon">💰</div>Sin cobros pendientes.</div>`;
+    return;
+  }
+
+  let totalUSD = 0;
+  rows.forEach(r => {
+    const m = parseFloat((r[COL.TOTAL_CFR] || '').replace(/[^0-9.]/g, ''));
+    if (!isNaN(m)) totalUSD += m;
+  });
+
+  let html = `
+  <div class="stats-row">
+    <div class="stat-card"><div class="stat-label">Cobros pendientes</div><div class="stat-value">${rows.length}</div></div>
+    <div class="stat-card warn-card"><div class="stat-label">Total expuesto</div><div class="stat-value" style="font-size:20px;color:var(--warn)">USD ${totalUSD.toLocaleString('es-AR', {maximumFractionDigits:0})}</div></div>
+  </div>
+  <div class="table-wrap">
+    <div class="table-top"><span style="font-size:13px;font-weight:700;">Cobranza activa</span></div>
+    <div style="overflow-x:auto;">
+    <table>
+      <thead><tr><th>Negocio</th><th>Customer</th><th>BL</th><th>Total CFR</th><th>Fecha Est. Cobro</th><th>Días</th><th></th></tr></thead>
+      <tbody>`;
+  rows.forEach((row, idx) => {
+    const origIdx = allRows.indexOf(row);
+    const d = daysFrom(row[COL.FECHA_EST_COBRO]);
+    const dc = daysClass(d);
+    html += `<tr>
+      <td class="mono">${row[COL.NEGOCIO] || '—'}</td>
+      <td>${row[COL.CUSTOMER] || '—'}</td>
+      <td class="mono">${(row[COL.BL] || '—').substring(0, 18)}</td>
+      <td class="mono">${row[COL.TOTAL_CFR] || '—'}</td>
+      <td class="mono">${fmtDate(row[COL.FECHA_EST_COBRO])}</td>
+      <td><span style="color:var(--${dc === 'red' ? 'danger' : dc === 'warn' ? 'warn' : 'ok'});font-weight:600;font-family:var(--mono)">${d !== null ? d + 'd' : '—'}</span></td>
+      <td><button class="row-action" onclick="openMailModal(${origIdx},'reclamo_cobro')">✉ Reclamo</button></td>
+    </tr>`;
+  });
+  html += `</tbody></table></div></div>`;
+  document.getElementById('content').innerHTML = html;
+}
+
+// ── PAGARÉS VIEW ──
+function renderPagares() {
+  const rows = allRows.filter(r => {
+    const pagEnv = (r[COL.PAGARE_ENVIADO] || '').trim().toUpperCase();
+    return true; // Mostrar todos con estado
+  });
+
+  let html = `
+  <div class="table-wrap">
+    <div class="table-top"><span style="font-size:13px;font-weight:700;">Estado de pagarés</span></div>
+    <div style="overflow-x:auto;">
+    <table>
+      <thead><tr><th>Negocio</th><th>Customer</th><th>BL</th><th>ETA</th><th>Enviado</th><th>Firmado</th><th>Fecha Est. Cobro</th><th></th></tr></thead>
+      <tbody>`;
+  rows.forEach((row, idx) => {
+    const pagEnv = (row[COL.PAGARE_ENVIADO] || '').trim().toUpperCase();
+    const pagFirm = (row[COL.PAGARE_FIRMADO] || '').trim().toUpperCase();
+    const envHtml = pagEnv === 'SI' ? '<span class="pagare-status enviado">SI</span>' : '<span class="pagare-status pendiente">NO</span>';
+    const firmHtml = pagFirm === 'SI' ? '<span class="pagare-status enviado">SI</span>' : '<span class="pagare-status pendiente">NO</span>';
+    html += `<tr>
+      <td class="mono">${row[COL.NEGOCIO] || '—'}</td>
+      <td>${row[COL.CUSTOMER] || '—'}</td>
+      <td class="mono">${(row[COL.BL] || '—').substring(0, 18)}</td>
+      <td class="mono">${fmtDate(row[COL.ETA])}</td>
+      <td>${envHtml}</td>
+      <td>${firmHtml}</td>
+      <td class="mono">${fmtDate(row[COL.FECHA_EST_COBRO])}</td>
+      <td>${pagEnv !== 'SI' ? `<button class="row-action" onclick="openMailModal(${idx},'solicitar_pagare')">✉ Solicitar</button>` : ''}</td>
+    </tr>`;
+  });
+  html += `</tbody></table></div></div>`;
+  document.getElementById('content').innerHTML = html;
+}
+
+// ── CONFIG VIEW ──
+function renderConfig() {
+  document.getElementById('content').innerHTML = `
+  <div class="config-section">
+    <div class="config-title">Conexión con Google Sheets</div>
+    <div class="config-desc">Ingresá los datos de tu planilla AXT Solutions.</div>
+    <div class="config-field">
+      <div class="config-label">ID de la Planilla</div>
+      <input class="config-input" id="cfg-sheetId" value="${cfg.sheetId}" placeholder="1Ms6iGQ3ObHvZYamiR5t7s6y_XggSMN0ZTWcuUUtGMqA">
+      <div style="font-size:10px;color:var(--muted);margin-top:4px;font-family:var(--mono)">Está en la URL: /spreadsheets/d/<b>ESTE_ID</b>/edit</div>
+    </div>
+    <div class="config-field">
+      <div class="config-label">Nombre de la pestaña</div>
+      <input class="config-input" id="cfg-sheetName" value="${cfg.sheetName}" placeholder="Hoja 1">
+    </div>
+    <div class="config-field">
+      <div class="config-label">Google API Key</div>
+      <input class="config-input" id="cfg-apiKey" type="password" value="${cfg.apiKey}" placeholder="AIzaSy...">
+    </div>
+    <div class="config-save"><button class="btn primary" onclick="saveConfig()">Guardar y conectar</button></div>
+  </div>
+  <div class="config-section">
+    <div class="config-title">Alertas</div>
+    <div class="config-field">
+      <div class="config-label">Días previos al ETA para alertar</div>
+      <input class="config-input" id="cfg-dias" type="number" value="${cfg.alerta_dias}" min="1" max="30" style="width:80px;">
+    </div>
+    <div class="config-save"><button class="btn primary" onclick="saveConfig()">Guardar</button></div>
+  </div>
+  <div class="config-section">
+    <div class="config-title">Instrucciones de configuración</div>
+    <div style="font-size:12px;color:var(--muted2);line-height:1.8;">
+      <b style="color:var(--text)">Paso 1</b> — Ir a <span style="color:var(--accent);font-family:var(--mono)">console.cloud.google.com</span><br>
+      <b style="color:var(--text)">Paso 2</b> — Crear proyecto → Habilitar <i>Google Sheets API</i> y <i>Gmail API</i><br>
+      <b style="color:var(--text)">Paso 3</b> — Credenciales → Crear API Key → pegar arriba<br>
+      <b style="color:var(--text)">Paso 4</b> — En tu planilla: Compartir → "Cualquiera con el enlace puede ver"<br>
+      <b style="color:var(--text)">Paso 5</b> — Pegar el ID de la planilla arriba y sincronizar
+    </div>
+  </div>`;
+}
+
+function saveConfig() {
+  cfg.sheetId = document.getElementById('cfg-sheetId')?.value?.trim() || cfg.sheetId;
+  cfg.sheetName = document.getElementById('cfg-sheetName')?.value?.trim() || cfg.sheetName;
+  cfg.apiKey = document.getElementById('cfg-apiKey')?.value?.trim() || cfg.apiKey;
+  cfg.alerta_dias = parseInt(document.getElementById('cfg-dias')?.value) || cfg.alerta_dias;
+  localStorage.setItem(CFG_KEY, JSON.stringify(cfg));
+  loadData();
+}
+
+function showConfigPrompt() {
+  document.getElementById('content').innerHTML = `
+  <div class="empty">
+    <div class="empty-icon">⚙</div>
+    <div style="margin-bottom:16px;">Configurá la conexión con tu planilla para empezar.</div>
+    <button class="btn primary" onclick="showView('config')">Ir a Configuración</button>
+  </div>`;
+}
+
+// ─── MODAL DE MAIL ────────────────────────────────────────────────────────────
+const MAIL_TEMPLATES = {
+  reclamo_pago: (d) => ({
+    subject: `Payment reminder – ${d.negocio} / ${d.bl}`,
+    body: `Dear ${d.customer},\n\nWe would like to kindly remind you that payment for shipment ${d.negocio} (BL: ${d.bl}) is due.\n\nVessel: ${d.vessel}\nPort: ${d.port}\nETA: ${d.eta}\n\nPlease confirm receipt and expected payment date.\n\nBest regards,\nLATINUT S.A.`
+  }),
+  envio_docs: (d) => ({
+    subject: `Shipping documents – ${d.negocio} / ${d.bl}`,
+    body: `Dear ${d.customer},\n\nPlease find attached the shipping documents for:\n\nShipment: ${d.negocio}\nBL: ${d.bl}\nVessel: ${d.vessel}\nETA: ${d.eta}\n\nKindly acknowledge receipt.\n\nBest regards,\nLATINUT S.A.`
+  }),
+  shipment_advice: (d) => ({
+    subject: `Shipment Advice – ${d.negocio} / ${d.bl}`,
+    body: `Dear ${d.customer},\n\nPlease be advised that the following shipment has departed:\n\nShipment: ${d.negocio}\nBL: ${d.bl}\nVessel: ${d.vessel}\nPort of destination: ${d.port}\nETA: ${d.eta}\n\nBest regards,\nLATINUT S.A.`
+  }),
+  solicitar_docs: (d) => ({
+    subject: `Request: pending documents – ${d.negocio}`,
+    body: `Dear team,\n\nWe are still awaiting the following documents for shipment ${d.negocio} (BL: ${d.bl}):\n\n${d.docsNote || '– Documents pending'}\n\nPlease send at your earliest convenience.\n\nBest regards,\nLATINUT S.A.`
+  }),
+  solicitar_pagare: (d) => ({
+    subject: `Pagaré – ${d.negocio} / ${d.bl}`,
+    body: `Estimado ${d.customer},\n\nLe solicitamos la firma y devolución del pagaré correspondiente al embarque ${d.negocio} (BL: ${d.bl}).\n\nETA: ${d.eta}\n\nQuedamos a disposición.\n\nSaludos,\nLATINUT S.A.`
+  }),
+  reclamo_cobro: (d) => ({
+    subject: `Outstanding payment – ${d.negocio} / ${d.bl}`,
+    body: `Dear ${d.customer},\n\nWe wish to follow up on the outstanding payment for shipment ${d.negocio} (BL: ${d.bl}).\n\nEstimated collection date: ${d.eta}\n\nPlease confirm status of payment.\n\nBest regards,\nLATINUT S.A.`
+  })
+};
+
+function openMailModal(rowIdx, mailType) {
+  const row = allRows[rowIdx];
+  if (!row) return;
+  const d = {
+    negocio: row[COL.NEGOCIO] || '',
+    bl: row[COL.BL] || '',
+    customer: row[COL.CUSTOMER] || '',
+    vessel: row[COL.VESSEL] || '',
+    port: row[COL.PORT] || '',
+    eta: fmtDate(row[COL.ETA]),
+    docsNote: row[COL.DOCUMENTOS] || ''
+  };
+  const tpl = MAIL_TEMPLATES[mailType] ? MAIL_TEMPLATES[mailType](d) : { subject: '', body: '' };
+  modalData = { rowIdx, mailType, customer: d.customer, subject: tpl.subject, body: tpl.body };
+
+  document.getElementById('modal-title').textContent = 'Nuevo borrador — ' + mailType.replace(/_/g, ' ');
+  document.getElementById('modal-to').textContent = d.customer + ' <contacto@cliente.com>';
+  document.getElementById('modal-cc').textContent = 'pedro@axt.com (siempre en CC)';
+  document.getElementById('modal-subject').textContent = tpl.subject;
+  document.getElementById('modal-body').value = tpl.body;
+  document.getElementById('mail-modal').classList.remove('hidden');
+}
+
+function closeModal() {
+  document.getElementById('mail-modal').classList.add('hidden');
+}
+
+async function sendDraft() {
+  const subject = document.getElementById('modal-subject').textContent;
+  const body = document.getElementById('modal-body').value;
+  const to = document.getElementById('modal-to').textContent;
+  // Si no hay OAuth configurado, copiar al clipboard como fallback
+  try {
+    await navigator.clipboard.writeText(`Para: ${to}\nAsunto: ${subject}\n\n${body}`);
+    alert('✓ Contenido del mail copiado al portapapeles.\n\nIntegrá con Gmail API para crear drafts automáticamente (ver documentación adjunta).');
+  } catch(e) {
+    alert('Mail listo:\n\nPara: ' + to + '\nAsunto: ' + subject);
+  }
+  closeModal();
+}
+
+// ─── SIDEBAR MOBILE ───────────────────────────────────────────────────────────
+function toggleSidebar() {
+  document.getElementById('sidebar').classList.toggle('open');
+  document.getElementById('overlay-close').style.display =
+    document.getElementById('sidebar').classList.contains('open') ? 'block' : 'none';
+}
+function closeSidebar() {
+  document.getElementById('sidebar').classList.remove('open');
+  document.getElementById('overlay-close').style.display = 'none';
+}
+
+// ─── INIT ─────────────────────────────────────────────────────────────────────
+window.onload = () => {
+  if (cfg.sheetId && cfg.apiKey) {
+    loadData();
+  } else {
+    showConfigPrompt();
+    setSheetStatus('err', 'Sin configurar');
+  }
+};
+</script>
+</body>
+</html>
