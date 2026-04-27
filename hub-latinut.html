@@ -428,7 +428,7 @@ function renderAlertas(){
   const alerts=getAlerts();
   const critCount=alerts.filter(a=>a.level==='critical').length;
   const warnCount=alerts.filter(a=>a.level==='warning').length;
-  const proxETA=allRows.filter(r=>{const d=daysFrom(r[COL.ETA]);return d!==null&&d<=7;}).length;
+  const proxETA=allRows.filter(r=>{const d=daysFrom(r[COL.ETA]);const telex=(r[COL.TELEX]||"").trim();return d!==null&&d>=0&&d<=7&&telex==="";}).length;
   let html=`<div class="stats-row">
     <div class="stat-card"><div class="stat-label">Cargas activas</div><div class="stat-value">${allRows.length}</div><div class="stat-sub">AXT Solutions</div></div>
     <div class="stat-card alert-card"><div class="stat-label">Alertas críticas</div><div class="stat-value" style="color:var(--danger)">${critCount}</div><div class="stat-sub">Acción urgente</div></div>
