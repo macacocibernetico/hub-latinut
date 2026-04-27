@@ -380,11 +380,19 @@ function getAlerts(){
     const dCobro=daysFrom(fechaEst);
     if(dCobro!==null&&dCobro<=14&&dCobro>=-30){
       const level2=dCobro<=0?'critical':'warning';
+      const inv1=(row[COL.INVOICE_CLIENTE]||'').trim();
+      const inv2=(row[COL.INVOICE_FC_SERV]||'').trim();
+      const invoiceTitle=inv1&&inv2?`${inv1} / ${inv2}`:inv1||inv2||negocio;
+      const cardTitle=`Cobro estimado — ${invoiceTitle} · ${customer}`;
+      const invLogLine=inv1&&inv2
+        ?`<div class="log-item"><span class="log-label">Invoice:</span><span class="log-value">${inv1}</span></div><div class="log-item"><span class="log-label">FC Servicios:</span><span class="log-value">${inv2}</span></div>`
+        :inv1?`<div class="log-item"><span class="log-label">Invoice:</span><span class="log-value">${inv1}</span></div>`
+        :inv2?`<div class="log-item"><span class="log-label">FC Servicios:</span><span class="log-value">${inv2}</span></div>`:'';
       alerts.push({level:level2,rowIdx:idx,
-        title:`Cobro estimado — ${customer}`,
+        title:cardTitle,
         meta:`Payment due: ${fmtDate(fechaEst)}  ·  BL: ${bl}`,
         tags:[{label:customer,cls:'customer'},{label:dCobro<=0?`Vencido hace ${Math.abs(dCobro)}d`:`En ${dCobro}d`,cls:'days-'+daysClass(dCobro)}],
-        logistics,detail,
+        logistics,detail,invLogLine,
         actions:[{label:'✉ Reclamo de cobro',mailType:'reclamo_cobro'}]
       });
     }
@@ -439,6 +447,7 @@ function renderAlertas(){
         <div class="log-item"><span class="log-label">Booking:</span><span class="log-value">${l.booking||'—'}</span></div>
         <div class="log-item"><span class="log-label">BL:</span><span class="log-value">${l.bl||'—'}</span></div>
         <div class="log-item"><span class="log-label">Naviera:</span><span class="log-value">${l.shipping||'—'}</span></div>
+        ${a.invLogLine||''}
       </div>`;
       const docsHtml=a.docsText?`<div style="margin-bottom:8px;font-family:var(--mono);font-size:11px;color:var(--warn);">📋 ${a.docsText}</div>`:'';
       html+=`<div class="alert-item ${a.level}"><div class="alert-dot ${a.level}"></div>
