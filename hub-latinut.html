@@ -37,6 +37,10 @@ button{font-family:var(--font);cursor:pointer;border:none;background:none;}
 .sheet-dot{display:inline-block;width:6px;height:6px;border-radius:50%;background:var(--ok);margin-right:6px;}
 .sheet-dot.err{background:var(--danger);}
 .sheet-dot.loading{background:var(--warn);}
+.auth-status{margin-top:8px;font-size:11px;font-family:var(--mono);}
+.auth-btn{margin-top:8px;width:100%;padding:6px;border-radius:6px;font-size:11px;font-weight:700;border:1px solid var(--border2);background:var(--bg3);color:var(--text);cursor:pointer;transition:all .15s;}
+.auth-btn:hover{background:var(--bg4);}
+.auth-btn.connected{border-color:var(--ok);color:var(--ok);}
 .topbar{display:flex;align-items:center;justify-content:space-between;padding:16px 28px;border-bottom:1px solid var(--border);background:var(--bg);position:sticky;top:0;z-index:5;}
 .topbar-title{font-size:20px;font-weight:700;}
 .topbar-right{display:flex;align-items:center;gap:12px;}
@@ -82,10 +86,13 @@ button{font-family:var(--font);cursor:pointer;border:none;background:none;}
 .log-item{font-size:10px;font-family:var(--mono);}
 .log-label{color:var(--muted);margin-right:4px;}
 .log-value{color:var(--text);}
+.alert-reclamo{font-size:10px;font-family:var(--mono);color:var(--warn);margin-bottom:8px;padding:4px 8px;background:rgba(255,170,34,.08);border-radius:4px;border-left:2px solid var(--warn);}
 .alert-actions{display:flex;gap:8px;flex-wrap:wrap;}
 .action-btn{font-size:11px;font-weight:600;padding:5px 12px;border-radius:5px;cursor:pointer;transition:all .15s;font-family:var(--font);border:1px solid;}
 .action-btn.mail{background:rgba(200,240,80,.1);color:var(--accent);border-color:rgba(200,240,80,.3);}
 .action-btn.mail:hover{background:rgba(200,240,80,.2);}
+.action-btn.write{background:rgba(77,159,255,.1);color:var(--info);border-color:rgba(77,159,255,.3);}
+.action-btn.write:hover{background:rgba(77,159,255,.2);}
 .alert-right{text-align:right;flex-shrink:0;}
 .days-badge{font-size:22px;font-weight:800;font-family:var(--mono);line-height:1;}
 .days-badge.red{color:var(--danger);}
@@ -141,6 +148,7 @@ td.mono{font-family:var(--mono);font-size:11px;}
 @keyframes spin{to{transform:rotate(360deg);}}
 .empty{padding:48px;text-align:center;color:var(--muted);font-size:13px;}
 .empty-icon{font-size:32px;margin-bottom:12px;}
+.log-table-wrap{background:var(--bg2);border:1px solid var(--border);border-radius:10px;overflow:hidden;margin-bottom:28px;}
 @media(max-width:768px){
   .sidebar{transform:translateX(-220px);transition:transform .25s;}
   .sidebar.open{transform:translateX(0);}
@@ -182,6 +190,12 @@ td.mono{font-family:var(--mono);font-size:11px;}
       </div>
     </div>
     <div class="nav-section">
+      <div class="nav-label">Historial</div>
+      <div class="nav-item" onclick="showView('log')">
+        <span class="icon">📋</span> Log de acciones
+      </div>
+    </div>
+    <div class="nav-section">
       <div class="nav-label">Sistema</div>
       <div class="nav-item" onclick="showView('config')">
         <span class="icon">⚙</span> Configuración
@@ -193,6 +207,10 @@ td.mono{font-family:var(--mono);font-size:11px;}
       <span class="sheet-dot" id="sheet-dot"></span>
       <span id="sheet-status-text">Cargando...</span>
     </div>
+    <div class="auth-status" id="auth-status">
+      <span id="auth-status-text" style="color:var(--muted)">● Sin autenticar</span>
+    </div>
+    <button class="auth-btn" id="auth-btn" onclick="handleAuth()">Conectar con Google</button>
   </div>
 </aside>
 <div class="overlay-close" id="overlay-close" onclick="closeSidebar()"></div>
@@ -213,7 +231,7 @@ td.mono{font-family:var(--mono);font-size:11px;}
 </main>
 </div>
 
-<!-- MODAL -->
+<!-- MODAL MAIL -->
 <div class="modal-overlay hidden" id="mail-modal">
   <div class="modal">
     <div class="modal-header">
@@ -234,14 +252,20 @@ td.mono{font-family:var(--mono);font-size:11px;}
     </div>
     <div class="modal-footer">
       <button class="btn" onclick="closeModal()">Cancelar</button>
-      <button class="btn primary" onclick="sendDraft()">✉ Crear borrador en Gmail</button>
+      <button class="btn primary" id="send-draft-btn" onclick="sendDraft()">✉ Crear borrador en Gmail</button>
     </div>
   </div>
 </div>
 
 <script>
+// ─── CONFIG ──────────────────────────────────────────────────────────────────
 const CFG_KEY = 'hub_latinut_config';
-let cfg = {...{sheetId:'',sheetName:'Cargas',apiKey:'',alerta_dias:10},...JSON.parse(localStorage.getItem(CFG_KEY)||'{}')};
+let cfg = {...{sheetId:'',sheetName:'Cargas',apiKey:'',clientId:'',alerta_dias:10},...JSON.parse(localStorage.getItem(CFG_KEY)||'{}')};
+
+// ─── OAUTH ───────────────────────────────────────────────────────────────────
+const SCOPES = 'https://www.googleapis.com/auth/spreadsheets https://www.googleapis.com/auth/gmail.compose';
+let tokenClient = null;
+let accessToken = null;
 let allRows = [], currentView = 'alertas', modalData = {}, currentLang = 'en';
 
 // ─── COLUMNAS ────────────────────────────────────────────────────────────────
@@ -253,9 +277,6 @@ let allRows = [], currentView = 'alertas', modalData = {}, currentLang = 'en';
 // X=23 Customer, Y=24 Invoice FC Lombard, Z=25 Contract, AA=26 Price
 // AB=27 Flete, AC=28 Total CFR, AD=29 INCOTERM
 // AE=30 Invoice FC Servicios, AF=31 Price FC Servicios
-// AG=32 Valor Total, AH=33 Px Final x Tn, AI=34 Comisión de Venta
-// AM=38 FC Flete, AN=39 FC Courier, AO=40 Proveedor, AP=41 Importe
-// AQ=42 Courier, AR=43 Total, AS=44 Fecha pago forwarder
 // AT=45 Pagaré Enviado, AU=46 Pagaré Firmado
 // AV=47 Fecha estimada cobro, AW=48 Fecha de cobro real
 const COL = {
@@ -263,13 +284,10 @@ const COL = {
   CONTAINERS:5, BOOKING:6, BL:7, SHIPPING:8, VESSEL:9,
   CONSOLIDACION:10, ETD:11, ETA:12, PORT:13,
   DOCUMENTOS:14, LOMBARD:15, CLIENTE_ENV:16, TELEX:17, EXPORTER:18,
-  CUSTOMER:23,
-  INVOICE_CLIENTE:24,
-  TOTAL_CFR:28, INCOTERM:29,
+  CUSTOMER:23, INVOICE_CLIENTE:24, TOTAL_CFR:28, INCOTERM:29,
   INVOICE_FC_SERV:30,
   PAGARE_ENVIADO:45, PAGARE_FIRMADO:46,
-  FECHA_EST_COBRO:47,
-  FECHA_COBRO:48
+  FECHA_EST_COBRO:47, FECHA_COBRO:48
 };
 
 // ─── UTILS ───────────────────────────────────────────────────────────────────
@@ -283,6 +301,7 @@ function daysFrom(v){const d=parseDate(v);if(!d)return null;return Math.round((d
 function fmtDate(v){const d=parseDate(v);if(!d)return v||'—';return d.toLocaleDateString('es-AR',{day:'2-digit',month:'2-digit',year:'2-digit'});}
 function isClosed(row){return(row[COL.FECHA_EST_COBRO]||'').trim().toUpperCase()==='SI'&&(row[COL.FECHA_COBRO]||'').trim()!=='';}
 function daysClass(n){if(n===null)return '';if(n<=7)return 'red';if(n<=14)return 'warn';return 'ok';}
+function nowStr(){const n=new Date();return{fecha:n.toLocaleDateString('es-AR'),hora:n.toLocaleTimeString('es-AR',{hour:'2-digit',minute:'2-digit'})};}
 
 function getInvoiceInfo(row){
   const inv1=(row[COL.INVOICE_CLIENTE]||'').trim();
@@ -292,6 +311,72 @@ function getInvoiceInfo(row){
   if(inv1) return `Invoice (${customer}): ${inv1}`;
   if(inv2) return `FC Servicios (${customer}): ${inv2}`;
   return '';
+}
+
+// ─── RECLAMO TRACKING (localStorage como cache, Sheet como verdad) ──────────
+function getReclamos(){
+  try{return JSON.parse(localStorage.getItem('hub_reclamos')||'{}');}catch(e){return {};}
+}
+function saveReclamo(bl, mailType){
+  const rec=getReclamos();
+  const key=`${bl}_${mailType}`;
+  if(!rec[key]) rec[key]={count:0, last:null};
+  rec[key].count++;
+  rec[key].last=new Date().toISOString();
+  localStorage.setItem('hub_reclamos', JSON.stringify(rec));
+  return rec[key];
+}
+function getReclamoInfo(bl, mailType){
+  const rec=getReclamos();
+  const key=`${bl}_${mailType}`;
+  if(!rec[key]) return null;
+  const hoursAgo=Math.round((Date.now()-new Date(rec[key].last).getTime())/3600000);
+  const timeStr=hoursAgo<24?`hace ${hoursAgo}h`:`hace ${Math.round(hoursAgo/24)}d`;
+  return{count:rec[key].count, timeStr};
+}
+
+// ─── GOOGLE AUTH ─────────────────────────────────────────────────────────────
+function initGoogleAuth(){
+  if(!cfg.clientId) return;
+  tokenClient = google.accounts.oauth2.initTokenClient({
+    client_id: cfg.clientId,
+    scope: SCOPES,
+    callback: (resp) => {
+      if(resp.error) { console.error(resp); return; }
+      accessToken = resp.access_token;
+      updateAuthUI(true);
+      loadData();
+    }
+  });
+}
+
+function handleAuth(){
+  if(accessToken){
+    // Desconectar
+    google.accounts.oauth2.revoke(accessToken, ()=>{
+      accessToken=null;
+      updateAuthUI(false);
+    });
+  } else {
+    if(!cfg.clientId){ alert('Primero configurá el Client ID en Configuración.'); return; }
+    tokenClient.requestAccessToken();
+  }
+}
+
+function updateAuthUI(connected){
+  const txt=document.getElementById('auth-status-text');
+  const btn=document.getElementById('auth-btn');
+  if(connected){
+    txt.textContent='● Conectado con Google';
+    txt.style.color='var(--ok)';
+    btn.textContent='Desconectar';
+    btn.className='auth-btn connected';
+  } else {
+    txt.textContent='● Sin autenticar';
+    txt.style.color='var(--muted)';
+    btn.textContent='Conectar con Google';
+    btn.className='auth-btn';
+  }
 }
 
 // ─── DATA ────────────────────────────────────────────────────────────────────
@@ -310,10 +395,69 @@ async function loadData(){
     updateBadges();renderView(currentView);
   }catch(e){setSheetStatus('err','Error de conexión');console.error(e);}
 }
+
 function setSheetStatus(state,text){
   const dot=document.getElementById('sheet-dot');
   dot.className='sheet-dot'+(state==='err'?' err':state==='loading'?' loading':'');
   document.getElementById('sheet-status-text').textContent=text;
+}
+
+// ─── WRITE TO SHEET ───────────────────────────────────────────────────────────
+async function writeCell(row, col, value){
+  if(!accessToken){alert('Conectate con Google primero para escribir en la planilla.');return false;}
+  // row es 0-based desde fila 4, col es 0-based
+  const sheetRow = row + 4; // +4 porque los datos empiezan en fila 4
+  const colLetter = String.fromCharCode(65 + col);
+  const range = encodeURIComponent(`${cfg.sheetName}!${colLetter}${sheetRow}`);
+  const url = `https://sheets.googleapis.com/v4/spreadsheets/${cfg.sheetId}/values/${range}?valueInputOption=USER_ENTERED`;
+  const r = await fetch(url, {
+    method: 'PUT',
+    headers: {'Authorization':`Bearer ${accessToken}`,'Content-Type':'application/json'},
+    body: JSON.stringify({values:[[value]]})
+  });
+  return r.ok;
+}
+
+async function appendLog(data){
+  if(!accessToken) return;
+  const {fecha,hora}=nowStr();
+  const values=[[fecha, hora, data.fc||'', data.fcServ||'', data.bl||'', data.customer||'', data.accion||'', data.detalle||'']];
+  const range=encodeURIComponent(`LOG!A:H`);
+  const url=`https://sheets.googleapis.com/v4/spreadsheets/${cfg.sheetId}/values/${range}:append?valueInputOption=USER_ENTERED&insertDataOption=INSERT_ROWS`;
+  await fetch(url,{
+    method:'POST',
+    headers:{'Authorization':`Bearer ${accessToken}`,'Content-Type':'application/json'},
+    body:JSON.stringify({values})
+  });
+}
+
+// ─── GMAIL DRAFT ─────────────────────────────────────────────────────────────
+async function createGmailDraft(to, cc, subject, body){
+  if(!accessToken){
+    // Fallback: copiar al portapapeles
+    try{await navigator.clipboard.writeText(`Para: ${to}\nCC: ${cc}\nAsunto: ${subject}\n\n${body}`);}catch(e){}
+    alert('✓ Contenido copiado al portapapeles.\n\nConectate con Google para crear drafts reales en Gmail.');
+    return false;
+  }
+  const email = [`To: ${to}`, `Cc: ${cc}`, `Subject: ${subject}`, `Content-Type: text/plain; charset=utf-8`, ``, body].join('\r\n');
+  const encoded = btoa(unescape(encodeURIComponent(email))).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');
+  const r = await fetch('https://gmail.googleapis.com/gmail/v1/users/me/drafts', {
+    method: 'POST',
+    headers: {'Authorization':`Bearer ${accessToken}`,'Content-Type':'application/json'},
+    body: JSON.stringify({message:{raw:encoded}})
+  });
+  if(r.ok){
+    showToast('✓ Borrador creado en Gmail');
+    return true;
+  }
+  return false;
+}
+
+function showToast(msg){
+  let t=document.getElementById('toast');
+  if(!t){t=document.createElement('div');t.id='toast';t.style.cssText='position:fixed;bottom:24px;right:24px;background:var(--ok);color:#0d0d0d;padding:10px 18px;border-radius:8px;font-weight:700;font-size:12px;z-index:999;transition:opacity .3s;';document.body.appendChild(t);}
+  t.textContent=msg;t.style.opacity='1';
+  setTimeout(()=>t.style.opacity='0',3000);
 }
 
 // ─── ALERTS ──────────────────────────────────────────────────────────────────
@@ -333,23 +477,32 @@ function getAlerts(){
     const product=(row[COL.PRODUCT]||'—').trim();
     const invoiceInfo=getInvoiceInfo(row);
     const paymentDueFmt=fmtDate(row[COL.FECHA_EST_COBRO]);
+    const inv1=(row[COL.INVOICE_CLIENTE]||'').trim();
+    const inv2=(row[COL.INVOICE_FC_SERV]||'').trim();
 
     const detail={negocio,product,bl,booking,containers,shipping,vessel,port,
-      etaFmt:fmtDate(row[COL.ETA]),customer,
-      paymentDueFmt,invoiceInfo,
-      docsNote:(row[COL.DOCUMENTOS]||'').trim()};
+      etaFmt:fmtDate(row[COL.ETA]),customer,paymentDueFmt,invoiceInfo,
+      docsNote:(row[COL.DOCUMENTOS]||'').trim(),inv1,inv2};
     const logistics={containers,booking,bl,shipping};
 
     // ETA próximo
     if(dETA!==null&&dETA<=cfg.alerta_dias){
       const level=dETA<=7?'critical':'warning';
       const etaLabel=dETA<0?`Llegó hace ${Math.abs(dETA)}d`:dETA===0?'Llega HOY':`Llega en ${dETA}d`;
+      const telexStatus=(row[COL.TELEX]||'').trim();
+      const recInfo=getReclamoInfo(bl,'reclamo_pago');
       alerts.push({level,dETA,rowIdx:idx,
         title:`Arribo próximo — ${customer}`,
         meta:`${negocio}  ·  ETA: ${fmtDate(row[COL.ETA])}`,
         tags:[{label:customer,cls:'customer'},{label:vessel,cls:'vessel'},{label:port,cls:'port'},{label:shipping,cls:'naviera'},{label:etaLabel,cls:'days-'+daysClass(dETA)}],
-        logistics,detail,
-        actions:[{label:'✉ Reclamo de pago',mailType:'reclamo_pago'},{label:'✉ Envío docs',mailType:'envio_docs'},{label:'✉ Shipment Advice',mailType:'shipment_advice'}]
+        logistics,detail,recInfo,
+        telexStatus,
+        actions:[
+          {label:'✉ Reclamo de pago',mailType:'reclamo_pago'},
+          {label:'✉ Envío docs',mailType:'envio_docs'},
+          {label:'✉ Shipment Advice',mailType:'shipment_advice'},
+          {label:'📋 Solicitar liberación',mailType:'solicitar_liberacion',isWrite:true}
+        ]
       });
     }
 
@@ -368,11 +521,12 @@ function getAlerts(){
     // Pagaré pendiente
     const pagEnv=(row[COL.PAGARE_ENVIADO]||'').trim().toUpperCase();
     if(pagEnv!=='SI'&&dETA!==null&&dETA<=30){
+      const recInfo=getReclamoInfo(bl,'solicitar_pagare');
       alerts.push({level:'info',rowIdx:idx,
         title:`Pagaré pendiente — ${customer}`,
         meta:`${negocio}  ·  BL: ${bl}  ·  ETA: ${fmtDate(row[COL.ETA])}`,
         tags:[{label:customer,cls:'customer'},{label:'Pagaré no enviado',cls:'days-warn'}],
-        logistics,detail,
+        logistics,detail,recInfo,
         actions:[{label:'✉ Solicitar pagaré',mailType:'solicitar_pagare'}]
       });
     }
@@ -382,19 +536,18 @@ function getAlerts(){
     const dCobro=daysFrom(fechaEst);
     if(dCobro!==null&&dCobro<=14&&dCobro>=-30){
       const level2=dCobro<=0?'critical':'warning';
-      const inv1=(row[COL.INVOICE_CLIENTE]||'').trim();
-      const inv2=(row[COL.INVOICE_FC_SERV]||'').trim();
       const invoiceTitle=inv1&&inv2?`${inv1} / ${inv2}`:inv1||inv2||negocio;
       const cardTitle=`Cobro estimado — ${invoiceTitle} · ${customer}`;
       const invLogLine=inv1&&inv2
         ?`<div class="log-item"><span class="log-label">Invoice:</span><span class="log-value">${inv1}</span></div><div class="log-item"><span class="log-label">FC Servicios:</span><span class="log-value">${inv2}</span></div>`
         :inv1?`<div class="log-item"><span class="log-label">Invoice:</span><span class="log-value">${inv1}</span></div>`
         :inv2?`<div class="log-item"><span class="log-label">FC Servicios:</span><span class="log-value">${inv2}</span></div>`:'';
+      const recInfo=getReclamoInfo(bl,'reclamo_cobro');
       alerts.push({level:level2,rowIdx:idx,
         title:cardTitle,
         meta:`Payment due: ${fmtDate(fechaEst)}  ·  BL: ${bl}`,
         tags:[{label:customer,cls:'customer'},{label:dCobro<=0?`Vencido hace ${Math.abs(dCobro)}d`:`En ${dCobro}d`,cls:'days-'+daysClass(dCobro)}],
-        logistics,detail,invLogLine,
+        logistics,detail,invLogLine,recInfo,
         actions:[{label:'✉ Reclamo de cobro',mailType:'reclamo_cobro'}]
       });
     }
@@ -416,31 +569,34 @@ function updateBadges(){
 function showView(view){
   currentView=view;
   document.querySelectorAll('.nav-item').forEach(el=>el.classList.remove('active'));
-  const titles={alertas:'Alertas',cargas:'Cargas AXT',cobranza:'Cobranza',pagares:'Pagarés',config:'Configuración'};
+  const titles={alertas:'Alertas',cargas:'Cargas AXT',cobranza:'Cobranza',pagares:'Pagarés',log:'Log de acciones',config:'Configuración'};
   document.getElementById('view-title').textContent=titles[view]||view;
   document.querySelectorAll('.nav-item').forEach(el=>{if(el.getAttribute('onclick')?.includes(`'${view}'`))el.classList.add('active');});
   renderView(view);
   if(window.innerWidth<=768)closeSidebar();
 }
-function renderView(v){({alertas:renderAlertas,cargas:renderCargas,cobranza:renderCobranza,pagares:renderPagares,config:renderConfig}[v]||renderAlertas)();}
+function renderView(v){({alertas:renderAlertas,cargas:renderCargas,cobranza:renderCobranza,pagares:renderPagares,log:renderLog,config:renderConfig}[v]||renderAlertas)();}
 
 function renderAlertas(){
   const alerts=getAlerts();
   const critCount=alerts.filter(a=>a.level==='critical').length;
   const warnCount=alerts.filter(a=>a.level==='warning').length;
-  const proxETA=allRows.filter(r=>{const d=daysFrom(r[COL.ETA]);const telex=(r[COL.TELEX]||"").trim();return d!==null&&d>=0&&d<=7&&telex==="";}).length;
+  const proxETA=allRows.filter(r=>{const d=daysFrom(r[COL.ETA]);const telex=(r[COL.TELEX]||'').trim();return d!==null&&d>=0&&d<=7&&telex==='';}).length;
   let html=`<div class="stats-row">
     <div class="stat-card"><div class="stat-label">Cargas activas</div><div class="stat-value">${allRows.length}</div><div class="stat-sub">AXT Solutions</div></div>
     <div class="stat-card alert-card"><div class="stat-label">Alertas críticas</div><div class="stat-value" style="color:var(--danger)">${critCount}</div><div class="stat-sub">Acción urgente</div></div>
     <div class="stat-card warn-card"><div class="stat-label">Advertencias</div><div class="stat-value" style="color:var(--warn)">${warnCount}</div><div class="stat-sub">A monitorear</div></div>
-    <div class="stat-card"><div class="stat-label">ETA próximos 7d</div><div class="stat-value" style="color:var(--info)">${proxETA}</div><div class="stat-sub">Arribar esta semana</div></div>
+    <div class="stat-card"><div class="stat-label">ETA próximos 7d</div><div class="stat-value" style="color:var(--info)">${proxETA}</div><div class="stat-sub">Sin liberación solicitada</div></div>
   </div>`;
   if(!alerts.length){html+=`<div class="empty"><div class="empty-icon">✓</div>Sin alertas activas. Todo en orden.</div>`;}
   else{
     html+=`<div class="section-header"><span class="section-title">Requieren atención</span><span class="section-count">${alerts.length} alertas</span></div><div class="alert-list">`;
     alerts.forEach(a=>{
       const tagsHtml=(a.tags||[]).map(t=>`<span class="tag ${t.cls}">${t.label}</span>`).join('');
-      const actionsHtml=(a.actions||[]).map(act=>`<button class="action-btn mail" onclick="openMailModal(${a.rowIdx},'${act.mailType}')">${act.label}</button>`).join('');
+      const actionsHtml=(a.actions||[]).map(act=>{
+        const cls=act.isWrite?'write':'mail';
+        return `<button class="action-btn ${cls}" onclick="openMailModal(${a.rowIdx},'${act.mailType}')">${act.label}</button>`;
+      }).join('');
       const dN=a.dETA!==undefined?a.dETA:null;
       const rightHtml=dN!==null?`<div class="alert-right"><div class="days-badge ${daysClass(dN)}">${dN<0?'+'+Math.abs(dN):dN}</div><div class="days-label">días ETA</div></div>`:'';
       const l=a.logistics||{};
@@ -452,12 +608,14 @@ function renderAlertas(){
         ${a.invLogLine||''}
       </div>`;
       const docsHtml=a.docsText?`<div style="margin-bottom:8px;font-family:var(--mono);font-size:11px;color:var(--warn);">📋 ${a.docsText}</div>`:'';
+      const telexHtml=a.telexStatus?`<div style="margin-bottom:8px;font-family:var(--mono);font-size:11px;color:var(--info);">📋 TELEX: ${a.telexStatus}</div>`:'';
+      const recHtml=a.recInfo?`<div class="alert-reclamo">⚠ Reclamado ${a.recInfo.count} vez${a.recInfo.count>1?'es':''} · último ${a.recInfo.timeStr} — sin respuesta</div>`:'';
       html+=`<div class="alert-item ${a.level}"><div class="alert-dot ${a.level}"></div>
         <div class="alert-body">
           <div class="alert-title">${a.title}</div>
           <div class="alert-meta">${a.meta}</div>
           <div class="alert-tags">${tagsHtml}</div>
-          ${logHtml}${docsHtml}
+          ${logHtml}${telexHtml}${docsHtml}${recHtml}
           <div class="alert-actions">${actionsHtml}</div>
         </div>${rightHtml}</div>`;
     });
@@ -469,7 +627,7 @@ function renderAlertas(){
 function renderCargas(){
   if(!allRows.length){document.getElementById('content').innerHTML=`<div class="empty"><div class="empty-icon">📦</div>Sin cargas. Sincronizá primero.</div>`;return;}
   let html=`<div class="table-wrap"><div class="table-top"><span style="font-size:13px;font-weight:700;">${allRows.length} cargas activas</span></div><div style="overflow-x:auto;"><table>
-    <thead><tr><th>Negocio</th><th>BL</th><th>Booking</th><th>Naviera</th><th>Customer</th><th>Vessel</th><th>ETA</th><th>Días</th><th>Docs</th><th>Pagaré</th><th>Cobro Est.</th><th></th></tr></thead><tbody>`;
+    <thead><tr><th>Negocio</th><th>BL</th><th>Booking</th><th>Naviera</th><th>Customer</th><th>Vessel</th><th>ETA</th><th>Días</th><th>Docs</th><th>TELEX</th><th>Pagaré</th><th>Cobro Est.</th><th></th></tr></thead><tbody>`;
   allRows.forEach((row,idx)=>{
     const days=daysFrom(row[COL.ETA]);
     const dc=daysClass(days);
@@ -478,6 +636,8 @@ function renderCargas(){
     const pagStatus=pagFirm==='SI'?'<span class="pagare-status enviado">Firmado</span>':pagEnv==='SI'?'<span class="pagare-status enviado">Enviado</span>':'<span class="pagare-status pendiente">Pendiente</span>';
     const docs=(row[COL.DOCUMENTOS]||'').trim();
     const docsOk=docs.toUpperCase()==='SI';
+    const telex=(row[COL.TELEX]||'').trim();
+    const telexColor=telex.toUpperCase()==='SI'?'var(--ok)':telex?'var(--info)':'var(--muted)';
     html+=`<tr>
       <td class="mono">${row[COL.NEGOCIO]||'—'}</td>
       <td class="mono">${(row[COL.BL]||'—').substring(0,22)}</td>
@@ -488,6 +648,7 @@ function renderCargas(){
       <td class="mono">${fmtDate(row[COL.ETA])}</td>
       <td><span style="color:var(--${dc==='red'?'danger':dc==='warn'?'warn':'ok'});font-family:var(--mono);font-weight:600">${days!==null?days+'d':'—'}</span></td>
       <td><div class="doc-status"><div class="doc-dot ${docsOk?'green':'red'}"></div><span class="doc-text" title="${docs||'Pendiente'}">${docsOk?'Completo':docs||'Pendiente'}</span></div></td>
+      <td><span style="color:${telexColor};font-family:var(--mono);font-size:10px">${telex||'—'}</span></td>
       <td>${pagStatus}</td>
       <td class="mono" style="color:var(--muted2)">${fmtDate(row[COL.FECHA_EST_COBRO])}</td>
       <td><button class="row-action" onclick="openMailModal(${idx},'reclamo_pago')">✉</button></td>
@@ -508,7 +669,7 @@ function renderCobranza(){
     <div class="stat-card warn-card"><div class="stat-label">Total expuesto</div><div class="stat-value" style="font-size:20px;color:var(--warn)">USD ${totalUSD.toLocaleString('es-AR',{maximumFractionDigits:0})}</div></div>
   </div>
   <div class="table-wrap"><div class="table-top"><span style="font-size:13px;font-weight:700;">Cobranza activa</span></div><div style="overflow-x:auto;"><table>
-    <thead><tr><th>Negocio</th><th>Customer</th><th>BL</th><th>Naviera</th><th>Invoice</th><th>Total CFR</th><th>Payment Due</th><th>Días</th><th></th></tr></thead><tbody>`;
+    <thead><tr><th>Negocio</th><th>Customer</th><th>BL</th><th>Naviera</th><th>Invoice</th><th>Total CFR</th><th>Payment Due</th><th>Días</th><th>Reclamos</th><th></th></tr></thead><tbody>`;
   rows.forEach(row=>{
     const origIdx=allRows.indexOf(row);
     const d=daysFrom(row[COL.FECHA_EST_COBRO]);
@@ -516,6 +677,8 @@ function renderCobranza(){
     const inv1=(row[COL.INVOICE_CLIENTE]||'').trim();
     const inv2=(row[COL.INVOICE_FC_SERV]||'').trim();
     const invDisplay=inv1&&inv2?`${inv1} / ${inv2}`:inv1||inv2||'—';
+    const recInfo=getReclamoInfo(row[COL.BL]||'','reclamo_cobro');
+    const recHtml=recInfo?`<span style="color:var(--warn);font-size:10px;font-family:var(--mono)">${recInfo.count}x · ${recInfo.timeStr}</span>`:`<span style="color:var(--muted);font-size:10px">—</span>`;
     html+=`<tr>
       <td class="mono">${row[COL.NEGOCIO]||'—'}</td>
       <td>${row[COL.CUSTOMER]||'—'}</td>
@@ -525,6 +688,7 @@ function renderCobranza(){
       <td class="mono">${row[COL.TOTAL_CFR]||'—'}</td>
       <td class="mono">${fmtDate(row[COL.FECHA_EST_COBRO])}</td>
       <td><span style="color:var(--${dc==='red'?'danger':dc==='warn'?'warn':'ok'});font-weight:600;font-family:var(--mono)">${d!==null?d+'d':'—'}</span></td>
+      <td>${recHtml}</td>
       <td><button class="row-action" onclick="openMailModal(${origIdx},'reclamo_cobro')">✉ Reclamo</button></td>
     </tr>`;
   });
@@ -534,10 +698,12 @@ function renderCobranza(){
 
 function renderPagares(){
   let html=`<div class="table-wrap"><div class="table-top"><span style="font-size:13px;font-weight:700;">Estado de pagarés</span></div><div style="overflow-x:auto;"><table>
-    <thead><tr><th>Negocio</th><th>Customer</th><th>BL</th><th>Naviera</th><th>ETA</th><th>Enviado</th><th>Firmado</th><th>Payment Due</th><th></th></tr></thead><tbody>`;
+    <thead><tr><th>Negocio</th><th>Customer</th><th>BL</th><th>Naviera</th><th>ETA</th><th>Enviado</th><th>Firmado</th><th>Payment Due</th><th>Reclamos</th><th></th></tr></thead><tbody>`;
   allRows.forEach((row,idx)=>{
     const pagEnv=(row[COL.PAGARE_ENVIADO]||'').trim().toUpperCase();
     const pagFirm=(row[COL.PAGARE_FIRMADO]||'').trim().toUpperCase();
+    const recInfo=getReclamoInfo(row[COL.BL]||'','solicitar_pagare');
+    const recHtml=recInfo?`<span style="color:var(--warn);font-size:10px;font-family:var(--mono)">${recInfo.count}x · ${recInfo.timeStr}</span>`:`<span style="color:var(--muted);font-size:10px">—</span>`;
     html+=`<tr>
       <td class="mono">${row[COL.NEGOCIO]||'—'}</td>
       <td>${row[COL.CUSTOMER]||'—'}</td>
@@ -547,11 +713,46 @@ function renderPagares(){
       <td>${pagEnv==='SI'?'<span class="pagare-status enviado">SI</span>':'<span class="pagare-status pendiente">NO</span>'}</td>
       <td>${pagFirm==='SI'?'<span class="pagare-status enviado">SI</span>':'<span class="pagare-status pendiente">NO</span>'}</td>
       <td class="mono">${fmtDate(row[COL.FECHA_EST_COBRO])}</td>
+      <td>${recHtml}</td>
       <td>${pagEnv!=='SI'?`<button class="row-action" onclick="openMailModal(${idx},'solicitar_pagare')">✉ Solicitar</button>`:''}</td>
     </tr>`;
   });
   html+=`</tbody></table></div></div>`;
   document.getElementById('content').innerHTML=html;
+}
+
+async function renderLog(){
+  if(!accessToken){
+    document.getElementById('content').innerHTML=`<div class="empty"><div class="empty-icon">📋</div><div style="margin-bottom:16px;">Conectate con Google para ver el log de acciones.</div><button class="btn primary" onclick="handleAuth()">Conectar con Google</button></div>`;
+    return;
+  }
+  document.getElementById('content').innerHTML=`<div class="spinner"><div class="spin"></div> Cargando log...</div>`;
+  try{
+    const range=encodeURIComponent(`LOG!A:H`);
+    const url=`https://sheets.googleapis.com/v4/spreadsheets/${cfg.sheetId}/values/${range}?key=${cfg.apiKey}`;
+    const r=await fetch(url);
+    const data=await r.json();
+    const rows=(data.values||[]).slice(1).reverse(); // Más recientes primero
+    if(!rows.length){document.getElementById('content').innerHTML=`<div class="empty"><div class="empty-icon">📋</div>Sin acciones registradas todavía.</div>`;return;}
+    let html=`<div class="table-wrap"><div class="table-top"><span style="font-size:13px;font-weight:700;">${rows.length} acciones registradas</span></div><div style="overflow-x:auto;"><table>
+      <thead><tr><th>Fecha</th><th>Hora</th><th>FC</th><th>FC Servicios</th><th>BL</th><th>Customer</th><th>Acción</th><th>Detalle</th></tr></thead><tbody>`;
+    rows.forEach(row=>{
+      const accion=(row[6]||'').trim();
+      const color=accion.includes('reclamo')||accion.includes('cobro')?'var(--warn)':accion.includes('liberac')?'var(--info)':'var(--muted2)';
+      html+=`<tr>
+        <td class="mono">${row[0]||'—'}</td>
+        <td class="mono">${row[1]||'—'}</td>
+        <td class="mono">${row[2]||'—'}</td>
+        <td class="mono">${row[3]||'—'}</td>
+        <td class="mono">${(row[4]||'—').substring(0,20)}</td>
+        <td>${row[5]||'—'}</td>
+        <td><span style="color:${color};font-size:11px;font-weight:600">${accion||'—'}</span></td>
+        <td style="color:var(--muted2);font-size:11px">${row[7]||'—'}</td>
+      </tr>`;
+    });
+    html+=`</tbody></table></div></div>`;
+    document.getElementById('content').innerHTML=html;
+  }catch(e){document.getElementById('content').innerHTML=`<div class="empty"><div class="empty-icon">⚠</div>Error al cargar el log.</div>`;}
 }
 
 function renderConfig(){
@@ -564,7 +765,8 @@ function renderConfig(){
       <div style="font-size:10px;color:var(--muted);margin-top:4px;font-family:var(--mono)">Solo el ID, no la URL completa</div>
     </div>
     <div class="config-field"><div class="config-label">Nombre de la pestaña</div><input class="config-input" id="cfg-sheetName" value="${cfg.sheetName}" placeholder="Cargas"></div>
-    <div class="config-field"><div class="config-label">Google API Key</div><input class="config-input" id="cfg-apiKey" type="password" value="${cfg.apiKey}" placeholder="AIzaSy..."></div>
+    <div class="config-field"><div class="config-label">Google API Key (lectura)</div><input class="config-input" id="cfg-apiKey" type="password" value="${cfg.apiKey}" placeholder="AIzaSy..."></div>
+    <div class="config-field"><div class="config-label">Google OAuth Client ID (escritura)</div><input class="config-input" id="cfg-clientId" value="${cfg.clientId}" placeholder="309220748877-...apps.googleusercontent.com"></div>
     <div class="config-save"><button class="btn primary" onclick="saveConfig()">Guardar y conectar</button></div>
   </div>
   <div class="config-section">
@@ -579,8 +781,10 @@ function saveConfig(){
   cfg.sheetId=document.getElementById('cfg-sheetId')?.value?.trim()||cfg.sheetId;
   cfg.sheetName=document.getElementById('cfg-sheetName')?.value?.trim()||cfg.sheetName;
   cfg.apiKey=document.getElementById('cfg-apiKey')?.value?.trim()||cfg.apiKey;
+  cfg.clientId=document.getElementById('cfg-clientId')?.value?.trim()||cfg.clientId;
   cfg.alerta_dias=parseInt(document.getElementById('cfg-dias')?.value)||cfg.alerta_dias;
   localStorage.setItem(CFG_KEY,JSON.stringify(cfg));
+  initGoogleAuth();
   loadData();
 }
 
@@ -589,50 +793,41 @@ function showConfigPrompt(){
 }
 
 // ─── MAIL TEMPLATES ──────────────────────────────────────────────────────────
-function getGreeting(lang, customer){ return lang==='es'?`Estimado/a ${customer}`:`Dear ${customer}`; }
-function getSalutation(lang){ return lang==='es'?'Saludos,\nLATINUT S.A.':'Best regards,\nLATINUT S.A.'; }
+function getGreeting(lang,customer){return lang==='es'?`Estimado/a ${customer}`:`Dear ${customer}`;}
+function getSalutation(lang){return lang==='es'?'Saludos,\nLATINUT S.A.':'Best regards,\nLATINUT S.A.';}
 
-function buildMailBody(mailType, d, lang){
+function buildMailBody(mailType,d,lang){
   const hi=getGreeting(lang,d.customer);
   const bye=getSalutation(lang);
   const invLine=d.invoiceInfo?`\n${d.invoiceInfo}`:'';
-
   const tpls={
     reclamo_pago:{
-      en:{subject:`Payment reminder – ${d.negocio} / BL: ${d.bl}`,
-        body:`${hi},\n\nWe would like to kindly remind you that payment for the following shipment is due:\n\nShipment: ${d.negocio}\nCustomer: ${d.customer}\nBL: ${d.bl}\nBooking: ${d.booking}\nContainer(s): ${d.containers}\nVessel: ${d.vessel}\nPort: ${d.port}\nETA: ${d.etaFmt}\nPayment due date: ${d.paymentDueFmt}${invLine}\n\nPlease confirm receipt and expected payment date.\n\n${bye}`},
-      es:{subject:`Recordatorio de pago – ${d.negocio} / BL: ${d.bl}`,
-        body:`${hi},\n\nLe recordamos que el pago del siguiente embarque se encuentra pendiente:\n\nNegocio: ${d.negocio}\nCliente: ${d.customer}\nBL: ${d.bl}\nBooking: ${d.booking}\nContainer(s): ${d.containers}\nBuque: ${d.vessel}\nPuerto: ${d.port}\nETA: ${d.etaFmt}\nFecha de pago estimada: ${d.paymentDueFmt}${invLine}\n\nPor favor confirme fecha estimada de pago.\n\n${bye}`}
+      en:{subject:`Payment reminder – ${d.negocio} / BL: ${d.bl}`,body:`${hi},\n\nWe would like to kindly remind you that payment for the following shipment is due:\n\nShipment: ${d.negocio}\nCustomer: ${d.customer}\nBL: ${d.bl}\nBooking: ${d.booking}\nContainer(s): ${d.containers}\nVessel: ${d.vessel}\nPort: ${d.port}\nETA: ${d.etaFmt}\nPayment due date: ${d.paymentDueFmt}${invLine}\n\nPlease confirm receipt and expected payment date.\n\n${bye}`},
+      es:{subject:`Recordatorio de pago – ${d.negocio} / BL: ${d.bl}`,body:`${hi},\n\nLe recordamos que el pago del siguiente embarque se encuentra pendiente:\n\nNegocio: ${d.negocio}\nCliente: ${d.customer}\nBL: ${d.bl}\nBooking: ${d.booking}\nContainer(s): ${d.containers}\nBuque: ${d.vessel}\nPuerto: ${d.port}\nETA: ${d.etaFmt}\nFecha de pago estimada: ${d.paymentDueFmt}${invLine}\n\nPor favor confirme fecha estimada de pago.\n\n${bye}`}
     },
     envio_docs:{
-      en:{subject:`Shipping documents – ${d.negocio} / BL: ${d.bl}`,
-        body:`${hi},\n\nPlease find attached the shipping documents for:\n\nShipment: ${d.negocio}\nCustomer: ${d.customer}\nBL: ${d.bl}\nBooking: ${d.booking}\nContainer(s): ${d.containers}\nVessel: ${d.vessel}\nETA: ${d.etaFmt}${invLine}\n\nKindly acknowledge receipt.\n\n${bye}`},
-      es:{subject:`Documentos de embarque – ${d.negocio} / BL: ${d.bl}`,
-        body:`${hi},\n\nAdjuntamos la documentación correspondiente al siguiente embarque:\n\nNegocio: ${d.negocio}\nCliente: ${d.customer}\nBL: ${d.bl}\nBooking: ${d.booking}\nContainer(s): ${d.containers}\nBuque: ${d.vessel}\nETA: ${d.etaFmt}${invLine}\n\nAgradecemos confirmar recepción.\n\n${bye}`}
+      en:{subject:`Shipping documents – ${d.negocio} / BL: ${d.bl}`,body:`${hi},\n\nPlease find attached the shipping documents for:\n\nShipment: ${d.negocio}\nCustomer: ${d.customer}\nBL: ${d.bl}\nBooking: ${d.booking}\nContainer(s): ${d.containers}\nVessel: ${d.vessel}\nETA: ${d.etaFmt}${invLine}\n\nKindly acknowledge receipt.\n\n${bye}`},
+      es:{subject:`Documentos de embarque – ${d.negocio} / BL: ${d.bl}`,body:`${hi},\n\nAdjuntamos la documentación correspondiente al siguiente embarque:\n\nNegocio: ${d.negocio}\nCliente: ${d.customer}\nBL: ${d.bl}\nBooking: ${d.booking}\nContainer(s): ${d.containers}\nBuque: ${d.vessel}\nETA: ${d.etaFmt}${invLine}\n\nAgradecemos confirmar recepción.\n\n${bye}`}
     },
     shipment_advice:{
-      en:{subject:`Shipment Advice – ${d.negocio} / BL: ${d.bl}`,
-        body:`${hi},\n\nPlease be advised that the following shipment has departed:\n\nShipment: ${d.negocio}\nCustomer: ${d.customer}\nBL: ${d.bl}\nBooking: ${d.booking}\nContainer(s): ${d.containers}\nVessel: ${d.vessel}\nPort of destination: ${d.port}\nETA: ${d.etaFmt}${invLine}\n\n${bye}`},
-      es:{subject:`Aviso de embarque – ${d.negocio} / BL: ${d.bl}`,
-        body:`${hi},\n\nLe informamos que el siguiente embarque ha zarpado:\n\nNegocio: ${d.negocio}\nCliente: ${d.customer}\nBL: ${d.bl}\nBooking: ${d.booking}\nContainer(s): ${d.containers}\nBuque: ${d.vessel}\nPuerto de destino: ${d.port}\nETA: ${d.etaFmt}${invLine}\n\n${bye}`}
+      en:{subject:`Shipment Advice – ${d.negocio} / BL: ${d.bl}`,body:`${hi},\n\nPlease be advised that the following shipment has departed:\n\nShipment: ${d.negocio}\nCustomer: ${d.customer}\nBL: ${d.bl}\nBooking: ${d.booking}\nContainer(s): ${d.containers}\nVessel: ${d.vessel}\nPort of destination: ${d.port}\nETA: ${d.etaFmt}${invLine}\n\n${bye}`},
+      es:{subject:`Aviso de embarque – ${d.negocio} / BL: ${d.bl}`,body:`${hi},\n\nLe informamos que el siguiente embarque ha zarpado:\n\nNegocio: ${d.negocio}\nCliente: ${d.customer}\nBL: ${d.bl}\nBooking: ${d.booking}\nContainer(s): ${d.containers}\nBuque: ${d.vessel}\nPuerto de destino: ${d.port}\nETA: ${d.etaFmt}${invLine}\n\n${bye}`}
     },
     solicitar_docs:{
-      en:{subject:`Request: pending documents – ${d.negocio} / BL: ${d.bl}`,
-        body:`${hi},\n\nWe are still awaiting the following documents for:\n\nShipment: ${d.negocio}\nCustomer: ${d.customer}\nBL: ${d.bl}\nBooking: ${d.booking}\nContainer(s): ${d.containers}\n\nPending: ${d.docsNote||'– Documents pending'}\n\nPlease send at your earliest convenience.\n\n${bye}`},
-      es:{subject:`Solicitud de documentos pendientes – ${d.negocio} / BL: ${d.bl}`,
-        body:`${hi},\n\nAún aguardamos la siguiente documentación para:\n\nNegocio: ${d.negocio}\nCliente: ${d.customer}\nBL: ${d.bl}\nBooking: ${d.booking}\nContainer(s): ${d.containers}\n\nPendiente: ${d.docsNote||'– Documentos pendientes'}\n\nSolicitamos envío a la brevedad.\n\n${bye}`}
+      en:{subject:`Request: pending documents – ${d.negocio} / BL: ${d.bl}`,body:`${hi},\n\nWe are still awaiting the following documents for:\n\nShipment: ${d.negocio}\nCustomer: ${d.customer}\nBL: ${d.bl}\nBooking: ${d.booking}\nContainer(s): ${d.containers}\n\nPending: ${d.docsNote||'– Documents pending'}\n\nPlease send at your earliest convenience.\n\n${bye}`},
+      es:{subject:`Solicitud de documentos pendientes – ${d.negocio} / BL: ${d.bl}`,body:`${hi},\n\nAún aguardamos la siguiente documentación para:\n\nNegocio: ${d.negocio}\nCliente: ${d.customer}\nBL: ${d.bl}\nBooking: ${d.booking}\nContainer(s): ${d.containers}\n\nPendiente: ${d.docsNote||'– Documentos pendientes'}\n\nSolicitamos envío a la brevedad.\n\n${bye}`}
     },
     solicitar_pagare:{
-      en:{subject:`Promissory note – ${d.negocio} / BL: ${d.bl}`,
-        body:`${hi},\n\nWe kindly request the signing and return of the promissory note for:\n\nShipment: ${d.negocio}\nCustomer: ${d.customer}\nBL: ${d.bl}\nBooking: ${d.booking}\nContainer(s): ${d.containers}\nVessel: ${d.vessel}\nETA: ${d.etaFmt}${invLine}\n\n${bye}`},
-      es:{subject:`Pagaré – ${d.negocio} / BL: ${d.bl}`,
-        body:`${hi},\n\nLe solicitamos la firma y devolución del pagaré correspondiente al siguiente embarque:\n\nNegocio: ${d.negocio}\nCliente: ${d.customer}\nBL: ${d.bl}\nBooking: ${d.booking}\nContainer(s): ${d.containers}\nBuque: ${d.vessel}\nETA: ${d.etaFmt}${invLine}\n\n${bye}`}
+      en:{subject:`Promissory note – ${d.negocio} / BL: ${d.bl}`,body:`${hi},\n\nWe kindly request the signing and return of the promissory note for:\n\nShipment: ${d.negocio}\nCustomer: ${d.customer}\nBL: ${d.bl}\nBooking: ${d.booking}\nContainer(s): ${d.containers}\nVessel: ${d.vessel}\nETA: ${d.etaFmt}${invLine}\n\n${bye}`},
+      es:{subject:`Pagaré – ${d.negocio} / BL: ${d.bl}`,body:`${hi},\n\nLe solicitamos la firma y devolución del pagaré correspondiente al siguiente embarque:\n\nNegocio: ${d.negocio}\nCliente: ${d.customer}\nBL: ${d.bl}\nBooking: ${d.booking}\nContainer(s): ${d.containers}\nBuque: ${d.vessel}\nETA: ${d.etaFmt}${invLine}\n\n${bye}`}
     },
     reclamo_cobro:{
-      en:{subject:`Outstanding payment – ${d.negocio} / BL: ${d.bl}`,
-        body:`${hi},\n\nWe wish to follow up on the outstanding payment for:\n\nShipment: ${d.negocio}\nCustomer: ${d.customer}\nBL: ${d.bl}\nBooking: ${d.booking}\nContainer(s): ${d.containers}\nPayment due date: ${d.paymentDueFmt}${invLine}\n\nPlease confirm status of payment.\n\n${bye}`},
-      es:{subject:`Reclamo de cobro – ${d.negocio} / BL: ${d.bl}`,
-        body:`${hi},\n\nNos comunicamos para hacer seguimiento del pago pendiente de:\n\nNegocio: ${d.negocio}\nCliente: ${d.customer}\nBL: ${d.bl}\nBooking: ${d.booking}\nContainer(s): ${d.containers}\nFecha de pago estimada: ${d.paymentDueFmt}${invLine}\n\nAgradecemos confirmar estado del pago.\n\n${bye}`}
+      en:{subject:`Outstanding payment – ${d.negocio} / BL: ${d.bl}`,body:`${hi},\n\nWe wish to follow up on the outstanding payment for:\n\nShipment: ${d.negocio}\nCustomer: ${d.customer}\nBL: ${d.bl}\nBooking: ${d.booking}\nContainer(s): ${d.containers}\nPayment due date: ${d.paymentDueFmt}${invLine}\n\nPlease confirm status of payment.\n\n${bye}`},
+      es:{subject:`Reclamo de cobro – ${d.negocio} / BL: ${d.bl}`,body:`${hi},\n\nNos comunicamos para hacer seguimiento del pago pendiente de:\n\nNegocio: ${d.negocio}\nCliente: ${d.customer}\nBL: ${d.bl}\nBooking: ${d.booking}\nContainer(s): ${d.containers}\nFecha de pago estimada: ${d.paymentDueFmt}${invLine}\n\nAgradecemos confirmar estado del pago.\n\n${bye}`}
+    },
+    solicitar_liberacion:{
+      en:{subject:`Release request – ${d.negocio} / BL: ${d.bl}`,body:`${hi},\n\nWe kindly request the release of the following shipment:\n\nShipment: ${d.negocio}\nCustomer: ${d.customer}\nBL: ${d.bl}\nBooking: ${d.booking}\nContainer(s): ${d.containers}\nVessel: ${d.vessel}\nPort: ${d.port}\nETA: ${d.etaFmt}\n\nPlease confirm.\n\n${bye}`},
+      es:{subject:`Solicitud de liberación – ${d.negocio} / BL: ${d.bl}`,body:`${hi},\n\nSolicitamos la liberación del siguiente embarque:\n\nNegocio: ${d.negocio}\nCliente: ${d.customer}\nBL: ${d.bl}\nBooking: ${d.booking}\nContainer(s): ${d.containers}\nBuque: ${d.vessel}\nPuerto: ${d.port}\nETA: ${d.etaFmt}\n\nQuedamos a la espera de confirmación.\n\n${bye}`}
     }
   };
   return tpls[mailType]?.[lang]||tpls[mailType]?.en||{subject:'',body:''};
@@ -653,7 +848,9 @@ function openMailModal(rowIdx, mailType){
     etaFmt:fmtDate(row[COL.ETA]),
     paymentDueFmt:fmtDate(row[COL.FECHA_EST_COBRO]),
     invoiceInfo:getInvoiceInfo(row),
-    docsNote:(row[COL.DOCUMENTOS]||'').trim()
+    docsNote:(row[COL.DOCUMENTOS]||'').trim(),
+    inv1:(row[COL.INVOICE_CLIENTE]||'').trim(),
+    inv2:(row[COL.INVOICE_FC_SERV]||'').trim()
   };
   currentLang='en';
   modalData={rowIdx,mailType,d};
@@ -665,6 +862,14 @@ function openMailModal(rowIdx, mailType){
   const tpl=buildMailBody(mailType,d,'en');
   document.getElementById('modal-subject').textContent=tpl.subject;
   document.getElementById('modal-body').value=tpl.body;
+
+  // Si es liberación, cambiar botón
+  const btn=document.getElementById('send-draft-btn');
+  if(mailType==='solicitar_liberacion'){
+    btn.textContent='📋 Marcar como solicitado + Draft';
+  } else {
+    btn.textContent='✉ Crear borrador en Gmail';
+  }
   document.getElementById('mail-modal').classList.remove('hidden');
 }
 
@@ -683,13 +888,37 @@ async function sendDraft(){
   const subject=document.getElementById('modal-subject').textContent;
   const body=document.getElementById('modal-body').value;
   const to=document.getElementById('modal-to').textContent;
-  try{
-    await navigator.clipboard.writeText(`Para: ${to}\nAsunto: ${subject}\n\n${body}`);
-    alert('✓ Contenido copiado al portapapeles.');
-  }catch(e){alert(`Para: ${to}\nAsunto: ${subject}`);}
+  const cc=document.getElementById('modal-cc').textContent;
+  const {mailType,d,rowIdx}=modalData;
+
+  // Crear draft en Gmail
+  await createGmailDraft(to, cc, subject, body);
+
+  // Registrar reclamo
+  saveReclamo(d.bl, mailType);
+
+  // Si es liberación, escribir en col TELEX
+  if(mailType==='solicitar_liberacion'){
+    const ok=await writeCell(rowIdx, COL.TELEX, 'solicitado, falta ok');
+    if(ok) showToast('✓ TELEX actualizado en planilla');
+  }
+
+  // Log en Sheet
+  await appendLog({
+    fc: d.inv1||d.negocio,
+    fcServ: d.inv2||'',
+    bl: d.bl,
+    customer: d.customer,
+    accion: mailType.replace(/_/g,' '),
+    detalle: subject
+  });
+
   closeModal();
+  // Refrescar vista para mostrar contador actualizado
+  setTimeout(()=>renderView(currentView), 500);
 }
 
+// ─── SIDEBAR ─────────────────────────────────────────────────────────────────
 function toggleSidebar(){
   document.getElementById('sidebar').classList.toggle('open');
   document.getElementById('overlay-close').style.display=document.getElementById('sidebar').classList.contains('open')?'block':'none';
@@ -699,10 +928,15 @@ function closeSidebar(){
   document.getElementById('overlay-close').style.display='none';
 }
 
+// ─── INIT ────────────────────────────────────────────────────────────────────
 window.onload=()=>{
   if(cfg.sheetId&&cfg.apiKey) loadData();
   else{showConfigPrompt();setSheetStatus('err','Sin configurar');}
+  if(cfg.clientId) initGoogleAuth();
 };
 </script>
+
+<!-- Google Identity Services -->
+<script src="https://accounts.google.com/gsi/client" async defer></script>
 </body>
 </html>
