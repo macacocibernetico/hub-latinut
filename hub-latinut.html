@@ -283,6 +283,7 @@ let tokenClient = null;
 let accessToken = null;
 let allRows = [], currentView = 'alertas', modalData = {}, currentLang = 'en';
 let contacts = []; // Cache de contactos del HUB sheet
+let logRows = []; // Cache del LOG del HUB sheet
 
 // ─── CONTACTS ────────────────────────────────────────────────────────────────
 async function loadContacts(){
@@ -317,6 +318,34 @@ function getContactsForEmpresa(empresa){
   const otherEmails=match.filter(c=>c!==toContact&&!c.ccSiempre).map(c=>c.email);
   const allCC=[...new Set([...cc,...otherEmails])];
   return{to:toStr, cc:allCC.join(', ')||'pedro@axt.com'};
+}
+
+// ─── LOG CACHE ───────────────────────────────────────────────────────────────
+async function loadLog(){
+  if(!cfg.hubSheetId||!cfg.apiKey) return;
+  try{
+    const range=encodeURIComponent('LOG!A:I');
+    const url=`https://sheets.googleapis.com/v4/spreadsheets/${cfg.hubSheetId}/values/${range}?key=${cfg.apiKey}`;
+    const r=await fetch(url);
+    if(!r.ok) return;
+    const data=await r.json();
+    logRows=(data.values||[]).slice(1); // Skip header
+    console.log(`Loaded ${logRows.length} log entries`);
+  }catch(e){console.error('Error loading log',e);}
+}
+
+function getReclamoInfoFromLog(bl, mailType){
+  if(!logRows.length) return null;
+  const accion=mailType.replace(/_/g,' ');
+  // col 5=BL, col 7=Accion (0-indexed: Fecha,Hora,Fuente,FC,FCServ,BL,Customer,Accion,Detalle)
+  const matches=logRows.filter(r=>(r[5]||'').trim()===bl&&(r[7]||'').toLowerCase().includes(accion.toLowerCase().split(' ')[0]));
+  if(!matches.length) return null;
+  // Get last entry date
+  const last=matches[matches.length-1];
+  const lastDateStr=(last[0]||'')+' '+(last[1]||'');
+  const hoursAgo=Math.round((Date.now()-new Date(last[0].split('/').reverse().join('-')+' '+last[1]).getTime())/3600000);
+  const timeStr=isNaN(hoursAgo)?'recientemente':hoursAgo<24?`hace ${hoursAgo}h`:`hace ${Math.round(hoursAgo/24)}d`;
+  return{count:matches.length, timeStr};
 }
 
 // ─── COLUMNAS ────────────────────────────────────────────────────────────────
@@ -365,25 +394,8 @@ function getInvoiceInfo(row){
 }
 
 // ─── RECLAMO TRACKING (localStorage como cache, Sheet como verdad) ──────────
-function getReclamos(){
-  try{return JSON.parse(localStorage.getItem('hub_reclamos')||'{}');}catch(e){return {};}
-}
 function saveReclamo(bl, mailType){
-  const rec=getReclamos();
-  const key=`${bl}_${mailType}`;
-  if(!rec[key]) rec[key]={count:0, last:null};
-  rec[key].count++;
-  rec[key].last=new Date().toISOString();
-  localStorage.setItem('hub_reclamos', JSON.stringify(rec));
-  return rec[key];
-}
-function getReclamoInfo(bl, mailType){
-  const rec=getReclamos();
-  const key=`${bl}_${mailType}`;
-  if(!rec[key]) return null;
-  const hoursAgo=Math.round((Date.now()-new Date(rec[key].last).getTime())/3600000);
-  const timeStr=hoursAgo<24?`hace ${hoursAgo}h`:`hace ${Math.round(hoursAgo/24)}d`;
-  return{count:rec[key].count, timeStr};
+  // Reclamos tracked via LOG sheet
 }
 
 // ─── GOOGLE AUTH ─────────────────────────────────────────────────────────────
@@ -443,6 +455,7 @@ async function loadData(){
     const rawRows=(data.values||[]);
     allRows=rawRows.map((row,i)=>{row._sheetRow=i+4;return row;}).filter(row=>row[COL.NEGOCIO]&&!isClosed(row));
     await loadContacts();
+    await loadLog();
     setSheetStatus('ok',`${allRows.length} cargas activas`);
     document.getElementById('last-sync').textContent='Sync '+new Date().toLocaleTimeString('es-AR',{hour:'2-digit',minute:'2-digit'});
     updateBadges();renderView(currentView);
@@ -547,7 +560,7 @@ function getAlerts(){
       const level=dETA<=7?'critical':'warning';
       const etaLabel=dETA<0?`Llegó hace ${Math.abs(dETA)}d`:dETA===0?'Llega HOY':`Llega en ${dETA}d`;
       const telexStatus=(row[COL.TELEX]||'').trim();
-      const recInfo=getReclamoInfo(bl,'reclamo_pago');
+      const recInfo=getReclamoInfoFromLog(bl,'reclamo_pago');
       alerts.push({level,dETA,rowIdx:idx,
         title:`Arribo próximo — ${customer}`,
         meta:`${negocio}  ·  ETA: ${fmtDate(row[COL.ETA])}`,
@@ -578,7 +591,7 @@ function getAlerts(){
     // Pagaré pendiente
     const pagEnv=(row[COL.PAGARE_ENVIADO]||'').trim().toUpperCase();
     if(pagEnv!=='SI'&&dETA!==null&&dETA<=30){
-      const recInfo=getReclamoInfo(bl,'solicitar_pagare');
+      const recInfo=getReclamoInfoFromLog(bl,'solicitar_pagare');
       alerts.push({level:'info',rowIdx:idx,
         title:`Pagaré pendiente — ${customer}`,
         meta:`${negocio}  ·  BL: ${bl}  ·  ETA: ${fmtDate(row[COL.ETA])}`,
@@ -599,7 +612,7 @@ function getAlerts(){
         ?`<div class="log-item"><span class="log-label">Invoice:</span><span class="log-value">${inv1}</span></div><div class="log-item"><span class="log-label">FC Servicios:</span><span class="log-value">${inv2}</span></div>`
         :inv1?`<div class="log-item"><span class="log-label">Invoice:</span><span class="log-value">${inv1}</span></div>`
         :inv2?`<div class="log-item"><span class="log-label">FC Servicios:</span><span class="log-value">${inv2}</span></div>`:'';
-      const recInfo=getReclamoInfo(bl,'reclamo_cobro');
+      const recInfo=getReclamoInfoFromLog(bl,'reclamo_cobro');
       alerts.push({level:level2,rowIdx:idx,
         title:cardTitle,
         meta:`Payment due: ${fmtDate(fechaEst)}  ·  BL: ${bl}`,
@@ -802,7 +815,7 @@ function renderLiberaciones(){
     const pagFirm=(row[COL.PAGARE_FIRMADO]||'').trim().toUpperCase();
     const invoiceStr=inv1&&inv2?`${inv1} / ${inv2}`:inv1||inv2||'—';
     const cardTitle=`${booking||bl} · ${invoiceStr!=='—'?invoiceStr:''} · ${customer}`.replace(' ·  ·',' ·').trim().replace(/· $/,'').trim();
-    const recInfo=getReclamoInfo(bl,'solicitar_liberacion');
+    const recInfo=getReclamoInfoFromLog(bl,'solicitar_liberacion');
 
     const level=telexOk?'info':d<=3?'critical':'warning';
     const telexHtml=telexOk
@@ -870,7 +883,7 @@ function renderCobranza(){
     const inv1=(row[COL.INVOICE_CLIENTE]||'').trim();
     const inv2=(row[COL.INVOICE_FC_SERV]||'').trim();
     const invDisplay=inv1&&inv2?`${inv1} / ${inv2}`:inv1||inv2||'—';
-    const recInfo=getReclamoInfo(row[COL.BL]||'','reclamo_cobro');
+    const recInfo=getReclamoInfoFromLog(row[COL.BL]||'','reclamo_cobro');
     const recHtml=recInfo?`<span style="color:var(--warn);font-size:10px;font-family:var(--mono)">${recInfo.count}x · ${recInfo.timeStr}</span>`:`<span style="color:var(--muted);font-size:10px">—</span>`;
     html+=`<tr>
       <td class="mono">${row[COL.NEGOCIO]||'—'}</td>
@@ -895,7 +908,7 @@ function renderPagares(){
   allRows.forEach((row,idx)=>{
     const pagEnv=(row[COL.PAGARE_ENVIADO]||'').trim().toUpperCase();
     const pagFirm=(row[COL.PAGARE_FIRMADO]||'').trim().toUpperCase();
-    const recInfo=getReclamoInfo(row[COL.BL]||'','solicitar_pagare');
+    const recInfo=getReclamoInfoFromLog(row[COL.BL]||'','solicitar_pagare');
     const recHtml=recInfo?`<span style="color:var(--warn);font-size:10px;font-family:var(--mono)">${recInfo.count}x · ${recInfo.timeStr}</span>`:`<span style="color:var(--muted);font-size:10px">—</span>`;
     html+=`<tr>
       <td class="mono">${row[COL.NEGOCIO]||'—'}</td>
@@ -1060,8 +1073,8 @@ function openBulkMailModal(rowIndices, mailType){
   const libCC=ccSiempreAll.length?ccSiempreAll.join(', '):'pberro@axtsolutions.com';
 
   modalData={rowIndices, mailType, isBulk:true, exporter, rows};
-  document.getElementById('lang-en').classList.add('active');
-  document.getElementById('lang-es').classList.remove('active');
+  document.getElementById('lang-en').classList.remove('active');
+  document.getElementById('lang-es').classList.add('active');
   document.getElementById('modal-title').textContent=`Liberación masiva — ${rows.length} cargas`;
   document.getElementById('modal-to').textContent=transcargo.to||'Thomas Laurenti <tlaurenti@transcargoarg.com>';
   document.getElementById('modal-cc').textContent=libCC;
@@ -1093,10 +1106,10 @@ function openMailModal(rowIdx, mailType){
     inv1:(row[COL.INVOICE_CLIENTE]||'').trim(),
     inv2:(row[COL.INVOICE_FC_SERV]||'').trim()
   };
-  currentLang='en';
+  currentLang=mailType==='solicitar_liberacion'?'es':'en';
   modalData={rowIdx,mailType,d};
-  document.getElementById('lang-en').classList.add('active');
-  document.getElementById('lang-es').classList.remove('active');
+  document.getElementById('lang-en').classList.toggle('active',currentLang==='en');
+  document.getElementById('lang-es').classList.toggle('active',currentLang==='es');
   document.getElementById('modal-title').textContent='Borrador — '+mailType.replace(/_/g,' ');
   let toStr, ccStr;
   if(mailType==='solicitar_liberacion'){
@@ -1187,6 +1200,7 @@ async function sendDraft(){
   }
 
   closeModal();
+  await loadLog();
   setTimeout(()=>renderView(currentView), 500);
 }
 
