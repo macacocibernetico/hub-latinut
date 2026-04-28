@@ -739,32 +739,34 @@ function renderLiberaciones(){
     return;
   }
 
-  let selectedRows=new Set();
+  window._libSelectedRows=new Set();
+  window._libRows=rows;
 
-  function updateBulkBar(){
+  window.updateLibBulkBar=function(){
     const bar=document.getElementById('lib-bulk-bar');
     if(!bar) return;
-    if(selectedRows.size>0){
-      bar.className='lib-bulk-bar visible';
-      bar.textContent=`📋 Solicitar liberación (${selectedRows.size} seleccionadas)`;
+    const n=window._libSelectedRows.size;
+    if(n>0){
+      bar.style.display='block';
+      bar.textContent='📋 Solicitar liberación (' + n + ' seleccionadas)';
     } else {
-      bar.className='lib-bulk-bar';
+      bar.style.display='none';
     }
-  }
-
-  window.toggleLibSelection=(idx)=>{
-    if(selectedRows.has(idx)) selectedRows.delete(idx);
-    else selectedRows.add(idx);
-    const cb=document.getElementById('lib-cb-'+idx);
-    const card=document.getElementById('lib-card-'+idx);
-    if(cb) cb.checked=selectedRows.has(idx);
-    if(card) card.style.borderColor=selectedRows.has(idx)?'var(--accent)':'';
-    updateBulkBar();
   };
 
-  window.requestBulkLiberation=()=>{
-    if(!selectedRows.size) return;
-    const selected=[...selectedRows].map(i=>allRows.indexOf(rows[i]));
+  window.toggleLibSelection=function(idx){
+    if(window._libSelectedRows.has(idx)) window._libSelectedRows.delete(idx);
+    else window._libSelectedRows.add(idx);
+    const cb=document.getElementById('lib-cb-'+idx);
+    const card=document.getElementById('lib-card-'+idx);
+    if(cb) cb.checked=window._libSelectedRows.has(idx);
+    if(card) card.style.outline=window._libSelectedRows.has(idx)?'2px solid var(--accent)':'none';
+    window.updateLibBulkBar();
+  };
+
+  window.requestBulkLiberation=function(){
+    if(!window._libSelectedRows.size) return;
+    const selected=[...window._libSelectedRows].map(i=>allRows.indexOf(window._libRows[i]));
     openBulkMailModal(selected,'solicitar_liberacion');
   };
 
@@ -775,7 +777,7 @@ function renderLiberaciones(){
     <div class="stat-card warn-card"><div class="stat-label">En proceso</div><div class="stat-value" style="color:var(--warn)">${rows.filter(r=>{const t=(r[COL.TELEX]||'').trim();return t&&t.toUpperCase()!=='SI';}).length}</div><div class="stat-sub">Solicitado / pendiente</div></div>
     <div class="stat-card"><div class="stat-label">Liberado</div><div class="stat-value" style="color:var(--ok)">${rows.filter(r=>(r[COL.TELEX]||'').trim().toUpperCase()==='SI').length}</div><div class="stat-sub">TELEX = SI</div></div>
   </div>
-  <button class="lib-bulk-bar" id="lib-bulk-bar" onclick="requestBulkLiberation()"></button>
+  <button style="display:none;position:sticky;bottom:20px;left:50%;transform:translateX(-50%);background:var(--accent);color:#0d0d0d;padding:10px 24px;border-radius:30px;font-weight:700;font-size:13px;cursor:pointer;z-index:20;box-shadow:0 4px 20px rgba(0,0,0,.5);border:none;font-family:var(--font);" id="lib-bulk-bar" onclick="requestBulkLiberation()"></button>
   <div class="alert-list">`;
 
   rows.forEach((row, localIdx)=>{
@@ -897,7 +899,7 @@ function renderLiberaciones(){
     html+=`<div class="alert-item ${level}">
       <div class="alert-dot ${level}"></div>
       <div class="alert-body">
-        <div class="alert-title">${negocio} — ${customer}</div>
+        <div class="alert-title">${cardTitle}</div>
         <div class="alert-meta">BL: ${bl}  ·  ETA: ${fmtDate(row[COL.ETA])}</div>
         <div class="alert-tags">
           <span class="tag customer">${customer}</span>
@@ -1107,10 +1109,14 @@ function buildMailBody(mailType,d,lang){
 function openBulkMailModal(rowIndices, mailType){
   if(!rowIndices.length) return;
   const rows=rowIndices.map(i=>allRows[i]);
-  const customer=(rows[0][COL.CUSTOMER]||'').trim();
-  const transcargo=getContactsForEmpresa('Transcargo');
+  
+  // Get exporter from first row (col S=18)
+  const exporter=(rows[0][COL.EXPORTER]||'').trim();
+  // Get earliest ETA
+  const etas=rows.map(r=>r[COL.ETA]).filter(Boolean).sort();
+  const etaStr=etas.length?fmtDate(etas[0]):'—';
 
-  // Build combined body
+  // Build each shipment block
   const lines=rows.map(row=>{
     const bl=(row[COL.BL]||'').trim();
     const booking=(row[COL.BOOKING]||'').trim();
@@ -1118,19 +1124,22 @@ function openBulkMailModal(rowIndices, mailType){
     const vessel=(row[COL.VESSEL]||'').trim();
     const port=(row[COL.PORT]||'').trim();
     const eta=fmtDate(row[COL.ETA]);
-    return `BL: ${bl} | Booking: ${booking} | Container(s): ${containers} | Vessel: ${vessel} | Port: ${port} | ETA: ${eta}`;
-  }).join('\n');
+    const exp=(row[COL.EXPORTER]||exporter).trim();
+    return `Exporter: ${exp}\nBL: ${bl}\nBooking: ${booking}\nContainer(s): ${containers}\nBuque: ${vessel}\nPuerto: ${port}\nETA: ${eta}`;
+  }).join('\n\n');
 
-  const subject=`Release request - ${customer} (${rows.length} shipments)`;
-  const body='Dear,\n\nWe kindly request the release of the following shipments:\n\n'+lines+'\n\nPlease confirm.\n\nBest regards,\nLATINUT S.A.';
+  const subject=`Solicitud de liberaciones - ${exporter} - AXT - ETA ${etaStr}`;
+  const body=`Dear,\n\nSolicitamos la liberación de los siguientes embarques:\n\n${lines}\n\nQuedamos a la espera de confirmación.\n\nSaludos,\nLATINUT S.A.`;
 
-  modalData={rowIndices, mailType, isBulk:true, customer, rows};
+  const transcargo=getContactsForEmpresa('Transcargo');
+  const ccSiempreAll=contacts.filter(c=>c.ccSiempre).map(c=>c.email);
+  const libCC=ccSiempreAll.length?ccSiempreAll.join(', '):'pberro@axtsolutions.com';
+
+  modalData={rowIndices, mailType, isBulk:true, exporter, rows};
   document.getElementById('lang-en').classList.add('active');
   document.getElementById('lang-es').classList.remove('active');
   document.getElementById('modal-title').textContent=`Liberación masiva — ${rows.length} cargas`;
   document.getElementById('modal-to').textContent=transcargo.to||'Thomas Laurenti <tlaurenti@transcargoarg.com>';
-  const ccSiempreAll=contacts.filter(c=>c.ccSiempre).map(c=>c.email);
-  const libCC=ccSiempreAll.length?ccSiempreAll.join(', '):'pberro@axtsolutions.com';
   document.getElementById('modal-cc').textContent=libCC;
   document.getElementById('modal-subject').textContent=subject;
   document.getElementById('modal-body').value=body;
@@ -1138,6 +1147,7 @@ function openBulkMailModal(rowIndices, mailType){
   btn.textContent=`📋 Solicitar ${rows.length} liberaciones + Draft`;
   document.getElementById('mail-modal').classList.remove('hidden');
 }
+
 
 function openMailModal(rowIdx, mailType){
   const row=allRows[rowIdx];
