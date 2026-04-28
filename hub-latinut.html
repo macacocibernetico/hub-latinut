@@ -796,7 +796,7 @@ function renderLiberaciones(){
     const inv2=(row[COL.INVOICE_FC_SERV]||'').trim();
     const pagFirm=(row[COL.PAGARE_FIRMADO]||'').trim().toUpperCase();
     const invoiceStr=inv1&&inv2?`${inv1} / ${inv2}`:inv1||inv2||'—';
-    const cardTitle=`${booking} · ${invoiceStr} · ${customer}`;
+    const cardTitle=`${booking||bl} · ${invoiceStr!=='—'?invoiceStr:''} · ${customer}`.replace(' ·  ·',' ·').trim().replace(/· $/,'').trim();
     const recInfo=getReclamoInfo(bl,'solicitar_liberacion');
 
     const level=telexOk?'info':d<=3?'critical':'warning';
@@ -811,9 +811,11 @@ function renderLiberaciones(){
       ?`<button class="action-btn write" onclick="openMailModal(${origIdx},'solicitar_liberacion')">📋 Solicitar liberación</button>`
       :'<span style="color:var(--ok);font-size:11px;font-weight:600">✓ Liberado</span>';
 
-    html+=`<div class="alert-item ${level}" id="lib-card-${localIdx}" style="cursor:pointer" onclick="toggleLibSelection(${localIdx})">
-      <input type="checkbox" class="lib-checkbox" id="lib-cb-${localIdx}" onclick="event.stopPropagation();toggleLibSelection(${localIdx})">
-      <div class="alert-dot ${level}"></div>
+    html+=`<div class="alert-item ${level}" id="lib-card-${localIdx}" style="cursor:pointer;transition:border-color .15s;" onclick="toggleLibSelection(${localIdx})">
+      <div style="display:flex;flex-direction:column;align-items:center;gap:6px;flex-shrink:0;">
+        <input type="checkbox" class="lib-checkbox" id="lib-cb-${localIdx}" onclick="event.stopPropagation();toggleLibSelection(${localIdx})" style="width:18px;height:18px;accent-color:var(--accent);cursor:pointer;">
+        <div class="alert-dot ${level}"></div>
+      </div>
       <div class="alert-body">
         <div class="alert-title">${cardTitle}</div>
         <div class="alert-meta">BL: ${bl}  ·  ETA: ${fmtDate(row[COL.ETA])}</div>
@@ -1095,8 +1097,8 @@ function buildMailBody(mailType,d,lang){
       es:{subject:`Consulta de pago – ${d.inv1&&d.inv2?d.inv1+' / '+d.inv2:d.inv1||d.inv2||d.bl}`,body:`Estimado/a,\n\nNos comunicamos para hacer seguimiento del pago pendiente de:\n\nCliente: ${d.customer}\nBL: ${d.bl}\nBooking: ${d.booking}\nContainer(s): ${d.containers}\nFecha de pago estimada: ${d.paymentDueFmt}${invLine}\n\nAgradecemos confirmar estado del pago.\n\n${bye}`}
     },
     solicitar_liberacion:{
-      en:{subject:`Release request – ${d.negocio} / BL: ${d.bl}`,body:`${hi},\n\nWe kindly request the release of the following shipment:\n\nShipment: ${d.negocio}\nCustomer: ${d.customer}\nBL: ${d.bl}\nBooking: ${d.booking}\nContainer(s): ${d.containers}\nVessel: ${d.vessel}\nPort: ${d.port}\nETA: ${d.etaFmt}\n\nPlease confirm.\n\n${bye}`},
-      es:{subject:`Solicitud de liberación – ${d.negocio} / BL: ${d.bl}`,body:`${hi},\n\nSolicitamos la liberación del siguiente embarque:\n\nNegocio: ${d.negocio}\nCliente: ${d.customer}\nBL: ${d.bl}\nBooking: ${d.booking}\nContainer(s): ${d.containers}\nBuque: ${d.vessel}\nPuerto: ${d.port}\nETA: ${d.etaFmt}\n\nQuedamos a la espera de confirmación.\n\n${bye}`}
+      en:{subject:`Release request – BL: ${d.bl}`,body:`Dear,\n\nWe kindly request the release of the following shipment:\n\nCustomer: ${d.customer}\nBL: ${d.bl}\nBooking: ${d.booking}\nContainer(s): ${d.containers}\nVessel: ${d.vessel}\nPort: ${d.port}\nETA: ${d.etaFmt}\n\nPlease confirm.\n\n${bye}`},
+      es:{subject:`Solicitud de liberación – BL: ${d.bl}`,body:`Estimado/a,\n\nSolicitamos la liberación del siguiente embarque:\n\nCliente: ${d.customer}\nBL: ${d.bl}\nBooking: ${d.booking}\nContainer(s): ${d.containers}\nBuque: ${d.vessel}\nPuerto: ${d.port}\nETA: ${d.etaFmt}\n\nQuedamos a la espera de confirmación.\n\n${bye}`}
     }
   };
   return tpls[mailType]?.[lang]||tpls[mailType]?.en||{subject:'',body:''};
@@ -1128,7 +1130,7 @@ function openBulkMailModal(rowIndices, mailType){
   document.getElementById('modal-title').textContent=`Liberación masiva — ${rows.length} cargas`;
   document.getElementById('modal-to').textContent=transcargo.to||'Thomas Laurenti <tlaurenti@transcargoarg.com>';
   const ccSiempreAll=contacts.filter(c=>c.ccSiempre).map(c=>c.email);
-  const libCC=[...new Set(['pberro@axtsolutions.com',...ccSiempreAll])].join(', ');
+  const libCC=ccSiempreAll.length?ccSiempreAll.join(', '):'pberro@axtsolutions.com';
   document.getElementById('modal-cc').textContent=libCC;
   document.getElementById('modal-subject').textContent=subject;
   document.getElementById('modal-body').value=body;
@@ -1166,8 +1168,7 @@ function openMailModal(rowIdx, mailType){
     const transcargo=getContactsForEmpresa('Transcargo');
     toStr=transcargo.to||'Thomas Laurenti <tlaurenti@transcargoarg.com>';
     const ccSiempre=contacts.filter(c=>c.ccSiempre).map(c=>c.email);
-    const allCC=[...new Set(['pberro@axtsolutions.com',...ccSiempre])];
-    ccStr=allCC.join(', ');
+    ccStr=ccSiempre.length?ccSiempre.join(', '):'pberro@axtsolutions.com';
   } else {
     const contactInfo=getContactsForEmpresa(d.customer);
     toStr=contactInfo.to||`${d.customer} <sin contacto cargado>`;
