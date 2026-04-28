@@ -403,10 +403,10 @@ async function callAppScript(accion, filaInicio, filaFin){
   const url = cfg.appsScriptUrl;
   if(!url){ alert('URL del AppScript no configurada.'); return false; }
   try{
-    const r = await fetch(url, {
-      method: 'POST',
-      headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({accion, filaInicio, filaFin: filaFin||filaInicio})
+    const params = new URLSearchParams({accion, filaInicio, filaFin: filaFin||filaInicio});
+    const r = await fetch(url + '?' + params.toString(), {
+      method: 'GET',
+      redirect: 'follow'
     });
     const data = await r.json();
     if(data.ok){
