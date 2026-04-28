@@ -1036,8 +1036,8 @@ function buildMailBody(mailType,d,lang){
       es:{subject:`Consulta de pago – ${d.inv1&&d.inv2?d.inv1+' / '+d.inv2:d.inv1||d.inv2||d.bl}`,body:`Estimado/a,\n\nNos comunicamos para hacer seguimiento del pago pendiente de:\n\nCliente: ${d.customer}\nBL: ${d.bl}\nBooking: ${d.booking}\nContainer(s): ${d.containers}\nFecha de pago estimada: ${d.paymentDueFmt}${invLine}\n\nAgradecemos confirmar estado del pago.\n\n${bye}`}
     },
     solicitar_liberacion:{
-      en:{subject:`Release request - ${d.exporter||d.customer} - AXT - ETA ${d.etaFmt}`,body:`Dear,\n\nWe kindly request the release of the following shipment:\n\nExporter: ${d.exporter||d.customer}\nCustomer: ${d.customer}\nBL: ${d.bl}\nBooking: ${d.booking}\nContainer(s): ${d.containers}\nVessel: ${d.vessel}\nPort: ${d.port}\nETA: ${d.etaFmt}\n\nPlease confirm.\n\nBest regards,\nLATINUT S.A.`},
-      es:{subject:`Solicitud de liberacion - ${d.exporter||d.customer} - AXT - ETA ${d.etaFmt}`,body:`Estimado/a,\n\nSolicitamos la liberacion del siguiente embarque:\n\nExporter: ${d.exporter||d.customer}\nCliente: ${d.customer}\nBL: ${d.bl}\nBooking: ${d.booking}\nContainer(s): ${d.containers}\nBuque: ${d.vessel}\nPuerto: ${d.port}\nETA: ${d.etaFmt}\n\nQuedamos a la espera de confirmacion.\n\nSaludos,\nLATINUT S.A.`}
+      en:{subject:`Release request - ${d.exporter||d.customer} - AXT - ETA ${d.etaFmt}`,body:`Dear,\n\nWe kindly request the release of the following shipment:\n\nExporter: ${d.exporter||d.customer}\nCustomer: ${d.customer}\nBL: ${d.bl}\nBooking: ${d.booking}\nContainer(s): ${d.containers}\nVessel: ${d.vessel}\nPort: ${d.port}\nETA: ${d.etaFmt}\n\n@Pedro Berro Madero Please confirm to proceed with the release.\n\nBest regards,\nLATINUT S.A.`},
+      es:{subject:`Solicitud de liberacion - ${d.exporter||d.customer} - AXT - ETA ${d.etaFmt}`,body:`Estimado/a,\n\nSolicitamos la liberacion del siguiente embarque:\n\nExporter: ${d.exporter||d.customer}\nCliente: ${d.customer}\nBL: ${d.bl}\nBooking: ${d.booking}\nContainer(s): ${d.containers}\nBuque: ${d.vessel}\nPuerto: ${d.port}\nETA: ${d.etaFmt}\n\n@Pedro Berro Madero Por favor, dar el ok para proceder con la liberacion.\n\nQuedamos a la espera de confirmacion.\n\nSaludos,\nLATINUT S.A.`}
     }
   };
   return tpls[mailType]?.[lang]||tpls[mailType]?.en||{subject:'',body:''};
@@ -1066,7 +1066,7 @@ function openBulkMailModal(rowIndices, mailType){
   }).join('\n\n');
 
   const subject=`Solicitud de liberaciones - ${exporter} - AXT - ETA ${etaStr}`;
-  const body=`Dear,\n\nSolicitamos la liberación de los siguientes embarques:\n\n${lines}\n\nQuedamos a la espera de confirmación.\n\nSaludos,\nLATINUT S.A.`;
+  const body=`Estimado/a,\n\nSolicitamos la liberacion de los siguientes embarques:\n\n${lines}\n\n@Pedro Berro Madero Por favor, dar el ok para proceder con la liberacion.\n\nQuedamos a la espera de confirmacion.\n\nSaludos,\nLATINUT S.A.`;
 
   const transcargo=getContactsForEmpresa('Transcargo');
   const ccSiempreAll=contacts.filter(c=>c.ccSiempre).map(c=>c.email);
