@@ -86,6 +86,9 @@ button{font-family:var(--font);cursor:pointer;border:none;background:none;}
 .log-item{font-size:10px;font-family:var(--mono);}
 .log-label{color:var(--muted);margin-right:4px;}
 .log-value{color:var(--text);}
+.lib-checkbox{width:18px;height:18px;accent-color:var(--accent);cursor:pointer;flex-shrink:0;margin-top:4px;}
+.lib-bulk-bar{display:none;position:sticky;bottom:20px;left:50%;transform:translateX(-50%);background:var(--accent);color:#0d0d0d;padding:10px 24px;border-radius:30px;font-weight:700;font-size:13px;cursor:pointer;z-index:20;box-shadow:0 4px 20px rgba(0,0,0,.5);border:none;font-family:var(--font);}
+.lib-bulk-bar.visible{display:block;}
 .alert-reclamo{font-size:10px;font-family:var(--mono);color:var(--warn);margin-bottom:8px;padding:4px 8px;background:rgba(255,170,34,.08);border-radius:4px;border-left:2px solid var(--warn);}
 .alert-actions{display:flex;gap:8px;flex-wrap:wrap;}
 .action-btn{font-size:11px;font-weight:600;padding:5px 12px;border-radius:5px;cursor:pointer;transition:all .15s;font-family:var(--font);border:1px solid;}
@@ -95,10 +98,10 @@ button{font-family:var(--font);cursor:pointer;border:none;background:none;}
 .action-btn.write:hover{background:rgba(77,159,255,.2);}
 .alert-right{text-align:right;flex-shrink:0;}
 .days-badge{font-size:22px;font-weight:800;font-family:var(--mono);line-height:1;}
-.days-badge.red{color:var(--danger);}
+.days-badge.red{color:#ff6b35;}
 .days-badge.warn{color:var(--warn);}
 .days-badge.ok{color:var(--ok);}
-.days-label{font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:1px;margin-top:2px;}
+.days-label{font-size:9px;color:var(--muted2);text-transform:uppercase;letter-spacing:1px;margin-top:2px;font-weight:700;}
 .table-wrap{background:var(--bg2);border:1px solid var(--border);border-radius:10px;overflow:hidden;margin-bottom:28px;}
 .table-top{display:flex;align-items:center;justify-content:space-between;padding:14px 18px;border-bottom:1px solid var(--border);}
 table{width:100%;border-collapse:collapse;}
@@ -736,16 +739,46 @@ function renderLiberaciones(){
     return;
   }
 
+  let selectedRows=new Set();
+
+  function updateBulkBar(){
+    const bar=document.getElementById('lib-bulk-bar');
+    if(!bar) return;
+    if(selectedRows.size>0){
+      bar.className='lib-bulk-bar visible';
+      bar.textContent=`📋 Solicitar liberación (${selectedRows.size} seleccionadas)`;
+    } else {
+      bar.className='lib-bulk-bar';
+    }
+  }
+
+  window.toggleLibSelection=(idx)=>{
+    if(selectedRows.has(idx)) selectedRows.delete(idx);
+    else selectedRows.add(idx);
+    const cb=document.getElementById('lib-cb-'+idx);
+    const card=document.getElementById('lib-card-'+idx);
+    if(cb) cb.checked=selectedRows.has(idx);
+    if(card) card.style.borderColor=selectedRows.has(idx)?'var(--accent)':'';
+    updateBulkBar();
+  };
+
+  window.requestBulkLiberation=()=>{
+    if(!selectedRows.size) return;
+    const selected=[...selectedRows].map(i=>allRows.indexOf(rows[i]));
+    openBulkMailModal(selected,'solicitar_liberacion');
+  };
+
   let html=`
   <div class="stats-row">
     <div class="stat-card"><div class="stat-label">Cargas próximas</div><div class="stat-value">${rows.length}</div><div class="stat-sub">ETA ≤ 7 días</div></div>
-    <div class="stat-card alert-card"><div class="stat-label">Sin liberación</div><div class="stat-value" style="color:var(--danger)">${rows.filter(r=>!(r[COL.TELEX]||'').trim()).length}</div><div class="stat-sub">TELEX vacío</div></div>
+    <div class="stat-card alert-card"><div class="stat-label">Sin liberación</div><div class="stat-value" style="color:#ff6b35">${rows.filter(r=>!(r[COL.TELEX]||'').trim()).length}</div><div class="stat-sub">TELEX vacío</div></div>
     <div class="stat-card warn-card"><div class="stat-label">En proceso</div><div class="stat-value" style="color:var(--warn)">${rows.filter(r=>{const t=(r[COL.TELEX]||'').trim();return t&&t.toUpperCase()!=='SI';}).length}</div><div class="stat-sub">Solicitado / pendiente</div></div>
     <div class="stat-card"><div class="stat-label">Liberado</div><div class="stat-value" style="color:var(--ok)">${rows.filter(r=>(r[COL.TELEX]||'').trim().toUpperCase()==='SI').length}</div><div class="stat-sub">TELEX = SI</div></div>
   </div>
+  <button class="lib-bulk-bar" id="lib-bulk-bar" onclick="requestBulkLiberation()"></button>
   <div class="alert-list">`;
 
-  rows.forEach(row=>{
+  rows.forEach((row, localIdx)=>{
     const origIdx=allRows.indexOf(row);
     const d=daysFrom(row[COL.ETA]);
     const dc=daysClass(d);
@@ -759,7 +792,11 @@ function renderLiberaciones(){
     const shipping=(row[COL.SHIPPING]||'').trim();
     const vessel=(row[COL.VESSEL]||'').trim();
     const port=(row[COL.PORT]||'').trim();
-    const negocio=(row[COL.NEGOCIO]||'').trim();
+    const inv1=(row[COL.INVOICE_CLIENTE]||'').trim();
+    const inv2=(row[COL.INVOICE_FC_SERV]||'').trim();
+    const pagFirm=(row[COL.PAGARE_FIRMADO]||'').trim().toUpperCase();
+    const invoiceStr=inv1&&inv2?`${inv1} / ${inv2}`:inv1||inv2||'—';
+    const cardTitle=`${booking} · ${invoiceStr} · ${customer}`;
     const recInfo=getReclamoInfo(bl,'solicitar_liberacion');
 
     const level=telexOk?'info':d<=3?'critical':'warning';
@@ -767,16 +804,18 @@ function renderLiberaciones(){
       ?`<div style="margin-bottom:8px;font-family:var(--mono);font-size:11px;color:var(--ok);">✓ Liberado: ${telex}</div>`
       :telexPending
         ?`<div style="margin-bottom:8px;font-family:var(--mono);font-size:11px;color:var(--info);">📋 Estado: ${telex}</div>`
-        :`<div style="margin-bottom:8px;font-family:var(--mono);font-size:11px;color:var(--danger);">⚠ Sin liberación solicitada</div>`;
+        :`<div style="margin-bottom:8px;font-family:var(--mono);font-size:11px;color:#ff6b35;">⚠ Sin liberación solicitada</div>`;
+    const pagHtml=`<div style="margin-bottom:8px;font-family:var(--mono);font-size:11px;color:${pagFirm==='SI'?'var(--ok)':'var(--warn)'};">${pagFirm==='SI'?'✓ Pagaré firmado':'⚠ Pagaré NO firmado'}</div>`;
     const recHtml=recInfo?`<div class="alert-reclamo">⚠ Solicitado ${recInfo.count} vez${recInfo.count>1?'es':''} · último ${recInfo.timeStr}</div>`:'';
     const actionBtn=!telexOk
       ?`<button class="action-btn write" onclick="openMailModal(${origIdx},'solicitar_liberacion')">📋 Solicitar liberación</button>`
       :'<span style="color:var(--ok);font-size:11px;font-weight:600">✓ Liberado</span>';
 
-    html+=`<div class="alert-item ${level}">
+    html+=`<div class="alert-item ${level}" id="lib-card-${localIdx}" style="cursor:pointer" onclick="toggleLibSelection(${localIdx})">
+      <input type="checkbox" class="lib-checkbox" id="lib-cb-${localIdx}" onclick="event.stopPropagation();toggleLibSelection(${localIdx})">
       <div class="alert-dot ${level}"></div>
       <div class="alert-body">
-        <div class="alert-title">${negocio} — ${customer}</div>
+        <div class="alert-title">${cardTitle}</div>
         <div class="alert-meta">BL: ${bl}  ·  ETA: ${fmtDate(row[COL.ETA])}</div>
         <div class="alert-tags">
           <span class="tag customer">${customer}</span>
@@ -791,12 +830,12 @@ function renderLiberaciones(){
           <div class="log-item"><span class="log-label">BL:</span><span class="log-value">${bl||'—'}</span></div>
           <div class="log-item"><span class="log-label">Naviera:</span><span class="log-value">${shipping||'—'}</span></div>
         </div>
-        ${telexHtml}${recHtml}
-        <div class="alert-actions">${actionBtn}</div>
+        ${pagHtml}${telexHtml}${recHtml}
+        <div class="alert-actions" onclick="event.stopPropagation()">${actionBtn}</div>
       </div>
       <div class="alert-right">
-        <div class="days-badge ${dc}">${d}</div>
-        <div class="days-label">días ETA</div>
+        <div class="days-badge ${dc}" style="font-size:28px">${d}</div>
+        <div class="days-label" style="color:var(--muted2);font-weight:700">DÍAS ETA</div>
       </div>
     </div>`;
   });
@@ -1063,6 +1102,49 @@ function buildMailBody(mailType,d,lang){
   return tpls[mailType]?.[lang]||tpls[mailType]?.en||{subject:'',body:''};
 }
 
+function openBulkMailModal(rowIndices, mailType){
+  if(!rowIndices.length) return;
+  const rows=rowIndices.map(i=>allRows[i]);
+  const customer=(rows[0][COL.CUSTOMER]||'').trim();
+  const contactInfo=getContactsForEmpresa(customer);
+
+  // Build combined body
+  const lines=rows.map(row=>{
+    const bl=(row[COL.BL]||'').trim();
+    const booking=(row[COL.BOOKING]||'').trim();
+    const containers=(row[COL.CONTAINERS]||'').trim();
+    const vessel=(row[COL.VESSEL]||'').trim();
+    const port=(row[COL.PORT]||'').trim();
+    const eta=fmtDate(row[COL.ETA]);
+    return `BL: ${bl} | Booking: ${booking} | Container(s): ${containers} | Vessel: ${vessel} | Port: ${port} | ETA: ${eta}`;
+  }).join('
+');
+
+  const subject=`Release request – ${customer} (${rows.length} shipments)`;
+  const body=`Dear,
+
+We kindly request the release of the following shipments:
+
+${lines}
+
+Please confirm.
+
+Best regards,
+LATINUT S.A.`;
+
+  modalData={rowIndices, mailType, isBulk:true, customer, rows};
+  document.getElementById('lang-en').classList.add('active');
+  document.getElementById('lang-es').classList.remove('active');
+  document.getElementById('modal-title').textContent=`Liberación masiva — ${rows.length} cargas`;
+  document.getElementById('modal-to').textContent=contactInfo.to||`${customer} <sin contacto>`;
+  document.getElementById('modal-cc').textContent=contactInfo.cc||'pedro@axt.com';
+  document.getElementById('modal-subject').textContent=subject;
+  document.getElementById('modal-body').value=body;
+  const btn=document.getElementById('send-draft-btn');
+  btn.textContent=`📋 Solicitar ${rows.length} liberaciones + Draft`;
+  document.getElementById('mail-modal').classList.remove('hidden');
+}
+
 function openMailModal(rowIdx, mailType){
   const row=allRows[rowIdx];
   if(!row) return;
@@ -1120,32 +1202,51 @@ async function sendDraft(){
   const body=document.getElementById('modal-body').value;
   const to=document.getElementById('modal-to').textContent;
   const cc=document.getElementById('modal-cc').textContent;
-  const {mailType,d,rowIdx}=modalData;
+  const {mailType,d,rowIdx,isBulk,rowIndices,rows:bulkRows}=modalData;
 
   // Crear draft en Gmail
   await createGmailDraft(to, cc, subject, body);
 
-  // Registrar reclamo
-  saveReclamo(d.bl, mailType);
-
-  // Si es liberación, escribir en col TELEX
-  if(mailType==='solicitar_liberacion'){
-    const ok=await writeCell(rowIdx, COL.TELEX, 'solicitado, falta ok');
-    if(ok) showToast('✓ TELEX actualizado en planilla');
+  if(isBulk && rowIndices){
+    // Bulk liberation
+    for(let i=0;i<rowIndices.length;i++){
+      const ri=rowIndices[i];
+      const row=allRows[ri];
+      const bl=(row[COL.BL]||'').trim();
+      const inv1=(row[COL.INVOICE_CLIENTE]||'').trim();
+      const inv2=(row[COL.INVOICE_FC_SERV]||'').trim();
+      saveReclamo(bl, mailType);
+      await writeCell(ri, COL.TELEX, 'solicitado, falta ok');
+      await appendLog({
+        fuente:'AXT',
+        fc: inv1||'',
+        fcServ: inv2||'',
+        bl,
+        customer:(row[COL.CUSTOMER]||'').trim(),
+        accion:'solicitar liberacion (bulk)',
+        detalle: subject
+      });
+    }
+    showToast(`✓ ${rowIndices.length} TELEX actualizados en planilla`);
+  } else if(d){
+    // Single
+    saveReclamo(d.bl, mailType);
+    if(mailType==='solicitar_liberacion'){
+      const ok=await writeCell(rowIdx, COL.TELEX, 'solicitado, falta ok');
+      if(ok) showToast('✓ TELEX actualizado en planilla');
+    }
+    await appendLog({
+      fuente:'AXT',
+      fc: d.inv1||d.negocio,
+      fcServ: d.inv2||'',
+      bl: d.bl,
+      customer: d.customer,
+      accion: mailType.replace(/_/g,' '),
+      detalle: subject
+    });
   }
 
-  // Log en Sheet
-  await appendLog({
-    fc: d.inv1||d.negocio,
-    fcServ: d.inv2||'',
-    bl: d.bl,
-    customer: d.customer,
-    accion: mailType.replace(/_/g,' '),
-    detalle: subject
-  });
-
   closeModal();
-  // Refrescar vista para mostrar contador actualizado
   setTimeout(()=>renderView(currentView), 500);
 }
 
