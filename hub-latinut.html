@@ -1117,20 +1117,10 @@ function openBulkMailModal(rowIndices, mailType){
     const port=(row[COL.PORT]||'').trim();
     const eta=fmtDate(row[COL.ETA]);
     return `BL: ${bl} | Booking: ${booking} | Container(s): ${containers} | Vessel: ${vessel} | Port: ${port} | ETA: ${eta}`;
-  }).join('
-');
+  }).join('\n');
 
-  const subject=`Release request – ${customer} (${rows.length} shipments)`;
-  const body=`Dear,
-
-We kindly request the release of the following shipments:
-
-${lines}
-
-Please confirm.
-
-Best regards,
-LATINUT S.A.`;
+  const subject=`Release request - ${customer} (${rows.length} shipments)`;
+  const body='Dear,\n\nWe kindly request the release of the following shipments:\n\n'+lines+'\n\nPlease confirm.\n\nBest regards,\nLATINUT S.A.';
 
   modalData={rowIndices, mailType, isBulk:true, customer, rows};
   document.getElementById('lang-en').classList.add('active');
