@@ -275,7 +275,7 @@ td.mono{font-family:var(--mono);font-size:11px;}
 <script>
 // ─── CONFIG ──────────────────────────────────────────────────────────────────
 const CFG_KEY = 'hub_latinut_config';
-let cfg = {...{sheetId:'',sheetName:'Cargas',apiKey:'',clientId:'',alerta_dias:10,hubSheetId:'11r3m9KuXWFRrSjdHf1an2xQDjNwnXhadWk5WbShuLms'},...JSON.parse(localStorage.getItem(CFG_KEY)||'{}')};
+let cfg = {...{sheetId:'',sheetName:'Cargas',apiKey:'',clientId:'',alerta_dias:10,hubSheetId:'11r3m9KuXWFRrSjdHf1an2xQDjNwnXhadWk5WbShuLms',appsScriptUrl:'https://script.google.com/macros/s/AKfycbyUy0QaexIIqToupRj1_5zgnFpm5Wyycnt7SLClZMk_zLfhm6CfzLpNr8EgT98aSOY4/exec'},...JSON.parse(localStorage.getItem(CFG_KEY)||'{}')};
 
 // ─── OAUTH ───────────────────────────────────────────────────────────────────
 const SCOPES = 'https://www.googleapis.com/auth/spreadsheets https://www.googleapis.com/auth/gmail.compose';
@@ -396,6 +396,32 @@ function getInvoiceInfo(row){
 // ─── RECLAMO TRACKING (localStorage como cache, Sheet como verdad) ──────────
 function saveReclamo(bl, mailType){
   // Reclamos tracked via LOG sheet
+}
+
+// ─── APPS SCRIPT BRIDGE ──────────────────────────────────────────────────────
+async function callAppScript(accion, filaInicio, filaFin){
+  const url = cfg.appsScriptUrl;
+  if(!url){ alert('URL del AppScript no configurada.'); return false; }
+  try{
+    const r = await fetch(url, {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({accion, filaInicio, filaFin: filaFin||filaInicio})
+    });
+    const data = await r.json();
+    if(data.ok){
+      showToast('✓ Acción ejecutada correctamente');
+      return true;
+    } else {
+      console.error('AppScript error:', data.error);
+      alert('Error: ' + (data.error||'desconocido'));
+      return false;
+    }
+  } catch(e){
+    console.error('callAppScript error:', e);
+    alert('Error al conectar con el AppScript. Verificá que esté publicado correctamente.');
+    return false;
+  }
 }
 
 // ─── GOOGLE AUTH ─────────────────────────────────────────────────────────────
@@ -744,6 +770,73 @@ function renderCargas(showAll){
 }
 
 
+async function solicitarLiberacionViaAppScript(rowIdx){
+  const row = allRows[rowIdx];
+  if(!row) return;
+  const sheetRow = row._sheetRow;
+  if(!sheetRow){ alert('No se pudo determinar la fila en la planilla.'); return; }
+  
+  // Show confirmation
+  const bl = (row[COL.BL]||'').trim();
+  const customer = (row[COL.CUSTOMER]||'').trim();
+  
+  if(!confirm(`¿Solicitar liberación para:\n${customer} - BL: ${bl}?\n\nSe creará el borrador en Gmail y se marcará la planilla.`)) return;
+  
+  showToast('Procesando...');
+  const ok = await callAppScript('liberacion', sheetRow, sheetRow);
+  
+  if(ok){
+    // Also log it
+    const inv1=(row[COL.INVOICE_CLIENTE]||'').trim();
+    const inv2=(row[COL.INVOICE_FC_SERV]||'').trim();
+    await appendLog({
+      fuente:'AXT', fc:inv1||'', fcServ:inv2||'', bl, customer,
+      accion:'solicitar liberacion',
+      detalle:'Via AppScript - fila ' + sheetRow
+    });
+    await loadLog();
+    await loadData();
+  }
+}
+
+async function solicitarLiberacionBulkViaAppScript(rowIndices){
+  if(!rowIndices.length) return;
+  const rows = rowIndices.map(i=>allRows[i]);
+  const sheetRows = rows.map(r=>r._sheetRow).filter(Boolean);
+  
+  if(sheetRows.length !== rowIndices.length){
+    alert('No se pudieron determinar todas las filas en la planilla.');
+    return;
+  }
+  
+  const customer = (rows[0][COL.CUSTOMER]||'').trim();
+  if(!confirm(`¿Solicitar liberación para ${rowIndices.length} cargas de ${customer}?\n\nSe creará UN borrador en Gmail con todas las cargas.`)) return;
+
+  showToast('Procesando...');
+  // Call AppScript for each row (AppScript will group them if consecutive)
+  // For now call with range if consecutive, else individual
+  const minRow = Math.min(...sheetRows);
+  const maxRow = Math.max(...sheetRows);
+  const ok = await callAppScript('liberacion', minRow, maxRow);
+  
+  if(ok){
+    for(let i=0; i<rowIndices.length; i++){
+      const row = rows[i];
+      const bl=(row[COL.BL]||'').trim();
+      const inv1=(row[COL.INVOICE_CLIENTE]||'').trim();
+      const inv2=(row[COL.INVOICE_FC_SERV]||'').trim();
+      await appendLog({
+        fuente:'AXT', fc:inv1||'', fcServ:inv2||'', bl,
+        customer:(row[COL.CUSTOMER]||'').trim(),
+        accion:'solicitar liberacion (bulk)',
+        detalle:'Via AppScript - filas ' + minRow + '-' + maxRow
+      });
+    }
+    await loadLog();
+    await loadData();
+  }
+}
+
 async function marcarPedroOk(rowIdx){
   if(!accessToken){ alert('Conectate con Google primero.'); return; }
   const row=allRows[rowIdx];
@@ -838,7 +931,7 @@ function renderLiberaciones(){
   window.requestBulkLiberation=function(){
     if(!window._libSelectedRows.size) return;
     const selected=[...window._libSelectedRows].map(i=>allRows.indexOf(window._libRows[i]));
-    openBulkMailModal(selected,'solicitar_liberacion');
+    solicitarLiberacionBulkViaAppScript(selected);
   };
 
   let html=`
@@ -893,8 +986,8 @@ function renderLiberaciones(){
       // Estado: solicitado falta ok -> boton pedro dio ok
       actionBtn=`<button class="action-btn" style="background:rgba(77,159,255,.1);color:var(--info);border:1px solid rgba(77,159,255,.3);font-size:11px;font-weight:600;padding:5px 12px;border-radius:5px;cursor:pointer;font-family:var(--font);" onclick="marcarPedroOk(${origIdx})">👍 Pedro dio el OK</button>`;
     } else {
-      // Estado: vacío -> boton solicitar
-      actionBtn=`<button class="action-btn write" onclick="openMailModal(${origIdx},'solicitar_liberacion')">📋 Solicitar liberación</button>`;
+      // Estado: vacío -> boton solicitar via AppScript
+      actionBtn=`<button class="action-btn write" onclick="solicitarLiberacionViaAppScript(${origIdx})">📋 Solicitar liberación</button>`;
     }
 
     html+=`<div class="alert-item ${level}" id="lib-card-${localIdx}" style="cursor:pointer;transition:border-color .15s;" onclick="toggleLibSelection(${localIdx})">
@@ -1044,6 +1137,7 @@ function renderConfig(){
     <div class="config-field"><div class="config-label">Google API Key (lectura)</div><input class="config-input" id="cfg-apiKey" type="password" value="${cfg.apiKey}" placeholder="AIzaSy..."></div>
     <div class="config-field"><div class="config-label">Google OAuth Client ID (escritura)</div><input class="config-input" id="cfg-clientId" value="${cfg.clientId}" placeholder="309220748877-...apps.googleusercontent.com"></div>
     <div class="config-field"><div class="config-label">ID Planilla HUB LATINUT (LOG + Contactos)</div><input class="config-input" id="cfg-hubSheetId" value="${cfg.hubSheetId||'11r3m9KuXWFRrSjdHf1an2xQDjNwnXhadWk5WbShuLms'}" placeholder="11r3m9K..."></div>
+    <div class="config-field"><div class="config-label">URL AppScript (automatizaciones)</div><input class="config-input" id="cfg-appsScriptUrl" value="${cfg.appsScriptUrl||''}" placeholder="https://script.google.com/macros/s/..."></div>
     <div class="config-save"><button class="btn primary" onclick="saveConfig()">Guardar y conectar</button></div>
   </div>
   <div class="config-section">
@@ -1060,6 +1154,7 @@ function saveConfig(){
   cfg.apiKey=document.getElementById('cfg-apiKey')?.value?.trim()||cfg.apiKey;
   cfg.clientId=document.getElementById('cfg-clientId')?.value?.trim()||cfg.clientId;
   cfg.hubSheetId=document.getElementById('cfg-hubSheetId')?.value?.trim()||cfg.hubSheetId;
+  cfg.appsScriptUrl=document.getElementById('cfg-appsScriptUrl')?.value?.trim()||cfg.appsScriptUrl;
   cfg.alerta_dias=parseInt(document.getElementById('cfg-dias')?.value)||cfg.alerta_dias;
   localStorage.setItem(CFG_KEY,JSON.stringify(cfg));
   initGoogleAuth();
