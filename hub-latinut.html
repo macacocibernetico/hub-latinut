@@ -150,6 +150,14 @@ td.mono{font-family:var(--mono);font-size:11px;}
 .empty-icon{font-size:32px;margin-bottom:12px;}
 .log-table-wrap{background:var(--bg2);border:1px solid var(--border);border-radius:10px;overflow:hidden;margin-bottom:28px;}
 @media(max-width:768px){
+  .content{padding:16px;}
+  .topbar{padding:12px 16px;}
+  .modal{width:95vw;}
+  .modal-body{padding:14px 16px;}
+  .modal-footer{padding:12px 16px;}
+  .stats-row{gap:8px;}
+  .stat-card{padding:12px 14px;}
+  .stat-value{font-size:22px;}
   .sidebar{transform:translateX(-220px);transition:transform .25s;}
   .sidebar.open{transform:translateX(0);}
   .main{margin-left:0;}
@@ -158,7 +166,7 @@ td.mono{font-family:var(--mono);font-size:11px;}
   .alert-logistics{grid-template-columns:1fr;}
 }
 .mobile-toggle{display:none;align-items:center;justify-content:center;width:36px;height:36px;border-radius:6px;background:var(--bg3);border:1px solid var(--border2);cursor:pointer;font-size:16px;}
-.overlay-close{display:none;position:fixed;inset:0;z-index:9;}
+.overlay-close{display:none;position:fixed;inset:0;z-index:9;background:rgba(0,0,0,.5);}
 </style>
 </head>
 <body>
@@ -184,6 +192,10 @@ td.mono{font-family:var(--mono);font-size:11px;}
       <div class="nav-item" onclick="showView('cobranza')">
         <span class="icon">💰</span> Cobranza
         <span class="nav-badge warn" id="badge-cobranza"></span>
+      </div>
+      <div class="nav-item" onclick="showView('liberaciones')">
+        <span class="icon">🔓</span> Liberaciones
+        <span class="nav-badge warn" id="badge-liberaciones"></span>
       </div>
       <div class="nav-item" onclick="showView('pagares')">
         <span class="icon">📄</span> Pagarés
@@ -260,13 +272,49 @@ td.mono{font-family:var(--mono);font-size:11px;}
 <script>
 // ─── CONFIG ──────────────────────────────────────────────────────────────────
 const CFG_KEY = 'hub_latinut_config';
-let cfg = {...{sheetId:'',sheetName:'Cargas',apiKey:'',clientId:'',alerta_dias:10},...JSON.parse(localStorage.getItem(CFG_KEY)||'{}')};
+let cfg = {...{sheetId:'',sheetName:'Cargas',apiKey:'',clientId:'',alerta_dias:10,hubSheetId:'11r3m9KuXWFRrSjdHf1an2xQDjNwnXhadWk5WbShuLms'},...JSON.parse(localStorage.getItem(CFG_KEY)||'{}')};
 
 // ─── OAUTH ───────────────────────────────────────────────────────────────────
 const SCOPES = 'https://www.googleapis.com/auth/spreadsheets https://www.googleapis.com/auth/gmail.compose';
 let tokenClient = null;
 let accessToken = null;
 let allRows = [], currentView = 'alertas', modalData = {}, currentLang = 'en';
+let contacts = []; // Cache de contactos del HUB sheet
+
+// ─── CONTACTS ────────────────────────────────────────────────────────────────
+async function loadContacts(){
+  if(!cfg.hubSheetId||!cfg.apiKey) return;
+  try{
+    const range=encodeURIComponent('CONTACTOS!A2:E');
+    const url=`https://sheets.googleapis.com/v4/spreadsheets/${cfg.hubSheetId}/values/${range}?key=${cfg.apiKey}`;
+    const r=await fetch(url);
+    if(!r.ok) return;
+    const data=await r.json();
+    contacts=(data.values||[]).map(row=>({
+      empresa:(row[0]||'').trim(),
+      contacto:(row[1]||'').trim(),
+      email:(row[2]||'').trim(),
+      rol:(row[3]||'').trim(),
+      ccSiempre:(row[4]||'').trim().toUpperCase()==='SI'
+    })).filter(c=>c.email);
+    console.log(`Loaded ${contacts.length} contacts`);
+  }catch(e){console.error('Error loading contacts',e);}
+}
+
+function getContactsForEmpresa(empresa){
+  if(!empresa||!contacts.length) return {to:'', cc:'pedro@axt.com'};
+  const emp=empresa.trim().toUpperCase();
+  const match=contacts.filter(c=>c.empresa.toUpperCase()===emp);
+  const principal=match.filter(c=>c.rol.toLowerCase().includes('principal'));
+  const cc=contacts.filter(c=>c.ccSiempre).map(c=>c.email);
+  // To: principal o primero que matchea
+  const toContact=principal[0]||match[0];
+  const toStr=toContact?`${toContact.contacto} <${toContact.email}>`:'';
+  // CC: los que tienen CC_Siempre + otros contactos no principales
+  const otherEmails=match.filter(c=>c!==toContact&&!c.ccSiempre).map(c=>c.email);
+  const allCC=[...new Set([...cc,...otherEmails])];
+  return{to:toStr, cc:allCC.join(', ')||'pedro@axt.com'};
+}
 
 // ─── COLUMNAS ────────────────────────────────────────────────────────────────
 // A=0 Negocio, B=1 Tns, C=2 Product, D=3 Packing, E=4 Lots
@@ -390,6 +438,7 @@ async function loadData(){
     if(!r.ok) throw new Error(`HTTP ${r.status}`);
     const data=await r.json();
     allRows=(data.values||[]).filter(row=>row[COL.NEGOCIO]&&!isClosed(row));
+    await loadContacts();
     setSheetStatus('ok',`${allRows.length} cargas activas`);
     document.getElementById('last-sync').textContent='Sync '+new Date().toLocaleTimeString('es-AR',{hour:'2-digit',minute:'2-digit'});
     updateBadges();renderView(currentView);
@@ -421,9 +470,10 @@ async function writeCell(row, col, value){
 async function appendLog(data){
   if(!accessToken) return;
   const {fecha,hora}=nowStr();
-  const values=[[fecha, hora, data.fc||'', data.fcServ||'', data.bl||'', data.customer||'', data.accion||'', data.detalle||'']];
-  const range=encodeURIComponent(`LOG!A:H`);
-  const url=`https://sheets.googleapis.com/v4/spreadsheets/${cfg.sheetId}/values/${range}:append?valueInputOption=USER_ENTERED&insertDataOption=INSERT_ROWS`;
+  const hubId=cfg.hubSheetId||cfg.sheetId;
+  const values=[[fecha, hora, data.fuente||'AXT', data.fc||'', data.fcServ||'', data.bl||'', data.customer||'', data.accion||'', data.detalle||'']];
+  const range=encodeURIComponent(`LOG!A:I`);
+  const url=`https://sheets.googleapis.com/v4/spreadsheets/${hubId}/values/${range}:append?valueInputOption=USER_ENTERED&insertDataOption=INSERT_ROWS`;
   await fetch(url,{
     method:'POST',
     headers:{'Authorization':`Bearer ${accessToken}`,'Content-Type':'application/json'},
@@ -563,19 +613,22 @@ function updateBadges(){
   const cobros=allRows.filter(r=>{const d=daysFrom(r[COL.FECHA_EST_COBRO]);return d!==null&&d<=14;}).length;
   const bC=document.getElementById('badge-cobranza');
   bC.textContent=cobros||'';bC.style.display=cobros?'':'none';
+  const libs=allRows.filter(r=>{const d=daysFrom(r[COL.ETA]);const t=(r[COL.TELEX]||'').trim();return d!==null&&d>=0&&d<=7&&t.toUpperCase()!=='SI';}).length;
+  const bL=document.getElementById('badge-liberaciones');
+  if(bL){bL.textContent=libs||'';bL.style.display=libs?'':'none';}
 }
 
 // ─── VIEWS ───────────────────────────────────────────────────────────────────
 function showView(view){
   currentView=view;
   document.querySelectorAll('.nav-item').forEach(el=>el.classList.remove('active'));
-  const titles={alertas:'Alertas',cargas:'Cargas AXT',cobranza:'Cobranza',pagares:'Pagarés',log:'Log de acciones',config:'Configuración'};
+  const titles={alertas:'Alertas',cargas:'Cargas AXT',cobranza:'Cobranza',liberaciones:'Liberaciones',pagares:'Pagarés',log:'Log de acciones',config:'Configuración'};
   document.getElementById('view-title').textContent=titles[view]||view;
   document.querySelectorAll('.nav-item').forEach(el=>{if(el.getAttribute('onclick')?.includes(`'${view}'`))el.classList.add('active');});
   renderView(view);
   if(window.innerWidth<=768)closeSidebar();
 }
-function renderView(v){({alertas:renderAlertas,cargas:renderCargas,cobranza:renderCobranza,pagares:renderPagares,log:renderLog,config:renderConfig}[v]||renderAlertas)();}
+function renderView(v){({alertas:renderAlertas,cargas:renderCargas,cobranza:renderCobranza,liberaciones:renderLiberaciones,pagares:renderPagares,log:renderLog,config:renderConfig}[v]||renderAlertas)();}
 
 function renderAlertas(){
   const alerts=getAlerts();
@@ -624,11 +677,24 @@ function renderAlertas(){
   document.getElementById('content').innerHTML=html;
 }
 
-function renderCargas(){
+let cargasShowAll = false;
+function renderCargas(showAll){
+  if(showAll !== undefined) cargasShowAll = showAll;
   if(!allRows.length){document.getElementById('content').innerHTML=`<div class="empty"><div class="empty-icon">📦</div>Sin cargas. Sincronizá primero.</div>`;return;}
-  let html=`<div class="table-wrap"><div class="table-top"><span style="font-size:13px;font-weight:700;">${allRows.length} cargas activas</span></div><div style="overflow-x:auto;"><table>
+  const rows = cargasShowAll ? allRows : allRows.filter(r=>(r[COL.FECHA_COBRO]||'').trim()==='');
+  let html=`<div class="table-wrap">
+    <div class="table-top">
+      <span style="font-size:13px;font-weight:700;">${rows.length} cargas ${cargasShowAll?'totales':'activas'}</span>
+      <div style="display:flex;gap:8px;">
+        <span class="filter-chip ${!cargasShowAll?'active':''}" onclick="renderCargas(false)" style="font-size:11px;font-family:var(--mono);padding:4px 10px;border-radius:4px;border:1px solid var(--border2);cursor:pointer;background:${!cargasShowAll?'var(--accent)':'var(--bg3)'};color:${!cargasShowAll?'#0d0d0d':'var(--muted2)'};">Activas</span>
+        <span class="filter-chip ${cargasShowAll?'active':''}" onclick="renderCargas(true)" style="font-size:11px;font-family:var(--mono);padding:4px 10px;border-radius:4px;border:1px solid var(--border2);cursor:pointer;background:${cargasShowAll?'var(--accent)':'var(--bg3)'};color:${cargasShowAll?'#0d0d0d':'var(--muted2)'};">Todas</span>
+      </div>
+    </div>
+    <div style="overflow-x:auto;"><table>
     <thead><tr><th>Negocio</th><th>BL</th><th>Booking</th><th>Naviera</th><th>Customer</th><th>Vessel</th><th>ETA</th><th>Días</th><th>Docs</th><th>TELEX</th><th>Pagaré</th><th>Cobro Est.</th><th></th></tr></thead><tbody>`;
-  allRows.forEach((row,idx)=>{
+  rows.forEach((row,idx)=>{
+  const origIdx = allRows.indexOf(row);
+  idx = origIdx;
     const days=daysFrom(row[COL.ETA]);
     const dc=daysClass(days);
     const pagEnv=(row[COL.PAGARE_ENVIADO]||'').trim().toUpperCase();
@@ -655,6 +721,166 @@ function renderCargas(){
     </tr>`;
   });
   html+=`</tbody></table></div></div>`;
+  document.getElementById('content').innerHTML=html;
+}
+
+
+function renderLiberaciones(){
+  const rows=allRows.filter(r=>{
+    const d=daysFrom(r[COL.ETA]);
+    return d!==null&&d>=0&&d<=7;
+  }).sort((a,b)=>(daysFrom(a[COL.ETA])||999)-(daysFrom(b[COL.ETA])||999));
+
+  if(!rows.length){
+    document.getElementById('content').innerHTML=`<div class="empty"><div class="empty-icon">🔓</div>Sin cargas con ETA en los próximos 7 días.</div>`;
+    return;
+  }
+
+  let html=`
+  <div class="stats-row">
+    <div class="stat-card"><div class="stat-label">Cargas próximas</div><div class="stat-value">${rows.length}</div><div class="stat-sub">ETA ≤ 7 días</div></div>
+    <div class="stat-card alert-card"><div class="stat-label">Sin liberación</div><div class="stat-value" style="color:var(--danger)">${rows.filter(r=>!(r[COL.TELEX]||'').trim()).length}</div><div class="stat-sub">TELEX vacío</div></div>
+    <div class="stat-card warn-card"><div class="stat-label">En proceso</div><div class="stat-value" style="color:var(--warn)">${rows.filter(r=>{const t=(r[COL.TELEX]||'').trim();return t&&t.toUpperCase()!=='SI';}).length}</div><div class="stat-sub">Solicitado / pendiente</div></div>
+    <div class="stat-card"><div class="stat-label">Liberado</div><div class="stat-value" style="color:var(--ok)">${rows.filter(r=>(r[COL.TELEX]||'').trim().toUpperCase()==='SI').length}</div><div class="stat-sub">TELEX = SI</div></div>
+  </div>
+  <div class="alert-list">`;
+
+  rows.forEach(row=>{
+    const origIdx=allRows.indexOf(row);
+    const d=daysFrom(row[COL.ETA]);
+    const dc=daysClass(d);
+    const telex=(row[COL.TELEX]||'').trim();
+    const telexOk=telex.toUpperCase()==='SI';
+    const telexPending=telex&&!telexOk;
+    const customer=(row[COL.CUSTOMER]||'—').trim();
+    const bl=(row[COL.BL]||'').trim();
+    const booking=(row[COL.BOOKING]||'').trim();
+    const containers=(row[COL.CONTAINERS]||'').trim();
+    const shipping=(row[COL.SHIPPING]||'').trim();
+    const vessel=(row[COL.VESSEL]||'').trim();
+    const port=(row[COL.PORT]||'').trim();
+    const negocio=(row[COL.NEGOCIO]||'').trim();
+    const recInfo=getReclamoInfo(bl,'solicitar_liberacion');
+
+    const level=telexOk?'info':d<=3?'critical':'warning';
+    const telexHtml=telexOk
+      ?`<div style="margin-bottom:8px;font-family:var(--mono);font-size:11px;color:var(--ok);">✓ Liberado: ${telex}</div>`
+      :telexPending
+        ?`<div style="margin-bottom:8px;font-family:var(--mono);font-size:11px;color:var(--info);">📋 Estado: ${telex}</div>`
+        :`<div style="margin-bottom:8px;font-family:var(--mono);font-size:11px;color:var(--danger);">⚠ Sin liberación solicitada</div>`;
+    const recHtml=recInfo?`<div class="alert-reclamo">⚠ Solicitado ${recInfo.count} vez${recInfo.count>1?'es':''} · último ${recInfo.timeStr}</div>`:'';
+    const actionBtn=!telexOk
+      ?`<button class="action-btn write" onclick="openMailModal(${origIdx},'solicitar_liberacion')">📋 Solicitar liberación</button>`
+      :'<span style="color:var(--ok);font-size:11px;font-weight:600">✓ Liberado</span>';
+
+    html+=`<div class="alert-item ${level}">
+      <div class="alert-dot ${level}"></div>
+      <div class="alert-body">
+        <div class="alert-title">${negocio} — ${customer}</div>
+        <div class="alert-meta">BL: ${bl}  ·  ETA: ${fmtDate(row[COL.ETA])}</div>
+        <div class="alert-tags">
+          <span class="tag customer">${customer}</span>
+          <span class="tag vessel">${vessel}</span>
+          <span class="tag port">${port}</span>
+          <span class="tag naviera">${shipping}</span>
+          <span class="tag days-${dc}">${d===0?'HOY':d+'d'}</span>
+        </div>
+        <div class="alert-logistics">
+          <div class="log-item"><span class="log-label">Containers:</span><span class="log-value">${containers||'—'}</span></div>
+          <div class="log-item"><span class="log-label">Booking:</span><span class="log-value">${booking||'—'}</span></div>
+          <div class="log-item"><span class="log-label">BL:</span><span class="log-value">${bl||'—'}</span></div>
+          <div class="log-item"><span class="log-label">Naviera:</span><span class="log-value">${shipping||'—'}</span></div>
+        </div>
+        ${telexHtml}${recHtml}
+        <div class="alert-actions">${actionBtn}</div>
+      </div>
+      <div class="alert-right">
+        <div class="days-badge ${dc}">${d}</div>
+        <div class="days-label">días ETA</div>
+      </div>
+    </div>`;
+  });
+  html+=`</div>`;
+  document.getElementById('content').innerHTML=html;
+}
+
+
+function renderLiberaciones(){
+  const rows=allRows.filter(r=>{
+    const d=daysFrom(r[COL.ETA]);
+    return d!==null&&d>=0&&d<=7;
+  }).sort((a,b)=>(daysFrom(a[COL.ETA])||999)-(daysFrom(b[COL.ETA])||999));
+
+  if(!rows.length){
+    document.getElementById('content').innerHTML=`<div class="empty"><div class="empty-icon">🔓</div>Sin cargas con ETA en los próximos 7 días.</div>`;
+    return;
+  }
+
+  let html=`
+  <div class="stats-row">
+    <div class="stat-card"><div class="stat-label">Cargas próximas</div><div class="stat-value">${rows.length}</div><div class="stat-sub">ETA ≤ 7 días</div></div>
+    <div class="stat-card alert-card"><div class="stat-label">Sin liberación</div><div class="stat-value" style="color:var(--danger)">${rows.filter(r=>!(r[COL.TELEX]||'').trim()).length}</div><div class="stat-sub">TELEX vacío</div></div>
+    <div class="stat-card warn-card"><div class="stat-label">En proceso</div><div class="stat-value" style="color:var(--warn)">${rows.filter(r=>{const t=(r[COL.TELEX]||'').trim();return t&&t.toUpperCase()!=='SI';}).length}</div><div class="stat-sub">Solicitado / pendiente</div></div>
+    <div class="stat-card"><div class="stat-label">Liberado</div><div class="stat-value" style="color:var(--ok)">${rows.filter(r=>(r[COL.TELEX]||'').trim().toUpperCase()==='SI').length}</div><div class="stat-sub">TELEX = SI</div></div>
+  </div>
+  <div class="alert-list">`;
+
+  rows.forEach(row=>{
+    const origIdx=allRows.indexOf(row);
+    const d=daysFrom(row[COL.ETA]);
+    const dc=daysClass(d);
+    const telex=(row[COL.TELEX]||'').trim();
+    const telexOk=telex.toUpperCase()==='SI';
+    const telexPending=telex&&!telexOk;
+    const customer=(row[COL.CUSTOMER]||'—').trim();
+    const bl=(row[COL.BL]||'').trim();
+    const booking=(row[COL.BOOKING]||'').trim();
+    const containers=(row[COL.CONTAINERS]||'').trim();
+    const shipping=(row[COL.SHIPPING]||'').trim();
+    const vessel=(row[COL.VESSEL]||'').trim();
+    const port=(row[COL.PORT]||'').trim();
+    const negocio=(row[COL.NEGOCIO]||'').trim();
+    const recInfo=getReclamoInfo(bl,'solicitar_liberacion');
+
+    const level=telexOk?'info':d<=3?'critical':'warning';
+    const telexHtml=telexOk
+      ?`<div style="margin-bottom:8px;font-family:var(--mono);font-size:11px;color:var(--ok);">✓ Liberado: ${telex}</div>`
+      :telexPending
+        ?`<div style="margin-bottom:8px;font-family:var(--mono);font-size:11px;color:var(--info);">📋 Estado: ${telex}</div>`
+        :`<div style="margin-bottom:8px;font-family:var(--mono);font-size:11px;color:var(--danger);">⚠ Sin liberación solicitada</div>`;
+    const recHtml=recInfo?`<div class="alert-reclamo">⚠ Solicitado ${recInfo.count} vez${recInfo.count>1?'es':''} · último ${recInfo.timeStr}</div>`:'';
+    const actionBtn=!telexOk
+      ?`<button class="action-btn write" onclick="openMailModal(${origIdx},'solicitar_liberacion')">📋 Solicitar liberación</button>`
+      :'<span style="color:var(--ok);font-size:11px;font-weight:600">✓ Liberado</span>';
+
+    html+=`<div class="alert-item ${level}">
+      <div class="alert-dot ${level}"></div>
+      <div class="alert-body">
+        <div class="alert-title">${negocio} — ${customer}</div>
+        <div class="alert-meta">BL: ${bl}  ·  ETA: ${fmtDate(row[COL.ETA])}</div>
+        <div class="alert-tags">
+          <span class="tag customer">${customer}</span>
+          <span class="tag vessel">${vessel}</span>
+          <span class="tag port">${port}</span>
+          <span class="tag naviera">${shipping}</span>
+          <span class="tag days-${dc}">${d===0?'HOY':d+'d'}</span>
+        </div>
+        <div class="alert-logistics">
+          <div class="log-item"><span class="log-label">Containers:</span><span class="log-value">${containers||'—'}</span></div>
+          <div class="log-item"><span class="log-label">Booking:</span><span class="log-value">${booking||'—'}</span></div>
+          <div class="log-item"><span class="log-label">BL:</span><span class="log-value">${bl||'—'}</span></div>
+          <div class="log-item"><span class="log-label">Naviera:</span><span class="log-value">${shipping||'—'}</span></div>
+        </div>
+        ${telexHtml}${recHtml}
+        <div class="alert-actions">${actionBtn}</div>
+      </div>
+      <div class="alert-right">
+        <div class="days-badge ${dc}">${d}</div>
+        <div class="days-label">días ETA</div>
+      </div>
+    </div>`;
+  });
+  html+=`</div>`;
   document.getElementById('content').innerHTML=html;
 }
 
@@ -728,26 +954,28 @@ async function renderLog(){
   }
   document.getElementById('content').innerHTML=`<div class="spinner"><div class="spin"></div> Cargando log...</div>`;
   try{
-    const range=encodeURIComponent(`LOG!A:H`);
-    const url=`https://sheets.googleapis.com/v4/spreadsheets/${cfg.sheetId}/values/${range}?key=${cfg.apiKey}`;
+    const hubId=cfg.hubSheetId||cfg.sheetId;
+    const range=encodeURIComponent(`LOG!A:I`);
+    const url=`https://sheets.googleapis.com/v4/spreadsheets/${hubId}/values/${range}?key=${cfg.apiKey}`;
     const r=await fetch(url);
     const data=await r.json();
     const rows=(data.values||[]).slice(1).reverse(); // Más recientes primero
     if(!rows.length){document.getElementById('content').innerHTML=`<div class="empty"><div class="empty-icon">📋</div>Sin acciones registradas todavía.</div>`;return;}
     let html=`<div class="table-wrap"><div class="table-top"><span style="font-size:13px;font-weight:700;">${rows.length} acciones registradas</span></div><div style="overflow-x:auto;"><table>
-      <thead><tr><th>Fecha</th><th>Hora</th><th>FC</th><th>FC Servicios</th><th>BL</th><th>Customer</th><th>Acción</th><th>Detalle</th></tr></thead><tbody>`;
+      <thead><tr><th>Fecha</th><th>Hora</th><th>Fuente</th><th>FC</th><th>FC Servicios</th><th>BL</th><th>Customer</th><th>Acción</th><th>Detalle</th></tr></thead><tbody>`;
     rows.forEach(row=>{
-      const accion=(row[6]||'').trim();
+      const accion=(row[7]||'').trim();
       const color=accion.includes('reclamo')||accion.includes('cobro')?'var(--warn)':accion.includes('liberac')?'var(--info)':'var(--muted2)';
       html+=`<tr>
         <td class="mono">${row[0]||'—'}</td>
         <td class="mono">${row[1]||'—'}</td>
-        <td class="mono">${row[2]||'—'}</td>
+        <td><span style="color:var(--accent);font-size:10px;font-family:var(--mono)">${row[2]||'AXT'}</span></td>
         <td class="mono">${row[3]||'—'}</td>
-        <td class="mono">${(row[4]||'—').substring(0,20)}</td>
-        <td>${row[5]||'—'}</td>
+        <td class="mono">${row[4]||'—'}</td>
+        <td class="mono">${(row[5]||'—').substring(0,20)}</td>
+        <td>${row[6]||'—'}</td>
         <td><span style="color:${color};font-size:11px;font-weight:600">${accion||'—'}</span></td>
-        <td style="color:var(--muted2);font-size:11px">${row[7]||'—'}</td>
+        <td style="color:var(--muted2);font-size:11px">${row[8]||'—'}</td>
       </tr>`;
     });
     html+=`</tbody></table></div></div>`;
@@ -767,6 +995,7 @@ function renderConfig(){
     <div class="config-field"><div class="config-label">Nombre de la pestaña</div><input class="config-input" id="cfg-sheetName" value="${cfg.sheetName}" placeholder="Cargas"></div>
     <div class="config-field"><div class="config-label">Google API Key (lectura)</div><input class="config-input" id="cfg-apiKey" type="password" value="${cfg.apiKey}" placeholder="AIzaSy..."></div>
     <div class="config-field"><div class="config-label">Google OAuth Client ID (escritura)</div><input class="config-input" id="cfg-clientId" value="${cfg.clientId}" placeholder="309220748877-...apps.googleusercontent.com"></div>
+    <div class="config-field"><div class="config-label">ID Planilla HUB LATINUT (LOG + Contactos)</div><input class="config-input" id="cfg-hubSheetId" value="${cfg.hubSheetId||'11r3m9KuXWFRrSjdHf1an2xQDjNwnXhadWk5WbShuLms'}" placeholder="11r3m9K..."></div>
     <div class="config-save"><button class="btn primary" onclick="saveConfig()">Guardar y conectar</button></div>
   </div>
   <div class="config-section">
@@ -782,6 +1011,7 @@ function saveConfig(){
   cfg.sheetName=document.getElementById('cfg-sheetName')?.value?.trim()||cfg.sheetName;
   cfg.apiKey=document.getElementById('cfg-apiKey')?.value?.trim()||cfg.apiKey;
   cfg.clientId=document.getElementById('cfg-clientId')?.value?.trim()||cfg.clientId;
+  cfg.hubSheetId=document.getElementById('cfg-hubSheetId')?.value?.trim()||cfg.hubSheetId;
   cfg.alerta_dias=parseInt(document.getElementById('cfg-dias')?.value)||cfg.alerta_dias;
   localStorage.setItem(CFG_KEY,JSON.stringify(cfg));
   initGoogleAuth();
@@ -822,8 +1052,8 @@ function buildMailBody(mailType,d,lang){
       es:{subject:`Pagaré – ${d.negocio} / BL: ${d.bl}`,body:`${hi},\n\nLe solicitamos la firma y devolución del pagaré correspondiente al siguiente embarque:\n\nNegocio: ${d.negocio}\nCliente: ${d.customer}\nBL: ${d.bl}\nBooking: ${d.booking}\nContainer(s): ${d.containers}\nBuque: ${d.vessel}\nETA: ${d.etaFmt}${invLine}\n\n${bye}`}
     },
     reclamo_cobro:{
-      en:{subject:`Outstanding payment – ${d.negocio} / BL: ${d.bl}`,body:`${hi},\n\nWe wish to follow up on the outstanding payment for:\n\nShipment: ${d.negocio}\nCustomer: ${d.customer}\nBL: ${d.bl}\nBooking: ${d.booking}\nContainer(s): ${d.containers}\nPayment due date: ${d.paymentDueFmt}${invLine}\n\nPlease confirm status of payment.\n\n${bye}`},
-      es:{subject:`Reclamo de cobro – ${d.negocio} / BL: ${d.bl}`,body:`${hi},\n\nNos comunicamos para hacer seguimiento del pago pendiente de:\n\nNegocio: ${d.negocio}\nCliente: ${d.customer}\nBL: ${d.bl}\nBooking: ${d.booking}\nContainer(s): ${d.containers}\nFecha de pago estimada: ${d.paymentDueFmt}${invLine}\n\nAgradecemos confirmar estado del pago.\n\n${bye}`}
+      en:{subject:`Payment inquiry – ${d.inv1&&d.inv2?d.inv1+' / '+d.inv2:d.inv1||d.inv2||d.bl}`,body:`Dear,\n\nWe wish to follow up on the outstanding payment for:\n\nCustomer: ${d.customer}\nBL: ${d.bl}\nBooking: ${d.booking}\nContainer(s): ${d.containers}\nPayment due date: ${d.paymentDueFmt}${invLine}\n\nPlease confirm status of payment.\n\n${bye}`},
+      es:{subject:`Consulta de pago – ${d.inv1&&d.inv2?d.inv1+' / '+d.inv2:d.inv1||d.inv2||d.bl}`,body:`Estimado/a,\n\nNos comunicamos para hacer seguimiento del pago pendiente de:\n\nCliente: ${d.customer}\nBL: ${d.bl}\nBooking: ${d.booking}\nContainer(s): ${d.containers}\nFecha de pago estimada: ${d.paymentDueFmt}${invLine}\n\nAgradecemos confirmar estado del pago.\n\n${bye}`}
     },
     solicitar_liberacion:{
       en:{subject:`Release request – ${d.negocio} / BL: ${d.bl}`,body:`${hi},\n\nWe kindly request the release of the following shipment:\n\nShipment: ${d.negocio}\nCustomer: ${d.customer}\nBL: ${d.bl}\nBooking: ${d.booking}\nContainer(s): ${d.containers}\nVessel: ${d.vessel}\nPort: ${d.port}\nETA: ${d.etaFmt}\n\nPlease confirm.\n\n${bye}`},
@@ -857,8 +1087,9 @@ function openMailModal(rowIdx, mailType){
   document.getElementById('lang-en').classList.add('active');
   document.getElementById('lang-es').classList.remove('active');
   document.getElementById('modal-title').textContent='Borrador — '+mailType.replace(/_/g,' ');
-  document.getElementById('modal-to').textContent=`${d.customer} <contacto@cliente.com>`;
-  document.getElementById('modal-cc').textContent='pedro@axt.com';
+  const contactInfo=getContactsForEmpresa(d.customer);
+  document.getElementById('modal-to').textContent=contactInfo.to||`${d.customer} <sin contacto cargado>`;
+  document.getElementById('modal-cc').textContent=contactInfo.cc||'pedro@axt.com';
   const tpl=buildMailBody(mailType,d,'en');
   document.getElementById('modal-subject').textContent=tpl.subject;
   document.getElementById('modal-body').value=tpl.body;
