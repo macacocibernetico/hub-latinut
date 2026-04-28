@@ -152,6 +152,7 @@ td.mono{font-family:var(--mono);font-size:11px;}
 .empty{padding:48px;text-align:center;color:var(--muted);font-size:13px;}
 .empty-icon{font-size:32px;margin-bottom:12px;}
 .log-table-wrap{background:var(--bg2);border:1px solid var(--border);border-radius:10px;overflow:hidden;margin-bottom:28px;}
+.mobile-toggle{display:none;align-items:center;justify-content:center;width:36px;height:36px;border-radius:6px;background:var(--bg3);border:1px solid var(--border2);cursor:pointer;font-size:16px;}
 @media(max-width:768px){
   .content{padding:16px;}
   .topbar{padding:12px 16px;}
@@ -168,7 +169,6 @@ td.mono{font-family:var(--mono);font-size:11px;}
   .mobile-toggle{display:flex;}
   .alert-logistics{grid-template-columns:1fr;}
 }
-.mobile-toggle{display:none;align-items:center;justify-content:center;width:36px;height:36px;border-radius:6px;background:var(--bg3);border:1px solid var(--border2);cursor:pointer;font-size:16px;}
 .overlay-close{display:none;position:fixed;inset:0;z-index:9;background:rgba(0,0,0,.5);}
 </style>
 </head>
@@ -706,8 +706,8 @@ function renderCargas(showAll){
     <div class="table-top">
       <span style="font-size:13px;font-weight:700;">${rows.length} cargas ${cargasShowAll?'totales':'activas'}</span>
       <div style="display:flex;gap:8px;">
-        <span class="filter-chip ${!cargasShowAll?'active':''}" onclick="renderCargas(false)" style="font-size:11px;font-family:var(--mono);padding:4px 10px;border-radius:4px;border:1px solid var(--border2);cursor:pointer;background:${!cargasShowAll?'var(--accent)':'var(--bg3)'};color:${!cargasShowAll?'#0d0d0d':'var(--muted2)'};">Activas</span>
-        <span class="filter-chip ${cargasShowAll?'active':''}" onclick="renderCargas(true)" style="font-size:11px;font-family:var(--mono);padding:4px 10px;border-radius:4px;border:1px solid var(--border2);cursor:pointer;background:${cargasShowAll?'var(--accent)':'var(--bg3)'};color:${cargasShowAll?'#0d0d0d':'var(--muted2)'};">Todas</span>
+        <span onclick="renderCargas(false)" style="font-size:11px;font-family:var(--mono);padding:4px 10px;border-radius:4px;border:1px solid var(--border2);cursor:pointer;${!cargasShowAll?'background:var(--accent);color:#0d0d0d;':'background:var(--bg3);color:var(--muted2);'}">Activas</span>
+        <span onclick="renderCargas(true)" style="font-size:11px;font-family:var(--mono);padding:4px 10px;border-radius:4px;border:1px solid var(--border2);cursor:pointer;${cargasShowAll?'background:var(--accent);color:#0d0d0d;':'background:var(--bg3);color:var(--muted2);'}">Todas</span>
       </div>
     </div>
     <div style="overflow-x:auto;"><table>
@@ -1142,6 +1142,8 @@ function setLang(lang){
   currentLang=lang;
   document.getElementById('lang-en').classList.toggle('active',lang==='en');
   document.getElementById('lang-es').classList.toggle('active',lang==='es');
+  // Skip rebuild for bulk mails - body is already correct Spanish
+  if(modalData.isBulk) return;
   const tpl=buildMailBody(modalData.mailType,modalData.d,lang);
   document.getElementById('modal-subject').textContent=tpl.subject;
   document.getElementById('modal-body').value=tpl.body;
