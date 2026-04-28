@@ -695,9 +695,8 @@ function renderCargas(showAll){
     </div>
     <div style="overflow-x:auto;"><table>
     <thead><tr><th>Negocio</th><th>BL</th><th>Booking</th><th>Naviera</th><th>Customer</th><th>Vessel</th><th>ETA</th><th>Días</th><th>Docs</th><th>TELEX</th><th>Pagaré</th><th>Cobro Est.</th><th></th></tr></thead><tbody>`;
-  rows.forEach((row,idx)=>{
-  const origIdx = allRows.indexOf(row);
-  idx = origIdx;
+  rows.forEach((row)=>{
+  const idx = allRows.indexOf(row);
     const days=daysFrom(row[COL.ETA]);
     const dc=daysClass(days);
     const pagEnv=(row[COL.PAGARE_ENVIADO]||'').trim().toUpperCase();
@@ -847,85 +846,6 @@ function renderLiberaciones(){
   document.getElementById('content').innerHTML=html;
 }
 
-
-function renderLiberaciones(){
-  const rows=allRows.filter(r=>{
-    const d=daysFrom(r[COL.ETA]);
-    return d!==null&&d>=0&&d<=7;
-  }).sort((a,b)=>(daysFrom(a[COL.ETA])||999)-(daysFrom(b[COL.ETA])||999));
-
-  if(!rows.length){
-    document.getElementById('content').innerHTML=`<div class="empty"><div class="empty-icon">🔓</div>Sin cargas con ETA en los próximos 7 días.</div>`;
-    return;
-  }
-
-  let html=`
-  <div class="stats-row">
-    <div class="stat-card"><div class="stat-label">Cargas próximas</div><div class="stat-value">${rows.length}</div><div class="stat-sub">ETA ≤ 7 días</div></div>
-    <div class="stat-card alert-card"><div class="stat-label">Sin liberación</div><div class="stat-value" style="color:var(--danger)">${rows.filter(r=>!(r[COL.TELEX]||'').trim()).length}</div><div class="stat-sub">TELEX vacío</div></div>
-    <div class="stat-card warn-card"><div class="stat-label">En proceso</div><div class="stat-value" style="color:var(--warn)">${rows.filter(r=>{const t=(r[COL.TELEX]||'').trim();return t&&t.toUpperCase()!=='SI';}).length}</div><div class="stat-sub">Solicitado / pendiente</div></div>
-    <div class="stat-card"><div class="stat-label">Liberado</div><div class="stat-value" style="color:var(--ok)">${rows.filter(r=>(r[COL.TELEX]||'').trim().toUpperCase()==='SI').length}</div><div class="stat-sub">TELEX = SI</div></div>
-  </div>
-  <div class="alert-list">`;
-
-  rows.forEach(row=>{
-    const origIdx=allRows.indexOf(row);
-    const d=daysFrom(row[COL.ETA]);
-    const dc=daysClass(d);
-    const telex=(row[COL.TELEX]||'').trim();
-    const telexOk=telex.toUpperCase()==='SI';
-    const telexPending=telex&&!telexOk;
-    const customer=(row[COL.CUSTOMER]||'—').trim();
-    const bl=(row[COL.BL]||'').trim();
-    const booking=(row[COL.BOOKING]||'').trim();
-    const containers=(row[COL.CONTAINERS]||'').trim();
-    const shipping=(row[COL.SHIPPING]||'').trim();
-    const vessel=(row[COL.VESSEL]||'').trim();
-    const port=(row[COL.PORT]||'').trim();
-    const negocio=(row[COL.NEGOCIO]||'').trim();
-    const recInfo=getReclamoInfo(bl,'solicitar_liberacion');
-
-    const level=telexOk?'info':d<=3?'critical':'warning';
-    const telexHtml=telexOk
-      ?`<div style="margin-bottom:8px;font-family:var(--mono);font-size:11px;color:var(--ok);">✓ Liberado: ${telex}</div>`
-      :telexPending
-        ?`<div style="margin-bottom:8px;font-family:var(--mono);font-size:11px;color:var(--info);">📋 Estado: ${telex}</div>`
-        :`<div style="margin-bottom:8px;font-family:var(--mono);font-size:11px;color:var(--danger);">⚠ Sin liberación solicitada</div>`;
-    const recHtml=recInfo?`<div class="alert-reclamo">⚠ Solicitado ${recInfo.count} vez${recInfo.count>1?'es':''} · último ${recInfo.timeStr}</div>`:'';
-    const actionBtn=!telexOk
-      ?`<button class="action-btn write" onclick="openMailModal(${origIdx},'solicitar_liberacion')">📋 Solicitar liberación</button>`
-      :'<span style="color:var(--ok);font-size:11px;font-weight:600">✓ Liberado</span>';
-
-    html+=`<div class="alert-item ${level}">
-      <div class="alert-dot ${level}"></div>
-      <div class="alert-body">
-        <div class="alert-title">${cardTitle}</div>
-        <div class="alert-meta">BL: ${bl}  ·  ETA: ${fmtDate(row[COL.ETA])}</div>
-        <div class="alert-tags">
-          <span class="tag customer">${customer}</span>
-          <span class="tag vessel">${vessel}</span>
-          <span class="tag port">${port}</span>
-          <span class="tag naviera">${shipping}</span>
-          <span class="tag days-${dc}">${d===0?'HOY':d+'d'}</span>
-        </div>
-        <div class="alert-logistics">
-          <div class="log-item"><span class="log-label">Containers:</span><span class="log-value">${containers||'—'}</span></div>
-          <div class="log-item"><span class="log-label">Booking:</span><span class="log-value">${booking||'—'}</span></div>
-          <div class="log-item"><span class="log-label">BL:</span><span class="log-value">${bl||'—'}</span></div>
-          <div class="log-item"><span class="log-label">Naviera:</span><span class="log-value">${shipping||'—'}</span></div>
-        </div>
-        ${telexHtml}${recHtml}
-        <div class="alert-actions">${actionBtn}</div>
-      </div>
-      <div class="alert-right">
-        <div class="days-badge ${dc}">${d}</div>
-        <div class="days-label">días ETA</div>
-      </div>
-    </div>`;
-  });
-  html+=`</div>`;
-  document.getElementById('content').innerHTML=html;
-}
 
 function renderCobranza(){
   const rows=allRows.filter(r=>daysFrom(r[COL.FECHA_EST_COBRO])!==null)
