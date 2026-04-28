@@ -744,6 +744,61 @@ function renderCargas(showAll){
 }
 
 
+async function marcarPedroOk(rowIdx){
+  if(!accessToken){ alert('Conectate con Google primero.'); return; }
+  const row=allRows[rowIdx];
+  if(!row) return;
+  const bl=(row[COL.BL]||'').trim();
+  const customer=(row[COL.CUSTOMER]||'').trim();
+  const inv1=(row[COL.INVOICE_CLIENTE]||'').trim();
+  const inv2=(row[COL.INVOICE_FC_SERV]||'').trim();
+  const ok=await writeCell(rowIdx, COL.TELEX, 'recibir');
+  if(ok){
+    showToast('✓ Estado actualizado a "recibir"');
+    await appendLog({
+      fuente:'AXT', fc:inv1||'', fcServ:inv2||'', bl, customer,
+      accion:'pedro dio ok - a recibir',
+      detalle:'TELEX: recibir'
+    });
+    await loadLog();
+    await loadData();
+  } else {
+    alert('Error al actualizar la planilla.');
+  }
+}
+
+async function marcarLiberado(rowIdx){
+  if(!accessToken){
+    alert('Conectate con Google primero.');
+    return;
+  }
+  const row=allRows[rowIdx];
+  if(!row) return;
+  const bl=(row[COL.BL]||'').trim();
+  const customer=(row[COL.CUSTOMER]||'').trim();
+  const inv1=(row[COL.INVOICE_CLIENTE]||'').trim();
+  const inv2=(row[COL.INVOICE_FC_SERV]||'').trim();
+
+  const ok=await writeCell(rowIdx, COL.TELEX, 'SI');
+  if(ok){
+    showToast('✓ Liberación marcada como recibida en planilla');
+    await appendLog({
+      fuente:'AXT',
+      fc: inv1||'',
+      fcServ: inv2||'',
+      bl,
+      customer,
+      accion:'liberacion recibida',
+      detalle:'TELEX marcado SI'
+    });
+    await loadLog();
+    // Reload data to refresh allRows with updated TELEX
+    await loadData();
+  } else {
+    alert('Error al actualizar la planilla. Verificá que estés conectado con Google.');
+  }
+}
+
 function renderLiberaciones(){
   const rows=allRows.filter(r=>{
     const d=daysFrom(r[COL.ETA]);
@@ -825,9 +880,22 @@ function renderLiberaciones(){
         :`<div style="margin-bottom:8px;font-family:var(--mono);font-size:11px;color:#ff6b35;">⚠ Sin liberación solicitada</div>`;
     const pagHtml=`<div style="margin-bottom:8px;font-family:var(--mono);font-size:11px;color:${pagFirm==='SI'?'var(--ok)':'var(--warn)'};">${pagFirm==='SI'?'✓ Pagaré firmado':'⚠ Pagaré NO firmado'}</div>`;
     const recHtml=recInfo?`<div class="alert-reclamo">⚠ Solicitado ${recInfo.count} vez${recInfo.count>1?'es':''} · último ${recInfo.timeStr}</div>`:'';
-    const actionBtn=!telexOk
-      ?`<button class="action-btn write" onclick="openMailModal(${origIdx},'solicitar_liberacion')">📋 Solicitar liberación</button>`
-      :'<span style="color:var(--ok);font-size:11px;font-weight:600">✓ Liberado</span>';
+    const telexVal=telex.toLowerCase();
+    const esSolicitado=telexVal.includes('solicitado');
+    const esRecibir=telexVal.includes('recibir');
+    let actionBtn='';
+    if(telexOk){
+      actionBtn='<span style="color:var(--ok);font-size:11px;font-weight:600">✓ Liberado</span>';
+    } else if(esRecibir){
+      // Estado: recibir -> solo boton liberacion recibida
+      actionBtn=`<button class="action-btn" style="background:rgba(61,214,140,.1);color:var(--ok);border:1px solid rgba(61,214,140,.3);font-size:11px;font-weight:600;padding:5px 12px;border-radius:5px;cursor:pointer;font-family:var(--font);" onclick="marcarLiberado(${origIdx})">✓ Liberación recibida</button>`;
+    } else if(esSolicitado){
+      // Estado: solicitado falta ok -> boton pedro dio ok
+      actionBtn=`<button class="action-btn" style="background:rgba(77,159,255,.1);color:var(--info);border:1px solid rgba(77,159,255,.3);font-size:11px;font-weight:600;padding:5px 12px;border-radius:5px;cursor:pointer;font-family:var(--font);" onclick="marcarPedroOk(${origIdx})">👍 Pedro dio el OK</button>`;
+    } else {
+      // Estado: vacío -> boton solicitar
+      actionBtn=`<button class="action-btn write" onclick="openMailModal(${origIdx},'solicitar_liberacion')">📋 Solicitar liberación</button>`;
+    }
 
     html+=`<div class="alert-item ${level}" id="lib-card-${localIdx}" style="cursor:pointer;transition:border-color .15s;" onclick="toggleLibSelection(${localIdx})">
       <div style="display:flex;flex-direction:column;align-items:center;gap:6px;flex-shrink:0;">
