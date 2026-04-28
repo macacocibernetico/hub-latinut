@@ -1106,7 +1106,7 @@ function openBulkMailModal(rowIndices, mailType){
   if(!rowIndices.length) return;
   const rows=rowIndices.map(i=>allRows[i]);
   const customer=(rows[0][COL.CUSTOMER]||'').trim();
-  const contactInfo=getContactsForEmpresa(customer);
+  const transcargo=getContactsForEmpresa('Transcargo');
 
   // Build combined body
   const lines=rows.map(row=>{
@@ -1136,8 +1136,10 @@ LATINUT S.A.`;
   document.getElementById('lang-en').classList.add('active');
   document.getElementById('lang-es').classList.remove('active');
   document.getElementById('modal-title').textContent=`Liberación masiva — ${rows.length} cargas`;
-  document.getElementById('modal-to').textContent=contactInfo.to||`${customer} <sin contacto>`;
-  document.getElementById('modal-cc').textContent=contactInfo.cc||'pedro@axt.com';
+  document.getElementById('modal-to').textContent=transcargo.to||'Thomas Laurenti <tlaurenti@transcargoarg.com>';
+  const ccSiempreAll=contacts.filter(c=>c.ccSiempre).map(c=>c.email);
+  const libCC=[...new Set(['pberro@axtsolutions.com',...ccSiempreAll])].join(', ');
+  document.getElementById('modal-cc').textContent=libCC;
   document.getElementById('modal-subject').textContent=subject;
   document.getElementById('modal-body').value=body;
   const btn=document.getElementById('send-draft-btn');
@@ -1169,9 +1171,20 @@ function openMailModal(rowIdx, mailType){
   document.getElementById('lang-en').classList.add('active');
   document.getElementById('lang-es').classList.remove('active');
   document.getElementById('modal-title').textContent='Borrador — '+mailType.replace(/_/g,' ');
-  const contactInfo=getContactsForEmpresa(d.customer);
-  document.getElementById('modal-to').textContent=contactInfo.to||`${d.customer} <sin contacto cargado>`;
-  document.getElementById('modal-cc').textContent=contactInfo.cc||'pedro@axt.com';
+  let toStr, ccStr;
+  if(mailType==='solicitar_liberacion'){
+    const transcargo=getContactsForEmpresa('Transcargo');
+    toStr=transcargo.to||'Thomas Laurenti <tlaurenti@transcargoarg.com>';
+    const ccSiempre=contacts.filter(c=>c.ccSiempre).map(c=>c.email);
+    const allCC=[...new Set(['pberro@axtsolutions.com',...ccSiempre])];
+    ccStr=allCC.join(', ');
+  } else {
+    const contactInfo=getContactsForEmpresa(d.customer);
+    toStr=contactInfo.to||`${d.customer} <sin contacto cargado>`;
+    ccStr=contactInfo.cc||'pedro@axt.com';
+  }
+  document.getElementById('modal-to').textContent=toStr;
+  document.getElementById('modal-cc').textContent=ccStr;
   const tpl=buildMailBody(mailType,d,'en');
   document.getElementById('modal-subject').textContent=tpl.subject;
   document.getElementById('modal-body').value=tpl.body;
