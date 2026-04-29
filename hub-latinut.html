@@ -257,6 +257,9 @@ button{font-family:var(--font);cursor:pointer;border:none;background:none;}
       <div class="nav-item" onclick="showView('cargas')">
         <span class="icon">📦</span> Cargas AXT
       </div>
+      <div class="nav-item" onclick="showView('nueva_carga')">
+        <span class="icon">＋</span> Nueva Carga
+      </div>
     </div>
     <div class="nav-section">
       <div class="nav-label">Finanzas</div>
@@ -736,13 +739,13 @@ function updateBadges(){
 function showView(view){
   currentView=view;
   document.querySelectorAll('.nav-item').forEach(el=>el.classList.remove('active'));
-  const titles={alertas:'Alertas',cargas:'Cargas AXT',cobranza:'Cobranza',liberaciones:'Liberaciones',pagares:'Pagarés',log:'Log de acciones',config:'Configuración'};
+  const titles={alertas:'Alertas',cargas:'Cargas AXT',nueva_carga:'Nueva Carga',cobranza:'Cobranza',liberaciones:'Liberaciones',pagares:'Pagarés',log:'Log de acciones',config:'Configuración'};
   document.getElementById('view-title').textContent=titles[view]||view;
   document.querySelectorAll('.nav-item').forEach(el=>{if(el.getAttribute('onclick')?.includes(`'${view}'`))el.classList.add('active');});
   renderView(view);
   if(window.innerWidth<=768)closeSidebar();
 }
-function renderView(v){({alertas:renderAlertas,cargas:renderCargas,cobranza:renderCobranza,liberaciones:renderLiberaciones,pagares:renderPagares,log:renderLog,config:renderConfig}[v]||renderAlertas)();}
+function renderView(v){({alertas:renderAlertas,cargas:renderCargas,nueva_carga:renderNuevaCarga,cobranza:renderCobranza,liberaciones:renderLiberaciones,pagares:renderPagares,log:renderLog,config:renderConfig}[v]||renderAlertas)();}
 
 function renderAlertas(){
   const alerts=getAlerts();
@@ -805,7 +808,7 @@ function renderCargas(showAll){
       </div>
     </div>
     <div style="overflow-x:auto;"><table>
-    <thead><tr><th>Negocio</th><th>BL</th><th>Booking</th><th>Naviera</th><th>Customer</th><th>Vessel</th><th>ETA</th><th>Días</th><th>Docs</th><th>TELEX</th><th>Pagaré</th><th>Cobro Est.</th><th></th></tr></thead><tbody>`;
+    <thead><tr><th>Negocio</th><th>BL</th><th>Booking</th><th>Naviera</th><th>Customer</th><th>Vessel</th><th>ETA</th><th>Días</th><th>Docs</th><th>TELEX</th><th>Pagaré</th><th>Cobro Est.</th><th></th><th></th></tr></thead><tbody>`;
   rows.forEach((row)=>{
   const idx = allRows.indexOf(row);
     const days=daysFrom(row[COL.ETA]);
@@ -831,6 +834,7 @@ function renderCargas(showAll){
       <td>${pagStatus}</td>
       <td class="mono" style="color:var(--muted2)">${fmtDate(row[COL.FECHA_EST_COBRO])}</td>
       <td><button class="row-action" onclick="openMailModal(${idx},'reclamo_pago')">✉</button></td>
+      <td><button class="row-action" onclick="renderEditCarga(${idx})">✎ Editar</button></td>
     </tr>`;
   });
   html+=`</tbody></table></div></div>`;
@@ -1087,6 +1091,279 @@ function renderLiberaciones(){
   });
   html+=`</div>`;
   document.getElementById('content').innerHTML=html;
+}
+
+
+
+// ─── NUEVA CARGA & EDITAR ────────────────────────────────────────────────────
+
+// COL positions for new row (0-based, matching sheet columns)
+// B=1 Tns, C=2 Product, D=3 Packing, E=4 Lots
+// G=6 Booking, K=10 Consolidacion, L=11 ETD, M=12 ETA, N=13 Port
+// S=18 Exporter, X=23 Customer
+
+async function writeRow(rowData, sheetRow){
+  // rowData = {colIndex: value, ...}
+  if(!accessToken){ alert('Conectate con Google primero.'); return false; }
+  
+  const requests = Object.entries(rowData).map(([col, value]) => {
+    const colLetter = colIndexToLetter(parseInt(col));
+    return {range: `${cfg.sheetName}!${colLetter}${sheetRow}`, values: [[value]]};
+  });
+
+  // Batch update
+  const url = `https://sheets.googleapis.com/v4/spreadsheets/${cfg.sheetId}/values:batchUpdate`;
+  const r = await fetch(url, {
+    method: 'POST',
+    headers: {'Authorization': `Bearer ${accessToken}`, 'Content-Type': 'application/json'},
+    body: JSON.stringify({
+      valueInputOption: 'USER_ENTERED',
+      data: requests
+    })
+  });
+  return r.ok;
+}
+
+async function appendRow(rowData){
+  if(!accessToken){ alert('Conectate con Google primero.'); return false; }
+  
+  // Find last row that has a Port value (col N = index 13)
+  const range = encodeURIComponent(`${cfg.sheetName}!N:N`);
+  const url = `https://sheets.googleapis.com/v4/spreadsheets/${cfg.sheetId}/values/${range}?key=${cfg.apiKey}`;
+  const r = await fetch(url);
+  const data = await r.json();
+  const vals = data.values||[];
+  
+  // Find last row with Port (skip header rows 1-3)
+  let lastPortRow = 3; // default fallback
+  for(let i = 3; i < vals.length; i++){
+    if(vals[i] && vals[i][0] && vals[i][0].toString().trim() !== ''){
+      lastPortRow = i + 1; // 1-based sheet row
+    }
+  }
+  
+  const insertAfterRow = lastPortRow; // insert after this row
+  const newRow = insertAfterRow + 1;
+  
+  // Step 1: Insert a blank row after lastPortRow using sheets.spreadsheets.batchUpdate
+  const sheetId = await getSheetId();
+  if(sheetId === null){ alert('No se pudo obtener el ID de la hoja.'); return null; }
+  
+  const insertUrl = `https://sheets.googleapis.com/v4/spreadsheets/${cfg.sheetId}:batchUpdate`;
+  const insertR = await fetch(insertUrl, {
+    method: 'POST',
+    headers: {'Authorization': `Bearer ${accessToken}`, 'Content-Type': 'application/json'},
+    body: JSON.stringify({
+      requests: [{
+        insertDimension: {
+          range: {
+            sheetId: sheetId,
+            dimension: 'ROWS',
+            startIndex: insertAfterRow, // 0-based
+            endIndex: insertAfterRow + 1
+          },
+          inheritFromBefore: true // copy format from row above
+        }
+      }]
+    })
+  });
+  
+  if(!insertR.ok){
+    console.error('Insert row failed:', await insertR.text());
+    alert('Error al insertar fila.');
+    return null;
+  }
+  
+  // Step 2: Write data to the new row
+  const ok = await writeRow(rowData, newRow);
+  if(ok) return newRow;
+  return null;
+}
+
+async function getSheetId(){
+  // Get the numeric sheetId for the named sheet
+  const url = `https://sheets.googleapis.com/v4/spreadsheets/${cfg.sheetId}?key=${cfg.apiKey}`;
+  const r = await fetch(url);
+  const data = await r.json();
+  const sheet = (data.sheets||[]).find(s => s.properties.title === cfg.sheetName);
+  return sheet ? sheet.properties.sheetId : null;
+}
+
+function colIndexToLetter(idx){
+  // 0-based to letter: 0=A, 1=B, 25=Z, 26=AA...
+  let letter = '';
+  let n = idx + 1;
+  while(n > 0){
+    const rem = (n-1) % 26;
+    letter = String.fromCharCode(65 + rem) + letter;
+    n = Math.floor((n-1) / 26);
+  }
+  return letter;
+}
+
+function getFormValues(prefix){
+  const fields = ['tns','product','packing','lots','booking','consol','etd','eta','port','exporter','customer'];
+  const data = {};
+  fields.forEach(f => {
+    const el = document.getElementById(`${prefix}-${f}`);
+    if(el) data[f] = el.value.trim();
+  });
+  return data;
+}
+
+function formToRowData(d){
+  const data = {
+    1:  d.tns,        // B = Tns
+    2:  d.product,    // C = Product
+    3:  d.packing,    // D = Packing
+    4:  d.lots,       // E = Lots
+    6:  d.booking,    // G = Booking
+    10: d.consol,     // K = Consolidacion
+    11: d.etd,        // L = ETD
+    12: d.eta,        // M = ETA
+    13: d.port,       // N = Port
+    18: d.exporter,   // S = Exporter
+    23: d.customer,   // X = Customer
+  };
+  if(d.negocio) data[0] = d.negocio; // A = Negocio
+  return data;
+}
+
+async function submitNuevaCarga(){
+  const d = getFormValues('nc');
+  if(!d.product || !d.eta || !d.customer){
+    alert('Product, ETA y Customer son obligatorios.');
+    return;
+  }
+  
+  const btn = document.getElementById('nc-submit');
+  btn.textContent = 'Guardando...';
+  btn.disabled = true;
+  
+  const rowData = formToRowData(d);
+  const newRow = await appendRow(rowData);
+  
+  if(newRow){
+    showToast(`✓ Carga agregada en fila ${newRow}`);
+    await loadData();
+    showView('cargas');
+  } else {
+    alert('Error al guardar. Verificá que estés conectado con Google.');
+    btn.textContent = 'Guardar carga';
+    btn.disabled = false;
+  }
+}
+
+async function submitEditCarga(rowIdx){
+  const d = getFormValues('ec');
+  if(!d.product || !d.eta || !d.customer){
+    alert('Product, ETA y Customer son obligatorios.');
+    return;
+  }
+  
+  const row = allRows[rowIdx];
+  const sheetRow = row._sheetRow;
+  if(!sheetRow){ alert('Error: no se pudo determinar la fila.'); return; }
+  
+  const btn = document.getElementById('ec-submit');
+  btn.textContent = 'Guardando...';
+  btn.disabled = true;
+  
+  const rowData = formToRowData(d);
+  const ok = await writeRow(rowData, sheetRow);
+  
+  if(ok){
+    showToast('✓ Carga actualizada');
+    await loadData();
+    showView('cargas');
+  } else {
+    alert('Error al guardar. Verificá que estés conectado con Google.');
+    btn.textContent = 'Guardar cambios';
+    btn.disabled = false;
+  }
+}
+
+function buildCargaForm(prefix, d={}){
+  const field = (id, label, value='', type='text', placeholder='') => `
+    <div class="config-field">
+      <div class="config-label">${label}</div>
+      <input class="config-input" id="${prefix}-${id}" type="${type}" value="${value}" placeholder="${placeholder}">
+    </div>`;
+  
+  return `
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:0 20px;">
+    ${field('product','Product *', d.product||'', 'text', 'ej: Blanched peanuts 38/42')}
+    ${field('customer','Customer *', d.customer||'', 'text', 'ej: IDI')}
+    ${field('tns','Tns', d.tns||'', 'number', 'ej: 22')}
+    ${field('packing','Packing', d.packing||'', 'text', 'ej: big bags')}
+    ${field('lots','Lots', d.lots||'', 'text', 'ej: BL38-250022-AP')}
+    ${field('booking','Booking', d.booking||'', 'text', 'ej: EBKG15971228')}
+    ${field('exporter','Exporter', d.exporter||'', 'text', 'ej: Argen Peanuts')}
+    ${field('port','Port', d.port||'', 'text', 'ej: Norfolk')}
+    ${field('etd','ETD', d.etd||'', 'text', 'ej: 06/03/2026')}
+    ${field('eta','ETA *', d.eta||'', 'text', 'ej: 19/04/2026')}
+    ${field('consol','Consolidación', d.consol||'', 'text', 'ej: 01/03/2026')}
+  </div>
+  <div style="grid-column:1/-1;">
+    <div class="config-label" style="margin-bottom:4px;">Negocio / Lote</div>
+    <input class="config-input" id="${prefix}-negocio" value="${d.negocio||''}" placeholder="ej: ARG2-2" style="width:100%;margin-bottom:10px;">
+  </div>`;
+}
+
+function renderNuevaCarga(){
+  if(!accessToken){
+    document.getElementById('content').innerHTML=`<div class="empty"><div class="empty-icon">＋</div><div style="margin-bottom:16px;">Conectate con Google para agregar cargas.</div><button class="btn primary" onclick="handleAuth()">Conectar con Google</button></div>`;
+    return;
+  }
+  document.getElementById('content').innerHTML=`
+  <div class="config-section">
+    <div class="config-title">Nueva Carga</div>
+    <div class="config-desc">Completá los campos para agregar una nueva fila a la planilla AXT.</div>
+    ${buildCargaForm('nc')}
+    <div class="config-save">
+      <button class="btn" onclick="showView('cargas')" style="margin-right:8px;">Cancelar</button>
+      <button class="btn primary" id="nc-submit" onclick="submitNuevaCarga()">Guardar carga</button>
+    </div>
+  </div>`;
+}
+
+function renderEditCarga(rowIdx){
+  if(!accessToken){
+    alert('Conectate con Google primero.');
+    return;
+  }
+  const row = allRows[rowIdx];
+  if(!row) return;
+  
+  const d = {
+    tns:      row[1]||'',
+    product:  row[2]||'',
+    packing:  row[3]||'',
+    lots:     row[4]||'',
+    booking:  row[6]||'',
+    consol:   row[10]||'',
+    etd:      row[11]||'',
+    eta:      row[12]||'',
+    port:     row[13]||'',
+    exporter: row[18]||'',
+    customer: row[23]||'',
+    negocio:  row[0]||'',
+  };
+  
+  document.getElementById('content').innerHTML=`
+  <div class="config-section">
+    <div class="config-title">Editar Carga — ${d.customer} / ${d.product}</div>
+    <div class="config-desc">Los cambios se guardarán directamente en la planilla AXT.</div>
+    ${buildCargaForm('ec', d)}
+    <div class="config-save">
+      <button class="btn" onclick="showView('cargas')" style="margin-right:8px;">Cancelar</button>
+      <button class="btn primary" id="ec-submit" onclick="submitEditCarga(${rowIdx})">Guardar cambios</button>
+    </div>
+  </div>`;
+  
+  // Set negocio separately since it uses col 0
+  const negEl = document.getElementById('ec-negocio');
+  if(negEl) negEl.value = d.negocio;
 }
 
 
