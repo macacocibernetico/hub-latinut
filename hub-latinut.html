@@ -1105,6 +1105,214 @@ function renderEditCarga(rowIdx){
   </div>`;
 }
 
+
+async function solicitarLiberacionViaAppScript(rowIdx){
+  const row=allRows[rowIdx];
+  if(!row) return;
+  const sheetRow=row._sheetRow;
+  if(!sheetRow){alert('No se pudo determinar la fila en la planilla.');return;}
+  const bl=(row[COL.BL]||'').trim();
+  const customer=(row[COL.CUSTOMER]||'').trim();
+  if(!confirm(`¿Solicitar liberación para:\n${customer} - BL: ${bl}?\n\nSe creará el borrador en Gmail y se marcará la planilla.`)) return;
+  showToast('Procesando...');
+  const ok=await callAppScript('liberacion',sheetRow,sheetRow);
+  if(ok){
+    const inv1=(row[COL.INVOICE_CLIENTE]||'').trim();
+    const inv2=(row[COL.INVOICE_FC_SERV]||'').trim();
+    await appendLog({fuente:'AXT',fc:inv1||'',fcServ:inv2||'',bl,customer,accion:'solicitar liberacion',detalle:'Via AppScript - fila '+sheetRow});
+    await loadLog();
+    await loadData();
+  }
+}
+
+async function solicitarLiberacionBulkViaAppScript(rowIndices){
+  if(!rowIndices.length) return;
+  const rows=rowIndices.map(i=>allRows[i]);
+  const sheetRows=rows.map(r=>r._sheetRow).filter(Boolean);
+  if(sheetRows.length!==rowIndices.length){alert('No se pudieron determinar todas las filas.');return;}
+  const customer=(rows[0][COL.CUSTOMER]||'').trim();
+  if(!confirm(`¿Solicitar liberación para ${rowIndices.length} cargas de ${customer}?`)) return;
+  showToast('Procesando...');
+  const minRow=Math.min(...sheetRows);
+  const maxRow=Math.max(...sheetRows);
+  const ok=await callAppScript('liberacion',minRow,maxRow);
+  if(ok){
+    for(let i=0;i<rowIndices.length;i++){
+      const row=rows[i];
+      const bl=(row[COL.BL]||'').trim();
+      const inv1=(row[COL.INVOICE_CLIENTE]||'').trim();
+      const inv2=(row[COL.INVOICE_FC_SERV]||'').trim();
+      await appendLog({fuente:'AXT',fc:inv1||'',fcServ:inv2||'',bl,customer:(row[COL.CUSTOMER]||'').trim(),accion:'solicitar liberacion (bulk)',detalle:'Via AppScript - filas '+minRow+'-'+maxRow});
+    }
+    await loadLog();
+    await loadData();
+  }
+}
+
+async function marcarPedroOk(rowIdx){
+  if(!accessToken){alert('Conectate con Google primero.');return;}
+  const row=allRows[rowIdx];
+  if(!row) return;
+  const bl=(row[COL.BL]||'').trim();
+  const customer=(row[COL.CUSTOMER]||'').trim();
+  const inv1=(row[COL.INVOICE_CLIENTE]||'').trim();
+  const inv2=(row[COL.INVOICE_FC_SERV]||'').trim();
+  const ok=await writeCell(rowIdx,COL.TELEX,'recibir');
+  if(ok){
+    showToast('✓ Estado actualizado a "recibir"');
+    await appendLog({fuente:'AXT',fc:inv1||'',fcServ:inv2||'',bl,customer,accion:'pedro dio ok - a recibir',detalle:'TELEX: recibir'});
+    await loadLog();
+    await loadData();
+  } else {
+    alert('Error al actualizar la planilla.');
+  }
+}
+
+async function marcarLiberado(rowIdx){
+  if(!accessToken){alert('Conectate con Google primero.');return;}
+  const row=allRows[rowIdx];
+  if(!row) return;
+  const bl=(row[COL.BL]||'').trim();
+  const customer=(row[COL.CUSTOMER]||'').trim();
+  const inv1=(row[COL.INVOICE_CLIENTE]||'').trim();
+  const inv2=(row[COL.INVOICE_FC_SERV]||'').trim();
+  const ok=await writeCell(rowIdx,COL.TELEX,'SI');
+  if(ok){
+    showToast('✓ Liberación marcada como recibida');
+    await appendLog({fuente:'AXT',fc:inv1||'',fcServ:inv2||'',bl,customer,accion:'liberacion recibida',detalle:'TELEX marcado SI'});
+    await loadLog();
+    await loadData();
+  } else {
+    alert('Error al actualizar la planilla.');
+  }
+}
+
+function renderLiberaciones(){
+  const rows=allRows.filter(r=>{
+    const d=daysFrom(r[COL.ETA]);
+    return d!==null&&d>=0&&d<=7;
+  }).sort((a,b)=>(daysFrom(a[COL.ETA])||999)-(daysFrom(b[COL.ETA])||999));
+
+  if(!rows.length){
+    document.getElementById('content').innerHTML=`<div class="empty"><div class="empty-icon">🔓</div>Sin cargas con ETA en los próximos 7 días.</div>`;
+    return;
+  }
+
+  window._libSelectedRows=new Set();
+  window._libRows=rows;
+
+  window.updateLibBulkBar=function(){
+    const bar=document.getElementById('lib-bulk-bar');
+    if(!bar) return;
+    const n=window._libSelectedRows.size;
+    if(n>0){bar.style.display='block';bar.textContent='📋 Solicitar liberación ('+n+' seleccionadas)';}
+    else{bar.style.display='none';}
+  };
+
+  window.toggleLibSelection=function(idx){
+    if(window._libSelectedRows.has(idx)) window._libSelectedRows.delete(idx);
+    else window._libSelectedRows.add(idx);
+    const cb=document.getElementById('lib-cb-'+idx);
+    const card=document.getElementById('lib-card-'+idx);
+    if(cb) cb.checked=window._libSelectedRows.has(idx);
+    if(card) card.style.outline=window._libSelectedRows.has(idx)?'2px solid var(--accent)':'none';
+    window.updateLibBulkBar();
+  };
+
+  window.requestBulkLiberation=function(){
+    if(!window._libSelectedRows.size) return;
+    const selected=[...window._libSelectedRows].map(i=>allRows.indexOf(window._libRows[i]));
+    solicitarLiberacionBulkViaAppScript(selected);
+  };
+
+  let html=`
+  <div class="stats-row">
+    <div class="stat-card"><div class="stat-label">Cargas próximas</div><div class="stat-value">${rows.length}</div><div class="stat-sub">ETA ≤ 7 días</div></div>
+    <div class="stat-card alert-card"><div class="stat-label">Sin liberación</div><div class="stat-value" style="color:var(--danger)">${rows.filter(r=>!(r[COL.TELEX]||'').trim()).length}</div><div class="stat-sub">TELEX vacío</div></div>
+    <div class="stat-card warn-card"><div class="stat-label">En proceso</div><div class="stat-value" style="color:var(--warn)">${rows.filter(r=>{const t=(r[COL.TELEX]||'').trim();return t&&t.toUpperCase()!=='SI';}).length}</div><div class="stat-sub">Solicitado / pendiente</div></div>
+    <div class="stat-card"><div class="stat-label">Liberado</div><div class="stat-value" style="color:var(--ok)">${rows.filter(r=>(r[COL.TELEX]||'').trim().toUpperCase()==='SI').length}</div><div class="stat-sub">TELEX = SI</div></div>
+  </div>
+  <button style="display:none;position:sticky;bottom:20px;left:50%;transform:translateX(-50%);background:var(--accent);color:#fff;padding:10px 24px;border-radius:30px;font-weight:600;font-size:13px;cursor:pointer;z-index:20;box-shadow:var(--shadow-lg);border:none;font-family:var(--font);" id="lib-bulk-bar" onclick="requestBulkLiberation()"></button>
+  <div class="alert-list">`;
+
+  rows.forEach((row,localIdx)=>{
+    const origIdx=allRows.indexOf(row);
+    const d=daysFrom(row[COL.ETA]);
+    const dc=daysClass(d);
+    const telex=(row[COL.TELEX]||'').trim();
+    const telexOk=telex.toUpperCase()==='SI';
+    const telexPending=telex&&!telexOk;
+    const customer=(row[COL.CUSTOMER]||'—').trim();
+    const bl=(row[COL.BL]||'').trim();
+    const booking=(row[COL.BOOKING]||'').trim();
+    const containers=(row[COL.CONTAINERS]||'').trim();
+    const shipping=(row[COL.SHIPPING]||'').trim();
+    const vessel=(row[COL.VESSEL]||'').trim();
+    const port=(row[COL.PORT]||'').trim();
+    const inv1=(row[COL.INVOICE_CLIENTE]||'').trim();
+    const inv2=(row[COL.INVOICE_FC_SERV]||'').trim();
+    const pagFirm=(row[COL.PAGARE_FIRMADO]||'').trim().toUpperCase();
+    const invoiceStr=inv1&&inv2?`${inv1} / ${inv2}`:inv1||inv2||'—';
+    const cardTitle=`${booking} · ${invoiceStr} · ${customer}`;
+    const recInfo=getReclamoInfoFromLog(bl,'solicitar liberacion');
+    const telexVal=telex.toLowerCase();
+    const esSolicitado=telexVal.includes('solicitado');
+    const esRecibir=telexVal.includes('recibir');
+    const level=telexOk?'info':d<=3?'critical':'warning';
+
+    const telexHtml=telexOk
+      ?`<div class="status-label ok">✓ Liberado</div>`
+      :telexPending
+        ?`<div class="status-label info">● Estado: ${telex}</div>`
+        :`<div class="status-label danger">○ Sin liberación solicitada</div>`;
+    const pagHtml=`<div class="status-label ${pagFirm==='SI'?'ok':'warn'}">${pagFirm==='SI'?'✓ Pagaré firmado':'○ Pagaré pendiente de firma'}</div>`;
+    const recHtml=recInfo?`<div class="alert-reclamo">⚠ Solicitado ${recInfo.count} vez${recInfo.count>1?'es':''} · último ${recInfo.timeStr}</div>`:'';
+
+    let actionBtn='';
+    if(telexOk){
+      actionBtn='<span class="status-label ok" style="font-size:11px;font-weight:600;">✓ Liberación completada</span>';
+    } else if(esRecibir){
+      actionBtn=`<button class="action-btn success-action" onclick="marcarLiberado(${origIdx})">✓ Confirmar liberación recibida</button>`;
+    } else if(esSolicitado){
+      actionBtn=`<button class="action-btn info-action" onclick="marcarPedroOk(${origIdx})">✓ Pedro dio el OK</button>`;
+    } else {
+      actionBtn=`<button class="action-btn write" onclick="solicitarLiberacionViaAppScript(${origIdx})">Solicitar liberación</button>`;
+    }
+
+    html+=`<div class="alert-item ${level}" id="lib-card-${localIdx}" style="cursor:pointer" onclick="toggleLibSelection(${localIdx})">
+      <div style="display:flex;flex-direction:column;align-items:center;gap:6px;flex-shrink:0;">
+        <input type="checkbox" class="lib-checkbox" id="lib-cb-${localIdx}" onclick="event.stopPropagation();toggleLibSelection(${localIdx})">
+        <div class="alert-dot ${level}"></div>
+      </div>
+      <div class="alert-body">
+        <div class="alert-title">${cardTitle}</div>
+        <div class="alert-meta">BL: ${bl}  ·  ETA: ${fmtDate(row[COL.ETA])}</div>
+        <div class="alert-tags">
+          <span class="tag customer">${customer}</span>
+          <span class="tag vessel">${vessel}</span>
+          <span class="tag port">${port}</span>
+          <span class="tag naviera">${shipping}</span>
+          <span class="tag days-${dc}">${d===0?'HOY':d+'d'}</span>
+        </div>
+        <div class="alert-logistics">
+          <div class="log-item"><span class="log-label">Containers:</span><span class="log-value">${containers||'—'}</span></div>
+          <div class="log-item"><span class="log-label">Booking:</span><span class="log-value">${booking||'—'}</span></div>
+          <div class="log-item"><span class="log-label">BL:</span><span class="log-value">${bl||'—'}</span></div>
+          <div class="log-item"><span class="log-label">Naviera:</span><span class="log-value">${shipping||'—'}</span></div>
+        </div>
+        ${pagHtml}${telexHtml}${recHtml}
+        <div class="alert-actions" onclick="event.stopPropagation()">${actionBtn}</div>
+      </div>
+      <div class="alert-right">
+        <div class="days-badge ${dc}" style="font-size:28px">${d}</div>
+        <div class="days-label" style="font-weight:600">DÍAS ETA</div>
+      </div>
+    </div>`;
+  });
+  html+=`</div>`;
+  document.getElementById('content').innerHTML=html;
+}
+
 function renderCobranza(){
   const rows=allRows.filter(r=>daysFrom(r[COL.FECHA_EST_COBRO])!==null)
     .sort((a,b)=>(daysFrom(a[COL.FECHA_EST_COBRO])||9999)-(daysFrom(b[COL.FECHA_EST_COBRO])||9999));
