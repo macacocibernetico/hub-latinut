@@ -795,577 +795,160 @@ function renderAlertas(){
 }
 
 let cargasShowAll = false;
-function renderCargas(showAll){
+let cargasFilters = new Set(); // active additional filters
+let cargasSort = 'eta'; // 'eta' or 'cobro'
+
+function renderCargas(showAll, toggleFilter, sort){
   if(showAll !== undefined) cargasShowAll = showAll;
-  if(!allRows.length){document.getElementById('content').innerHTML=`<div class="empty"><div class="empty-icon">📦</div>Sin cargas. Sincronizá primero.</div>`;return;}
-  const rows = cargasShowAll ? allRows : allRows.filter(r=>(r[COL.FECHA_COBRO]||'').trim()==='');
-  let html=`<div class="table-wrap">
-    <div class="table-top">
-      <span style="font-size:13px;font-weight:700;">${rows.length} cargas ${cargasShowAll?'totales':'activas'}</span>
-      <div style="display:flex;gap:8px;">
-        <span onclick="renderCargas(false)" style="font-size:11px;font-family:var(--mono);padding:4px 10px;border-radius:4px;border:1px solid var(--border2);cursor:pointer;${!cargasShowAll?'background:var(--accent);color:#0d0d0d;':'background:var(--bg3);color:var(--muted2);'}">Activas</span>
-        <span onclick="renderCargas(true)" style="font-size:11px;font-family:var(--mono);padding:4px 10px;border-radius:4px;border:1px solid var(--border2);cursor:pointer;${cargasShowAll?'background:var(--accent);color:#0d0d0d;':'background:var(--bg3);color:var(--muted2);'}">Todas</span>
+  if(toggleFilter !== undefined){
+    if(cargasFilters.has(toggleFilter)) cargasFilters.delete(toggleFilter);
+    else cargasFilters.add(toggleFilter);
+  }
+  if(sort !== undefined) cargasSort = sort;
+
+  if(!allRows.length){
+    document.getElementById('content').innerHTML=`<div class="empty"><div class="empty-icon">📦</div>Sin cargas. Sincronizá primero.</div>`;
+    return;
+  }
+
+  // Base filter
+  let rows = cargasShowAll
+    ? allRows
+    : allRows.filter(r => (r[COL.FECHA_COBRO]||'').trim() === '');
+
+  // Additional filters
+  if(cargasFilters.has('pagare_envio')){
+    rows = rows.filter(r => (r[COL.PAGARE_ENVIADO]||'').trim().toUpperCase() !== 'SI');
+  }
+  if(cargasFilters.has('pagare_firma')){
+    rows = rows.filter(r => {
+      const env = (r[COL.PAGARE_ENVIADO]||'').trim().toUpperCase();
+      const firm = (r[COL.PAGARE_FIRMADO]||'').trim().toUpperCase();
+      return env === 'SI' && firm !== 'SI';
+    });
+  }
+  if(cargasFilters.has('docs_pendientes')){
+    rows = rows.filter(r => (r[COL.DOCUMENTOS]||'').trim().toUpperCase() !== 'SI');
+  }
+  if(cargasFilters.has('telex_pendiente')){
+    rows = rows.filter(r => (r[COL.TELEX]||'').trim() === '');
+  }
+
+  // Sort
+  if(cargasSort === 'cobro'){
+    rows = [...rows].sort((a,b) => {
+      const da = daysFrom(a[COL.FECHA_EST_COBRO]);
+      const db = daysFrom(b[COL.FECHA_EST_COBRO]);
+      if(da===null && db===null) return 0;
+      if(da===null) return 1;
+      if(db===null) return -1;
+      return da - db;
+    });
+  } else {
+    rows = [...rows].sort((a,b) => {
+      const da = daysFrom(a[COL.ETA]);
+      const db = daysFrom(b[COL.ETA]);
+      if(da===null && db===null) return 0;
+      if(da===null) return 1;
+      if(db===null) return -1;
+      return da - db;
+    });
+  }
+
+  const chip = (label, key, active) =>
+    `<span onclick="renderCargas(undefined,'${key}')" style="font-size:11px;font-family:var(--mono);padding:4px 10px;border-radius:20px;border:1px solid ${active?'var(--accent)':'var(--border2)'};cursor:pointer;background:${active?'var(--accent-light)':'var(--bg2)'};color:${active?'var(--accent)':'var(--text3)'};transition:all .15s;white-space:nowrap;">${label}</span>`;
+
+  const viewChip = (label, active, onclick) =>
+    `<span onclick="${onclick}" style="font-size:11px;font-family:var(--mono);padding:4px 12px;border-radius:20px;border:1px solid ${active?'var(--accent)':'var(--border2)'};cursor:pointer;background:${active?'var(--accent)':'var(--bg2)'};color:${active?'#fff':'var(--text3)'};transition:all .15s;">${label}</span>`;
+
+  const sortChip = (label, key) =>
+    `<span onclick="renderCargas(undefined,undefined,'${key}')" style="font-size:11px;font-family:var(--mono);padding:4px 10px;border-radius:20px;border:1px solid ${cargasSort===key?'var(--info)':'var(--border2)'};cursor:pointer;background:${cargasSort===key?'rgba(0,113,227,.08)':'var(--bg2)'};color:${cargasSort===key?'var(--info)':'var(--text3)'};transition:all .15s;">${label}</span>`;
+
+  let html = `<div class="table-wrap">
+    <div class="table-top" style="flex-direction:column;align-items:flex-start;gap:10px;padding:14px 16px;">
+      <div style="display:flex;align-items:center;justify-content:space-between;width:100%;">
+        <span style="font-size:13px;font-weight:600;color:var(--text);">${rows.length} cargas</span>
+        <div style="display:flex;gap:6px;">
+          ${viewChip('Activas', !cargasShowAll, "renderCargas(false)")}
+          ${viewChip('Todas', cargasShowAll, "renderCargas(true)")}
+        </div>
+      </div>
+      <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;">
+        <span style="font-size:10px;color:var(--text3);font-weight:600;text-transform:uppercase;letter-spacing:.5px;margin-right:2px;">Filtrar:</span>
+        ${chip('Pagaré sin enviar', 'pagare_envio', cargasFilters.has('pagare_envio'))}
+        ${chip('Pagaré sin firmar', 'pagare_firma', cargasFilters.has('pagare_firma'))}
+        ${chip('Docs pendientes', 'docs_pendientes', cargasFilters.has('docs_pendientes'))}
+        ${chip('TELEX pendiente', 'telex_pendiente', cargasFilters.has('telex_pendiente'))}
+      </div>
+      <div style="display:flex;gap:6px;align-items:center;">
+        <span style="font-size:10px;color:var(--text3);font-weight:600;text-transform:uppercase;letter-spacing:.5px;margin-right:2px;">Ordenar:</span>
+        ${sortChip('ETA ↑', 'eta')}
+        ${sortChip('Cobro ↑', 'cobro')}
       </div>
     </div>
-    <div style="overflow-x:auto;"><table>
-    <thead><tr><th>Negocio</th><th>BL</th><th>Booking</th><th>Naviera</th><th>Customer</th><th>Vessel</th><th>ETA</th><th>Días</th><th>Docs</th><th>TELEX</th><th>Pagaré</th><th>Cobro Est.</th><th></th><th></th></tr></thead><tbody>`;
-  rows.forEach((row)=>{
-  const idx = allRows.indexOf(row);
-    const days=daysFrom(row[COL.ETA]);
-    const dc=daysClass(days);
-    const pagEnv=(row[COL.PAGARE_ENVIADO]||'').trim().toUpperCase();
-    const pagFirm=(row[COL.PAGARE_FIRMADO]||'').trim().toUpperCase();
-    const pagStatus=pagFirm==='SI'?'<span class="pagare-status enviado">Firmado</span>':pagEnv==='SI'?'<span class="pagare-status enviado">Enviado</span>':'<span class="pagare-status pendiente">Pendiente</span>';
-    const docs=(row[COL.DOCUMENTOS]||'').trim();
-    const docsOk=docs.toUpperCase()==='SI';
-    const telex=(row[COL.TELEX]||'').trim();
-    const telexColor=telex.toUpperCase()==='SI'?'var(--ok)':telex?'var(--info)':'var(--muted)';
-    html+=`<tr>
-      <td class="mono">${row[COL.NEGOCIO]||'—'}</td>
-      <td class="mono">${(row[COL.BL]||'—').substring(0,22)}</td>
+    <div style="overflow-x:auto;">
+    <table>
+      <thead><tr>
+        <th>Negocio</th><th>BL</th><th>Booking</th><th>Naviera</th><th>Customer</th>
+        <th>Vessel</th><th>ETA</th><th>Días</th><th>Docs</th><th>TELEX</th>
+        <th>Pagaré</th><th>Invoice FC1</th><th>Total FC1</th><th>Invoice FC2</th>
+        <th>Total FC2</th><th>Total</th><th>Cobro Est.</th><th></th><th></th>
+      </tr></thead>
+      <tbody>`;
+
+  rows.forEach((row) => {
+    const idx = allRows.indexOf(row);
+    const days = daysFrom(row[COL.ETA]);
+    const dc = daysClass(days);
+    const pagEnv = (row[COL.PAGARE_ENVIADO]||'').trim().toUpperCase();
+    const pagFirm = (row[COL.PAGARE_FIRMADO]||'').trim().toUpperCase();
+    let pagLabel, pagColor;
+    if(pagFirm === 'SI'){ pagLabel='Firmado'; pagColor='var(--ok)'; }
+    else if(pagEnv === 'SI'){ pagLabel='Sin firmar'; pagColor='var(--warn)'; }
+    else { pagLabel='Sin enviar'; pagColor='var(--danger)'; }
+
+    const docs = (row[COL.DOCUMENTOS]||'').trim();
+    const docsOk = docs.toUpperCase() === 'SI';
+    const telex = (row[COL.TELEX]||'').trim();
+    const telexOk = telex.toUpperCase() === 'SI';
+
+    // FC columns
+    const inv1 = (row[COL.INVOICE_CLIENTE]||'').trim();
+    const total1Raw = parseFloat((row[28]||'').toString().replace(/[^0-9.-]/g,''));
+    const total1 = isNaN(total1Raw) ? '' : total1Raw.toLocaleString('es-AR',{maximumFractionDigits:0});
+    const inv2 = (row[COL.INVOICE_FC_SERV]||'').trim();
+    const total2Raw = parseFloat((row[31]||'').toString().replace(/[^0-9.-]/g,''));
+    const total2 = isNaN(total2Raw) ? '' : total2Raw.toLocaleString('es-AR',{maximumFractionDigits:0});
+    const totalCarga = (!isNaN(total1Raw) || !isNaN(total2Raw))
+      ? ((isNaN(total1Raw)?0:total1Raw) + (isNaN(total2Raw)?0:total2Raw)).toLocaleString('es-AR',{maximumFractionDigits:0})
+      : '—';
+
+    html += `<tr>
+      <td class="mono">${(row[COL.NEGOCIO]||'—')}</td>
+      <td class="mono">${(row[COL.BL]||'—').substring(0,20)}</td>
       <td class="mono">${(row[COL.BOOKING]||'—').substring(0,14)}</td>
-      <td style="color:var(--muted2);font-size:11px">${(row[COL.SHIPPING]||'—').substring(0,14)}</td>
-      <td>${row[COL.CUSTOMER]||'—'}</td>
-      <td style="color:var(--muted2);font-size:11px">${(row[COL.VESSEL]||'—').substring(0,16)}</td>
+      <td style="color:var(--text3);font-size:11px">${(row[COL.SHIPPING]||'—').substring(0,14)}</td>
+      <td style="font-weight:500">${row[COL.CUSTOMER]||'—'}</td>
+      <td style="color:var(--text3);font-size:11px">${(row[COL.VESSEL]||'—').substring(0,16)}</td>
       <td class="mono">${fmtDate(row[COL.ETA])}</td>
       <td><span style="color:var(--${dc==='red'?'danger':dc==='warn'?'warn':'ok'});font-family:var(--mono);font-weight:600">${days!==null?days+'d':'—'}</span></td>
-      <td><div class="doc-status"><div class="doc-dot ${docsOk?'green':'red'}"></div><span class="doc-text" title="${docs||'Pendiente'}">${docsOk?'Completo':docs||'Pendiente'}</span></div></td>
-      <td><span style="color:${telexColor};font-family:var(--mono);font-size:10px">${telex||'—'}</span></td>
-      <td>${pagStatus}</td>
-      <td class="mono" style="color:var(--muted2)">${fmtDate(row[COL.FECHA_EST_COBRO])}</td>
+      <td><div class="doc-status"><div class="doc-dot ${docsOk?'green':'red'}"></div><span class="doc-text" title="${docs||'Pendiente'}">${docsOk?'OK':docs||'—'}</span></div></td>
+      <td><span style="color:${telexOk?'var(--ok)':telex?'var(--info)':'var(--text3)'};font-family:var(--mono);font-size:10px">${telex||'—'}</span></td>
+      <td><span style="color:${pagColor};font-size:11px;font-family:var(--mono)">${pagLabel}</span></td>
+      <td class="mono" style="color:var(--accent)">${inv1||'—'}</td>
+      <td class="mono">${total1?'USD '+total1:'—'}</td>
+      <td class="mono" style="color:var(--accent)">${inv2||'—'}</td>
+      <td class="mono">${total2?'USD '+total2:'—'}</td>
+      <td class="mono" style="font-weight:600;color:var(--text)">${totalCarga!=='—'?'USD '+totalCarga:'—'}</td>
+      <td class="mono" style="color:var(--text3)">${fmtDate(row[COL.FECHA_EST_COBRO])}</td>
       <td><button class="row-action" onclick="openMailModal(${idx},'reclamo_pago')">✉</button></td>
       <td><button class="row-action" onclick="renderEditCarga(${idx})">✎ Editar</button></td>
     </tr>`;
   });
-  html+=`</tbody></table></div></div>`;
-  document.getElementById('content').innerHTML=html;
+
+  html += `</tbody></table></div></div>`;
+  document.getElementById('content').innerHTML = html;
 }
-
-
-async function solicitarLiberacionViaAppScript(rowIdx){
-  const row = allRows[rowIdx];
-  if(!row) return;
-  const sheetRow = row._sheetRow;
-  if(!sheetRow){ alert('No se pudo determinar la fila en la planilla.'); return; }
-  
-  // Show confirmation
-  const bl = (row[COL.BL]||'').trim();
-  const customer = (row[COL.CUSTOMER]||'').trim();
-  
-  if(!confirm(`¿Solicitar liberación para:\n${customer} - BL: ${bl}?\n\nSe creará el borrador en Gmail y se marcará la planilla.`)) return;
-  
-  showToast('Procesando...');
-  const ok = await callAppScript('liberacion', sheetRow, sheetRow);
-  
-  if(ok){
-    // Also log it
-    const inv1=(row[COL.INVOICE_CLIENTE]||'').trim();
-    const inv2=(row[COL.INVOICE_FC_SERV]||'').trim();
-    await appendLog({
-      fuente:'AXT', fc:inv1||'', fcServ:inv2||'', bl, customer,
-      accion:'solicitar liberacion',
-      detalle:'Via AppScript - fila ' + sheetRow
-    });
-    await loadLog();
-    await loadData();
-  }
-}
-
-async function solicitarLiberacionBulkViaAppScript(rowIndices){
-  if(!rowIndices.length) return;
-  const rows = rowIndices.map(i=>allRows[i]);
-  const sheetRows = rows.map(r=>r._sheetRow).filter(Boolean);
-  
-  if(sheetRows.length !== rowIndices.length){
-    alert('No se pudieron determinar todas las filas en la planilla.');
-    return;
-  }
-  
-  const customer = (rows[0][COL.CUSTOMER]||'').trim();
-  if(!confirm(`¿Solicitar liberación para ${rowIndices.length} cargas de ${customer}?\n\nSe creará UN borrador en Gmail con todas las cargas.`)) return;
-
-  showToast('Procesando...');
-  // Call AppScript for each row (AppScript will group them if consecutive)
-  // For now call with range if consecutive, else individual
-  const minRow = Math.min(...sheetRows);
-  const maxRow = Math.max(...sheetRows);
-  const ok = await callAppScript('liberacion', minRow, maxRow);
-  
-  if(ok){
-    for(let i=0; i<rowIndices.length; i++){
-      const row = rows[i];
-      const bl=(row[COL.BL]||'').trim();
-      const inv1=(row[COL.INVOICE_CLIENTE]||'').trim();
-      const inv2=(row[COL.INVOICE_FC_SERV]||'').trim();
-      await appendLog({
-        fuente:'AXT', fc:inv1||'', fcServ:inv2||'', bl,
-        customer:(row[COL.CUSTOMER]||'').trim(),
-        accion:'solicitar liberacion (bulk)',
-        detalle:'Via AppScript - filas ' + minRow + '-' + maxRow
-      });
-    }
-    await loadLog();
-    await loadData();
-  }
-}
-
-async function marcarPedroOk(rowIdx){
-  if(!accessToken){ alert('Conectate con Google primero.'); return; }
-  const row=allRows[rowIdx];
-  if(!row) return;
-  const bl=(row[COL.BL]||'').trim();
-  const customer=(row[COL.CUSTOMER]||'').trim();
-  const inv1=(row[COL.INVOICE_CLIENTE]||'').trim();
-  const inv2=(row[COL.INVOICE_FC_SERV]||'').trim();
-  const ok=await writeCell(rowIdx, COL.TELEX, 'recibir');
-  if(ok){
-    showToast('✓ Estado actualizado a "recibir"');
-    await appendLog({
-      fuente:'AXT', fc:inv1||'', fcServ:inv2||'', bl, customer,
-      accion:'pedro dio ok - a recibir',
-      detalle:'TELEX: recibir'
-    });
-    await loadLog();
-    await loadData();
-  } else {
-    alert('Error al actualizar la planilla.');
-  }
-}
-
-async function marcarLiberado(rowIdx){
-  if(!accessToken){
-    alert('Conectate con Google primero.');
-    return;
-  }
-  const row=allRows[rowIdx];
-  if(!row) return;
-  const bl=(row[COL.BL]||'').trim();
-  const customer=(row[COL.CUSTOMER]||'').trim();
-  const inv1=(row[COL.INVOICE_CLIENTE]||'').trim();
-  const inv2=(row[COL.INVOICE_FC_SERV]||'').trim();
-
-  const ok=await writeCell(rowIdx, COL.TELEX, 'SI');
-  if(ok){
-    showToast('✓ Liberación marcada como recibida en planilla');
-    await appendLog({
-      fuente:'AXT',
-      fc: inv1||'',
-      fcServ: inv2||'',
-      bl,
-      customer,
-      accion:'liberacion recibida',
-      detalle:'TELEX marcado SI'
-    });
-    await loadLog();
-    // Reload data to refresh allRows with updated TELEX
-    await loadData();
-  } else {
-    alert('Error al actualizar la planilla. Verificá que estés conectado con Google.');
-  }
-}
-
-function renderLiberaciones(){
-  const rows=allRows.filter(r=>{
-    const d=daysFrom(r[COL.ETA]);
-    return d!==null&&d>=0&&d<=7;
-  }).sort((a,b)=>(daysFrom(a[COL.ETA])||999)-(daysFrom(b[COL.ETA])||999));
-
-  if(!rows.length){
-    document.getElementById('content').innerHTML=`<div class="empty"><div class="empty-icon">🔓</div>Sin cargas con ETA en los próximos 7 días.</div>`;
-    return;
-  }
-
-  window._libSelectedRows=new Set();
-  window._libRows=rows;
-
-  window.updateLibBulkBar=function(){
-    const bar=document.getElementById('lib-bulk-bar');
-    if(!bar) return;
-    const n=window._libSelectedRows.size;
-    if(n>0){
-      bar.style.display='block';
-      bar.textContent='📋 Solicitar liberación (' + n + ' seleccionadas)';
-    } else {
-      bar.style.display='none';
-    }
-  };
-
-  window.toggleLibSelection=function(idx){
-    if(window._libSelectedRows.has(idx)) window._libSelectedRows.delete(idx);
-    else window._libSelectedRows.add(idx);
-    const cb=document.getElementById('lib-cb-'+idx);
-    const card=document.getElementById('lib-card-'+idx);
-    if(cb) cb.checked=window._libSelectedRows.has(idx);
-    if(card) card.style.outline=window._libSelectedRows.has(idx)?'2px solid var(--accent)':'none';
-    window.updateLibBulkBar();
-  };
-
-  window.requestBulkLiberation=function(){
-    if(!window._libSelectedRows.size) return;
-    const selected=[...window._libSelectedRows].map(i=>allRows.indexOf(window._libRows[i]));
-    solicitarLiberacionBulkViaAppScript(selected);
-  };
-
-  let html=`
-  <div class="stats-row">
-    <div class="stat-card"><div class="stat-label">Cargas próximas</div><div class="stat-value">${rows.length}</div><div class="stat-sub">ETA ≤ 7 días</div></div>
-    <div class="stat-card alert-card"><div class="stat-label">Sin liberación</div><div class="stat-value" style="color:#ff6b35">${rows.filter(r=>!(r[COL.TELEX]||'').trim()).length}</div><div class="stat-sub">TELEX vacío</div></div>
-    <div class="stat-card warn-card"><div class="stat-label">En proceso</div><div class="stat-value" style="color:var(--warn)">${rows.filter(r=>{const t=(r[COL.TELEX]||'').trim();return t&&t.toUpperCase()!=='SI';}).length}</div><div class="stat-sub">Solicitado / pendiente</div></div>
-    <div class="stat-card"><div class="stat-label">Liberado</div><div class="stat-value" style="color:var(--ok)">${rows.filter(r=>(r[COL.TELEX]||'').trim().toUpperCase()==='SI').length}</div><div class="stat-sub">TELEX = SI</div></div>
-  </div>
-  <button style="display:none;position:sticky;bottom:20px;left:50%;transform:translateX(-50%);background:var(--accent);color:#0d0d0d;padding:10px 24px;border-radius:30px;font-weight:700;font-size:13px;cursor:pointer;z-index:20;box-shadow:0 4px 20px rgba(0,0,0,.5);border:none;font-family:var(--font);" id="lib-bulk-bar" onclick="requestBulkLiberation()"></button>
-  <div class="alert-list">`;
-
-  rows.forEach((row, localIdx)=>{
-    const origIdx=allRows.indexOf(row);
-    const d=daysFrom(row[COL.ETA]);
-    const dc=daysClass(d);
-    const telex=(row[COL.TELEX]||'').trim();
-    const telexOk=telex.toUpperCase()==='SI';
-    const telexPending=telex&&!telexOk;
-    const customer=(row[COL.CUSTOMER]||'—').trim();
-    const bl=(row[COL.BL]||'').trim();
-    const booking=(row[COL.BOOKING]||'').trim();
-    const containers=(row[COL.CONTAINERS]||'').trim();
-    const shipping=(row[COL.SHIPPING]||'').trim();
-    const vessel=(row[COL.VESSEL]||'').trim();
-    const port=(row[COL.PORT]||'').trim();
-    const inv1=(row[COL.INVOICE_CLIENTE]||'').trim();
-    const inv2=(row[COL.INVOICE_FC_SERV]||'').trim();
-    const pagFirm=(row[COL.PAGARE_FIRMADO]||'').trim().toUpperCase();
-    const invoiceStr=inv1&&inv2?`${inv1} / ${inv2}`:inv1||inv2||'—';
-    const cardTitle=`${booking||bl} · ${invoiceStr!=='—'?invoiceStr:''} · ${customer}`.replace(' ·  ·',' ·').trim().replace(/· $/,'').trim();
-    const recInfo=getReclamoInfoFromLog(bl,'solicitar_liberacion');
-
-    const level=telexOk?'info':d<=3?'critical':'warning';
-    const telexHtml=telexOk
-      ?`<div class="status-label ok">✓ Liberado</div>`
-      :telexPending
-        ?`<div class="status-label info">● Estado: ${telex}</div>`
-        :`<div class="status-label danger">○ Sin liberación solicitada</div>`;
-    const pagHtml=`<div class="status-label ${pagFirm==='SI'?'ok':'warn'}">${pagFirm==='SI'?'✓ Pagaré firmado':'○ Pagaré pendiente de firma'}</div>`;
-    const recHtml=recInfo?`<div class="alert-reclamo">⚠ Solicitado ${recInfo.count} vez${recInfo.count>1?'es':''} · último ${recInfo.timeStr}</div>`:'';
-    const telexVal=telex.toLowerCase();
-    const esSolicitado=telexVal.includes('solicitado');
-    const esRecibir=telexVal.includes('recibir');
-    let actionBtn='';
-    if(telexOk){
-      actionBtn='<span class="status-label ok" style="font-size:11px;font-weight:600;">✓ Liberación completada</span>';
-    } else if(esRecibir){
-      actionBtn=`<button class="action-btn success-action" onclick="marcarLiberado(${origIdx})">✓ Confirmar liberación recibida</button>`;
-    } else if(esSolicitado){
-      actionBtn=`<button class="action-btn info-action" onclick="marcarPedroOk(${origIdx})">✓ Pedro dio el OK</button>`;
-    } else {
-      actionBtn=`<button class="action-btn write" onclick="solicitarLiberacionViaAppScript(${origIdx})">Solicitar liberación</button>`;
-    }
-
-    html+=`<div class="alert-item ${level}" id="lib-card-${localIdx}" style="cursor:pointer;transition:border-color .15s;" onclick="toggleLibSelection(${localIdx})">
-      <div style="display:flex;flex-direction:column;align-items:center;gap:6px;flex-shrink:0;">
-        <input type="checkbox" class="lib-checkbox" id="lib-cb-${localIdx}" onclick="event.stopPropagation();toggleLibSelection(${localIdx})" style="width:18px;height:18px;accent-color:var(--accent);cursor:pointer;">
-        <div class="alert-dot ${level}"></div>
-      </div>
-      <div class="alert-body">
-        <div class="alert-title">${cardTitle}</div>
-        <div class="alert-meta">BL: ${bl}  ·  ETA: ${fmtDate(row[COL.ETA])}</div>
-        <div class="alert-tags">
-          <span class="tag customer">${customer}</span>
-          <span class="tag vessel">${vessel}</span>
-          <span class="tag port">${port}</span>
-          <span class="tag naviera">${shipping}</span>
-          <span class="tag days-${dc}">${d===0?'HOY':d+'d'}</span>
-        </div>
-        <div class="alert-logistics">
-          <div class="log-item"><span class="log-label">Containers:</span><span class="log-value">${containers||'—'}</span></div>
-          <div class="log-item"><span class="log-label">Booking:</span><span class="log-value">${booking||'—'}</span></div>
-          <div class="log-item"><span class="log-label">BL:</span><span class="log-value">${bl||'—'}</span></div>
-          <div class="log-item"><span class="log-label">Naviera:</span><span class="log-value">${shipping||'—'}</span></div>
-        </div>
-        ${pagHtml}${telexHtml}${recHtml}
-        <div class="alert-actions" onclick="event.stopPropagation()">${actionBtn}</div>
-      </div>
-      <div class="alert-right">
-        <div class="days-badge ${dc}" style="font-size:28px">${d}</div>
-        <div class="days-label" style="color:var(--muted2);font-weight:700">DÍAS ETA</div>
-      </div>
-    </div>`;
-  });
-  html+=`</div>`;
-  document.getElementById('content').innerHTML=html;
-}
-
-
-
-// ─── NUEVA CARGA & EDITAR ────────────────────────────────────────────────────
-
-// COL positions for new row (0-based, matching sheet columns)
-// B=1 Tns, C=2 Product, D=3 Packing, E=4 Lots
-// G=6 Booking, K=10 Consolidacion, L=11 ETD, M=12 ETA, N=13 Port
-// S=18 Exporter, X=23 Customer
-
-async function writeRow(rowData, sheetRow){
-  // rowData = {colIndex: value, ...}
-  if(!accessToken){ alert('Conectate con Google primero.'); return false; }
-  
-  const requests = Object.entries(rowData).map(([col, value]) => {
-    const colLetter = colIndexToLetter(parseInt(col));
-    return {range: `${cfg.sheetName}!${colLetter}${sheetRow}`, values: [[value]]};
-  });
-
-  // Batch update
-  const url = `https://sheets.googleapis.com/v4/spreadsheets/${cfg.sheetId}/values:batchUpdate`;
-  const r = await fetch(url, {
-    method: 'POST',
-    headers: {'Authorization': `Bearer ${accessToken}`, 'Content-Type': 'application/json'},
-    body: JSON.stringify({
-      valueInputOption: 'USER_ENTERED',
-      data: requests
-    })
-  });
-  return r.ok;
-}
-
-async function appendRow(rowData){
-  if(!accessToken){ alert('Conectate con Google primero.'); return false; }
-  
-  // Find last row that has a Port value (col N = index 13)
-  const range = encodeURIComponent(`${cfg.sheetName}!N:N`);
-  const url = `https://sheets.googleapis.com/v4/spreadsheets/${cfg.sheetId}/values/${range}?key=${cfg.apiKey}`;
-  const r = await fetch(url);
-  const data = await r.json();
-  const vals = data.values||[];
-  
-  // Find last row with Port (skip header rows 1-3)
-  let lastPortRow = 3; // default fallback
-  for(let i = 3; i < vals.length; i++){
-    if(vals[i] && vals[i][0] && vals[i][0].toString().trim() !== ''){
-      lastPortRow = i + 1; // 1-based sheet row
-    }
-  }
-  
-  const insertAfterRow = lastPortRow; // insert after this row
-  const newRow = insertAfterRow + 1;
-  
-  // Step 1: Insert a blank row after lastPortRow using sheets.spreadsheets.batchUpdate
-  const sheetId = await getSheetId();
-  if(sheetId === null){ alert('No se pudo obtener el ID de la hoja.'); return null; }
-  
-  const insertUrl = `https://sheets.googleapis.com/v4/spreadsheets/${cfg.sheetId}:batchUpdate`;
-  const insertR = await fetch(insertUrl, {
-    method: 'POST',
-    headers: {'Authorization': `Bearer ${accessToken}`, 'Content-Type': 'application/json'},
-    body: JSON.stringify({
-      requests: [{
-        insertDimension: {
-          range: {
-            sheetId: sheetId,
-            dimension: 'ROWS',
-            startIndex: insertAfterRow, // 0-based
-            endIndex: insertAfterRow + 1
-          },
-          inheritFromBefore: true // copy format from row above
-        }
-      }]
-    })
-  });
-  
-  if(!insertR.ok){
-    console.error('Insert row failed:', await insertR.text());
-    alert('Error al insertar fila.');
-    return null;
-  }
-  
-  // Step 2: Write data to the new row
-  const ok = await writeRow(rowData, newRow);
-  if(ok) return newRow;
-  return null;
-}
-
-async function getSheetId(){
-  // Get the numeric sheetId for the named sheet
-  const url = `https://sheets.googleapis.com/v4/spreadsheets/${cfg.sheetId}?key=${cfg.apiKey}`;
-  const r = await fetch(url);
-  const data = await r.json();
-  const sheet = (data.sheets||[]).find(s => s.properties.title === cfg.sheetName);
-  return sheet ? sheet.properties.sheetId : null;
-}
-
-function colIndexToLetter(idx){
-  // 0-based to letter: 0=A, 1=B, 25=Z, 26=AA...
-  let letter = '';
-  let n = idx + 1;
-  while(n > 0){
-    const rem = (n-1) % 26;
-    letter = String.fromCharCode(65 + rem) + letter;
-    n = Math.floor((n-1) / 26);
-  }
-  return letter;
-}
-
-function getFormValues(prefix){
-  const fields = ['tns','product','packing','lots','booking','consol','etd','eta','port','exporter','customer'];
-  const data = {};
-  fields.forEach(f => {
-    const el = document.getElementById(`${prefix}-${f}`);
-    if(el) data[f] = el.value.trim();
-  });
-  return data;
-}
-
-function formToRowData(d){
-  const data = {
-    1:  d.tns,        // B = Tns
-    2:  d.product,    // C = Product
-    3:  d.packing,    // D = Packing
-    4:  d.lots,       // E = Lots
-    6:  d.booking,    // G = Booking
-    10: d.consol,     // K = Consolidacion
-    11: d.etd,        // L = ETD
-    12: d.eta,        // M = ETA
-    13: d.port,       // N = Port
-    18: d.exporter,   // S = Exporter
-    23: d.customer,   // X = Customer
-  };
-  if(d.negocio) data[0] = d.negocio; // A = Negocio
-  return data;
-}
-
-async function submitNuevaCarga(){
-  const d = getFormValues('nc');
-  if(!d.product || !d.eta || !d.customer){
-    alert('Product, ETA y Customer son obligatorios.');
-    return;
-  }
-  
-  const btn = document.getElementById('nc-submit');
-  btn.textContent = 'Guardando...';
-  btn.disabled = true;
-  
-  const rowData = formToRowData(d);
-  const newRow = await appendRow(rowData);
-  
-  if(newRow){
-    showToast(`✓ Carga agregada en fila ${newRow}`);
-    await loadData();
-    showView('cargas');
-  } else {
-    alert('Error al guardar. Verificá que estés conectado con Google.');
-    btn.textContent = 'Guardar carga';
-    btn.disabled = false;
-  }
-}
-
-async function submitEditCarga(rowIdx){
-  const d = getFormValues('ec');
-  if(!d.product || !d.eta || !d.customer){
-    alert('Product, ETA y Customer son obligatorios.');
-    return;
-  }
-  
-  const row = allRows[rowIdx];
-  const sheetRow = row._sheetRow;
-  if(!sheetRow){ alert('Error: no se pudo determinar la fila.'); return; }
-  
-  const btn = document.getElementById('ec-submit');
-  btn.textContent = 'Guardando...';
-  btn.disabled = true;
-  
-  const rowData = formToRowData(d);
-  const ok = await writeRow(rowData, sheetRow);
-  
-  if(ok){
-    showToast('✓ Carga actualizada');
-    await loadData();
-    showView('cargas');
-  } else {
-    alert('Error al guardar. Verificá que estés conectado con Google.');
-    btn.textContent = 'Guardar cambios';
-    btn.disabled = false;
-  }
-}
-
-function buildCargaForm(prefix, d={}){
-  const field = (id, label, value='', type='text', placeholder='') => `
-    <div class="config-field">
-      <div class="config-label">${label}</div>
-      <input class="config-input" id="${prefix}-${id}" type="${type}" value="${value}" placeholder="${placeholder}">
-    </div>`;
-  
-  return `
-  <div style="display:grid;grid-template-columns:1fr 1fr;gap:0 20px;">
-    ${field('product','Product *', d.product||'', 'text', 'ej: Blanched peanuts 38/42')}
-    ${field('customer','Customer *', d.customer||'', 'text', 'ej: IDI')}
-    ${field('tns','Tns', d.tns||'', 'number', 'ej: 22')}
-    ${field('packing','Packing', d.packing||'', 'text', 'ej: big bags')}
-    ${field('lots','Lots', d.lots||'', 'text', 'ej: BL38-250022-AP')}
-    ${field('booking','Booking', d.booking||'', 'text', 'ej: EBKG15971228')}
-    ${field('exporter','Exporter', d.exporter||'', 'text', 'ej: Argen Peanuts')}
-    ${field('port','Port', d.port||'', 'text', 'ej: Norfolk')}
-    ${field('etd','ETD', d.etd||'', 'text', 'ej: 06/03/2026')}
-    ${field('eta','ETA *', d.eta||'', 'text', 'ej: 19/04/2026')}
-    ${field('consol','Consolidación', d.consol||'', 'text', 'ej: 01/03/2026')}
-  </div>
-  <div style="grid-column:1/-1;">
-    <div class="config-label" style="margin-bottom:4px;">Negocio / Lote</div>
-    <input class="config-input" id="${prefix}-negocio" value="${d.negocio||''}" placeholder="ej: ARG2-2" style="width:100%;margin-bottom:10px;">
-  </div>`;
-}
-
-function renderNuevaCarga(){
-  if(!accessToken){
-    document.getElementById('content').innerHTML=`<div class="empty"><div class="empty-icon">＋</div><div style="margin-bottom:16px;">Conectate con Google para agregar cargas.</div><button class="btn primary" onclick="handleAuth()">Conectar con Google</button></div>`;
-    return;
-  }
-  document.getElementById('content').innerHTML=`
-  <div class="config-section">
-    <div class="config-title">Nueva Carga</div>
-    <div class="config-desc">Completá los campos para agregar una nueva fila a la planilla AXT.</div>
-    ${buildCargaForm('nc')}
-    <div class="config-save">
-      <button class="btn" onclick="showView('cargas')" style="margin-right:8px;">Cancelar</button>
-      <button class="btn primary" id="nc-submit" onclick="submitNuevaCarga()">Guardar carga</button>
-    </div>
-  </div>`;
-}
-
-function renderEditCarga(rowIdx){
-  if(!accessToken){
-    alert('Conectate con Google primero.');
-    return;
-  }
-  const row = allRows[rowIdx];
-  if(!row) return;
-  
-  const d = {
-    tns:      row[1]||'',
-    product:  row[2]||'',
-    packing:  row[3]||'',
-    lots:     row[4]||'',
-    booking:  row[6]||'',
-    consol:   row[10]||'',
-    etd:      row[11]||'',
-    eta:      row[12]||'',
-    port:     row[13]||'',
-    exporter: row[18]||'',
-    customer: row[23]||'',
-    negocio:  row[0]||'',
-  };
-  
-  document.getElementById('content').innerHTML=`
-  <div class="config-section">
-    <div class="config-title">Editar Carga — ${d.customer} / ${d.product}</div>
-    <div class="config-desc">Los cambios se guardarán directamente en la planilla AXT.</div>
-    ${buildCargaForm('ec', d)}
-    <div class="config-save">
-      <button class="btn" onclick="showView('cargas')" style="margin-right:8px;">Cancelar</button>
-      <button class="btn primary" id="ec-submit" onclick="submitEditCarga(${rowIdx})">Guardar cambios</button>
-    </div>
-  </div>`;
-  
-  // Set negocio separately since it uses col 0
-  const negEl = document.getElementById('ec-negocio');
-  if(negEl) negEl.value = d.negocio;
-}
-
 
 function renderCobranza(){
   const rows=allRows.filter(r=>daysFrom(r[COL.FECHA_EST_COBRO])!==null)
