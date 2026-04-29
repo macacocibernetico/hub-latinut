@@ -889,8 +889,8 @@ function renderCargas(showAll, toggleFilter, sort){
     <div style="overflow-x:auto;">
     <table>
       <thead><tr>
-        <th>Negocio</th><th>BL</th><th>Booking</th><th>Naviera</th><th>Customer</th>
-        <th>Vessel</th><th>ETA</th><th>Días</th><th>Docs</th><th>TELEX</th>
+        <th>BL</th><th>Booking</th><th>Naviera</th><th>Customer</th>
+        <th>Vessel</th><th>ETA</th><th>Docs</th><th>TELEX</th>
         <th>Pagaré</th><th>Invoice FC1</th><th>Total FC1</th><th>Invoice FC2</th>
         <th>Total FC2</th><th>Total</th><th>Cobro Est.</th><th></th><th></th>
       </tr></thead>
@@ -898,8 +898,6 @@ function renderCargas(showAll, toggleFilter, sort){
 
   rows.forEach((row) => {
     const idx = allRows.indexOf(row);
-    const days = daysFrom(row[COL.ETA]);
-    const dc = daysClass(days);
     const pagEnv = (row[COL.PAGARE_ENVIADO]||'').trim().toUpperCase();
     const pagFirm = (row[COL.PAGARE_FIRMADO]||'').trim().toUpperCase();
     let pagLabel, pagColor;
@@ -917,21 +915,19 @@ function renderCargas(showAll, toggleFilter, sort){
     const total1Raw = parseFloat((row[28]||'').toString().replace(/[^0-9.-]/g,''));
     const total1 = isNaN(total1Raw) ? '' : total1Raw.toLocaleString('es-AR',{maximumFractionDigits:0});
     const inv2 = (row[COL.INVOICE_FC_SERV]||'').trim();
-    const total2Raw = parseFloat((row[31]||'').toString().replace(/[^0-9.-]/g,''));
+    const total2Raw = parseFloat((row[31]||'').toString().replace(/[^0-9.-]/g,'')); // AF=31 FC2 total
     const total2 = isNaN(total2Raw) ? '' : total2Raw.toLocaleString('es-AR',{maximumFractionDigits:0});
     const totalCarga = (!isNaN(total1Raw) || !isNaN(total2Raw))
       ? ((isNaN(total1Raw)?0:total1Raw) + (isNaN(total2Raw)?0:total2Raw)).toLocaleString('es-AR',{maximumFractionDigits:0})
       : '—';
 
     html += `<tr>
-      <td class="mono">${(row[COL.NEGOCIO]||'—')}</td>
       <td class="mono">${(row[COL.BL]||'—').substring(0,20)}</td>
       <td class="mono">${(row[COL.BOOKING]||'—').substring(0,14)}</td>
       <td style="color:var(--text3);font-size:11px">${(row[COL.SHIPPING]||'—').substring(0,14)}</td>
       <td style="font-weight:500">${row[COL.CUSTOMER]||'—'}</td>
       <td style="color:var(--text3);font-size:11px">${(row[COL.VESSEL]||'—').substring(0,16)}</td>
       <td class="mono">${fmtDate(row[COL.ETA])}</td>
-      <td><span style="color:var(--${dc==='red'?'danger':dc==='warn'?'warn':'ok'});font-family:var(--mono);font-weight:600">${days!==null?days+'d':'—'}</span></td>
       <td><div class="doc-status"><div class="doc-dot ${docsOk?'green':'red'}"></div><span class="doc-text" title="${docs||'Pendiente'}">${docsOk?'OK':docs||'—'}</span></div></td>
       <td><span style="color:${telexOk?'var(--ok)':telex?'var(--info)':'var(--text3)'};font-family:var(--mono);font-size:10px">${telex||'—'}</span></td>
       <td><span style="color:${pagColor};font-size:11px;font-family:var(--mono)">${pagLabel}</span></td>
@@ -1009,19 +1005,56 @@ function colIndexToLetter(idx){
 }
 
 function getFormValues(prefix){
-  const fields = ['tns','product','packing','lots','booking','consol','etd','eta','port','exporter','customer','negocio'];
+  const fields = [
+    'negocio','tns','product','packing','lots','containers','booking','bl','shipping',
+    'vessel','consol','etd','eta','port','exporter','customer',
+    'documentos','lombard','clienteEnv','telex',
+    'invoiceCliente','contractCliente','priceCFR','flete','totalCFR','incoterm',
+    'invoiceFCServ','priceFCServ',
+    'pagareEnviado','pagareFirmado','fechaEstCobro','fechaCobro'
+  ];
   const data = {};
   fields.forEach(f => { const el=document.getElementById(`${prefix}-${f}`); if(el) data[f]=el.value.trim(); });
   return data;
 }
 
 function formToRowData(d){
-  const data = {
-    1: d.tns, 2: d.product, 3: d.packing, 4: d.lots,
-    6: d.booking, 10: d.consol, 11: d.etd, 12: d.eta,
-    13: d.port, 18: d.exporter, 23: d.customer
-  };
-  if(d.negocio) data[0] = d.negocio;
+  const data = {};
+  const set = (col, val) => { if(val !== undefined && val !== '') data[col] = val; };
+  // Basic
+  set(0, d.negocio);
+  set(1, d.tns);
+  set(2, d.product);
+  set(3, d.packing);
+  set(4, d.lots);
+  set(5, d.containers);
+  set(6, d.booking);
+  set(7, d.bl);
+  set(8, d.shipping);
+  set(9, d.vessel);
+  set(10, d.consol);
+  set(11, d.etd);
+  set(12, d.eta);
+  set(13, d.port);
+  set(18, d.exporter);
+  set(23, d.customer);
+  // Extra (edit only)
+  set(14, d.documentos);
+  set(15, d.lombard);
+  set(16, d.clienteEnv);
+  set(17, d.telex);
+  set(24, d.invoiceCliente);
+  set(25, d.contractCliente);
+  set(26, d.priceCFR);
+  set(27, d.flete);
+  set(28, d.totalCFR);
+  set(29, d.incoterm);
+  set(30, d.invoiceFCServ);
+  set(31, d.priceFCServ);
+  set(45, d.pagareEnviado);
+  set(46, d.pagareFirmado);
+  set(47, d.fechaEstCobro);
+  set(48, d.fechaCobro);
   return data;
 }
 
@@ -1048,23 +1081,57 @@ async function submitEditCarga(rowIdx){
   else { alert('Error al guardar.'); btn.textContent='Guardar cambios'; btn.disabled=false; }
 }
 
-function buildCargaForm(prefix, d={}){
+function buildCargaForm(prefix, d={}, fullEdit=false){
   const field = (id, label, value='', type='text', placeholder='') =>
     `<div class="config-field"><div class="config-label">${label}</div><input class="config-input" id="${prefix}-${id}" type="${type}" value="${value}" placeholder="${placeholder}"></div>`;
-  return `<div style="display:grid;grid-template-columns:1fr 1fr;gap:0 20px;">
+
+  const section = (title) =>
+    `<div style="grid-column:1/-1;margin-top:12px;padding-bottom:6px;border-bottom:1px solid var(--border);"><span style="font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.5px;color:var(--text3);">${title}</span></div>`;
+
+  const basicFields = `
     ${field('negocio','Negocio',d.negocio||'','text','ej: ARG2-2')}
     ${field('customer','Customer *',d.customer||'','text','ej: IDI')}
     ${field('product','Product *',d.product||'','text','ej: Blanched peanuts 38/42')}
     ${field('tns','Tns',d.tns||'','number','ej: 22')}
     ${field('packing','Packing',d.packing||'','text','ej: big bags')}
     ${field('lots','Lots',d.lots||'','text','ej: BL38-250022-AP')}
+    ${field('containers','Containers',d.containers||'','text','ej: FFAU3862300')}
     ${field('booking','Booking',d.booking||'','text','ej: EBKG15971228')}
-    ${field('exporter','Exporter',d.exporter||'','text','ej: Argen Peanuts')}
-    ${field('port','Port *',d.port||'','text','ej: Norfolk')}
+    ${field('bl','BL',d.bl||'','text','ej: TRANSHBL00048410')}
+    ${field('shipping','Shipping Line',d.shipping||'','text','ej: MSC')}
+    ${field('vessel','Vessel',d.vessel||'','text','ej: MSC URSULA VI')}
+    ${field('consol','Consolidación',d.consol||'','text','ej: 01/03/2026')}
     ${field('etd','ETD',d.etd||'','text','ej: 06/03/2026')}
     ${field('eta','ETA *',d.eta||'','text','ej: 19/04/2026')}
-    ${field('consol','Consolidación',d.consol||'','text','ej: 01/03/2026')}
-  </div>`;
+    ${field('port','Port *',d.port||'','text','ej: Norfolk')}
+    ${field('exporter','Exporter',d.exporter||'','text','ej: Argen Peanuts')}`;
+
+  if(!fullEdit) return `<div style="display:grid;grid-template-columns:1fr 1fr;gap:0 16px;">${basicFields}</div>`;
+
+  const extraFields = `
+    ${section('Documentos')}
+    ${field('documentos','Documentos',d.documentos||'','text','ej: SI o detalle pendiente')}
+    ${field('lombard','Envío a Lombard',d.lombard||'','text','ej: SI')}
+    ${field('clienteEnv','Envío al Cliente',d.clienteEnv||'','text','ej: SI')}
+    ${field('telex','TELEX',d.telex||'','text','ej: solicitado, falta ok')}
+    ${section('FC Lombard')}
+    ${field('invoiceCliente','Invoice Cliente (Y)',d.invoiceCliente||'','text','ej: 13117')}
+    ${field('contractCliente','Contract Cliente (Z)',d.contractCliente||'','text','')}
+    ${field('priceCFR','Price CFR (AA)',d.priceCFR||'','text','ej: 1130')}
+    ${field('flete','Flete (AB)',d.flete||'','text','ej: 270')}
+    ${field('totalCFR','Total CFR (AC)',d.totalCFR||'','text','ej: 30800')}
+    ${field('incoterm','INCOTERM (AD)',d.incoterm||'','text','ej: CFR Norfolk')}
+    ${section('FC Servicios')}
+    ${field('invoiceFCServ','Invoice FC Servicios (AE)',d.invoiceFCServ||'','text','ej: 13118')}
+    ${field('priceFCServ','Price FC Servicios (AF)',d.priceFCServ||'','text','ej: 13200')}
+    ${section('Pagaré')}
+    ${field('pagareEnviado','Enviado (AT)',d.pagareEnviado||'','text','ej: SI')}
+    ${field('pagareFirmado','Firmado (AU)',d.pagareFirmado||'','text','ej: SI')}
+    ${section('Cobranza')}
+    ${field('fechaEstCobro','Fecha Est. Cobro (AV)',d.fechaEstCobro||'','text','ej: 27/05/2026')}
+    ${field('fechaCobro','Fecha de Cobro (AW)',d.fechaCobro||'','text','ej: 27/05/2026')}`;
+
+  return `<div style="display:grid;grid-template-columns:1fr 1fr;gap:0 16px;">${basicFields}${extraFields}</div>`;
 }
 
 function renderNuevaCarga(){
@@ -1089,17 +1156,46 @@ function renderEditCarga(rowIdx){
   const row = allRows[rowIdx];
   if(!row) return;
   const d = {
-    negocio:row[0]||'', tns:row[1]||'', product:row[2]||'', packing:row[3]||'',
-    lots:row[4]||'', booking:row[6]||'', consol:row[10]||'', etd:row[11]||'',
-    eta:row[12]||'', port:row[13]||'', exporter:row[18]||'', customer:row[23]||''
+    negocio:    row[0]||'',
+    tns:        row[1]||'',
+    product:    row[2]||'',
+    packing:    row[3]||'',
+    lots:       row[4]||'',
+    containers: row[5]||'',
+    booking:    row[6]||'',
+    bl:         row[7]||'',
+    shipping:   row[8]||'',
+    vessel:     row[9]||'',
+    consol:     row[10]||'',
+    etd:        row[11]||'',
+    eta:        row[12]||'',
+    port:       row[13]||'',
+    documentos: row[14]||'',
+    lombard:    row[15]||'',
+    clienteEnv: row[16]||'',
+    telex:      row[17]||'',
+    exporter:   row[18]||'',
+    invoiceCliente:   row[24]||'',
+    contractCliente:  row[25]||'',
+    priceCFR:         row[26]||'',
+    flete:            row[27]||'',
+    totalCFR:         row[28]||'',
+    incoterm:         row[29]||'',
+    invoiceFCServ:    row[30]||'',
+    priceFCServ:      row[31]||'',
+    customer:         row[23]||'',
+    pagareEnviado:    row[45]||'',
+    pagareFirmado:    row[46]||'',
+    fechaEstCobro:    row[47]||'',
+    fechaCobro:       row[48]||'',
   };
   document.getElementById('content').innerHTML=`
-  <div class="config-section">
+  <div class="config-section" style="max-width:100%;">
     <div class="config-title">Editar Carga — ${d.customer} / ${d.product}</div>
-    <div class="config-desc">Los cambios se guardarán directamente en la planilla AXT.</div>
-    ${buildCargaForm('ec', d)}
-    <div class="config-save">
-      <button class="btn" onclick="showView('cargas')" style="margin-right:8px;">Cancelar</button>
+    <div class="config-desc">Los cambios se guardarán directamente en la planilla AXT. Dejá en blanco los campos que no querés modificar.</div>
+    ${buildCargaForm('ec', d, true)}
+    <div class="config-save" style="margin-top:16px;gap:8px;display:flex;justify-content:flex-end;">
+      <button class="btn" onclick="showView('cargas')">Cancelar</button>
       <button class="btn primary" id="ec-submit" onclick="submitEditCarga(${rowIdx})">Guardar cambios</button>
     </div>
   </div>`;
