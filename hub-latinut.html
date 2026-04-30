@@ -379,16 +379,18 @@ async function loadContacts(){
 function getContactsForEmpresa(empresa){
   if(!empresa||!contacts.length) return {to:'', cc:'pedro@axt.com'};
   const emp=empresa.trim().toUpperCase();
-  const match=contacts.filter(c=>c.empresa.toUpperCase()===emp);
+  // Match: exact OR empresa column contains the customer name (for grouped entries)
+  const match=contacts.filter(c=>{
+    const cEmp=c.empresa.toUpperCase();
+    return cEmp===emp || cEmp.includes(emp) || emp.includes(cEmp);
+  });
   const principal=match.filter(c=>c.rol.toLowerCase().includes('principal'));
   const cc=contacts.filter(c=>c.ccSiempre).map(c=>c.email);
-  // To: principal o primero que matchea
   const toContact=principal[0]||match[0];
   const toStr=toContact?`${toContact.contacto} <${toContact.email}>`:'';
-  // CC: los que tienen CC_Siempre + otros contactos no principales
   const otherEmails=match.filter(c=>c!==toContact&&!c.ccSiempre).map(c=>c.email);
   const allCC=[...new Set([...cc,...otherEmails])];
-  return{to:toStr, cc:allCC.join(', ')||'pedro@axt.com'};
+  return{to:toStr, cc:allCC.join(', ')||'pberro@axtsolutions.com'};
 }
 
 // ─── LOG CACHE ───────────────────────────────────────────────────────────────
@@ -1484,43 +1486,92 @@ function renderLiberaciones(){
   document.getElementById('content').innerHTML=html;
 }
 
-function renderCobranza(){
-  const rows=allRows.filter(r=>daysFrom(r[COL.FECHA_EST_COBRO])!==null)
-    .sort((a,b)=>(daysFrom(a[COL.FECHA_EST_COBRO])||9999)-(daysFrom(b[COL.FECHA_EST_COBRO])||9999));
+let cobranzaFilters = { cliente: '', sort: 'due_asc' };
+
+const EMPRESAS_GRUPO_ITALIA = ['Pata s.p.a','Torrefazione La Forlivese','Nutitaly S.R.L.','Dimipro SRL','Arsal SRL'];
+
+function renderCobranza(filterKey, filterVal){
+  if(filterKey !== undefined) cobranzaFilters[filterKey] = filterVal;
+
+  let rows = allRows.filter(r => daysFrom(r[COL.FECHA_EST_COBRO]) !== null);
+
+  if(cobranzaFilters.cliente){
+    rows = rows.filter(r => (r[COL.CUSTOMER]||'').trim() === cobranzaFilters.cliente);
+  }
+
+  rows = [...rows].sort((a,b) => {
+    const da=daysFrom(a[COL.FECHA_EST_COBRO]), db=daysFrom(b[COL.FECHA_EST_COBRO]);
+    if(da===null&&db===null) return 0;
+    if(da===null) return 1; if(db===null) return -1;
+    return cobranzaFilters.sort==='due_desc'?db-da:da-db;
+  });
+
   if(!rows.length){document.getElementById('content').innerHTML=`<div class="empty"><div class="empty-icon">💰</div>Sin cobros pendientes.</div>`;return;}
+
   let totalUSD=0;
-  rows.forEach(r=>{const m=parseFloat((r[COL.TOTAL_CFR]||'').replace(/[^0-9.]/g,''));if(!isNaN(m))totalUSD+=m;});
+  rows.forEach(r=>{const m=parseSheetNum(r[COL.TOTAL_CFR]);if(!isNaN(m))totalUSD+=m;});
+
+  const uniqueClientes=[...new Set(allRows.filter(r=>daysFrom(r[COL.FECHA_EST_COBRO])!==null).map(r=>(r[COL.CUSTOMER]||'').trim()).filter(Boolean))].sort();
+
+  const clienteSel=`<select onchange="renderCobranza('cliente',this.value)" style="font-size:11px;font-family:var(--mono);padding:5px 8px;border-radius:8px;border:1px solid ${cobranzaFilters.cliente?'var(--accent)':'var(--border)'};background:${cobranzaFilters.cliente?'var(--accent-light)':'var(--bg2)'};color:${cobranzaFilters.cliente?'var(--accent)':'var(--text2)'};outline:none;cursor:pointer;">
+    <option value="">Todos los clientes</option>
+    ${uniqueClientes.map(c=>`<option value="${c}" ${cobranzaFilters.cliente===c?'selected':''}>${c}</option>`).join('')}
+  </select>`;
+
+  const sortSel=`<select onchange="renderCobranza('sort',this.value)" style="font-size:11px;font-family:var(--mono);padding:5px 8px;border-radius:8px;border:1px solid var(--border);background:var(--bg2);color:var(--text2);outline:none;cursor:pointer;">
+    <option value="due_asc" ${cobranzaFilters.sort==='due_asc'?'selected':''}>Payment due: proximo primero</option>
+    <option value="due_desc" ${cobranzaFilters.sort==='due_desc'?'selected':''}>Payment due: lejano primero</option>
+  </select>`;
+
+  const resetBtn=cobranzaFilters.cliente?`<span onclick="cobranzaFilters.cliente='';renderCobranza();" style="font-size:11px;font-family:var(--mono);padding:5px 10px;border-radius:8px;border:1px solid var(--danger);color:var(--danger);cursor:pointer;background:var(--danger-light);">X Limpiar</span>`:'';
+
   let html=`<div class="stats-row">
     <div class="stat-card"><div class="stat-label">Cobros pendientes</div><div class="stat-value">${rows.length}</div></div>
     <div class="stat-card warn-card"><div class="stat-label">Total expuesto</div><div class="stat-value" style="font-size:20px;color:var(--warn)">USD ${totalUSD.toLocaleString('es-AR',{maximumFractionDigits:0})}</div></div>
   </div>
-  <div class="table-wrap"><div class="table-top"><span style="font-size:13px;font-weight:700;">Cobranza activa</span></div><div style="overflow-x:auto;"><table>
-    <thead><tr><th>Negocio</th><th>Customer</th><th>BL</th><th>Naviera</th><th>Invoice</th><th>Total CFR</th><th>Payment Due</th><th>Días</th><th>Reclamos</th><th></th></tr></thead><tbody>`;
+  <div class="table-wrap">
+    <div class="table-top" style="flex-direction:column;align-items:flex-start;gap:10px;padding:14px 16px;">
+      <div style="display:flex;align-items:center;justify-content:space-between;width:100%;flex-wrap:wrap;gap:8px;">
+        <span style="font-size:13px;font-weight:600;color:var(--text);">Cobranza activa - ${rows.length} cobros</span>
+      </div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
+        ${clienteSel}${sortSel}${resetBtn}
+      </div>
+    </div>
+    <div style="overflow-x:auto;"><table>
+    <thead><tr><th>Customer</th><th>BL</th><th>Invoice</th><th>Total</th><th>Payment Due</th><th>Dias</th><th>Reclamos</th><th>Contacto</th><th></th></tr></thead><tbody>`;
+
   rows.forEach(row=>{
     const origIdx=allRows.indexOf(row);
     const d=daysFrom(row[COL.FECHA_EST_COBRO]);
     const dc=daysClass(d);
     const inv1=(row[COL.INVOICE_CLIENTE]||'').trim();
     const inv2=(row[COL.INVOICE_FC_SERV]||'').trim();
-    const invDisplay=inv1&&inv2?`${inv1} / ${inv2}`:inv1||inv2||'—';
-    const recInfo=getReclamoInfoFromLog(row[COL.BL]||'','reclamo_cobro');
-    const recHtml=recInfo?`<span style="color:var(--warn);font-size:10px;font-family:var(--mono)">${recInfo.count}x · ${recInfo.timeStr}</span>`:`<span style="color:var(--muted);font-size:10px">—</span>`;
+    const invDisplay=inv1&&inv2?`${inv1} / ${inv2}`:inv1||inv2||'--';
+    const recInfo=getReclamoInfoFromLog(row[COL.BL]||'','reclamo cobro');
+    const recHtml=recInfo?`<span style="color:var(--warn);font-size:10px;font-family:var(--mono)">${recInfo.count}x - ${recInfo.timeStr}</span>`:`<span style="color:var(--text3);font-size:10px">--</span>`;
+    const customer=(row[COL.CUSTOMER]||'--').trim();
+    const contactInfo=getContactsForEmpresa(customer);
+    const contactDisplay=contactInfo.to?contactInfo.to.split('<')[0].trim():'--';
+    const total=parseSheetNum(row[COL.TOTAL_CFR]);
+    const totalDisplay=isNaN(total)?row[COL.TOTAL_CFR]||'--':'USD '+total.toLocaleString('es-AR',{maximumFractionDigits:0});
+
     html+=`<tr>
-      <td class="mono">${row[COL.NEGOCIO]||'—'}</td>
-      <td>${row[COL.CUSTOMER]||'—'}</td>
-      <td class="mono">${(row[COL.BL]||'—').substring(0,20)}</td>
-      <td style="color:var(--muted2);font-size:11px">${(row[COL.SHIPPING]||'—').substring(0,14)}</td>
-      <td class="mono" style="font-size:10px">${invDisplay}</td>
-      <td class="mono">${row[COL.TOTAL_CFR]||'—'}</td>
+      <td style="font-weight:500">${customer}</td>
+      <td class="mono">${(row[COL.BL]||'--').substring(0,20)}</td>
+      <td class="mono" style="font-size:10px;color:var(--accent)">${invDisplay}</td>
+      <td class="mono" style="font-weight:600">${totalDisplay}</td>
       <td class="mono">${fmtDate(row[COL.FECHA_EST_COBRO])}</td>
-      <td><span style="color:var(--${dc==='red'?'danger':dc==='warn'?'warn':'ok'});font-weight:600;font-family:var(--mono)">${d!==null?d+'d':'—'}</span></td>
+      <td><span style="color:var(--${dc==='red'?'danger':dc==='warn'?'warn':'ok'});font-weight:600;font-family:var(--mono)">${d!==null?d+'d':'--'}</span></td>
       <td>${recHtml}</td>
-      <td><button class="row-action" onclick="openMailModal(${origIdx},'reclamo_cobro')">✉ Reclamo</button></td>
+      <td style="font-size:10px;color:var(--text3)">${contactDisplay}</td>
+      <td><button class="row-action" onclick="openMailModal(${origIdx},'reclamo_cobro')">Reclamo</button></td>
     </tr>`;
   });
   html+=`</tbody></table></div></div>`;
   document.getElementById('content').innerHTML=html;
 }
+
 
 function renderPagares(){
   let html=`<div class="table-wrap"><div class="table-top"><span style="font-size:13px;font-weight:700;">Estado de pagarés</span></div><div style="overflow-x:auto;"><table>
