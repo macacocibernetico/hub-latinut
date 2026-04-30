@@ -1483,6 +1483,40 @@ let cobranzaFilters = { cliente: '', sort: 'due_asc' };
 
 const EMPRESAS_GRUPO_ITALIA = ['Pata s.p.a','Torrefazione La Forlivese','Nutitaly S.R.L.','Dimipro SRL','Arsal SRL'];
 
+async function reclamarCobranzaBulk(rowIndices){
+  if(!rowIndices.length) return;
+  const rows=rowIndices.map(i=>allRows[i]);
+  const customer=(rows[0][COL.CUSTOMER]||'').trim();
+  const contactInfo=getContactsForEmpresa(customer);
+  const otherCC=contacts.filter(c=>!c.ccSiempre&&(c.empresa.toUpperCase().includes(customer.toUpperCase())||customer.toUpperCase().includes(c.empresa.toUpperCase()))).map(c=>c.email);
+
+  const plural=rows.length>1;
+  const intro=plural?'los siguientes pagos':'el siguiente pago';
+
+  const lines=rows.map(row=>{
+    const inv1=(row[COL.INVOICE_CLIENTE]||'').trim();
+    const inv2raw=(row[COL.INVOICE_FC_SERV]||'').trim();
+    const inv2=(inv2raw==='-'||inv2raw==='--')?'':inv2raw;
+    const due=fmtDate(row[COL.FECHA_EST_COBRO]);
+    return `Cliente: ${customer}\nInvoice: ${inv1||'—'}${inv2?'\nFC Servicios: '+inv2:''}\nFecha de pago: ${due}`;
+  }).join('\n\n');
+
+  const subject=`Consulta de pago - ${customer}${plural?' ('+rows.length+' facturas)':''}`;
+  const body=`Estimado/a,\n\nNos comunicamos para consultar respecto a ${intro}:\n\n${lines}\n\nAgradecemos confirmar estado del pago.\n\nSaludos,\nLATINUT S.A.`;
+
+  modalData={rowIndices, isBulk:true, mailType:'reclamo_cobro', customer, rows};
+  document.getElementById('lang-en').classList.remove('active');
+  document.getElementById('lang-es').classList.add('active');
+  document.getElementById('modal-title').textContent=`Reclamo de cobro${plural?' ('+rows.length+' facturas)':''}`;
+  document.getElementById('modal-to').textContent=contactInfo.to||`${customer} <sin contacto>`;
+  document.getElementById('modal-cc').textContent=otherCC.join(', ')||'';
+  document.getElementById('modal-subject').textContent=subject;
+  document.getElementById('modal-body').value=body;
+  const btn=document.getElementById('send-draft-btn');
+  btn.textContent=`✉ Crear borrador`;
+  document.getElementById('mail-modal').classList.remove('hidden');
+}
+
 function renderCobranza(filterKey, filterVal){
   if(filterKey !== undefined) cobranzaFilters[filterKey] = filterVal;
 
@@ -1518,6 +1552,24 @@ function renderCobranza(filterKey, filterVal){
 
   const resetBtn=cobranzaFilters.cliente?`<span onclick="cobranzaFilters.cliente='';renderCobranza();" style="font-size:11px;font-family:var(--mono);padding:5px 10px;border-radius:8px;border:1px solid var(--danger);color:var(--danger);cursor:pointer;background:var(--danger-light);">X Limpiar</span>`:'';
 
+  window._cobSelectedRows=new Set();
+  window._cobRows=rows;
+  window.toggleCobSelection=function(idx){
+    if(window._cobSelectedRows.has(idx)) window._cobSelectedRows.delete(idx);
+    else window._cobSelectedRows.add(idx);
+    const cb=document.getElementById('cob-cb-'+idx);
+    const tr=document.getElementById('cob-tr-'+idx);
+    if(cb) cb.checked=window._cobSelectedRows.has(idx);
+    if(tr) tr.style.background=window._cobSelectedRows.has(idx)?'rgba(0,113,227,.05)':'';
+    const bar=document.getElementById('cob-bulk-bar');
+    if(bar){const n=window._cobSelectedRows.size;bar.style.display=n>0?'block':'none';bar.textContent='✉ Reclamo masivo ('+n+' seleccionadas)';}
+  };
+  window.requestBulkReclamo=function(){
+    if(!window._cobSelectedRows.size) return;
+    const selected=[...window._cobSelectedRows].map(i=>allRows.indexOf(window._cobRows[i]));
+    reclamarCobranzaBulk(selected);
+  };
+
   let html=`<div class="stats-row">
     <div class="stat-card"><div class="stat-label">Cobros pendientes</div><div class="stat-value">${rows.length}</div></div>
     <div class="stat-card warn-card"><div class="stat-label">Total expuesto</div><div class="stat-value" style="font-size:20px;color:var(--warn)">USD ${totalUSD.toLocaleString('es-AR',{maximumFractionDigits:0})}</div></div>
@@ -1531,10 +1583,11 @@ function renderCobranza(filterKey, filterVal){
         ${clienteSel}${sortSel}${resetBtn}
       </div>
     </div>
+  <button id="cob-bulk-bar" onclick="requestBulkReclamo()" style="display:none;position:sticky;bottom:20px;left:50%;transform:translateX(-50%);background:var(--accent);color:#fff;padding:10px 24px;border-radius:30px;font-weight:600;font-size:13px;cursor:pointer;z-index:20;box-shadow:var(--shadow-lg);border:none;font-family:var(--font);"></button>
     <div style="overflow-x:auto;"><table>
-    <thead><tr><th>Customer</th><th>BL</th><th>Invoice</th><th>Total</th><th>Payment Due</th><th>Dias</th><th>Reclamos</th><th>Contacto</th><th></th></tr></thead><tbody>`;
+    <thead><tr><th style="width:30px"></th><th>Customer</th><th>BL</th><th>Invoice</th><th>Total</th><th>Payment Due</th><th>Dias</th><th>Reclamos</th><th>Contacto</th><th></th></tr></thead><tbody>`;
 
-  rows.forEach(row=>{
+  rows.forEach((row,localIdx)=>{
     const origIdx=allRows.indexOf(row);
     const d=daysFrom(row[COL.FECHA_EST_COBRO]);
     const dc=daysClass(d);
@@ -1551,7 +1604,8 @@ function renderCobranza(filterKey, filterVal){
     const totalNum=parseSheetNum(row[32]);
     const totalDisplay=!isNaN(totalNum)&&totalNum>0?'USD '+totalNum.toLocaleString('es-AR',{maximumFractionDigits:0}):'--';
 
-    html+=`<tr>
+    html+=`<tr id="cob-tr-${localIdx}" style="cursor:pointer" onclick="toggleCobSelection(${localIdx})">
+      <td onclick="event.stopPropagation()"><input type="checkbox" id="cob-cb-${localIdx}" onclick="toggleCobSelection(${localIdx})" style="accent-color:var(--accent);cursor:pointer;"></td>
       <td style="font-weight:500">${customer}</td>
       <td class="mono">${(row[COL.BL]||'--').substring(0,20)}</td>
       <td class="mono" style="font-size:10px;color:var(--accent)">${invDisplay}</td>
@@ -1700,8 +1754,8 @@ function buildMailBody(mailType,d,lang){
       es:{subject:`Pagaré - ${d.negocio} / BL: ${d.bl}`,body:`${hi},\n\nLe solicitamos la firma y devolución del pagaré correspondiente al siguiente embarque:\n\nNegocio: ${d.negocio}\nCliente: ${d.customer}\nBL: ${d.bl}\nBooking: ${d.booking}\nContainer(s): ${d.containers}\nBuque: ${d.vessel}\nETA: ${d.etaFmt}${invLine}\n\n${bye}`}
     },
     reclamo_cobro:{
-      en:{subject:`Payment inquiry - ${d.inv1&&d.inv2?d.inv1+' / '+d.inv2:d.inv1||d.inv2||d.bl}`,body:`Dear,\n\nWe wish to follow up on the outstanding payment for:\n\nCustomer: ${d.customer}\nBL: ${d.bl}\nBooking: ${d.booking}\nContainer(s): ${d.containers}\nPayment due date: ${d.paymentDueFmt}${invLine}\n\nPlease confirm status of payment.\n\n${bye}`},
-      es:{subject:`Consulta de pago - ${d.inv1&&d.inv2?d.inv1+' / '+d.inv2:d.inv1||d.inv2||d.bl}`,body:`Estimado/a,\n\nNos comunicamos para hacer seguimiento del pago pendiente de:\n\nCliente: ${d.customer}\nBL: ${d.bl}\nBooking: ${d.booking}\nContainer(s): ${d.containers}\nFecha de pago estimada: ${d.paymentDueFmt}${invLine}\n\nAgradecemos confirmar estado del pago.\n\n${bye}`}
+      en:{subject:`Payment inquiry - ${d.inv1&&d.inv2?d.inv1+' / '+d.inv2:d.inv1||d.inv2||d.bl}`,body:`Dear,\n\nWe are writing to follow up on the following payment:\n\nCustomer: ${d.customer}\nInvoice: ${d.inv1||d.bl}${d.inv2?'\nFC Servicios: '+d.inv2:''}\nPayment due: ${d.paymentDueFmt}\n\nPlease confirm payment status.\n\n${bye}`},
+      es:{subject:`Consulta de pago - ${d.inv1&&d.inv2?d.inv1+' / '+d.inv2:d.inv1||d.inv2||d.bl}`,body:`Estimado/a,\n\nNos comunicamos para consultar respecto al siguiente pago:\n\nCliente: ${d.customer}\nInvoice: ${d.inv1||d.bl}${d.inv2?'\nFC Servicios: '+d.inv2:''}\nFecha de pago: ${d.paymentDueFmt}\n\nAgradecemos confirmar estado del pago.\n\n${bye}`}
     },
     solicitar_liberacion:{
       en:{subject:`Release request - ${d.exporter||d.customer} - AXT - ETA ${d.etaFmt}`,body:`Dear,\n\nWe kindly request the release of the following shipment:\n\nExporter: ${d.exporter||d.customer}\nCustomer: ${d.customer}\nBL: ${d.bl}\nBooking: ${d.booking}\nContainer(s): ${d.containers}\nVessel: ${d.vessel}\nPort: ${d.port}\nETA: ${d.etaFmt}\n\n@Pedro Berro Madero Please confirm to proceed with the release.\n\nBest regards,\nLATINUT S.A.`},
@@ -1779,7 +1833,8 @@ function openMailModal(rowIdx, mailType){
   const customerLower=(d.customer||'').toLowerCase();
   const esItaliano=GRUPO_ITALIA_KEYS.some(k=>customerLower.includes(k));
   const esLiberacion=mailType==='solicitar_liberacion';
-  currentLang=(esLiberacion||esItaliano)?'es':'en';
+  const esReclamo=mailType==='reclamo_cobro';
+  currentLang=(esLiberacion||esItaliano||esReclamo)?'es':'en';
   modalData={rowIdx,mailType,d};
   document.getElementById('lang-en').classList.toggle('active',currentLang==='en');
   document.getElementById('lang-es').classList.toggle('active',currentLang==='es');
@@ -1790,6 +1845,12 @@ function openMailModal(rowIdx, mailType){
     toStr=transcargo.to||'Thomas Laurenti <tlaurenti@transcargoarg.com>';
     const ccSiempre=contacts.filter(c=>c.ccSiempre).map(c=>c.email);
     ccStr=ccSiempre.length?ccSiempre.join(', '):'pberro@axtsolutions.com';
+  } else if(mailType==='reclamo_cobro'){
+    const contactInfo=getContactsForEmpresa(d.customer);
+    toStr=contactInfo.to||`${d.customer} <sin contacto cargado>`;
+    // No Pedro in CC for cobranza - only customer contacts
+    const otherCC=contacts.filter(c=>!c.ccSiempre&&c.empresa.toUpperCase()!==d.customer.toUpperCase()&&(c.empresa.toUpperCase().includes(d.customer.toUpperCase())||d.customer.toUpperCase().includes(c.empresa.toUpperCase()))).map(c=>c.email);
+    ccStr=otherCC.join(', ')||'';
   } else {
     const contactInfo=getContactsForEmpresa(d.customer);
     toStr=contactInfo.to||`${d.customer} <sin contacto cargado>`;
