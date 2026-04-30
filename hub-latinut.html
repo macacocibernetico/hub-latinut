@@ -445,35 +445,27 @@ const COL = {
 
 // ─── UTILS ───────────────────────────────────────────────────────────────────
 function parseSheetNum(val){
-  // Google Sheets may return numbers as "54.425" (dot as thousands sep in es-AR)
-  // or as plain "54425" or "54,425" — normalize all to float
   if(!val && val !== 0) return NaN;
-  const s = val.toString().trim();
-  if(s === '' || s === '-') return NaN;
-  // If it looks like es-AR format: 54.425,00 or 54.425
-  // Remove currency symbols and spaces
-  let clean = s.replace(/[USD$\s]/g, '');
-  // If has comma as decimal (54.425,00) -> remove dots, replace comma with dot
-  if(/\.\d{3},/.test(clean) || /^\d{1,3}(\.\d{3})+,\d*$/.test(clean)){
-    clean = clean.replace(/\./g,'').replace(',','.');
+  let s = val.toString().trim();
+  if(s === '' || s === '-' || s === '--') return NaN;
+  // Remove currency prefix like "usd" (case insensitive) and symbols
+  s = s.replace(/^usd\s*/i,'').replace(/[$\s]/g,'').trim();
+  if(s === '') return NaN;
+  // es-AR format: 54.425 (dot=thousands) or 54.425,00
+  if(/^\d{1,3}(\.\d{3})+(,\d+)?$/.test(s)){
+    s = s.replace(/\./g,'').replace(',','.');
   }
-  // If has dot as decimal and comma as thousands (54,425.00)
-  else if(/,\d{3}\./.test(clean) || /^\d{1,3}(,\d{3})+\.\d*$/.test(clean)){
-    clean = clean.replace(/,/g,'');
+  // en-US format: 54,425 or 54,425.00
+  else if(/^\d{1,3}(,\d{3})+(\.\d+)?$/.test(s)){
+    s = s.replace(/,/g,'');
   }
-  // If has dot as thousands separator only (54.425 with no decimal part)
-  else if(/^\d{1,3}(\.\d{3})+$/.test(clean)){
-    clean = clean.replace(/\./g,'');
+  // Plain with comma as decimal: 54425,00
+  else if(/^\d+,\d{1,2}$/.test(s)){
+    s = s.replace(',','.');
   }
-  // Otherwise remove any non-numeric except last dot/comma
-  else {
-    clean = clean.replace(/[^0-9.,]/g,'');
-    // replace comma with dot if it looks like decimal
-    if(/,\d{1,2}$/.test(clean)) clean = clean.replace(',','.');
-    clean = clean.replace(/,/g,'');
-  }
-  return parseFloat(clean);
+  return parseFloat(s);
 }
+
 
 function parseDate(v){
   if(!v) return null;
@@ -989,10 +981,10 @@ function renderCargas(showAll, sort){
 
     // FC columns
     const inv1 = (row[COL.INVOICE_CLIENTE]||'').trim();
-    const total1Raw = parseSheetNum(row[28]);
+    const total1Raw = parseSheetNum(row[27]); // AB=27 Total CFR FC1
     const total1 = isNaN(total1Raw) ? '' : total1Raw.toLocaleString('es-AR',{maximumFractionDigits:0});
     const inv2 = (row[COL.INVOICE_FC_SERV]||'').trim();
-    const total2Raw = parseSheetNum(row[31]); // AF=31 FC2 total
+    const total2Raw = parseSheetNum(row[32]); // AG=32 FC2 total
     const total2 = isNaN(total2Raw) ? '' : total2Raw.toLocaleString('es-AR',{maximumFractionDigits:0});
     const totalCarga = (!isNaN(total1Raw) || !isNaN(total2Raw))
       ? ((isNaN(total1Raw)?0:total1Raw) + (isNaN(total2Raw)?0:total2Raw)).toLocaleString('es-AR',{maximumFractionDigits:0})
@@ -1509,7 +1501,7 @@ function renderCobranza(filterKey, filterVal){
   if(!rows.length){document.getElementById('content').innerHTML=`<div class="empty"><div class="empty-icon">💰</div>Sin cobros pendientes.</div>`;return;}
 
   let totalUSD=0;
-  rows.forEach(r=>{const m=parseSheetNum(r[COL.TOTAL_CFR]);if(!isNaN(m))totalUSD+=m;});
+  rows.forEach(r=>{const m=parseSheetNum(r[27]);if(!isNaN(m))totalUSD+=m;});
 
   const uniqueClientes=[...new Set(allRows.filter(r=>daysFrom(r[COL.FECHA_EST_COBRO])!==null).map(r=>(r[COL.CUSTOMER]||'').trim()).filter(Boolean))].sort();
 
@@ -1553,11 +1545,9 @@ function renderCobranza(filterKey, filterVal){
     const customer=(row[COL.CUSTOMER]||'--').trim();
     const contactInfo=getContactsForEmpresa(customer);
     const contactDisplay=contactInfo.to?contactInfo.to.split('<')[0].trim():'--';
-    // Total = FC1 (col AC=28) + FC2 (col AF=31) if exists
-    const t1=parseSheetNum(row[28]);
-    const t2=parseSheetNum(row[31]);
-    const totalNum=(isNaN(t1)?0:t1)+(isNaN(t2)?0:t2);
-    const totalDisplay=totalNum>0?'USD '+totalNum.toLocaleString('es-AR',{maximumFractionDigits:0}):'--';
+    // Total from col AB=27 (Total CFR)
+    const totalNum=parseSheetNum(row[27]);
+    const totalDisplay=!isNaN(totalNum)&&totalNum>0?'USD '+totalNum.toLocaleString('es-AR',{maximumFractionDigits:0}):'--';
 
     html+=`<tr>
       <td style="font-weight:500">${customer}</td>
