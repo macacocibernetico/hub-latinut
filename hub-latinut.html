@@ -1779,7 +1779,12 @@ function openMailModal(rowIdx, mailType){
     inv1:(row[COL.INVOICE_CLIENTE]||'').trim(),
     inv2:(row[COL.INVOICE_FC_SERV]||'').trim()
   };
-  currentLang=mailType==='solicitar_liberacion'?'es':'en';
+  // Default ES for: liberacion (Transcargo) + Italian group customers
+  const GRUPO_ITALIA_KEYS=['pata','forlivese','nutitaly','dimipro','arsal'];
+  const customerLower=(d.customer||'').toLowerCase();
+  const esItaliano=GRUPO_ITALIA_KEYS.some(k=>customerLower.includes(k));
+  const esLiberacion=mailType==='solicitar_liberacion';
+  currentLang=(esLiberacion||esItaliano)?'es':'en';
   modalData={rowIdx,mailType,d};
   document.getElementById('lang-en').classList.toggle('active',currentLang==='en');
   document.getElementById('lang-es').classList.toggle('active',currentLang==='es');
