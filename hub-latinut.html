@@ -981,7 +981,7 @@ function renderCargas(showAll, sort){
 
     // FC columns
     const inv1 = (row[COL.INVOICE_CLIENTE]||'').trim();
-    const total1Raw = parseSheetNum(row[27]); // AB=27 Total CFR FC1
+    const total1Raw = parseSheetNum(row[32]); // AG=32 Valor Total
     const total1 = isNaN(total1Raw) ? '' : total1Raw.toLocaleString('es-AR',{maximumFractionDigits:0});
     const inv2 = (row[COL.INVOICE_FC_SERV]||'').trim();
     const total2Raw = parseSheetNum(row[32]); // AG=32 FC2 total
@@ -1501,7 +1501,7 @@ function renderCobranza(filterKey, filterVal){
   if(!rows.length){document.getElementById('content').innerHTML=`<div class="empty"><div class="empty-icon">💰</div>Sin cobros pendientes.</div>`;return;}
 
   let totalUSD=0;
-  rows.forEach(r=>{const m=parseSheetNum(r[27]);if(!isNaN(m))totalUSD+=m;});
+  rows.forEach(r=>{const m=parseSheetNum(r[32]);if(!isNaN(m))totalUSD+=m;});
 
   const uniqueClientes=[...new Set(allRows.filter(r=>daysFrom(r[COL.FECHA_EST_COBRO])!==null).map(r=>(r[COL.CUSTOMER]||'').trim()).filter(Boolean))].sort();
 
@@ -1546,7 +1546,7 @@ function renderCobranza(filterKey, filterVal){
     const contactInfo=getContactsForEmpresa(customer);
     const contactDisplay=contactInfo.to?contactInfo.to.split('<')[0].trim():'--';
     // Total from col AB=27 (Total CFR)
-    const totalNum=parseSheetNum(row[27]);
+    const totalNum=parseSheetNum(row[32]);
     const totalDisplay=!isNaN(totalNum)&&totalNum>0?'USD '+totalNum.toLocaleString('es-AR',{maximumFractionDigits:0}):'--';
 
     html+=`<tr>
