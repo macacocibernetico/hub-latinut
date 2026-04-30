@@ -983,8 +983,9 @@ function renderCargas(showAll, sort){
     const inv1 = (row[COL.INVOICE_CLIENTE]||'').trim();
     const total1Raw = parseSheetNum(row[32]); // AG=32 Valor Total
     const total1 = isNaN(total1Raw) ? '' : total1Raw.toLocaleString('es-AR',{maximumFractionDigits:0});
-    const inv2 = (row[COL.INVOICE_FC_SERV]||'').trim();
-    const total2Raw = parseSheetNum(row[32]); // AG=32 FC2 total
+    const inv2raw2 = (row[COL.INVOICE_FC_SERV]||'').trim();
+    const inv2 = (inv2raw2==='-'||inv2raw2==='--')?'':inv2raw2;
+    const total2Raw = inv2?parseSheetNum(row[32]):NaN; // AG=32 FC2 total, skip if no inv2
     const total2 = isNaN(total2Raw) ? '' : total2Raw.toLocaleString('es-AR',{maximumFractionDigits:0});
     const totalCarga = (!isNaN(total1Raw) || !isNaN(total2Raw))
       ? ((isNaN(total1Raw)?0:total1Raw) + (isNaN(total2Raw)?0:total2Raw)).toLocaleString('es-AR',{maximumFractionDigits:0})
@@ -1538,7 +1539,8 @@ function renderCobranza(filterKey, filterVal){
     const d=daysFrom(row[COL.FECHA_EST_COBRO]);
     const dc=daysClass(d);
     const inv1=(row[COL.INVOICE_CLIENTE]||'').trim();
-    const inv2=(row[COL.INVOICE_FC_SERV]||'').trim();
+    const _inv2r=(row[COL.INVOICE_FC_SERV]||'').trim();
+    const inv2=(_inv2r==='-'||_inv2r==='--')?'':_inv2r;
     const invDisplay=inv1&&inv2?`${inv1} / ${inv2}`:inv1||'--';
     const recInfo=getReclamoInfoFromLog(row[COL.BL]||'','reclamo cobro');
     const recHtml=recInfo?`<span style="color:var(--warn);font-size:10px;font-family:var(--mono)">${recInfo.count}x - ${recInfo.timeStr}</span>`:`<span style="color:var(--text3);font-size:10px">--</span>`;
