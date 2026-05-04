@@ -495,6 +495,35 @@ function saveReclamo(bl, mailType){
 }
 
 // ─── SOLICITUD FC ────────────────────────────────────────────────────────────
+async function solicitarFCBulk(rowIndices){
+  if(!rowIndices.length) return;
+  const rows = rowIndices.map(i => allRows[i]);
+  const sheetRows = rows.map(r => r._sheetRow).filter(Boolean).sort((a,b)=>a-b);
+  if(sheetRows.length !== rowIndices.length){ alert('No se pudieron determinar todas las filas.'); return; }
+
+  const customer = (rows[0][COL.CUSTOMER]||'').trim();
+  const product = (rows[0][COL.PRODUCT]||'').trim();
+  const minRow = sheetRows[0];
+  const maxRow = sheetRows[sheetRows.length-1];
+
+  if(!confirm(`¿Generar Solicitud FC para ${rowIndices.length} cargas?\n${customer} - ${product}\nFilas: ${minRow}-${maxRow}\n\nSe creará el borrador en Gmail y se marcará col P.`)) return;
+
+  showToast('Generando borrador...');
+  const ok = await callAppScript('solicitudFC', minRow, maxRow);
+
+  if(ok){
+    for(const row of rows){
+      await appendLog({
+        fuente:'AXT', fc:(row[COL.INVOICE_CLIENTE]||'').trim(), fcServ:'',
+        bl:(row[COL.BL]||'').trim(), customer,
+        accion:'solicitud FC (bulk)', detalle:'Via AppScript - filas '+minRow+'-'+maxRow
+      });
+    }
+    await loadLog();
+    await loadData();
+  }
+}
+
 async function solicitarFC(rowIdx){
   const row = allRows[rowIdx];
   if(!row) return;
@@ -959,6 +988,31 @@ function renderCargas(showAll, sort){
     ? `<span onclick="Object.keys(cargasDropFilters).forEach(k=>cargasDropFilters[k]='');renderCargas();" style="font-size:11px;font-family:var(--mono);padding:5px 10px;border-radius:8px;border:1px solid var(--danger);color:var(--danger);cursor:pointer;background:var(--danger-light);">✕ Limpiar</span>`
     : '';
 
+  // FC bulk selection
+  window._fcSelectedRows = new Set();
+  window._fcAllRows = rows;
+
+  window.toggleFCSelection = function(idx){
+    if(window._fcSelectedRows.has(idx)) window._fcSelectedRows.delete(idx);
+    else window._fcSelectedRows.add(idx);
+    const cb = document.getElementById('fc-cb-'+idx);
+    const tr = document.getElementById('fc-tr-'+idx);
+    if(cb) cb.checked = window._fcSelectedRows.has(idx);
+    if(tr) tr.style.background = window._fcSelectedRows.has(idx)?'rgba(0,113,227,.05)':'';
+    const bar = document.getElementById('fc-bulk-bar');
+    if(bar){
+      const n = window._fcSelectedRows.size;
+      bar.style.display = n>0?'block':'none';
+      bar.textContent = '📄 Solicitud FC ('+ n +' cargas)';
+    }
+  };
+
+  window.requestBulkFC = function(){
+    if(!window._fcSelectedRows.size) return;
+    const selected = [...window._fcSelectedRows].map(i => allRows.indexOf(window._fcAllRows[i]));
+    solicitarFCBulk(selected);
+  };
+
   let html = `<div class="table-wrap">
     <div class="table-top" style="flex-direction:column;align-items:flex-start;gap:10px;padding:14px 16px;">
       <div style="display:flex;align-items:center;justify-content:space-between;width:100%;flex-wrap:wrap;gap:8px;">
@@ -982,9 +1036,11 @@ function renderCargas(showAll, sort){
         ${sortSel}
       </div>
     </div>
+  <button id="fc-bulk-bar" onclick="requestBulkFC()" style="display:none;position:sticky;bottom:20px;left:50%;transform:translateX(-50%);background:var(--accent);color:#fff;padding:10px 24px;border-radius:30px;font-weight:600;font-size:13px;cursor:pointer;z-index:20;box-shadow:var(--shadow-lg);border:none;font-family:var(--font);"></button>
     <div style="overflow-x:auto;">
     <table>
       <thead><tr>
+        <th style="width:30px"></th>
         <th>BL</th><th>Booking</th><th>Naviera</th><th>Customer</th>
         <th>Vessel</th><th>ETA</th><th>Docs</th><th>TELEX</th>
         <th>Pagaré</th><th>Invoice FC1</th><th>Total FC1</th><th>Invoice FC2</th>
@@ -992,7 +1048,7 @@ function renderCargas(showAll, sort){
       </tr></thead>
       <tbody>`;
 
-  rows.forEach((row) => {
+  rows.forEach((row, localIdx) => {
     const idx = allRows.indexOf(row);
     const pagEnv = (row[COL.PAGARE_ENVIADO]||'').trim().toUpperCase();
     const pagFirm = (row[COL.PAGARE_FIRMADO]||'').trim().toUpperCase();
@@ -1018,7 +1074,8 @@ function renderCargas(showAll, sort){
       ? ((isNaN(total1Raw)?0:total1Raw) + (isNaN(total2Raw)?0:total2Raw)).toLocaleString('es-AR',{maximumFractionDigits:0})
       : '—';
 
-    html += `<tr>
+    html += `<tr id="fc-tr-${localIdx}" style="cursor:pointer" onclick="toggleFCSelection(${localIdx})">
+      <td onclick="event.stopPropagation()"><input type="checkbox" id="fc-cb-${localIdx}" onclick="toggleFCSelection(${localIdx})" style="accent-color:var(--accent);cursor:pointer;"></td>
       <td class="mono">${(row[COL.BL]||'—').substring(0,20)}</td>
       <td class="mono">${(row[COL.BOOKING]||'—').substring(0,14)}</td>
       <td style="color:var(--text3);font-size:11px">${(row[COL.SHIPPING]||'—').substring(0,14)}</td>
