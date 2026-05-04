@@ -494,6 +494,33 @@ function saveReclamo(bl, mailType){
   // Reclamos tracked via LOG sheet
 }
 
+// ─── SOLICITUD FC ────────────────────────────────────────────────────────────
+async function solicitarFC(rowIdx){
+  const row = allRows[rowIdx];
+  if(!row) return;
+  const sheetRow = row._sheetRow;
+  if(!sheetRow){ alert('No se pudo determinar la fila en la planilla.'); return; }
+
+  const product = (row[COL.PRODUCT]||'').trim();
+  const customer = (row[COL.CUSTOMER]||'').trim();
+  const eta = fmtDate(row[COL.ETA]);
+
+  if(!confirm(`¿Generar aviso de embarque (Solicitud FC) para:\n${customer} - ${product}\nETA: ${eta}?\n\nSe creará el borrador en Gmail y se marcará col P en la planilla.`)) return;
+
+  showToast('Generando borrador...');
+  const ok = await callAppScript('solicitudFC', sheetRow, sheetRow);
+
+  if(ok){
+    const inv1=(row[COL.INVOICE_CLIENTE]||'').trim();
+    await appendLog({
+      fuente:'AXT', fc:inv1||'', fcServ:'', bl:(row[COL.BL]||'').trim(),
+      customer, accion:'solicitud FC', detalle:'Via AppScript - fila '+sheetRow
+    });
+    await loadLog();
+    await loadData();
+  }
+}
+
 // ─── APPS SCRIPT BRIDGE ──────────────────────────────────────────────────────
 async function callAppScript(accion, filaInicio, filaFin){
   const url = cfg.appsScriptUrl;
@@ -961,7 +988,7 @@ function renderCargas(showAll, sort){
         <th>BL</th><th>Booking</th><th>Naviera</th><th>Customer</th>
         <th>Vessel</th><th>ETA</th><th>Docs</th><th>TELEX</th>
         <th>Pagaré</th><th>Invoice FC1</th><th>Total FC1</th><th>Invoice FC2</th>
-        <th>Total FC2</th><th>Total</th><th>Cobro Est.</th><th></th><th></th>
+        <th>Total FC2</th><th>Total</th><th>Cobro Est.</th><th></th><th></th><th></th>
       </tr></thead>
       <tbody>`;
 
@@ -1009,6 +1036,7 @@ function renderCargas(showAll, sort){
       <td class="mono" style="color:var(--text3)">${fmtDate(row[COL.FECHA_EST_COBRO])}</td>
       <td><button class="row-action" onclick="openMailModal(${idx},'reclamo_pago')">✉</button></td>
       <td><button class="row-action" onclick="renderEditCarga(${idx})">✎ Editar</button></td>
+      <td><button class="row-action" onclick="solicitarFC(${idx})" title="Solicitud FC a AXT" style="color:var(--accent);border-color:var(--accent);">📄 FC</button></td>
     </tr>`;
   });
 
