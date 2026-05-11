@@ -710,98 +710,164 @@ function showToast(msg){
 
 // ─── ALERTS ──────────────────────────────────────────────────────────────────
 function getAlerts(){
-  const alerts=[];
-  allRows.forEach((row,idx)=>{
-    const eta=parseDate(row[COL.ETA]);
-    const dETA=eta?Math.round((eta-new Date())/86400000):null;
-    const customer=(row[COL.CUSTOMER]||'—').trim();
-    const vessel=(row[COL.VESSEL]||'—').trim();
-    const port=(row[COL.PORT]||'—').trim();
-    const bl=(row[COL.BL]||'—').trim();
-    const booking=(row[COL.BOOKING]||'—').trim();
-    const containers=(row[COL.CONTAINERS]||'—').trim();
-    const shipping=(row[COL.SHIPPING]||'—').trim();
-    const negocio=(row[COL.NEGOCIO]||'—').trim();
-    const product=(row[COL.PRODUCT]||'—').trim();
-    const invoiceInfo=getInvoiceInfo(row);
-    const paymentDueFmt=fmtDate(row[COL.FECHA_EST_COBRO]);
-    const inv1=(row[COL.INVOICE_CLIENTE]||'').trim();
-    const inv2=(row[COL.INVOICE_FC_SERV]||'').trim();
+  const alerts = [];
+  const today = new Date();
 
-    const detail={negocio,product,bl,booking,containers,shipping,vessel,port,
-      etaFmt:fmtDate(row[COL.ETA]),customer,paymentDueFmt,invoiceInfo,
-      docsNote:(row[COL.DOCUMENTOS]||'').trim(),inv1,inv2};
-    const logistics={containers,booking,bl,shipping};
+  allRows.forEach((row, idx) => {
+    const eta = parseDate(row[COL.ETA]);
+    const dETA = eta ? Math.round((eta - today) / 86400000) : null;
+    const customer = (row[COL.CUSTOMER]||'—').trim();
+    const bl = (row[COL.BL]||'—').trim();
+    const booking = (row[COL.BOOKING]||'').trim();
+    const vessel = (row[COL.VESSEL]||'—').trim();
+    const port = (row[COL.PORT]||'—').trim();
+    const containers = (row[COL.CONTAINERS]||'').trim();
+    const shipping = (row[COL.SHIPPING]||'').trim();
+    const telex = (row[COL.TELEX]||'').trim();
+    const telexLow = telex.toLowerCase();
+    const telexSI = telexLow === 'si';
+    const telexBLOrig = telexLow.includes('bl orig');
+    const telexVacio = telex === '';
+    const pagEnv = (row[COL.PAGARE_ENVIADO]||'').trim();
+    const pagFirm = (row[COL.PAGARE_FIRMADO]||'').trim();
+    const pagNA = pagEnv === '-' || pagFirm === '-';
+    const docs = (row[COL.DOCUMENTOS]||'').trim();
+    const inv1 = (row[COL.INVOICE_CLIENTE]||'').trim();
+    const inv2raw = (row[COL.INVOICE_FC_SERV]||'').trim();
+    const inv2 = (inv2raw==='-'||inv2raw==='--')?'':inv2raw;
+    const fechaCobro = row[COL.FECHA_EST_COBRO];
+    const dCobro = daysFrom(fechaCobro);
+    const recInfo = getReclamoInfoFromLog(bl, 'solicitar liberacion');
 
-    // ETA próximo
-    if(dETA!==null&&dETA<=cfg.alerta_dias){
-      const level=dETA<=7?'critical':'warning';
-      const etaLabel=dETA<0?`Llegó hace ${Math.abs(dETA)}d`:dETA===0?'Llega HOY':`Llega en ${dETA}d`;
-      const telexStatus=(row[COL.TELEX]||'').trim();
-      const recInfo=getReclamoInfoFromLog(bl,'reclamo_pago');
-      alerts.push({level,dETA,rowIdx:idx,
-        title:`Arribo próximo — ${customer}`,
-        meta:`${negocio}  ·  ETA: ${fmtDate(row[COL.ETA])}`,
-        tags:[{label:customer,cls:'customer'},{label:vessel,cls:'vessel'},{label:port,cls:'port'},{label:shipping,cls:'naviera'},{label:etaLabel,cls:'days-'+daysClass(dETA)}],
-        logistics,detail,recInfo,
-        telexStatus,
-        actions:[
-          {label:'✉ Reclamo de pago',mailType:'reclamo_pago'},
-          {label:'✉ Envío docs',mailType:'envio_docs'},
-          {label:'✉ Shipment Advice',mailType:'shipment_advice'},
-          {label:'📋 Solicitar liberación',mailType:'solicitar_liberacion',isWrite:true}
-        ]
+    const logistics = { containers, booking, bl, shipping };
+    const invLogLine = inv1 ? `<div class="log-item"><span class="log-label">Invoice:</span><span class="log-value">${inv1}${inv2?' / '+inv2:''}</span></div>` : '';
+
+    // ── CRÍTICAS ─────────────────────────────────────────────
+    // C1: ETA ≤ 7d + TELEX vacío (liberación no solicitada)
+    if(dETA !== null && dETA >= 0 && dETA <= 7 && telexVacio && !telexBLOrig){
+      alerts.push({
+        level:'critical', subtype:'liberacion_urgente', rowIdx:idx, dETA,
+        title:`Liberación no solicitada — ${customer}`,
+        meta:`BL: ${bl}  ·  ETA: ${fmtDate(row[COL.ETA])}`,
+        tags:[{label:customer,cls:'customer'},{label:vessel,cls:'vessel'},{label:port,cls:'port'},{label:dETA+'d',cls:'days-red'}],
+        logistics, invLogLine,
+        actions:[{label:'Solicitar liberación',mailType:'solicitar_liberacion',isWrite:true}]
       });
     }
 
-    // Docs pendientes
-    const docs=(row[COL.DOCUMENTOS]||'').trim();
-    if(docs&&docs.toUpperCase()!=='SI'&&dETA!==null&&dETA<=20){
-      alerts.push({level:'warning',rowIdx:idx,
+    // C2: ETA ya pasó + TELEX no es SI ni BL Original
+    if(dETA !== null && dETA < 0 && !telexSI && !telexBLOrig){
+      alerts.push({
+        level:'critical', subtype:'eta_vencido', rowIdx:idx, dETA,
+        title:`ETA vencido sin liberar — ${customer}`,
+        meta:`BL: ${bl}  ·  ETA: ${fmtDate(row[COL.ETA])} (hace ${Math.abs(dETA)}d)`,
+        tags:[{label:customer,cls:'customer'},{label:vessel,cls:'vessel'},{label:port,cls:'port'},{label:`+${Math.abs(dETA)}d`,cls:'days-red'}],
+        logistics, invLogLine,
+        actions:[{label:'Solicitar liberación',mailType:'solicitar_liberacion',isWrite:true}]
+      });
+    }
+
+    // C3: Cobro vence en ≤ 5 días o ya venció
+    if(dCobro !== null && dCobro <= 5){
+      alerts.push({
+        level:'critical', subtype:'cobro_urgente', rowIdx:idx, dETA,
+        title:`Cobro vence pronto — ${customer}`,
+        meta:`Fecha cobro: ${fmtDate(fechaCobro)}  ·  BL: ${bl}`,
+        tags:[{label:customer,cls:'customer'},{label:dCobro<=0?`Vencido ${Math.abs(dCobro)}d`:`En ${dCobro}d`,cls:'days-red'}],
+        logistics, invLogLine,
+        recInfo: getReclamoInfoFromLog(bl,'reclamo cobro'),
+        actions:[{label:'✉ Reclamo de cobro',mailType:'reclamo_cobro'}]
+      });
+    }
+
+    // ── ADVERTENCIAS ─────────────────────────────────────────
+    // W1: ETA 8-14d + TELEX vacío
+    if(dETA !== null && dETA >= 8 && dETA <= 14 && telexVacio && !telexBLOrig){
+      alerts.push({
+        level:'warning', subtype:'liberacion_prox', rowIdx:idx, dETA,
+        title:`Liberación pendiente — ${customer}`,
+        meta:`BL: ${bl}  ·  ETA: ${fmtDate(row[COL.ETA])}`,
+        tags:[{label:customer,cls:'customer'},{label:vessel,cls:'vessel'},{label:port,cls:'port'},{label:dETA+'d',cls:'days-warn'}],
+        logistics, invLogLine,
+        actions:[{label:'Solicitar liberación',mailType:'solicitar_liberacion',isWrite:true}]
+      });
+    }
+
+    // W2: Cobro vence en 6-15 días
+    if(dCobro !== null && dCobro >= 6 && dCobro <= 15){
+      alerts.push({
+        level:'warning', subtype:'cobro_prox', rowIdx:idx, dETA,
+        title:`Cobro próximo — ${customer}`,
+        meta:`Fecha cobro: ${fmtDate(fechaCobro)}  ·  BL: ${bl}`,
+        tags:[{label:customer,cls:'customer'},{label:`En ${dCobro}d`,cls:'days-warn'}],
+        logistics, invLogLine,
+        recInfo: getReclamoInfoFromLog(bl,'reclamo cobro'),
+        actions:[{label:'✉ Reclamo de cobro',mailType:'reclamo_cobro'}]
+      });
+    }
+
+    // W3: Pagaré sin firmar + ETA ≤ 21d
+    if(!pagNA && pagEnv.toUpperCase()==='SI' && pagFirm.toUpperCase()!=='SI' && dETA !== null && dETA <= 21 && dETA >= 0){
+      alerts.push({
+        level:'warning', subtype:'pagare_firma', rowIdx:idx, dETA,
+        title:`Pagaré sin firmar — ${customer}`,
+        meta:`BL: ${bl}  ·  ETA: ${fmtDate(row[COL.ETA])}`,
+        tags:[{label:customer,cls:'customer'},{label:'Enviado, sin firma',cls:'days-warn'}],
+        logistics, invLogLine,
+        actions:[{label:'✉ Solicitar firma',mailType:'solicitar_pagare'}]
+      });
+    }
+
+    // W4: Docs pendientes + ETA ≤ 21d
+    if(docs && docs.toUpperCase()!=='SI' && dETA !== null && dETA <= 21 && dETA >= 0){
+      alerts.push({
+        level:'warning', subtype:'docs_pendientes', rowIdx:idx, dETA,
         title:`Docs pendientes — ${customer}`,
-        meta:`${negocio}  ·  BL: ${bl}  ·  ETA: ${fmtDate(row[COL.ETA])}`,
-        tags:[{label:customer,cls:'customer'},{label:product,cls:'vessel'}],
-        logistics,docsText:docs,detail,
+        meta:`BL: ${bl}  ·  ETA: ${fmtDate(row[COL.ETA])}`,
+        tags:[{label:customer,cls:'customer'},{label:dETA+'d',cls:'days-warn'}],
+        docsText: docs,
+        logistics, invLogLine,
         actions:[{label:'✉ Solicitar docs',mailType:'solicitar_docs'}]
       });
     }
 
-    // Pagaré pendiente
-    const pagEnv=(row[COL.PAGARE_ENVIADO]||'').trim().toUpperCase();
-    if(pagEnv!=='SI'&&dETA!==null&&dETA<=30){
-      const recInfo=getReclamoInfoFromLog(bl,'solicitar_pagare');
-      alerts.push({level:'info',rowIdx:idx,
-        title:`Pagaré pendiente — ${customer}`,
-        meta:`${negocio}  ·  BL: ${bl}  ·  ETA: ${fmtDate(row[COL.ETA])}`,
-        tags:[{label:customer,cls:'customer'},{label:'Pagaré no enviado',cls:'days-warn'}],
-        logistics,detail,recInfo,
+    // ── INFO ─────────────────────────────────────────────────
+    // I1: Pagaré sin enviar + ETA ≤ 30d
+    if(!pagNA && pagEnv.toUpperCase()!=='SI' && dETA !== null && dETA <= 30 && dETA >= 0){
+      alerts.push({
+        level:'info', subtype:'pagare_envio', rowIdx:idx, dETA,
+        title:`Pagaré sin enviar — ${customer}`,
+        meta:`BL: ${bl}  ·  ETA: ${fmtDate(row[COL.ETA])}`,
+        tags:[{label:customer,cls:'customer'},{label:'Sin enviar',cls:'days-warn'}],
+        logistics, invLogLine,
         actions:[{label:'✉ Solicitar pagaré',mailType:'solicitar_pagare'}]
       });
     }
 
-    // Cobro estimado
-    const fechaEst=row[COL.FECHA_EST_COBRO];
-    const dCobro=daysFrom(fechaEst);
-    if(dCobro!==null&&dCobro<=14&&dCobro>=-30){
-      const level2=dCobro<=0?'critical':'warning';
-      const invoiceTitle=inv1&&inv2?`${inv1} / ${inv2}`:inv1||inv2||negocio;
-      const cardTitle=`Cobro estimado — ${invoiceTitle} · ${customer}`;
-      const invLogLine=inv1&&inv2
-        ?`<div class="log-item"><span class="log-label">Invoice:</span><span class="log-value">${inv1}</span></div><div class="log-item"><span class="log-label">FC Servicios:</span><span class="log-value">${inv2}</span></div>`
-        :inv1?`<div class="log-item"><span class="log-label">Invoice:</span><span class="log-value">${inv1}</span></div>`
-        :inv2?`<div class="log-item"><span class="log-label">FC Servicios:</span><span class="log-value">${inv2}</span></div>`:'';
-      const recInfo=getReclamoInfoFromLog(bl,'reclamo_cobro');
-      alerts.push({level:level2,rowIdx:idx,
-        title:cardTitle,
-        meta:`Payment due: ${fmtDate(fechaEst)}  ·  BL: ${bl}`,
-        tags:[{label:customer,cls:'customer'},{label:dCobro<=0?`Vencido hace ${Math.abs(dCobro)}d`:`En ${dCobro}d`,cls:'days-'+daysClass(dCobro)}],
-        logistics,detail,invLogLine,recInfo,
-        actions:[{label:'✉ Reclamo de cobro',mailType:'reclamo_cobro'}]
+    // I2: ETA 15-30d sin liberación solicitada
+    if(dETA !== null && dETA >= 15 && dETA <= 30 && telexVacio && !telexBLOrig){
+      alerts.push({
+        level:'info', subtype:'liberacion_futura', rowIdx:idx, dETA,
+        title:`Liberación a gestionar — ${customer}`,
+        meta:`BL: ${bl}  ·  ETA: ${fmtDate(row[COL.ETA])}`,
+        tags:[{label:customer,cls:'customer'},{label:vessel,cls:'vessel'},{label:dETA+'d',cls:'days-ok'}],
+        logistics, invLogLine,
+        actions:[]
       });
     }
   });
-  return alerts.sort((a,b)=>({critical:0,warning:1,info:2}[a.level]||2)-({critical:0,warning:1,info:2}[b.level]||2));
+
+  // Sort: critical first, then by urgency
+  const order = {critical:0, warning:1, info:2};
+  return alerts.sort((a,b) => {
+    const lvl = (order[a.level]||2) - (order[b.level]||2);
+    if(lvl !== 0) return lvl;
+    const da = a.dETA !== null && a.dETA !== undefined ? a.dETA : 999;
+    const db = b.dETA !== null && b.dETA !== undefined ? b.dETA : 999;
+    return da - db;
+  });
 }
+
 
 function updateBadges(){
   const alerts=getAlerts();
@@ -811,7 +877,7 @@ function updateBadges(){
   const cobros=allRows.filter(r=>{const d=daysFrom(r[COL.FECHA_EST_COBRO]);return d!==null&&d<=14;}).length;
   const bC=document.getElementById('badge-cobranza');
   bC.textContent=cobros||'';bC.style.display=cobros?'':'none';
-  const libs=allRows.filter(r=>{const d=daysFrom(r[COL.ETA]);const t=(r[COL.TELEX]||'').trim();return d!==null&&d>=0&&d<=7&&t.toUpperCase()!=='SI';}).length;
+  const libs=allRows.filter(r=>{const d=daysFrom(r[COL.ETA]);const t=(r[COL.TELEX]||'').trim().toLowerCase();return d!==null&&d>=0&&d<=7&&t!=='si'&&!t.includes('bl orig');}).length;
   const bL=document.getElementById('badge-liberaciones');
   if(bL){bL.textContent=libs||'';bL.style.display=libs?'':'none';}
 }
@@ -840,23 +906,57 @@ function renderAlertas(){
     <div class="stat-card"><div class="stat-label">ETA próximos 7d</div><div class="stat-value" style="color:var(--info)">${proxETA}</div><div class="stat-sub">Sin liberación solicitada</div></div>
   </div>`;
   const alertFilter = window._alertFilter || 'all';
-  window.setAlertFilter = function(f){ window._alertFilter = f; renderAlertas(); };
-  const filteredAlerts = alertFilter === 'all' ? alerts : alerts.filter(a => a.level === alertFilter);
-  const chip = (label, key, count) => {
-    const active = alertFilter === key;
-    const color = key==='critical'?'var(--danger)':key==='warning'?'var(--warn)':key==='info'?'var(--info)':'var(--accent)';
-    return `<span onclick="setAlertFilter('${key}')" style="font-size:11px;font-family:var(--mono);padding:5px 12px;border-radius:20px;border:1px solid ${active?color:'var(--border)'};cursor:pointer;background:${active?color:'var(--bg2)'};color:${active?'#fff':'var(--text3)'};transition:all .15s;">${label}${count>0?' ('+count+')':''}</span>`;
+  const alertSubFilter = window._alertSubFilter || 'all';
+  window.setAlertFilter = function(f){ window._alertFilter=f; window._alertSubFilter='all'; renderAlertas(); };
+  window.setAlertSubFilter = function(f){ window._alertSubFilter=f; renderAlertas(); };
+
+  const SUBTYPES = {
+    critical:[
+      {key:'liberacion_urgente',label:'Liberación urgente'},
+      {key:'eta_vencido',label:'ETA vencido'},
+      {key:'cobro_urgente',label:'Cobro urgente'},
+    ],
+    warning:[
+      {key:'liberacion_prox',label:'Liberación próxima'},
+      {key:'cobro_prox',label:'Cobro próximo'},
+      {key:'pagare_firma',label:'Pagaré sin firma'},
+      {key:'docs_pendientes',label:'Docs pendientes'},
+    ],
+    info:[
+      {key:'pagare_envio',label:'Pagaré sin enviar'},
+      {key:'liberacion_futura',label:'Liberación futura'},
+    ]
   };
-  html += `<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:16px;align-items:center;">
-    <span style="font-size:10px;color:var(--text3);font-weight:600;text-transform:uppercase;letter-spacing:.5px;margin-right:4px;">Filtrar:</span>
-    ${chip('Todas', 'all', alerts.length)}
-    ${chip('Criticas', 'critical', alerts.filter(a=>a.level==='critical').length)}
-    ${chip('Advertencias', 'warning', alerts.filter(a=>a.level==='warning').length)}
-    ${chip('Info', 'info', alerts.filter(a=>a.level==='info').length)}
+
+  const levelFiltered = alertFilter==='all'?alerts:alerts.filter(a=>a.level===alertFilter);
+  const filteredAlerts = alertSubFilter==='all'?levelFiltered:levelFiltered.filter(a=>a.subtype===alertSubFilter);
+
+  const chip = (label, key, count, onclick, color) => {
+    const active = alertFilter===key||alertSubFilter===key;
+    const c = color||(key==='critical'?'var(--danger)':key==='warning'?'var(--warn)':key==='info'?'var(--info)':'var(--accent)');
+    return `<span onclick="${onclick}" style="font-size:11px;font-family:var(--mono);padding:4px 12px;border-radius:20px;border:1px solid ${active?c:'var(--border)'};cursor:pointer;background:${active?c:'var(--bg2)'};color:${active?'#fff':'var(--text3)'};transition:all .15s;white-space:nowrap;">${label}${count>0?' ('+count+')':''}</span>`;
+  };
+
+  html+=`<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px;align-items:center;">
+    <span style="font-size:10px;color:var(--text3);font-weight:600;text-transform:uppercase;letter-spacing:.5px;margin-right:4px;">Ver:</span>
+    ${chip('Todas','all',alerts.length,"setAlertFilter('all')",'var(--accent)')}
+    ${chip('Críticas','critical',alerts.filter(a=>a.level==='critical').length,"setAlertFilter('critical')","var(--danger)")}
+    ${chip('Advertencias','warning',alerts.filter(a=>a.level==='warning').length,"setAlertFilter('warning')","var(--warn)")}
+    ${chip('Info','info',alerts.filter(a=>a.level==='info').length,"setAlertFilter('info')","var(--info)")}
   </div>`;
+
+  if(alertFilter!=='all'&&SUBTYPES[alertFilter]){
+    const borderColor=alertFilter==='critical'?'var(--danger)':alertFilter==='warning'?'var(--warn)':'var(--info)';
+    const subs=SUBTYPES[alertFilter];
+    html+=`<div style="display:flex;gap:5px;flex-wrap:wrap;margin-bottom:14px;padding-left:12px;border-left:2px solid ${borderColor};">
+      ${chip('Todas','all_sub',levelFiltered.length,"setAlertSubFilter('all')",borderColor)}
+      ${subs.map(s=>{const cnt=levelFiltered.filter(a=>a.subtype===s.key).length;return cnt>0?chip(s.label,s.key,cnt,`setAlertSubFilter('${s.key}')`,borderColor):'';}).join('')}
+    </div>`;
+  }
+
   if(!filteredAlerts.length){html+=`<div class="empty"><div class="empty-icon">✓</div>${alerts.length?'Sin alertas en esta categoría.':'Todo en orden.'}</div>`;}
   else{
-    html+=`<div class="section-header"><span class="section-title">Requieren atención</span><span class="section-count">${filteredAlerts.length}${alertFilter!=='all'?' de '+alerts.length:''} alertas</span></div><div class="alert-list">`;
+    html+=`<div class="section-header"><span class="section-title">Requieren atención</span><span class="section-count">${filteredAlerts.length}${alertFilter!=='all'||alertSubFilter!=='all'?' de '+alerts.length:''} alertas</span></div><div class="alert-list">`;
     filteredAlerts.forEach(a=>{
       const tagsHtml=(a.tags||[]).map(t=>`<span class="tag ${t.cls}">${t.label}</span>`).join('');
       const actionsHtml=(a.actions||[]).map(act=>{
@@ -1457,7 +1557,13 @@ async function marcarLiberado(rowIdx){
 function renderLiberaciones(){
   const rows=allRows.filter(r=>{
     const d=daysFrom(r[COL.ETA]);
-    return d!==null&&d>=0&&d<=7;
+    if(d===null||d<0||d>7) return false;
+    // Exclude BL Original - no telex needed
+    const telex=(r[COL.TELEX]||'').trim().toLowerCase();
+    if(telex.includes('bl original')||telex.includes('bl orig')) return false;
+    // Exclude already fully liberated
+    if(telex==='si') return false;
+    return true;
   }).sort((a,b)=>(daysFrom(a[COL.ETA])||999)-(daysFrom(b[COL.ETA])||999));
 
   if(!rows.length){
