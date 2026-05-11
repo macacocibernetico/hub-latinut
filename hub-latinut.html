@@ -1070,6 +1070,7 @@ function renderCargas(showAll, sort){
     let pagLabel, pagColor;
     if(pagFirm === 'SI'){ pagLabel='Firmado'; pagColor='var(--ok)'; }
     else if(pagEnv === 'SI'){ pagLabel='Sin firmar'; pagColor='var(--warn)'; }
+    else if(pagEnv === '-' || pagFirm === '-'){ pagLabel='N/A'; pagColor='var(--text3)'; }
     else { pagLabel='Sin enviar'; pagColor='var(--danger)'; }
 
     const docs = (row[COL.DOCUMENTOS]||'').trim();
@@ -1517,26 +1518,35 @@ function renderLiberaciones(){
     const port=(row[COL.PORT]||'').trim();
     const inv1=(row[COL.INVOICE_CLIENTE]||'').trim();
     const inv2=(row[COL.INVOICE_FC_SERV]||'').trim();
-    const pagFirm=(row[COL.PAGARE_FIRMADO]||'').trim().toUpperCase();
+    const pagFirmRaw=(row[COL.PAGARE_FIRMADO]||'').trim();
+    const pagFirm=pagFirmRaw==='-'?'NA':pagFirmRaw.toUpperCase();
+    const pagEnvRaw=(row[COL.PAGARE_ENVIADO]||'').trim();
+    const pagEnvLib=pagEnvRaw==='-'?'NA':pagEnvRaw.toUpperCase();
     const invoiceStr=inv1&&inv2?`${inv1} / ${inv2}`:inv1||inv2||'—';
     const cardTitle=`${booking} · ${invoiceStr} · ${customer}`;
     const recInfo=getReclamoInfoFromLog(bl,'solicitar liberacion');
     const telexVal=telex.toLowerCase();
     const esSolicitado=telexVal.includes('solicitado');
     const esRecibir=telexVal.includes('recibir');
-    const level=telexOk?'info':d<=3?'critical':'warning';
+    const esBLOriginal=telexVal.includes('bl original')||telexVal.includes('bl orig');
+    const level=telexOk||esBLOriginal?'info':d<=3?'critical':'warning';
 
     const telexHtml=telexOk
       ?`<div class="status-label ok">✓ Liberado</div>`
-      :telexPending
-        ?`<div class="status-label info">● Estado: ${telex}</div>`
-        :`<div class="status-label danger">○ Sin liberación solicitada</div>`;
-    const pagHtml=`<div class="status-label ${pagFirm==='SI'?'ok':'warn'}">${pagFirm==='SI'?'✓ Pagaré firmado':'○ Pagaré pendiente de firma'}</div>`;
+      :esBLOriginal
+        ?`<div class="status-label info">📄 BL Original</div>`
+        :telexPending
+          ?`<div class="status-label info">● Estado: ${telex}</div>`
+          :`<div class="status-label danger">○ Sin liberación solicitada</div>`;
+    const pagHtml=pagFirm==='NA'?'':
+      `<div class="status-label ${pagFirm==='SI'?'ok':'warn'}">${pagFirm==='SI'?'✓ Pagaré firmado':'○ Pagaré pendiente de firma'}</div>`;
     const recHtml=recInfo?`<div class="alert-reclamo">⚠ Solicitado ${recInfo.count} vez${recInfo.count>1?'es':''} · último ${recInfo.timeStr}</div>`:'';
 
     let actionBtn='';
     if(telexOk){
       actionBtn='<span class="status-label ok" style="font-size:11px;font-weight:600;">✓ Liberación completada</span>';
+    } else if(esBLOriginal){
+      actionBtn='<span class="status-label info" style="font-size:11px;">📄 BL Original — no requiere liberación telex</span>';
     } else if(esRecibir){
       actionBtn=`<button class="action-btn success-action" onclick="marcarLiberado(${origIdx})">✓ Confirmar liberación recibida</button>`;
     } else if(esSolicitado){
@@ -1727,7 +1737,10 @@ function renderPagares(){
     <thead><tr><th>Negocio</th><th>Customer</th><th>BL</th><th>Naviera</th><th>ETA</th><th>Enviado</th><th>Firmado</th><th>Payment Due</th><th>Reclamos</th><th></th></tr></thead><tbody>`;
   allRows.forEach((row,idx)=>{
     const pagEnv=(row[COL.PAGARE_ENVIADO]||'').trim().toUpperCase();
-    const pagFirm=(row[COL.PAGARE_FIRMADO]||'').trim().toUpperCase();
+    const pagFirmRaw=(row[COL.PAGARE_FIRMADO]||'').trim();
+    const pagFirm=pagFirmRaw==='-'?'NA':pagFirmRaw.toUpperCase();
+    const pagEnvRaw=(row[COL.PAGARE_ENVIADO]||'').trim();
+    const pagEnvLib=pagEnvRaw==='-'?'NA':pagEnvRaw.toUpperCase();
     const recInfo=getReclamoInfoFromLog(row[COL.BL]||'','solicitar_pagare');
     const recHtml=recInfo?`<span style="color:var(--warn);font-size:10px;font-family:var(--mono)">${recInfo.count}x · ${recInfo.timeStr}</span>`:`<span style="color:var(--muted);font-size:10px">—</span>`;
     html+=`<tr>
