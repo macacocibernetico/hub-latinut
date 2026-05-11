@@ -832,17 +832,32 @@ function renderAlertas(){
   const alerts=getAlerts();
   const critCount=alerts.filter(a=>a.level==='critical').length;
   const warnCount=alerts.filter(a=>a.level==='warning').length;
-  const proxETA=allRows.filter(r=>{const d=daysFrom(r[COL.ETA]);const telex=(r[COL.TELEX]||'').trim();return d!==null&&d>=0&&d<=7&&telex==='';}).length;
+  const proxETA=allRows.filter(r=>{const d=daysFrom(r[COL.ETA]);return d!==null&&d>=0&&d<=7;}).length;
   let html=`<div class="stats-row">
     <div class="stat-card"><div class="stat-label">Cargas activas</div><div class="stat-value">${allRows.length}</div><div class="stat-sub">AXT Solutions</div></div>
     <div class="stat-card alert-card"><div class="stat-label">Alertas críticas</div><div class="stat-value" style="color:var(--danger)">${critCount}</div><div class="stat-sub">Acción urgente</div></div>
     <div class="stat-card warn-card"><div class="stat-label">Advertencias</div><div class="stat-value" style="color:var(--warn)">${warnCount}</div><div class="stat-sub">A monitorear</div></div>
     <div class="stat-card"><div class="stat-label">ETA próximos 7d</div><div class="stat-value" style="color:var(--info)">${proxETA}</div><div class="stat-sub">Sin liberación solicitada</div></div>
   </div>`;
-  if(!alerts.length){html+=`<div class="empty"><div class="empty-icon">✓</div>Sin alertas activas. Todo en orden.</div>`;}
+  const alertFilter = window._alertFilter || 'all';
+  window.setAlertFilter = function(f){ window._alertFilter = f; renderAlertas(); };
+  const filteredAlerts = alertFilter === 'all' ? alerts : alerts.filter(a => a.level === alertFilter);
+  const chip = (label, key, count) => {
+    const active = alertFilter === key;
+    const color = key==='critical'?'var(--danger)':key==='warning'?'var(--warn)':key==='info'?'var(--info)':'var(--accent)';
+    return `<span onclick="setAlertFilter('${key}')" style="font-size:11px;font-family:var(--mono);padding:5px 12px;border-radius:20px;border:1px solid ${active?color:'var(--border)'};cursor:pointer;background:${active?color:'var(--bg2)'};color:${active?'#fff':'var(--text3)'};transition:all .15s;">${label}${count>0?' ('+count+')':''}</span>`;
+  };
+  html += `<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:16px;align-items:center;">
+    <span style="font-size:10px;color:var(--text3);font-weight:600;text-transform:uppercase;letter-spacing:.5px;margin-right:4px;">Filtrar:</span>
+    ${chip('Todas', 'all', alerts.length)}
+    ${chip('Criticas', 'critical', alerts.filter(a=>a.level==='critical').length)}
+    ${chip('Advertencias', 'warning', alerts.filter(a=>a.level==='warning').length)}
+    ${chip('Info', 'info', alerts.filter(a=>a.level==='info').length)}
+  </div>`;
+  if(!filteredAlerts.length){html+=`<div class="empty"><div class="empty-icon">✓</div>${alerts.length?'Sin alertas en esta categoría.':'Todo en orden.'}</div>`;}
   else{
-    html+=`<div class="section-header"><span class="section-title">Requieren atención</span><span class="section-count">${alerts.length} alertas</span></div><div class="alert-list">`;
-    alerts.forEach(a=>{
+    html+=`<div class="section-header"><span class="section-title">Requieren atención</span><span class="section-count">${filteredAlerts.length}${alertFilter!=='all'?' de '+alerts.length:''} alertas</span></div><div class="alert-list">`;
+    filteredAlerts.forEach(a=>{
       const tagsHtml=(a.tags||[]).map(t=>`<span class="tag ${t.cls}">${t.label}</span>`).join('');
       const actionsHtml=(a.actions||[]).map(act=>{
         const cls=act.isWrite?'write':'secondary-action';
