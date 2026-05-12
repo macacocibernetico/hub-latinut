@@ -1019,6 +1019,13 @@ let cargasDropFilters = {
   puerto: ''
 };
 
+function sortCargas(field){
+  if(field==='eta') cargasSort = cargasSort==='eta_asc'?'eta_desc':'eta_asc';
+  else if(field==='cobro') cargasSort = cargasSort==='cobro_asc'?'cobro_desc':'cobro_asc';
+  else if(field==='cliente') cargasSort = cargasSort==='cliente_az'?'cliente_za':'cliente_az';
+  renderCargas();
+}
+
 function setCargasFilter(key, value){
   cargasDropFilters[key] = value;
   renderCargas();
@@ -1174,12 +1181,12 @@ function renderCargas(showAll, sort){
       <thead><tr>
         <th style="width:30px"></th>
         <th>BL</th><th>Booking</th><th>Naviera</th>
-        <th onclick="renderCargas(undefined,undefined,cargasSort==='cliente_az'?'cliente_za':'cliente_az')" style="cursor:pointer;user-select:none;">Customer ${'cliente_az'===cargasSort?'↑':'cliente_za'===cargasSort?'↓':'↕'}</th>
+        <th onclick="sortCargas('cliente')" style="cursor:pointer;user-select:none;">Customer ${cargasSort==='cliente_az'?'↑':cargasSort==='cliente_za'?'↓':'↕'}</th>
         <th>Vessel</th>
-        <th onclick="renderCargas(undefined,undefined,cargasSort==='eta_asc'?'eta_desc':'eta_asc')" style="cursor:pointer;user-select:none;">ETA ${'eta_asc'===cargasSort?'↑':'eta_desc'===cargasSort?'↓':'↕'}</th>
+        <th onclick="sortCargas('eta')" style="cursor:pointer;user-select:none;">ETA ${cargasSort==='eta_asc'?'↑':cargasSort==='eta_desc'?'↓':'↕'}</th>
         <th>Docs</th><th>TELEX</th><th>Pagaré</th>
         <th>Invoice FC1</th><th>Total FC1</th><th>Invoice FC2</th><th>Total FC2</th><th>Total</th>
-        <th onclick="renderCargas(undefined,undefined,cargasSort==='cobro_asc'?'cobro_desc':'cobro_asc')" style="cursor:pointer;user-select:none;">Cobro Est. ${'cobro_asc'===cargasSort?'↑':'cobro_desc'===cargasSort?'↓':'↕'}</th>
+        <th onclick="sortCargas('cobro')" style="cursor:pointer;user-select:none;">Cobro Est. ${cargasSort==='cobro_asc'?'↑':cargasSort==='cobro_desc'?'↓':'↕'}</th>
         <th></th><th></th><th></th>
       </tr></thead>
       <tbody>`;
