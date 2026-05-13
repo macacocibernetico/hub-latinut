@@ -2422,13 +2422,12 @@ function addChatMsg(role, text, isThinking=false){
 
 
 // ─── INIT ────────────────────────────────────────────────────────────────────
-// ─── INIT ────────────────────────────────────────────────────────────────────
 window.onload=()=>{
   if(cfg.sheetId&&cfg.apiKey) loadData();
   else{showConfigPrompt();setSheetStatus('err','Sin configurar');}
   if(cfg.clientId) initGoogleAuth();
 };
-
+</script>
 <!-- Google Identity Services -->
 <script src="https://accounts.google.com/gsi/client" async defer></script>
 <!-- CHAT -->
