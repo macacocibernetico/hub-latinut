@@ -649,7 +649,6 @@ async function callAppScript(accion, filaInicio, filaFin){
 
 // ─── GOOGLE AUTH ─────────────────────────────────────────────────────────────
 function initGoogleAuth(){
-function initGoogleAuth(){
   if(!cfg.clientId) return;
   if(typeof google === 'undefined' || !google.accounts || !google.accounts.oauth2){
     setTimeout(initGoogleAuth, 500);
@@ -667,7 +666,6 @@ function initGoogleAuth(){
   });
 }
 
-function handleAuth(){
 function handleAuth(){
   if(accessToken){
     google.accounts.oauth2.revoke(accessToken, ()=>{
@@ -2423,19 +2421,22 @@ function doLogin(){
 }
 
 // ─── INIT ────────────────────────────────────────────────────────────────────
+// ─── INIT ────────────────────────────────────────────────────────────────────
 window.onload=()=>{
-  // Check auth
-  if(!sessionStorage.getItem('hub_auth')){
+  // Show login if not authenticated
+  const authed = sessionStorage.getItem('hub_auth');
+  if(!authed){
     document.getElementById('login-overlay').classList.remove('hidden');
     document.getElementById('login-user').focus();
-    return;
+    // Still initialize Google auth in background so it's ready when user logs in
+  } else {
+    document.getElementById('login-overlay').classList.add('hidden');
   }
-  document.getElementById('login-overlay').classList.add('hidden');
-  if(cfg.sheetId&&cfg.apiKey) loadData();
-  else{showConfigPrompt();setSheetStatus('err','Sin configurar');}
+  // Always init these regardless of login state
+  if(cfg.sheetId&&cfg.apiKey&&authed) loadData();
+  else if(authed){showConfigPrompt();setSheetStatus('err','Sin configurar');}
   if(cfg.clientId) initGoogleAuth();
 };
-</script>
 
 <!-- Google Identity Services -->
 <script src="https://accounts.google.com/gsi/client" async defer></script>
