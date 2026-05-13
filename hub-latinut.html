@@ -649,7 +649,12 @@ async function callAppScript(accion, filaInicio, filaFin){
 
 // ─── GOOGLE AUTH ─────────────────────────────────────────────────────────────
 function initGoogleAuth(){
+function initGoogleAuth(){
   if(!cfg.clientId) return;
+  if(typeof google === 'undefined' || !google.accounts || !google.accounts.oauth2){
+    setTimeout(initGoogleAuth, 500);
+    return;
+  }
   tokenClient = google.accounts.oauth2.initTokenClient({
     client_id: cfg.clientId,
     scope: SCOPES,
@@ -663,14 +668,23 @@ function initGoogleAuth(){
 }
 
 function handleAuth(){
+function handleAuth(){
   if(accessToken){
-    // Desconectar
     google.accounts.oauth2.revoke(accessToken, ()=>{
       accessToken=null;
       updateAuthUI(false);
     });
   } else {
     if(!cfg.clientId){ alert('Primero configurá el Client ID en Configuración.'); return; }
+    if(!tokenClient){
+      if(typeof google === 'undefined' || !google.accounts){
+        alert('Google aún está cargando. Esperá un segundo e intentá de nuevo.');
+        return;
+      }
+      initGoogleAuth();
+      setTimeout(()=>{ if(tokenClient) tokenClient.requestAccessToken(); }, 600);
+      return;
+    }
     tokenClient.requestAccessToken();
   }
 }
