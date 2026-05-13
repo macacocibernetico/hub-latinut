@@ -411,12 +411,22 @@ let logRows = []; // Cache del LOG del HUB sheet
 
 // ─── CONTACTS ────────────────────────────────────────────────────────────────
 async function loadContacts(){
-  if(!cfg.hubSheetId||!cfg.apiKey) return;
+  if(!cfg.hubSheetId) return;
   try{
     const range=encodeURIComponent('CONTACTOS!A2:E');
-    const url=`https://sheets.googleapis.com/v4/spreadsheets/${cfg.hubSheetId}/values/${range}?key=${cfg.apiKey}`;
-    const r=await fetch(url);
-    if(!r.ok) return;
+    // Use OAuth if available (required for private sheets), fallback to API key
+    let url, headers={};
+    if(accessToken){
+      url=`https://sheets.googleapis.com/v4/spreadsheets/${cfg.hubSheetId}/values/${range}`;
+      headers={'Authorization':`Bearer ${accessToken}`};
+    } else if(cfg.apiKey){
+      url=`https://sheets.googleapis.com/v4/spreadsheets/${cfg.hubSheetId}/values/${range}?key=${cfg.apiKey}`;
+    } else {
+      console.warn('No auth available for HUB sheet');
+      return;
+    }
+    const r=await fetch(url,{headers});
+    if(!r.ok){ console.error('Contacts load failed:', r.status); return; }
     const data=await r.json();
     contacts=(data.values||[]).map(row=>({
       empresa:(row[0]||'').trim(),
@@ -448,14 +458,22 @@ function getContactsForEmpresa(empresa){
 
 // ─── LOG CACHE ───────────────────────────────────────────────────────────────
 async function loadLog(){
-  if(!cfg.hubSheetId||!cfg.apiKey) return;
+  if(!cfg.hubSheetId) return;
   try{
     const range=encodeURIComponent('LOG!A:I');
-    const url=`https://sheets.googleapis.com/v4/spreadsheets/${cfg.hubSheetId}/values/${range}?key=${cfg.apiKey}`;
-    const r=await fetch(url);
+    let url, headers={};
+    if(accessToken){
+      url=`https://sheets.googleapis.com/v4/spreadsheets/${cfg.hubSheetId}/values/${range}`;
+      headers={'Authorization':`Bearer ${accessToken}`};
+    } else if(cfg.apiKey){
+      url=`https://sheets.googleapis.com/v4/spreadsheets/${cfg.hubSheetId}/values/${range}?key=${cfg.apiKey}`;
+    } else {
+      return;
+    }
+    const r=await fetch(url,{headers});
     if(!r.ok) return;
     const data=await r.json();
-    logRows=(data.values||[]).slice(1); // Skip header
+    logRows=(data.values||[]).slice(1);
     console.log(`Loaded ${logRows.length} log entries`);
   }catch(e){console.error('Error loading log',e);}
 }
@@ -1938,8 +1956,14 @@ async function renderLog(){
   document.getElementById('content').innerHTML=`<div class="spinner"><div class="spin"></div> Cargando log...</div>`;
   try{
     const hubId=cfg.hubSheetId||cfg.sheetId;
-    const range=encodeURIComponent(`LOG!A:I`);
-    const url=`https://sheets.googleapis.com/v4/spreadsheets/${hubId}/values/${range}?key=${cfg.apiKey}`;
+    const range=encodeURIComponent('LOG!A:I');
+    let url, fetchOpts={};
+    if(accessToken){
+      url=`https://sheets.googleapis.com/v4/spreadsheets/${hubId}/values/${range}`;
+      fetchOpts={headers:{'Authorization':`Bearer ${accessToken}`}};
+    } else {
+      url=`https://sheets.googleapis.com/v4/spreadsheets/${hubId}/values/${range}?key=${cfg.apiKey}`;
+    }
     const r=await fetch(url);
     const data=await r.json();
     const rows=(data.values||[]).slice(1).reverse(); // Más recientes primero
