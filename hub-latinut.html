@@ -1879,7 +1879,10 @@ async function reclamarCobranzaBulk(rowIndices){
     return `Cliente: ${customer}\nInvoice: ${inv1||'—'}${inv2?'\nFC Servicios: '+inv2:''}\nFecha de vencimiento: ${due}`;
   }).join('\n\n');
 
-  const subject=`Consulta de pago - ${customer} - AXT Trading${plural?' ('+rows.length+' facturas)':''}`;
+  // Build dates string - single if all same, comma separated if different
+  const dates=[...new Set(rows.map(r=>fmtDate(r[COL.FECHA_EST_COBRO])).filter(Boolean))];
+  const datesStr=dates.length===1?dates[0]:dates.join(', ');
+  const subject=`Consulta de pago - ${customer} - AXT Trading - Vencimiento ${datesStr}`;
   const body=`Estimado/a,\n\nNos comunicamos para consultar respecto a ${intro}:\n\n${lines}\n\nAgradecemos confirmar estado del pago.\n\nSaludos,\nLATINUT S.A.`;
 
   modalData={rowIndices, isBulk:true, mailType:'reclamo_cobro', customer, rows};
