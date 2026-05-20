@@ -456,12 +456,16 @@ async function loadContacts(){
 }
 
 function getContactsForEmpresa(empresa){
-  if(!empresa||!contacts.length) return {to:'', cc:'pedro@axt.com'};
+  if(!empresa||!contacts.length) return {to:'', cc:''};
   const emp=empresa.trim().toUpperCase();
-  // Match: exact OR empresa column contains the customer name (for grouped entries)
+  // Match: exact OR contains in either direction (handles "IDI / PIDCO" group entries)
   const match=contacts.filter(c=>{
     const cEmp=c.empresa.toUpperCase();
-    return cEmp===emp || cEmp.includes(emp) || emp.includes(cEmp);
+    if(cEmp===emp) return true;
+    // Split grouped names like "IDI / PIDCO" and check each part
+    const parts=cEmp.split(/[\/,]/).map(p=>p.trim());
+    if(parts.some(p=>p===emp||emp.includes(p)||p.includes(emp))) return true;
+    return false;
   });
   const principal=match.filter(c=>c.rol.toLowerCase().includes('principal'));
   const cc=contacts.filter(c=>c.ccSiempre).map(c=>c.email);
@@ -1855,6 +1859,40 @@ function daysColor(d){
   if(d <= 4) return '#f97316'; // naranja
   if(d <= 10) return '#eab308'; // amarillo
   return 'var(--ok)';
+}
+
+async function reclamarCobranzaBulk(rowIndices){
+  if(!rowIndices.length) return;
+  const rows=rowIndices.map(i=>allRows[i]);
+  const customer=(rows[0][COL.CUSTOMER]||'').trim();
+  const contactInfo=getContactsForEmpresa(customer);
+  const ccSiempre=contacts.filter(c=>c.ccSiempre).map(c=>c.email);
+
+  const plural=rows.length>1;
+  const intro=plural?'los siguientes pagos':'el siguiente pago';
+
+  const lines=rows.map(row=>{
+    const inv1=(row[COL.INVOICE_CLIENTE]||'').trim();
+    const inv2raw=(row[COL.INVOICE_FC_SERV]||'').trim();
+    const inv2=(inv2raw==='-'||inv2raw==='--')?'':inv2raw;
+    const due=fmtDate(row[COL.FECHA_EST_COBRO]);
+    return `Cliente: ${customer}\nInvoice: ${inv1||'—'}${inv2?'\nFC Servicios: '+inv2:''}\nFecha de vencimiento: ${due}`;
+  }).join('\n\n');
+
+  const subject=`Consulta de pago - ${customer} - AXT Trading${plural?' ('+rows.length+' facturas)':''}`;
+  const body=`Estimado/a,\n\nNos comunicamos para consultar respecto a ${intro}:\n\n${lines}\n\nAgradecemos confirmar estado del pago.\n\nSaludos,\nLATINUT S.A.`;
+
+  modalData={rowIndices, isBulk:true, mailType:'reclamo_cobro', customer, rows};
+  document.getElementById('lang-en').classList.remove('active');
+  document.getElementById('lang-es').classList.add('active');
+  document.getElementById('modal-title').textContent=`Reclamo de cobro${plural?' ('+rows.length+' facturas)':''}`;
+  document.getElementById('modal-to').textContent=contactInfo.to||`${customer} <sin contacto>`;
+  document.getElementById('modal-cc').textContent=ccSiempre.length?ccSiempre.join(', '):'';
+  document.getElementById('modal-subject').textContent=subject;
+  document.getElementById('modal-body').value=body;
+  document.getElementById('send-draft-btn').textContent='✉ Crear borrador';
+  document.getElementById('send-draft-btn').onclick=sendDraft;
+  document.getElementById('mail-modal').classList.remove('hidden');
 }
 
 function renderCobranza(filterKey, filterVal){
