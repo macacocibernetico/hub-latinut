@@ -3,7 +3,9 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>HUB LATINUT</title>
+<title>LATINUT Hub</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E🌿%3C/text%3E%3C/svg%3E">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🌿</text></svg>">
 <style>
 @import url('https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Inter:wght@300;400;500;600&display=swap');
 
@@ -221,6 +223,32 @@ button{font-family:var(--font);cursor:pointer;border:none;background:none;}
 /* TOAST */
 #toast{position:fixed;bottom:20px;right:20px;background:var(--text);color:#fff;padding:10px 16px;border-radius:10px;font-weight:500;font-size:12px;z-index:999;transition:opacity .3s;pointer-events:none;box-shadow:var(--shadow-lg);}
 
+/* PROGRESS BAR */
+.progress-bar{position:fixed;top:0;left:0;right:0;height:3px;background:linear-gradient(90deg,var(--accent),#34c759);z-index:9999;transform-origin:left;transition:transform .3s ease;transform:scaleX(0);border-radius:0 2px 2px 0;}
+.progress-bar.active{animation:progress 1.5s ease-in-out infinite;}
+@keyframes progress{0%{transform:scaleX(0);opacity:1;}60%{transform:scaleX(.7);opacity:1;}100%{transform:scaleX(1);opacity:0;}}
+
+/* STICKY TABLE HEADER */
+.sticky-table thead th{position:sticky;top:0;z-index:2;background:var(--bg3);box-shadow:0 1px 0 var(--border);}
+
+/* PAGINATION */
+.pagination{display:flex;align-items:center;justify-content:space-between;padding:12px 16px;border-top:1px solid var(--border);background:var(--bg2);}
+.page-info{font-size:11px;color:var(--text3);font-family:var(--mono);}
+.page-btns{display:flex;gap:6px;}
+.page-btn{padding:5px 12px;border-radius:7px;border:1px solid var(--border);background:var(--bg2);color:var(--text2);font-size:11px;font-weight:500;cursor:pointer;transition:all .15s;}
+.page-btn:hover:not(:disabled){background:var(--bg3);}
+.page-btn.active{background:var(--accent);color:#fff;border-color:var(--accent);}
+.page-btn:disabled{opacity:.35;cursor:not-allowed;}
+
+/* CONFIRM DIALOG */
+.confirm-overlay{position:fixed;inset:0;background:rgba(0,0,0,.35);z-index:200;display:flex;align-items:center;justify-content:center;backdrop-filter:blur(4px);}
+.confirm-overlay.hidden{display:none;}
+.confirm-box{background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius-xl);padding:28px 32px;width:340px;max-width:90vw;box-shadow:0 20px 60px rgba(0,0,0,.15);text-align:center;}
+.confirm-icon{font-size:36px;margin-bottom:12px;}
+.confirm-title{font-size:15px;font-weight:600;color:var(--text);margin-bottom:6px;}
+.confirm-msg{font-size:12px;color:var(--text3);margin-bottom:24px;line-height:1.5;}
+.confirm-btns{display:flex;gap:8px;justify-content:center;}
+
 /* CHAT PANEL */
 .chat-toggle{position:fixed;bottom:24px;right:24px;width:48px;height:48px;border-radius:50%;background:var(--accent);color:#fff;border:none;font-size:20px;cursor:pointer;box-shadow:var(--shadow-lg);z-index:50;display:flex;align-items:center;justify-content:center;transition:all .2s;}
 .chat-toggle:hover{background:var(--accent-dim);transform:scale(1.05);}
@@ -256,6 +284,32 @@ button{font-family:var(--font);cursor:pointer;border:none;background:none;}
   .modal-body{padding:14px 16px;}
   .modal-footer{padding:12px 16px;}
 }
+
+/* PROGRESS BAR */
+.progress-bar{position:fixed;top:0;left:0;right:0;height:3px;background:linear-gradient(90deg,var(--accent),#34c759);z-index:9999;transform-origin:left;transition:transform .3s ease;transform:scaleX(0);border-radius:0 2px 2px 0;}
+.progress-bar.active{animation:progress 1.5s ease-in-out infinite;}
+@keyframes progress{0%{transform:scaleX(0);opacity:1;}60%{transform:scaleX(.7);opacity:1;}100%{transform:scaleX(1);opacity:0;}}
+
+/* STICKY TABLE HEADER */
+.sticky-table thead th{position:sticky;top:0;z-index:2;background:var(--bg3);box-shadow:0 1px 0 var(--border);}
+
+/* PAGINATION */
+.pagination{display:flex;align-items:center;justify-content:space-between;padding:12px 16px;border-top:1px solid var(--border);background:var(--bg2);}
+.page-info{font-size:11px;color:var(--text3);font-family:var(--mono);}
+.page-btns{display:flex;gap:6px;}
+.page-btn{padding:5px 12px;border-radius:7px;border:1px solid var(--border);background:var(--bg2);color:var(--text2);font-size:11px;font-weight:500;cursor:pointer;transition:all .15s;}
+.page-btn:hover:not(:disabled){background:var(--bg3);}
+.page-btn.active{background:var(--accent);color:#fff;border-color:var(--accent);}
+.page-btn:disabled{opacity:.35;cursor:not-allowed;}
+
+/* CONFIRM DIALOG */
+.confirm-overlay{position:fixed;inset:0;background:rgba(0,0,0,.35);z-index:200;display:flex;align-items:center;justify-content:center;backdrop-filter:blur(4px);}
+.confirm-overlay.hidden{display:none;}
+.confirm-box{background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius-xl);padding:28px 32px;width:340px;max-width:90vw;box-shadow:0 20px 60px rgba(0,0,0,.15);text-align:center;}
+.confirm-icon{font-size:36px;margin-bottom:12px;}
+.confirm-title{font-size:15px;font-weight:600;color:var(--text);margin-bottom:6px;}
+.confirm-msg{font-size:12px;color:var(--text3);margin-bottom:24px;line-height:1.5;}
+.confirm-btns{display:flex;gap:8px;justify-content:center;}
 
 /* CHAT PANEL */
 .chat-toggle{position:fixed;bottom:24px;right:24px;width:48px;height:48px;border-radius:50%;background:var(--accent);color:#fff;border:none;font-size:20px;cursor:pointer;box-shadow:var(--shadow-lg);z-index:50;display:flex;align-items:center;justify-content:center;transition:all .2s;}
@@ -641,6 +695,65 @@ async function solicitarFC(rowIdx){
   }
 }
 
+// ─── PROGRESS BAR ────────────────────────────────────────────────────────────
+function showProgress(){
+  const bar = document.getElementById('progress-bar');
+  if(bar){ bar.classList.add('active'); }
+}
+function hideProgress(){
+  const bar = document.getElementById('progress-bar');
+  if(bar){ bar.classList.remove('active'); }
+}
+
+// ─── CONFIRM DIALOG ───────────────────────────────────────────────────────────
+let _confirmResolve = null;
+function showConfirm(title, msg, icon='⚠️', okLabel='Confirmar', okDanger=false){
+  return new Promise(resolve => {
+    _confirmResolve = resolve;
+    document.getElementById('confirm-title').textContent = title;
+    document.getElementById('confirm-msg').textContent = msg;
+    document.getElementById('confirm-icon').textContent = icon;
+    const okBtn = document.getElementById('confirm-ok');
+    okBtn.textContent = okLabel;
+    okBtn.style.background = okDanger ? 'var(--danger)' : 'var(--accent)';
+    okBtn.style.borderColor = okDanger ? 'var(--danger)' : 'var(--accent)';
+    document.getElementById('confirm-overlay').classList.remove('hidden');
+  });
+}
+function resolveConfirm(result){
+  document.getElementById('confirm-overlay').classList.add('hidden');
+  if(_confirmResolve){ _confirmResolve(result); _confirmResolve = null; }
+}
+
+// ─── PAGINATION ───────────────────────────────────────────────────────────────
+const PAGE_SIZE = 20;
+let cargasPage = 0;
+
+function buildPagination(total, page, onPage){
+  const totalPages = Math.ceil(total / PAGE_SIZE);
+  if(totalPages <= 1) return '';
+  const start = page * PAGE_SIZE + 1;
+  const end = Math.min((page+1) * PAGE_SIZE, total);
+  const pageNums = [];
+  for(let i=0; i<totalPages; i++){
+    if(i===0||i===totalPages-1||Math.abs(i-page)<=1){
+      pageNums.push(`<button class="page-btn ${i===page?'active':''}" onclick="${onPage}(${i})">${i+1}</button>`);
+    } else if(Math.abs(i-page)===2){
+      pageNums.push(`<span style="color:var(--text3);padding:0 4px">…</span>`);
+    }
+  }
+  return `<div class="pagination">
+    <span class="page-info">Mostrando ${start}–${end} de ${total}</span>
+    <div class="page-btns">
+      <button class="page-btn" onclick="${onPage}(${page-1})" ${page===0?'disabled':''}>←</button>
+      ${pageNums.join('')}
+      <button class="page-btn" onclick="${onPage}(${page+1})" ${page>=totalPages-1?'disabled':''}>→</button>
+    </div>
+  </div>`;
+}
+
+function setCargasPage(p){ cargasPage = p; renderCargas(); }
+
 // ─── APPS SCRIPT BRIDGE ──────────────────────────────────────────────────────
 async function callAppScript(accion, filaInicio, filaFin){
   const url = cfg.appsScriptUrl;
@@ -727,6 +840,7 @@ function updateAuthUI(connected){
 async function loadData(){
   if(!cfg.sheetId||!cfg.apiKey){showConfigPrompt();return;}
   setSheetStatus('loading','Sincronizando...');
+  showProgress();
   try{
     const range=encodeURIComponent(`${cfg.sheetName}!A4:BI`);
     const url=`https://sheets.googleapis.com/v4/spreadsheets/${cfg.sheetId}/values/${range}?key=${cfg.apiKey}`;
@@ -738,6 +852,7 @@ async function loadData(){
     await loadContacts();
     await loadLog();
     setSheetStatus('ok',`${allRows.length} cargas activas`);
+    hideProgress();
     document.getElementById('last-sync').textContent='Sync '+new Date().toLocaleTimeString('es-AR',{hour:'2-digit',minute:'2-digit'});
     updateBadges();renderView(currentView);
   }catch(e){setSheetStatus('err','Error de conexión');console.error(e);}
@@ -973,6 +1088,8 @@ function getAlerts(){
 
 
 function updateBadges(){
+  const critCount = getAlerts().filter(a=>a.level==='critical').length;
+  document.title = critCount > 0 ? `(${critCount}) LATINUT Hub` : 'LATINUT Hub';
   const alerts=getAlerts();
   const crit=alerts.filter(a=>a.level==='critical'||a.level==='warning').length;
   const bA=document.getElementById('badge-alertas');
@@ -1108,11 +1225,13 @@ function sortCargas(field){
   if(field==='eta') cargasSort = cargasSort==='eta_asc'?'eta_desc':'eta_asc';
   else if(field==='cobro') cargasSort = cargasSort==='cobro_asc'?'cobro_desc':'cobro_asc';
   else if(field==='cliente') cargasSort = cargasSort==='cliente_az'?'cliente_za':'cliente_az';
+  cargasPage = 0;
   renderCargas();
 }
 
 function setCargasFilter(key, value){
   cargasDropFilters[key] = value;
+  cargasPage = 0;
   renderCargas();
 }
 
@@ -1241,6 +1360,12 @@ function renderCargas(showAll, sort){
     solicitarFCBulk(selected);
   };
 
+  // Pagination
+  const totalRows = rows.length;
+  const totalPages = Math.ceil(totalRows / PAGE_SIZE);
+  if(cargasPage >= totalPages) cargasPage = Math.max(0, totalPages-1);
+  const pagedRows = rows.slice(cargasPage * PAGE_SIZE, (cargasPage+1) * PAGE_SIZE);
+
   let html = `<div class="table-wrap">
     <div class="table-top" style="flex-direction:column;align-items:flex-start;gap:10px;padding:14px 16px;">
       <div style="display:flex;align-items:center;justify-content:space-between;width:100%;flex-wrap:wrap;gap:8px;">
@@ -1263,7 +1388,7 @@ function renderCargas(showAll, sort){
     </div>
   <button id="fc-bulk-bar" onclick="requestBulkFC()" style="display:none;position:sticky;bottom:20px;left:50%;transform:translateX(-50%);background:var(--accent);color:#fff;padding:10px 24px;border-radius:30px;font-weight:600;font-size:13px;cursor:pointer;z-index:20;box-shadow:var(--shadow-lg);border:none;font-family:var(--font);"></button>
     <div style="overflow-x:auto;">
-    <table>
+    <table class="sticky-table">
       <thead><tr>
         <th style="width:30px"></th>
         <th>BL</th><th>Booking</th><th>Naviera</th>
@@ -1277,7 +1402,7 @@ function renderCargas(showAll, sort){
       </tr></thead>
       <tbody>`;
 
-  rows.forEach((row, localIdx) => {
+  pagedRows.forEach((row, localIdx) => {
     const idx = allRows.indexOf(row);
     const pagEnv = (row[COL.PAGARE_ENVIADO]||'').trim().toUpperCase();
     const pagFirm = (row[COL.PAGARE_FIRMADO]||'').trim().toUpperCase();
@@ -1327,7 +1452,9 @@ function renderCargas(showAll, sort){
     </tr>`;
   });
 
-  html += `</tbody></table></div></div>`;
+  html += `</tbody></table></div>
+  ${buildPagination(totalRows, cargasPage, 'setCargasPage')}
+  </div>`;
   document.getElementById('content').innerHTML = html;
 }
 
@@ -1707,6 +1834,8 @@ async function solicitarLiberacionBulkViaAppScript(rowIndices){
 
 async function marcarPedroOk(rowIdx){
   if(!accessToken){alert('Conectate con Google primero.');return;}
+  const confirmed = await showConfirm('Pedro dio el OK','¿Confirmar que Pedro autorizó la liberación? Se actualizará la planilla.','👍','Confirmar');
+  if(!confirmed) return;
   const row=allRows[rowIdx];
   if(!row) return;
   const bl=(row[COL.BL]||'').trim();
@@ -1726,6 +1855,8 @@ async function marcarPedroOk(rowIdx){
 
 async function marcarLiberado(rowIdx){
   if(!accessToken){alert('Conectate con Google primero.');return;}
+  const confirmed = await showConfirm('Confirmar liberación','¿Confirmar que se recibió la liberación? Se marcará TELEX = SI en la planilla.','✅','Confirmar');
+  if(!confirmed) return;
   const row=allRows[rowIdx];
   if(!row) return;
   const bl=(row[COL.BL]||'').trim();
@@ -2618,6 +2749,22 @@ window.onload=()=>{
 </script>
 <!-- Google Identity Services -->
 <script src="https://accounts.google.com/gsi/client" async defer></script>
+<!-- PROGRESS BAR -->
+<div class="progress-bar" id="progress-bar"></div>
+
+<!-- CONFIRM DIALOG -->
+<div class="confirm-overlay hidden" id="confirm-overlay">
+  <div class="confirm-box">
+    <div class="confirm-icon" id="confirm-icon">⚠️</div>
+    <div class="confirm-title" id="confirm-title">¿Confirmar acción?</div>
+    <div class="confirm-msg" id="confirm-msg"></div>
+    <div class="confirm-btns">
+      <button class="btn" onclick="resolveConfirm(false)">Cancelar</button>
+      <button class="btn primary" id="confirm-ok" onclick="resolveConfirm(true)">Confirmar</button>
+    </div>
+  </div>
+</div>
+
 <!-- CHAT -->
 <button class="chat-toggle" id="chat-toggle" onclick="toggleChat()" title="Chat con IA">💬</button>
 <div class="chat-panel hidden" id="chat-panel">
