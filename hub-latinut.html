@@ -249,6 +249,22 @@ button{font-family:var(--font);cursor:pointer;border:none;background:none;}
 .confirm-msg{font-size:12px;color:var(--text3);margin-bottom:24px;line-height:1.5;}
 .confirm-btns{display:flex;gap:8px;justify-content:center;}
 
+/* SEARCH */
+.search-bar{display:flex;align-items:center;gap:8px;background:var(--bg3);border:1px solid var(--border);border-radius:10px;padding:6px 12px;transition:all .15s;width:220px;}
+.search-bar:focus-within{border-color:var(--accent);background:var(--bg2);width:280px;}
+.search-bar input{background:none;border:none;outline:none;font-family:var(--font);font-size:12px;color:var(--text);width:100%;}
+.search-bar input::placeholder{color:var(--text3);}
+.search-results{position:absolute;top:52px;right:24px;width:360px;background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius-lg);box-shadow:var(--shadow-lg);z-index:50;overflow:hidden;max-height:400px;overflow-y:auto;}
+.search-results.hidden{display:none;}
+.search-result-item{padding:10px 14px;border-bottom:1px solid var(--border);cursor:pointer;transition:background .1s;}
+.search-result-item:last-child{border-bottom:none;}
+.search-result-item:hover{background:var(--bg3);}
+.search-result-title{font-size:12px;font-weight:500;color:var(--text);}
+.search-result-sub{font-size:10px;color:var(--text3);font-family:var(--mono);margin-top:2px;}
+.search-result-badge{font-size:9px;padding:1px 6px;border-radius:10px;font-family:var(--mono);font-weight:600;float:right;}
+.search-result-badge.critical{background:var(--danger-light);color:var(--danger);}
+.search-result-badge.carga{background:var(--accent-light);color:var(--accent);}
+.search-result-badge.cobro{background:var(--warn-light);color:var(--warn);}
 /* CHAT PANEL */
 .chat-toggle{position:fixed;bottom:24px;right:24px;width:48px;height:48px;border-radius:50%;background:var(--accent);color:#fff;border:none;font-size:20px;cursor:pointer;box-shadow:var(--shadow-lg);z-index:50;display:flex;align-items:center;justify-content:center;transition:all .2s;}
 .chat-toggle:hover{background:var(--accent-dim);transform:scale(1.05);}
@@ -311,6 +327,22 @@ button{font-family:var(--font);cursor:pointer;border:none;background:none;}
 .confirm-msg{font-size:12px;color:var(--text3);margin-bottom:24px;line-height:1.5;}
 .confirm-btns{display:flex;gap:8px;justify-content:center;}
 
+/* SEARCH */
+.search-bar{display:flex;align-items:center;gap:8px;background:var(--bg3);border:1px solid var(--border);border-radius:10px;padding:6px 12px;transition:all .15s;width:220px;}
+.search-bar:focus-within{border-color:var(--accent);background:var(--bg2);width:280px;}
+.search-bar input{background:none;border:none;outline:none;font-family:var(--font);font-size:12px;color:var(--text);width:100%;}
+.search-bar input::placeholder{color:var(--text3);}
+.search-results{position:absolute;top:52px;right:24px;width:360px;background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius-lg);box-shadow:var(--shadow-lg);z-index:50;overflow:hidden;max-height:400px;overflow-y:auto;}
+.search-results.hidden{display:none;}
+.search-result-item{padding:10px 14px;border-bottom:1px solid var(--border);cursor:pointer;transition:background .1s;}
+.search-result-item:last-child{border-bottom:none;}
+.search-result-item:hover{background:var(--bg3);}
+.search-result-title{font-size:12px;font-weight:500;color:var(--text);}
+.search-result-sub{font-size:10px;color:var(--text3);font-family:var(--mono);margin-top:2px;}
+.search-result-badge{font-size:9px;padding:1px 6px;border-radius:10px;font-family:var(--mono);font-weight:600;float:right;}
+.search-result-badge.critical{background:var(--danger-light);color:var(--danger);}
+.search-result-badge.carga{background:var(--accent-light);color:var(--accent);}
+.search-result-badge.cobro{background:var(--warn-light);color:var(--warn);}
 /* CHAT PANEL */
 .chat-toggle{position:fixed;bottom:24px;right:24px;width:48px;height:48px;border-radius:50%;background:var(--accent);color:#fff;border:none;font-size:20px;cursor:pointer;box-shadow:var(--shadow-lg);z-index:50;display:flex;align-items:center;justify-content:center;transition:all .2s;}
 .chat-toggle:hover{background:var(--accent-dim);transform:scale(1.05);}
@@ -431,6 +463,14 @@ button{font-family:var(--font);cursor:pointer;border:none;background:none;}
     </div>
     <div class="topbar-right">
       <span class="last-sync" id="last-sync">—</span>
+      <div style="position:relative;">
+        <div class="search-bar">
+          <span style="color:var(--text3);font-size:13px;">🔍</span>
+          <input type="text" id="global-search" placeholder="Buscar BL, cliente, invoice..." 
+            oninput="handleSearch(this.value)" onblur="setTimeout(()=>hideSearch(),200)">
+        </div>
+        <div class="search-results hidden" id="search-results"></div>
+      </div>
       <button class="btn primary" onclick="loadData()">↻ Sincronizar</button>
     </div>
   </div>
@@ -2606,6 +2646,118 @@ function closeSidebar(){
   document.getElementById('overlay-close').style.display='none';
 }
 
+// ─── BÚSQUEDA GLOBAL ─────────────────────────────────────────────────────────
+function handleSearch(q){
+  const box = document.getElementById('search-results');
+  if(!q || q.length < 2){ box.classList.add('hidden'); return; }
+  const qUp = q.toUpperCase();
+  const results = [];
+
+  allRows.forEach((row, idx) => {
+    const bl = (row[COL.BL]||'').toUpperCase();
+    const customer = (row[COL.CUSTOMER]||'').toUpperCase();
+    const booking = (row[COL.BOOKING]||'').toUpperCase();
+    const inv1 = (row[COL.INVOICE_CLIENTE]||'').toUpperCase();
+    const inv2 = (row[COL.INVOICE_FC_SERV]||'').toUpperCase();
+    const vessel = (row[COL.VESSEL]||'').toUpperCase();
+    if([bl,customer,booking,inv1,inv2,vessel].some(f=>f.includes(qUp))){
+      const d = daysFrom(row[COL.ETA]);
+      const dCobro = daysFrom(row[COL.FECHA_EST_COBRO]);
+      results.push({
+        title: `${row[COL.CUSTOMER]||'—'} — ${row[COL.BL]||'—'}`,
+        sub: `ETA: ${fmtDate(row[COL.ETA])} · Booking: ${row[COL.BOOKING]||'—'} · ${row[COL.INVOICE_CLIENTE]||''}`,
+        badge: d!==null&&d<=7?'critical':'carga',
+        badgeLabel: d!==null&&d<=7?`ETA ${d}d`:'Carga',
+        action: ()=>{ showView('cargas'); hideSearch(); }
+      });
+    }
+  });
+
+  if(!results.length){
+    box.innerHTML = `<div style="padding:16px;text-align:center;color:var(--text3);font-size:12px;">Sin resultados para "${q}"</div>`;
+    box.classList.remove('hidden');
+    return;
+  }
+
+  box.innerHTML = results.slice(0,8).map((r,i)=>`
+    <div class="search-result-item" onclick="searchResults[${i}].action()">
+      <span class="search-result-badge ${r.badge}">${r.badgeLabel}</span>
+      <div class="search-result-title">${r.title}</div>
+      <div class="search-result-sub">${r.sub}</div>
+    </div>`).join('');
+  window.searchResults = results;
+  box.classList.remove('hidden');
+}
+
+function hideSearch(){
+  const box = document.getElementById('search-results');
+  if(box) box.classList.add('hidden');
+  const inp = document.getElementById('global-search');
+  if(inp) inp.value = '';
+}
+
+// ─── RESUMEN IA ───────────────────────────────────────────────────────────────
+async function generarResumenDia(){
+  if(!cfg.claudeApiKey){
+    addChatMsg('assistant','⚠️ Configurá la Groq API Key en Configuración para usar el resumen IA.');
+    document.getElementById('chat-panel').classList.remove('hidden');
+    return;
+  }
+
+  // Open chat panel
+  document.getElementById('chat-panel').classList.remove('hidden');
+  const thinking = addChatMsg('assistant', '⏳ Generando resumen del día...', true);
+
+  const alerts = getAlerts();
+  const crit = alerts.filter(a=>a.level==='critical');
+  const warn = alerts.filter(a=>a.level==='warning');
+  const cobrosUrgentes = allRows.filter(r=>{const d=daysFrom(r[COL.FECHA_EST_COBRO]);return d!==null&&d<=5;});
+  const libPendientes = allRows.filter(r=>{
+    const d=daysFrom(r[COL.ETA]);
+    const t=(r[COL.TELEX]||'').trim().toLowerCase();
+    return d!==null&&d>=0&&d<=7&&t===''&&!t.includes('bl orig');
+  });
+  const pagPendientes = allRows.filter(r=>{
+    const env=(r[COL.PAGARE_ENVIADO]||'').trim();
+    const d=daysFrom(r[COL.ETA]);
+    return env!=='SI'&&env!=='-'&&d!==null&&d<=21&&d>=0;
+  });
+
+  const prompt = `Generá un resumen ejecutivo MUY BREVE del día operativo para LATINUT S.A. Usá máximo 5 líneas con bullets. Sé directo y accionable.
+
+DATOS DE HOY (${new Date().toLocaleDateString('es-AR')}):
+- Alertas críticas: ${crit.length} (${crit.filter(a=>a.subtype==='liberacion_urgente').length} liberaciones urgentes, ${crit.filter(a=>a.subtype==='cobro_urgente').length} cobros urgentes)
+- Advertencias: ${warn.length}
+- Liberaciones pendientes ETA ≤7d: ${libPendientes.length} cargas sin TELEX
+- Cobros urgentes (≤5 días): ${cobrosUrgentes.map(r=>`${r[COL.CUSTOMER]||''} vence ${fmtDate(r[COL.FECHA_EST_COBRO])}`).join(', ')||'ninguno'}
+- Pagarés pendientes de envío (ETA ≤21d): ${pagPendientes.length}
+- Cargas activas totales: ${allRows.length}
+
+Formato: bullets cortos, accionables, en español. Sin intro ni conclusión.`;
+
+  try{
+    const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+      method: 'POST',
+      headers: {'Content-Type':'application/json','Authorization':`Bearer ${cfg.claudeApiKey}`},
+      body: JSON.stringify({
+        model: 'llama-3.3-70b-versatile',
+        max_tokens: 300,
+        messages: [{role:'user', content: prompt}]
+      })
+    });
+    const data = await response.json();
+    if(data.error){
+      thinking.textContent = '⚠️ Error: ' + (data.error.message||'desconocido');
+    } else {
+      thinking.textContent = '📋 Resumen del día:\n\n' + data.choices[0].message.content;
+    }
+    thinking.classList.remove('thinking');
+  } catch(e){
+    thinking.textContent = '⚠️ Error al conectar con la API.';
+    thinking.classList.remove('thinking');
+  }
+}
+
 // ─── CHAT ────────────────────────────────────────────────────────────────────
 let chatHistory = [];
 
@@ -2739,6 +2891,26 @@ function addChatMsg(role, text, isThinking=false){
   return div;
 }
 
+
+// ─── KEYBOARD SHORTCUTS ──────────────────────────────────────────────────────
+document.addEventListener('keydown', e => {
+  // Cmd+K or Ctrl+K → focus search
+  if((e.metaKey||e.ctrlKey) && e.key==='k'){
+    e.preventDefault();
+    const inp = document.getElementById('global-search');
+    if(inp){ inp.focus(); inp.select(); }
+  }
+  // Escape → close modal / search / chat
+  if(e.key==='Escape'){
+    closeModal();
+    hideSearch();
+    resolveConfirm(false);
+  }
+  // S → sync (when not typing)
+  if(e.key==='s' && !e.metaKey && !e.ctrlKey && document.activeElement.tagName!=='INPUT' && document.activeElement.tagName!=='TEXTAREA'){
+    loadData();
+  }
+});
 
 // ─── INIT ────────────────────────────────────────────────────────────────────
 window.onload=()=>{
