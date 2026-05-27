@@ -287,6 +287,14 @@ button{font-family:var(--font);cursor:pointer;border:none;background:none;}
 .mobile-toggle{display:none;align-items:center;justify-content:center;width:34px;height:34px;border-radius:8px;background:var(--bg3);border:1px solid var(--border);cursor:pointer;font-size:15px;color:var(--text2);}
 .overlay-close{display:none;position:fixed;inset:0;z-index:9;background:rgba(0,0,0,.3);}
 
+/* QUICK ACTIONS */
+.quick-action{display:inline-flex;align-items:center;gap:4px;padding:4px 10px;border-radius:6px;font-size:10px;font-weight:600;font-family:var(--font);border:1px solid;cursor:pointer;transition:all .15s;white-space:nowrap;}
+.quick-action.ok{background:var(--ok-light);color:#1a8f40;border-color:rgba(52,199,89,.25);}
+.quick-action.ok:hover{background:#daf5e4;}
+.quick-action.warn{background:var(--warn-light);color:#b06a00;border-color:rgba(255,149,0,.25);}
+.quick-action.warn:hover{background:#ffe8c0;}
+.quick-action.loading{opacity:.6;cursor:not-allowed;}
+
 /* BOTTOM NAV */
 .bottom-nav{display:none;position:fixed;bottom:0;left:0;right:0;height:60px;background:rgba(255,255,255,.92);backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);border-top:1px solid var(--border);z-index:11;padding:0 8px;padding-bottom:env(safe-area-inset-bottom);}
 .bottom-nav-items{display:flex;align-items:center;justify-content:space-around;height:100%;}
@@ -311,6 +319,19 @@ button{font-family:var(--font);cursor:pointer;border:none;background:none;}
 /* PULL TO REFRESH */
 .ptr-indicator{display:none;position:fixed;top:0;left:50%;transform:translateX(-50%);background:var(--bg2);border:1px solid var(--border);border-radius:0 0 20px 20px;padding:6px 16px;font-size:11px;color:var(--text3);z-index:100;box-shadow:var(--shadow);}
 .ptr-indicator.visible{display:block;}
+
+/* TABLET 768-1024px */
+@media(min-width:769px) and (max-width:1024px){
+  .sidebar{width:180px;}
+  .main{margin-left:180px;}
+  .stats-row{grid-template-columns:1fr 1fr;gap:10px;}
+  .topbar{padding:12px 18px;}
+  .content{padding:16px 18px;}
+  .table-wrap thead th{font-size:10px;padding:8px 10px;}
+  .table-wrap td{padding:9px 10px;font-size:11px;}
+  .chat-panel{width:320px;}
+  .search-bar{width:180px;}
+}
 
 @media(max-width:768px){
   .mobile-toggle{display:flex;}
@@ -1272,6 +1293,7 @@ function renderAlertas(){
         ${a.invLogLine||''}
       </div>`;
       const docsHtml=a.docsText?`<div class="status-label warn" style="margin-bottom:8px;">Docs: ${a.docsText}</div>`:''
+      const quickActionsHtml=a.rowIdx!==undefined?buildQuickActions(a.rowIdx):''
       const telexHtml=a.telexStatus?`<div style="margin-bottom:8px;font-family:var(--mono);font-size:11px;color:var(--info);">📋 TELEX: ${a.telexStatus}</div>`:'';
       const recHtml=a.recInfo?`<div class="alert-reclamo">⚠ Reclamado ${a.recInfo.count} vez${a.recInfo.count>1?'es':''} · último ${a.recInfo.timeStr} — sin respuesta</div>`:'';
       html+=`<div class="alert-item ${a.level}"><div class="alert-dot ${a.level}"></div>
@@ -1279,7 +1301,7 @@ function renderAlertas(){
           <div class="alert-title">${a.title}</div>
           <div class="alert-meta">${a.meta}</div>
           <div class="alert-tags">${tagsHtml}</div>
-          ${logHtml}${telexHtml}${docsHtml}${recHtml}
+          ${logHtml}${telexHtml}${docsHtml}${recHtml}${quickActionsHtml}
           <div class="alert-actions">${actionsHtml}</div>
         </div>${rightHtml}</div>`;
     });
@@ -2937,6 +2959,63 @@ function addChatMsg(role, text, isThinking=false){
   return div;
 }
 
+
+// ─── ACCIONES RÁPIDAS ────────────────────────────────────────────────────────
+
+async function quickAction(rowIdx, field, value, label, btnId){
+  if(!accessToken){ alert('Conectate con Google primero.'); return; }
+  const btn = document.getElementById(btnId);
+  if(btn){ btn.classList.add('loading'); btn.textContent = '...'; }
+
+  const colMap = {
+    'pagare_enviado': COL.PAGARE_ENVIADO,
+    'pagare_firmado': COL.PAGARE_FIRMADO,
+    'documentos': COL.DOCUMENTOS,
+    'telex': COL.TELEX,
+  };
+  const col = colMap[field];
+  if(col === undefined){ console.error('Unknown field', field); return; }
+
+  const ok = await writeCell(rowIdx, col, value);
+  if(ok){
+    const row = allRows[rowIdx];
+    const bl = (row[COL.BL]||'').trim();
+    const customer = (row[COL.CUSTOMER]||'').trim();
+    await appendLog({
+      fuente:'AXT', fc:(row[COL.INVOICE_CLIENTE]||'').trim(), fcServ:'',
+      bl, customer, accion:`accion rapida: ${label}`,
+      detalle:`${field} = ${value}`
+    });
+    showToast(`✓ ${label}`);
+    await loadData();
+  } else {
+    if(btn){ btn.classList.remove('loading'); btn.textContent = label; }
+    alert('Error al actualizar la planilla.');
+  }
+}
+
+// Build quick action buttons for an alert card
+function buildQuickActions(rowIdx){
+  const row = allRows[rowIdx];
+  if(!row) return '';
+  const pagEnv = (row[COL.PAGARE_ENVIADO]||'').trim().toUpperCase();
+  const pagFirm = (row[COL.PAGARE_FIRMADO]||'').trim().toUpperCase();
+  const pagNA = pagEnv==='-'||pagFirm==='-';
+  const docs = (row[COL.DOCUMENTOS]||'').trim().toUpperCase();
+  const btns = [];
+  const id = `qa-${rowIdx}`;
+
+  if(!pagNA && pagEnv!=='SI'){
+    btns.push(`<button id="${id}-penv" class="quick-action warn" onclick="quickAction(${rowIdx},'pagare_enviado','SI','Pagaré enviado','${id}-penv')">📄 Pagaré enviado</button>`);
+  }
+  if(!pagNA && pagEnv==='SI' && pagFirm!=='SI'){
+    btns.push(`<button id="${id}-pfirm" class="quick-action ok" onclick="quickAction(${rowIdx},'pagare_firmado','SI','Pagaré firmado','${id}-pfirm')">✓ Pagaré firmado</button>`);
+  }
+  if(docs && docs!=='SI'){
+    btns.push(`<button id="${id}-docs" class="quick-action ok" onclick="quickAction(${rowIdx},'documentos','SI','Docs completos','${id}-docs')">✓ Docs OK</button>`);
+  }
+  return btns.length ? `<div style="display:flex;gap:5px;flex-wrap:wrap;margin-top:6px;">${btns.join('')}</div>` : '';
+}
 
 // ─── MOBILE ENHANCEMENTS ─────────────────────────────────────────────────────
 
