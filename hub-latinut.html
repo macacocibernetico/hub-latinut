@@ -1390,6 +1390,7 @@ function colIndexToLetter(idx){
 }
 
 function getFormValues(prefix){
+  const dateFields = ['consol','etd','eta','fechaEstCobro','fechaCobro'];
   const fields = [
     'negocio','tns','product','packing','lots','containers','booking','bl','shipping',
     'vessel','consol','etd','eta','port','exporter','customer',
@@ -1399,7 +1400,16 @@ function getFormValues(prefix){
     'pagareEnviado','pagareFirmado','fechaEstCobro','fechaCobro'
   ];
   const data = {};
-  fields.forEach(f => { const el=document.getElementById(`${prefix}-${f}`); if(el) data[f]=el.value.trim(); });
+  fields.forEach(f => {
+    const el=document.getElementById(`${prefix}-${f}`);
+    if(!el) return;
+    if(dateFields.includes(f) && el.type==='date'){
+      // Convert YYYY-MM-DD back to DD/MM/YYYY
+      data[f] = el.value ? fromInputDate(el.value) : '';
+    } else {
+      data[f] = el.value.trim();
+    }
+  });
   return data;
 }
 
@@ -1466,6 +1476,72 @@ async function submitEditCarga(rowIdx){
   else { alert('Error al guardar.'); btn.textContent='Guardar cambios'; btn.disabled=false; }
 }
 
+function getUnique(col){
+  return [...new Set(allRows.map(r=>(r[col]||'').trim()).filter(Boolean))].sort();
+}
+
+function smartField(prefix, id, label, value='', placeholder='', colIdx=null){
+  const options = colIdx !== null ? getUnique(colIdx) : [];
+  if(!options.length){
+    // No data yet - plain input
+    return `<div class="config-field">
+      <div class="config-label">${label}</div>
+      <input class="config-input" id="${prefix}-${id}" value="${value}" placeholder="${placeholder}">
+    </div>`;
+  }
+  const selectId = `${prefix}-${id}-sel`;
+  const inputId = `${prefix}-${id}`;
+  const isOther = value && !options.includes(value);
+  return `<div class="config-field">
+    <div class="config-label">${label}</div>
+    <select id="${selectId}" onchange="handleSmartField('${selectId}','${inputId}')" style="width:100%;background:var(--bg3);border:1px solid var(--border);border-radius:7px;color:var(--text);font-family:var(--mono);font-size:11px;padding:7px 10px;outline:none;transition:border-color .15s;margin-bottom:4px;">
+      <option value="">— Seleccioná —</option>
+      ${options.map(o=>`<option value="${o}" ${(value===o&&!isOther)?'selected':''}>${o}</option>`).join('')}
+      <option value="__otro__" ${isOther?'selected':''}>✏ Escribir otro...</option>
+    </select>
+    <input class="config-input" id="${inputId}" value="${value}" placeholder="${placeholder}" style="display:${isOther||!value?'block':'none'};">
+  </div>`;
+}
+
+function handleSmartField(selectId, inputId){
+  const sel = document.getElementById(selectId);
+  const inp = document.getElementById(inputId);
+  if(!sel||!inp) return;
+  if(sel.value === '__otro__'){
+    inp.style.display = 'block';
+    inp.value = '';
+    inp.focus();
+  } else {
+    inp.style.display = 'none';
+    inp.value = sel.value;
+  }
+}
+
+function toInputDate(val){
+  // Convert DD/MM/YYYY to YYYY-MM-DD for input[type=date]
+  if(!val) return '';
+  const m = val.toString().match(/^(\d{1,2})\/(\d{1,2})\/(\d{2,4})$/);
+  if(m) return `${m[3].length===2?'20'+m[3]:m[3]}-${m[2].padStart(2,'0')}-${m[1].padStart(2,'0')}`;
+  return '';
+}
+
+function fromInputDate(val){
+  // Convert YYYY-MM-DD to DD/MM/YYYY for planilla
+  if(!val) return '';
+  const [y,m,d] = val.split('-');
+  return `${d}/${m}/${y}`;
+}
+
+function dateField(prefix, id, label, value=''){
+  const inputVal = toInputDate(value);
+  return `<div class="config-field">
+    <div class="config-label">${label}</div>
+    <input class="config-input" id="${prefix}-${id}" type="date" value="${inputVal}"
+      style="cursor:pointer;"
+      onchange="this.dataset.converted=fromInputDate(this.value)">
+  </div>`;
+}
+
 function buildCargaForm(prefix, d={}, fullEdit=false){
   const field = (id, label, value='', type='text', placeholder='') =>
     `<div class="config-field"><div class="config-label">${label}</div><input class="config-input" id="${prefix}-${id}" type="${type}" value="${value}" placeholder="${placeholder}"></div>`;
@@ -1475,21 +1551,21 @@ function buildCargaForm(prefix, d={}, fullEdit=false){
 
   const basicFields = `
     ${field('negocio','Negocio',d.negocio||'','text','ej: ARG2-2')}
-    ${field('customer','Customer *',d.customer||'','text','ej: IDI')}
-    ${field('product','Product *',d.product||'','text','ej: Blanched peanuts 38/42')}
+    ${smartField(prefix,'customer','Customer *',d.customer||'','ej: IDI', COL.CUSTOMER)}
+    ${smartField(prefix,'product','Product *',d.product||'','ej: Blanched peanuts 38/42', COL.PRODUCT)}
     ${field('tns','Tns',d.tns||'','number','ej: 22')}
-    ${field('packing','Packing',d.packing||'','text','ej: big bags')}
+    ${smartField(prefix,'packing','Packing',d.packing||'','ej: big bags', COL.DOCUMENTOS-1)}
     ${field('lots','Lots',d.lots||'','text','ej: BL38-250022-AP')}
     ${field('containers','Containers',d.containers||'','text','ej: FFAU3862300')}
     ${field('booking','Booking',d.booking||'','text','ej: EBKG15971228')}
     ${field('bl','BL',d.bl||'','text','ej: TRANSHBL00048410')}
-    ${field('shipping','Shipping Line',d.shipping||'','text','ej: MSC')}
+    ${smartField(prefix,'shipping','Shipping Line',d.shipping||'','ej: MSC', COL.SHIPPING)}
     ${field('vessel','Vessel',d.vessel||'','text','ej: MSC URSULA VI')}
-    ${field('consol','Consolidación',d.consol||'','text','ej: 01/03/2026')}
-    ${field('etd','ETD',d.etd||'','text','ej: 06/03/2026')}
-    ${field('eta','ETA *',d.eta||'','text','ej: 19/04/2026')}
-    ${field('port','Port *',d.port||'','text','ej: Norfolk')}
-    ${field('exporter','Exporter',d.exporter||'','text','ej: Argen Peanuts')}`;
+    ${dateField(prefix,'consol','Consolidación',d.consol||'')}
+    ${dateField(prefix,'etd','ETD',d.etd||'')}
+    ${dateField(prefix,'eta','ETA *',d.eta||'')}
+    ${smartField(prefix,'port','Port *',d.port||'','ej: Norfolk', COL.PORT)}
+    ${smartField(prefix,'exporter','Exporter',d.exporter||'','ej: Argen Peanuts', COL.EXPORTER)}`;
 
   if(!fullEdit) return `<div style="display:grid;grid-template-columns:1fr 1fr;gap:0 16px;">${basicFields}</div>`;
 
@@ -1513,12 +1589,11 @@ function buildCargaForm(prefix, d={}, fullEdit=false){
     ${field('pagareEnviado','Enviado (AT)',d.pagareEnviado||'','text','ej: SI')}
     ${field('pagareFirmado','Firmado (AU)',d.pagareFirmado||'','text','ej: SI')}
     ${section('Cobranza')}
-    ${field('fechaEstCobro','Fecha Est. Cobro (AV)',d.fechaEstCobro||'','text','ej: 27/05/2026')}
-    ${field('fechaCobro','Fecha de Cobro (AW)',d.fechaCobro||'','text','ej: 27/05/2026')}`;
+    ${dateField(prefix,'fechaEstCobro','Fecha Est. Cobro (AV)',d.fechaEstCobro||'')}
+    ${dateField(prefix,'fechaCobro','Fecha de Cobro (AW)',d.fechaCobro||'')}`;
 
   return `<div style="display:grid;grid-template-columns:1fr 1fr;gap:0 16px;">${basicFields}${extraFields}</div>`;
 }
-
 function renderNuevaCarga(){
   if(!accessToken){
     document.getElementById('content').innerHTML=`<div class="empty"><div class="empty-icon">＋</div><div style="margin-bottom:16px;">Conectate con Google para agregar cargas.</div><button class="btn primary" onclick="handleAuth()">Conectar con Google</button></div>`;
