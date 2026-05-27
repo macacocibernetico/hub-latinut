@@ -287,6 +287,31 @@ button{font-family:var(--font);cursor:pointer;border:none;background:none;}
 .mobile-toggle{display:none;align-items:center;justify-content:center;width:34px;height:34px;border-radius:8px;background:var(--bg3);border:1px solid var(--border);cursor:pointer;font-size:15px;color:var(--text2);}
 .overlay-close{display:none;position:fixed;inset:0;z-index:9;background:rgba(0,0,0,.3);}
 
+/* BOTTOM NAV */
+.bottom-nav{display:none;position:fixed;bottom:0;left:0;right:0;height:60px;background:rgba(255,255,255,.92);backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);border-top:1px solid var(--border);z-index:11;padding:0 8px;padding-bottom:env(safe-area-inset-bottom);}
+.bottom-nav-items{display:flex;align-items:center;justify-content:space-around;height:100%;}
+.bottom-nav-item{display:flex;flex-direction:column;align-items:center;gap:2px;padding:6px 12px;border-radius:10px;cursor:pointer;transition:all .15s;position:relative;min-width:52px;}
+.bottom-nav-item.active{background:var(--accent-light);}
+.bottom-nav-item .bnav-icon{font-size:20px;line-height:1;}
+.bottom-nav-item .bnav-label{font-size:9px;font-weight:600;color:var(--text3);letter-spacing:.3px;}
+.bottom-nav-item.active .bnav-label{color:var(--accent);}
+.bottom-nav-badge{position:absolute;top:4px;right:6px;background:var(--danger);color:#fff;font-size:8px;font-family:var(--mono);font-weight:700;padding:1px 4px;border-radius:10px;min-width:14px;text-align:center;}
+
+/* MOBILE CARD VIEW */
+.mobile-card{background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius-lg);padding:14px;margin-bottom:8px;box-shadow:var(--shadow);}
+.mobile-card-header{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:8px;}
+.mobile-card-title{font-size:13px;font-weight:600;color:var(--text);}
+.mobile-card-badge{font-size:10px;font-family:var(--mono);font-weight:600;padding:2px 8px;border-radius:20px;}
+.mobile-card-row{display:flex;justify-content:space-between;padding:3px 0;border-bottom:1px solid var(--border);font-size:11px;}
+.mobile-card-row:last-of-type{border-bottom:none;}
+.mobile-card-label{color:var(--text3);font-weight:500;}
+.mobile-card-value{color:var(--text2);font-family:var(--mono);text-align:right;max-width:60%;}
+.mobile-card-actions{display:flex;gap:6px;margin-top:10px;flex-wrap:wrap;}
+
+/* PULL TO REFRESH */
+.ptr-indicator{display:none;position:fixed;top:0;left:50%;transform:translateX(-50%);background:var(--bg2);border:1px solid var(--border);border-radius:0 0 20px 20px;padding:6px 16px;font-size:11px;color:var(--text3);z-index:100;box-shadow:var(--shadow);}
+.ptr-indicator.visible{display:block;}
+
 @media(max-width:768px){
   .mobile-toggle{display:flex;}
   .sidebar{transform:translateX(-240px);transition:transform .2s ease;}
@@ -369,14 +394,24 @@ button{font-family:var(--font);cursor:pointer;border:none;background:none;}
   .mobile-toggle{display:flex;}
   .sidebar{transform:translateX(-240px);transition:transform .2s ease;}
   .sidebar.open{transform:translateX(0);}
-  .main{margin-left:0;}
+  .main{margin-left:0;padding-bottom:70px;}
   .stats-row{grid-template-columns:1fr 1fr;gap:8px;}
-  .content{padding:14px 16px;}
-  .topbar{padding:12px 16px;}
+  .content{padding:12px 14px;}
+  .topbar{padding:10px 14px;}
+  .topbar-title{font-size:15px;}
   .alert-logistics{grid-template-columns:1fr;}
   .modal{width:95vw;}
   .modal-body{padding:14px 16px;}
   .modal-footer{padding:12px 16px;}
+  .bottom-nav{display:block;}
+  .action-btn{padding:9px 16px;font-size:13px;}
+  .row-action{padding:7px 12px;font-size:12px;}
+  .nav-item{padding:10px 12px;}
+  .search-bar{width:36px;}
+  .search-bar:focus-within{width:180px;}
+  .table-wrap thead th{font-size:9px;padding:7px 8px;}
+  .table-wrap td{padding:8px;font-size:11px;}
+  body{font-size:14px;}
 }
 
 /* LOGIN */
@@ -1130,6 +1165,7 @@ function getAlerts(){
 function updateBadges(){
   const critCount = getAlerts().filter(a=>a.level==='critical').length;
   document.title = critCount > 0 ? `(${critCount}) LATINUT Hub` : 'LATINUT Hub';
+  updateBottomNavBadges();
   const alerts=getAlerts();
   const crit=alerts.filter(a=>a.level==='critical'||a.level==='warning').length;
   const bA=document.getElementById('badge-alertas');
@@ -1144,6 +1180,8 @@ function updateBadges(){
 
 // ─── VIEWS ───────────────────────────────────────────────────────────────────
 function showView(view){
+  saveLastView(view);
+  updateBottomNav(view);
   currentView=view;
   document.querySelectorAll('.nav-item').forEach(el=>el.classList.remove('active'));
   const titles={alertas:'Alertas',cargas:'Cargas AXT',nueva_carga:'Nueva Carga',cobranza:'Cobranza',liberaciones:'Liberaciones',pagares:'Pagarés',log:'Log de acciones',config:'Configuración'};
@@ -1441,6 +1479,14 @@ function renderCargas(showAll, sort){
         <th></th><th></th><th></th>
       </tr></thead>
       <tbody>`;
+
+  // Mobile: show cards instead of table
+  if(isMobile()){
+    const mobileHtml = html + '<div style="overflow-x:visible;">' + renderCargasMobileCards(rows, pagedRows) + '</div>' +
+      buildPagination(totalRows, cargasPage, 'setCargasPage') + '</div>';
+    document.getElementById('content').innerHTML = mobileHtml;
+    return;
+  }
 
   pagedRows.forEach((row, localIdx) => {
     const idx = allRows.indexOf(row);
@@ -2892,6 +2938,113 @@ function addChatMsg(role, text, isThinking=false){
 }
 
 
+// ─── MOBILE ENHANCEMENTS ─────────────────────────────────────────────────────
+
+// Bottom nav active state
+function updateBottomNav(view){
+  document.querySelectorAll('.bottom-nav-item').forEach(el => el.classList.remove('active'));
+  const activeEl = document.getElementById('bnav-' + view);
+  if(activeEl) activeEl.classList.add('active');
+}
+
+// Update bottom nav badges
+function updateBottomNavBadges(){
+  const alerts = getAlerts();
+  const critWarn = alerts.filter(a=>a.level==='critical'||a.level==='warning').length;
+  const bnavAlerta = document.getElementById('bnav-badge-alertas');
+  if(bnavAlerta){ bnavAlerta.style.display = critWarn>0?'block':'none'; bnavAlerta.textContent = critWarn||''; }
+
+  const cobros = allRows.filter(r=>{const d=daysFrom(r[COL.FECHA_EST_COBRO]);return d!==null&&d<=10;}).length;
+  const bnavCob = document.getElementById('bnav-badge-cobranza');
+  if(bnavCob){ bnavCob.style.display = cobros>0?'block':'none'; bnavCob.textContent = cobros||''; }
+
+  const libs = allRows.filter(r=>{const d=daysFrom(r[COL.ETA]);const t=(r[COL.TELEX]||'').trim().toLowerCase();return d!==null&&d>=0&&d<=7&&t===''&&!t.includes('bl orig');}).length;
+  const bnavLib = document.getElementById('bnav-badge-liberaciones');
+  if(bnavLib){ bnavLib.style.display = libs>0?'block':'none'; bnavLib.textContent = libs||''; }
+}
+
+// Remember last view
+function saveLastView(view){ try{localStorage.setItem('hub_last_view',view);}catch(e){} }
+function getLastView(){ try{return localStorage.getItem('hub_last_view')||'alertas';}catch(e){return 'alertas';} }
+
+// Pull to refresh
+let ptrStartY = 0;
+let ptrActive = false;
+
+document.addEventListener('touchstart', e => {
+  if(window.scrollY === 0) ptrStartY = e.touches[0].clientY;
+}, {passive:true});
+
+document.addEventListener('touchmove', e => {
+  if(!ptrStartY) return;
+  const diff = e.touches[0].clientY - ptrStartY;
+  if(diff > 60 && window.scrollY === 0){
+    ptrActive = true;
+    const ind = document.getElementById('ptr-indicator');
+    if(ind){ ind.classList.add('visible'); ind.textContent = '↓ Soltar para sincronizar'; }
+  }
+}, {passive:true});
+
+document.addEventListener('touchend', () => {
+  if(ptrActive){
+    ptrActive = false;
+    ptrStartY = 0;
+    const ind = document.getElementById('ptr-indicator');
+    if(ind){ ind.textContent = '↻ Sincronizando...'; }
+    loadData().then(()=>{ setTimeout(()=>{ if(ind) ind.classList.remove('visible'); }, 800); });
+  } else {
+    ptrStartY = 0;
+  }
+});
+
+// Mobile card view for Cargas AXT
+function isMobile(){ return window.innerWidth <= 768; }
+
+function renderCargasMobileCards(rows, pagedRows){
+  let html = '';
+  pagedRows.forEach((row, localIdx) => {
+    const idx = allRows.indexOf(row);
+    const d = daysFrom(row[COL.ETA]);
+    const dc = daysClass(d);
+    const customer = row[COL.CUSTOMER]||'—';
+    const bl = (row[COL.BL]||'—').substring(0,20);
+    const eta = fmtDate(row[COL.ETA]);
+    const pagEnv=(row[COL.PAGARE_ENVIADO]||'').trim().toUpperCase();
+    const pagFirm=(row[COL.PAGARE_FIRMADO]||'').trim().toUpperCase();
+    let pagLabel;
+    if(pagFirm==='SI') pagLabel='<span style="color:var(--ok)">Firmado</span>';
+    else if(pagEnv==='SI') pagLabel='<span style="color:var(--warn)">Sin firmar</span>';
+    else if(pagEnv==='-') pagLabel='<span style="color:var(--text3)">N/A</span>';
+    else pagLabel='<span style="color:var(--danger)">Sin enviar</span>';
+    const inv1=(row[COL.INVOICE_CLIENTE]||'').trim();
+    const inv2raw=(row[COL.INVOICE_FC_SERV]||'').trim();
+    const inv2=(inv2raw==='-'||inv2raw==='--')?'':inv2raw;
+    const total=parseSheetNum(row[32]);
+    const totalDisplay=isNaN(total)?'—':'USD '+total.toLocaleString('es-AR',{maximumFractionDigits:0});
+    const dColor = dc==='red'?'var(--danger)':dc==='warn'?'var(--warn)':'var(--ok)';
+
+    html += `<div class="mobile-card" onclick="toggleFCSelection(${localIdx})">
+      <div class="mobile-card-header">
+        <div>
+          <div class="mobile-card-title">${customer}</div>
+          <div style="font-size:10px;color:var(--text3);font-family:var(--mono);margin-top:2px;">${bl}</div>
+        </div>
+        <span style="font-size:20px;font-weight:700;font-family:var(--mono);color:${dColor}">${d!==null?d+'d':'—'}</span>
+      </div>
+      <div class="mobile-card-row"><span class="mobile-card-label">ETA</span><span class="mobile-card-value">${eta}</span></div>
+      <div class="mobile-card-row"><span class="mobile-card-label">Invoice</span><span class="mobile-card-value">${inv1&&inv2?inv1+'/'+inv2:inv1||'—'}</span></div>
+      <div class="mobile-card-row"><span class="mobile-card-label">Total</span><span class="mobile-card-value">${totalDisplay}</span></div>
+      <div class="mobile-card-row"><span class="mobile-card-label">Pagaré</span><span class="mobile-card-value">${pagLabel}</span></div>
+      <div class="mobile-card-actions" onclick="event.stopPropagation()">
+        <button class="action-btn mail" onclick="openMailModal(${idx},'reclamo_pago')">✉ Reclamo</button>
+        <button class="action-btn secondary-action" onclick="renderEditCarga(${idx})">✎ Editar</button>
+        <button class="action-btn write" onclick="solicitarFC(${idx})" style="font-size:11px;">📄 FC</button>
+      </div>
+    </div>`;
+  });
+  return html;
+}
+
 // ─── KEYBOARD SHORTCUTS ──────────────────────────────────────────────────────
 document.addEventListener('keydown', e => {
   // Cmd+K or Ctrl+K → focus search
@@ -2914,6 +3067,10 @@ document.addEventListener('keydown', e => {
 
 // ─── INIT ────────────────────────────────────────────────────────────────────
 window.onload=()=>{
+  // Restore last view
+  const lastView = getLastView();
+  updateBottomNav(lastView);
+  if(lastView !== 'alertas') showView(lastView);
   if(cfg.sheetId&&cfg.apiKey) loadData();
   else{showConfigPrompt();setSheetStatus('err','Sin configurar');}
   if(cfg.clientId) initGoogleAuth();
@@ -2936,6 +3093,38 @@ window.onload=()=>{
     </div>
   </div>
 </div>
+
+<!-- PULL TO REFRESH -->
+<div class="ptr-indicator" id="ptr-indicator">↓ Soltar para sincronizar</div>
+
+<!-- BOTTOM NAV -->
+<nav class="bottom-nav" id="bottom-nav">
+  <div class="bottom-nav-items">
+    <div class="bottom-nav-item" id="bnav-alertas" onclick="showView('alertas')">
+      <span class="bnav-icon">⚡</span>
+      <span class="bnav-label">Alertas</span>
+      <span class="bottom-nav-badge" id="bnav-badge-alertas" style="display:none"></span>
+    </div>
+    <div class="bottom-nav-item" id="bnav-cargas" onclick="showView('cargas')">
+      <span class="bnav-icon">📦</span>
+      <span class="bnav-label">Cargas</span>
+    </div>
+    <div class="bottom-nav-item" id="bnav-cobranza" onclick="showView('cobranza')">
+      <span class="bnav-icon">💰</span>
+      <span class="bnav-label">Cobros</span>
+      <span class="bottom-nav-badge" id="bnav-badge-cobranza" style="display:none"></span>
+    </div>
+    <div class="bottom-nav-item" id="bnav-liberaciones" onclick="showView('liberaciones')">
+      <span class="bnav-icon">🔓</span>
+      <span class="bnav-label">Libera.</span>
+      <span class="bottom-nav-badge" id="bnav-badge-liberaciones" style="display:none"></span>
+    </div>
+    <div class="bottom-nav-item" id="bnav-chat" onclick="toggleChat()">
+      <span class="bnav-icon">🤖</span>
+      <span class="bnav-label">Chat IA</span>
+    </div>
+  </div>
+</nav>
 
 <!-- CHAT -->
 <button class="chat-toggle" id="chat-toggle" onclick="toggleChat()" title="Chat con IA">💬</button>
