@@ -2,7 +2,7 @@
 <html lang="es">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <title>LATINUT Hub</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E🌿%3C/text%3E%3C/svg%3E">
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🌿</text></svg>">
@@ -298,10 +298,10 @@ button{font-family:var(--font);cursor:pointer;border:none;background:none;}
 /* BOTTOM NAV */
 .bottom-nav{display:none;position:fixed;bottom:0;left:0;right:0;height:60px;background:rgba(255,255,255,.92);backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);border-top:1px solid var(--border);z-index:11;padding:0 8px;padding-bottom:env(safe-area-inset-bottom);}
 .bottom-nav-items{display:flex;align-items:center;justify-content:space-around;height:100%;}
-.bottom-nav-item{display:flex;flex-direction:column;align-items:center;gap:2px;padding:6px 12px;border-radius:10px;cursor:pointer;transition:all .15s;position:relative;min-width:52px;}
+.bottom-nav-item{display:flex;flex-direction:column;align-items:center;gap:2px;padding:8px 10px;border-radius:10px;cursor:pointer;transition:all .15s;position:relative;min-width:56px;-webkit-tap-highlight-color:rgba(0,113,227,.1);}
 .bottom-nav-item.active{background:var(--accent-light);}
-.bottom-nav-item .bnav-icon{font-size:20px;line-height:1;}
-.bottom-nav-item .bnav-label{font-size:9px;font-weight:600;color:var(--text3);letter-spacing:.3px;}
+.bottom-nav-item .bnav-icon{font-size:22px;line-height:1;}
+.bottom-nav-item .bnav-label{font-size:10px;font-weight:600;color:var(--text3);letter-spacing:.2px;}
 .bottom-nav-item.active .bnav-label{color:var(--accent);}
 .bottom-nav-badge{position:absolute;top:4px;right:6px;background:var(--danger);color:#fff;font-size:8px;font-family:var(--mono);font-weight:700;padding:1px 4px;border-radius:10px;min-width:14px;text-align:center;}
 
@@ -2089,9 +2089,9 @@ function renderLiberaciones(){
       actionBtn=`<button class="action-btn write" onclick="solicitarLiberacionViaAppScript(${origIdx})">Solicitar liberación</button>`;
     }
 
-    html+=`<div class="alert-item ${level}" id="lib-card-${localIdx}" style="cursor:pointer" onclick="toggleLibSelection(${localIdx})">
+    html+=`<div class="alert-item ${level}" id="lib-card-${localIdx}" style="cursor:pointer;-webkit-tap-highlight-color:rgba(0,113,227,.1);" onclick="toggleLibSelection(${localIdx})">
       <div style="display:flex;flex-direction:column;align-items:center;gap:6px;flex-shrink:0;">
-        <input type="checkbox" class="lib-checkbox" id="lib-cb-${localIdx}" onclick="event.stopPropagation();toggleLibSelection(${localIdx})">
+        <input type="checkbox" class="lib-checkbox" id="lib-cb-${localIdx}" onclick="event.stopPropagation();toggleLibSelection(${localIdx})" style="width:20px;height:20px;">
         <div class="alert-dot ${level}"></div>
       </div>
       <div class="alert-body">
@@ -2173,6 +2173,51 @@ function daysColor(d){
   if(d <= 4) return '#f97316'; // naranja
   if(d <= 10) return '#eab308'; // amarillo
   return 'var(--ok)';
+}
+
+function renderCobranzaMobile(rows){
+  let html = '';
+  rows.forEach((row, localIdx) => {
+    const origIdx = allRows.indexOf(row);
+    const d = daysFrom(row[COL.FECHA_EST_COBRO]);
+    const color = d===null?'var(--text3)':d<=0?'var(--danger)':d<=2?'#f97316':d<=4?'#f97316':d<=10?'#eab308':'var(--ok)';
+    const customer = (row[COL.CUSTOMER]||'—').trim();
+    const bl = (row[COL.BL]||'—').substring(0,18);
+    const inv1 = (row[COL.INVOICE_CLIENTE]||'').trim();
+    const inv2raw = (row[COL.INVOICE_FC_SERV]||'').trim();
+    const inv2 = (inv2raw==='-'||inv2raw==='--')?'':inv2raw;
+    const total = parseSheetNum(row[32]);
+    const totalDisplay = isNaN(total)?'—':'USD '+total.toLocaleString('es-AR',{maximumFractionDigits:0});
+    const due = fmtDate(row[COL.FECHA_EST_COBRO]);
+    const dLabel = d===null?'—':d<=0?`Vencido ${Math.abs(d)}d`:`${d}d`;
+    const recInfo = getReclamoInfoFromLog(row[COL.BL]||'','reclamo cobro');
+    const level = d!==null&&d<=2?'critical':d!==null&&d<=10?'warning':'info';
+
+    html += `<div class="alert-item ${level}" style="margin-bottom:8px;">
+      <div class="alert-body">
+        <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:6px;">
+          <div>
+            <div class="alert-title">${customer}</div>
+            <div class="alert-meta">${bl}</div>
+          </div>
+          <div style="text-align:right;flex-shrink:0;">
+            <div style="font-size:22px;font-weight:700;font-family:var(--mono);color:${color};line-height:1;">${dLabel}</div>
+            <div style="font-size:9px;color:var(--text3);text-transform:uppercase;letter-spacing:1px;">Vence ${due}</div>
+          </div>
+        </div>
+        <div class="alert-tags">
+          ${inv1?`<span class="tag customer">${inv1}${inv2?' / '+inv2:''}</span>`:''}
+          <span class="tag" style="background:var(--bg3);color:var(--text2);">${totalDisplay}</span>
+          ${recInfo?`<span class="tag days-warn">${recInfo.count}x reclamado</span>`:''}
+        </div>
+        <div class="alert-actions" style="margin-top:8px;">
+          <button class="action-btn mail" onclick="openMailModal(${origIdx},'reclamo_cobro')">✉ Reclamo</button>
+          <button class="action-btn secondary-action" onclick="openArchiveModal(${origIdx})">📁 Archivar</button>
+        </div>
+      </div>
+    </div>`;
+  });
+  return html;
 }
 
 async function reclamarCobranzaBulk(rowIndices){
@@ -2330,7 +2375,12 @@ function renderCobranza(filterKey, filterVal){
   });
 
   if(!rows.length) html += `<tr><td colspan="11"><div class="empty" style="padding:30px;">Sin cobros en este rango.</div></td></tr>`;
-  html += `</tbody></table></div></div>`;
+  if(isMobile()){
+    const mobileCards = renderCobranzaMobile(rows);
+    html += `<div style="padding:12px 0;">${mobileCards}</div></div>`;
+  } else {
+    html += `</tbody></table></div></div>`;
+  }
   document.getElementById('content').innerHTML = html;
 }
 
@@ -3086,43 +3136,57 @@ function renderCargasMobileCards(rows, pagedRows){
     const d = daysFrom(row[COL.ETA]);
     const dc = daysClass(d);
     const customer = row[COL.CUSTOMER]||'—';
-    const bl = (row[COL.BL]||'—').substring(0,20);
+    const bl = (row[COL.BL]||'—').substring(0,18);
+    const vessel = (row[COL.VESSEL]||'').substring(0,16);
+    const port = row[COL.PORT]||'';
     const eta = fmtDate(row[COL.ETA]);
     const pagEnv=(row[COL.PAGARE_ENVIADO]||'').trim().toUpperCase();
     const pagFirm=(row[COL.PAGARE_FIRMADO]||'').trim().toUpperCase();
-    let pagLabel;
-    if(pagFirm==='SI') pagLabel='<span style="color:var(--ok)">Firmado</span>';
-    else if(pagEnv==='SI') pagLabel='<span style="color:var(--warn)">Sin firmar</span>';
-    else if(pagEnv==='-') pagLabel='<span style="color:var(--text3)">N/A</span>';
-    else pagLabel='<span style="color:var(--danger)">Sin enviar</span>';
+    const pagNA = pagEnv==='-'||pagFirm==='-';
+    const dColor = dc==='red'?'var(--danger)':dc==='warn'?'var(--warn)':'var(--ok)';
     const inv1=(row[COL.INVOICE_CLIENTE]||'').trim();
     const inv2raw=(row[COL.INVOICE_FC_SERV]||'').trim();
     const inv2=(inv2raw==='-'||inv2raw==='--')?'':inv2raw;
     const total=parseSheetNum(row[32]);
     const totalDisplay=isNaN(total)?'—':'USD '+total.toLocaleString('es-AR',{maximumFractionDigits:0});
-    const dColor = dc==='red'?'var(--danger)':dc==='warn'?'var(--warn)':'var(--ok)';
 
-    html += `<div class="mobile-card" onclick="toggleFCSelection(${localIdx})">
-      <div class="mobile-card-header">
-        <div>
-          <div class="mobile-card-title">${customer}</div>
-          <div style="font-size:10px;color:var(--text3);font-family:var(--mono);margin-top:2px;">${bl}</div>
+    let pagBadge='';
+    if(!pagNA){
+      if(pagFirm==='SI') pagBadge='<span class="tag days-ok">Firmado</span>';
+      else if(pagEnv==='SI') pagBadge='<span class="tag days-warn">Sin firmar</span>';
+      else pagBadge='<span class="tag days-red">Sin enviar</span>';
+    }
+
+    html += `<div class="alert-item info" style="margin-bottom:8px;cursor:default;">
+      <div class="alert-body">
+        <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:6px;">
+          <div>
+            <div class="alert-title">${customer}</div>
+            <div class="alert-meta">${bl}</div>
+          </div>
+          <div style="text-align:right;flex-shrink:0;">
+            <div style="font-size:22px;font-weight:700;font-family:var(--mono);color:${dColor};line-height:1;">${d!==null?d+'d':'—'}</div>
+            <div style="font-size:9px;color:var(--text3);text-transform:uppercase;letter-spacing:1px;">ETA ${eta}</div>
+          </div>
         </div>
-        <span style="font-size:20px;font-weight:700;font-family:var(--mono);color:${dColor}">${d!==null?d+'d':'—'}</span>
-      </div>
-      <div class="mobile-card-row"><span class="mobile-card-label">ETA</span><span class="mobile-card-value">${eta}</span></div>
-      <div class="mobile-card-row"><span class="mobile-card-label">Invoice</span><span class="mobile-card-value">${inv1&&inv2?inv1+'/'+inv2:inv1||'—'}</span></div>
-      <div class="mobile-card-row"><span class="mobile-card-label">Total</span><span class="mobile-card-value">${totalDisplay}</span></div>
-      <div class="mobile-card-row"><span class="mobile-card-label">Pagaré</span><span class="mobile-card-value">${pagLabel}</span></div>
-      <div class="mobile-card-actions" onclick="event.stopPropagation()">
-        <button class="action-btn mail" onclick="openMailModal(${idx},'reclamo_pago')">✉ Reclamo</button>
-        <button class="action-btn secondary-action" onclick="renderEditCarga(${idx})">✎ Editar</button>
-        <button class="action-btn write" onclick="solicitarFC(${idx})" style="font-size:11px;">📄 FC</button>
+        <div class="alert-tags">
+          ${vessel?`<span class="tag vessel">${vessel}</span>`:''}
+          ${port?`<span class="tag port">${port}</span>`:''}
+          ${pagBadge}
+          ${inv1?`<span class="tag customer">${inv1}${inv2?' / '+inv2:''}</span>`:''}
+          ${!isNaN(total)?`<span class="tag" style="background:var(--bg3);color:var(--text2);">${totalDisplay}</span>`:''}
+        </div>
+        <div class="alert-actions" style="margin-top:8px;">
+          <button class="action-btn mail" onclick="openMailModal(${idx},'reclamo_pago')">✉ Reclamo</button>
+          <button class="action-btn secondary-action" onclick="renderEditCarga(${idx})">✎ Editar</button>
+          <button class="action-btn write" onclick="solicitarFC(${idx})" style="font-size:11px;">📄 FC</button>
+        </div>
       </div>
     </div>`;
   });
   return html;
 }
+
 
 // ─── KEYBOARD SHORTCUTS ──────────────────────────────────────────────────────
 document.addEventListener('keydown', e => {
