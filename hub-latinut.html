@@ -606,21 +606,11 @@ async function loadContacts(){
 }
 
 function getReciprocaCC(){
-  // Returns the email of the teammate based on who's logged in
-  const email = (window._userEmail||'').toLowerCase();
+  // Returns ONLY the teammate - not the sender
+  const email = (window._userEmail || document.getElementById('auth-btn')?.dataset?.email || '').toLowerCase();
   if(email.includes('agustin')) return 'valentina@latinutsa.com';
   if(email.includes('valentina')) return 'agustin@latinutsa.com';
-  // fallback: check auth button display text
-  const authBtn = document.getElementById('auth-btn');
-  if(authBtn){
-    const stored = (authBtn.dataset.email||'').toLowerCase();
-    if(stored.includes('agustin')) return 'valentina@latinutsa.com';
-    if(stored.includes('valentina')) return 'agustin@latinutsa.com';
-    const txt = authBtn.textContent.toLowerCase();
-    if(txt.includes('agustin')) return 'valentina@latinutsa.com';
-    if(txt.includes('valentina')) return 'agustin@latinutsa.com';
-  }
-  // last resort: both
+  // If unknown, return both as fallback
   return 'agustin@latinutsa.com,valentina@latinutsa.com';
 }
 
@@ -637,14 +627,14 @@ function getContactsForEmpresa(empresa){
     return false;
   });
   const principal=match.filter(c=>c.rol.toLowerCase().includes('principal'));
-  const cc=contacts.filter(c=>c.ccSiempre).map(c=>c.email);
+  // Exclude @latinutsa.com from ccSiempre - those are handled by getReciprocaCC
+  const cc=contacts.filter(c=>c.ccSiempre&&!c.email.toLowerCase().includes('latinutsa.com')).map(c=>c.email);
   const toContact=principal[0]||match[0];
   const toStr=toContact?`${toContact.contacto} <${toContact.email}>`:'';
   const otherEmails=match.filter(c=>c!==toContact&&!c.ccSiempre).map(c=>c.email);
-  // Add reciprocal teammate CC
-  const reciproca=getReciprocaCC();
-  const allCC=[...new Set([...cc,...otherEmails,...reciproca.split(',')])];
-  return{to:toStr, cc:allCC.join(', ')||'pberro@axtsolutions.com'};
+  const reciproca=getReciprocaCC().split(',').map(e=>e.trim()).filter(Boolean);
+  const allCC=[...new Set([...cc,...otherEmails,...reciproca])];
+  return{to:toStr, cc:allCC.join(', ')||''};
 }
 
 // ─── LOG CACHE ───────────────────────────────────────────────────────────────
@@ -2697,8 +2687,8 @@ function openMailModal(rowIdx, mailType){
     toStr=contactInfo.to||`${d.customer} <sin contacto cargado>`;
     // CC: other contacts from same customer + reciprocal teammate
     const otherCC=contacts.filter(c=>!c.ccSiempre&&c.empresa.toUpperCase()!==d.customer.toUpperCase()&&(c.empresa.toUpperCase().includes(d.customer.toUpperCase())||d.customer.toUpperCase().includes(c.empresa.toUpperCase()))).map(c=>c.email);
-    const reciproca=getReciprocaCC();
-    ccStr=[...new Set([...otherCC,...reciproca.split(',')])].filter(Boolean).join(', ');
+    const reciproca=getReciprocaCC().split(',').map(e=>e.trim()).filter(Boolean);
+    ccStr=[...new Set([...otherCC,...reciproca])].join(', ');
   } else {
     const contactInfo=getContactsForEmpresa(d.customer);
     toStr=contactInfo.to||`${d.customer} <sin contacto cargado>`;
