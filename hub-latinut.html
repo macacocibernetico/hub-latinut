@@ -610,7 +610,17 @@ function getReciprocaCC(){
   const email = (window._userEmail||'').toLowerCase();
   if(email.includes('agustin')) return 'valentina@latinutsa.com';
   if(email.includes('valentina')) return 'agustin@latinutsa.com';
-  // fallback: return both
+  // fallback: check auth button display text
+  const authBtn = document.getElementById('auth-btn');
+  if(authBtn){
+    const stored = (authBtn.dataset.email||'').toLowerCase();
+    if(stored.includes('agustin')) return 'valentina@latinutsa.com';
+    if(stored.includes('valentina')) return 'agustin@latinutsa.com';
+    const txt = authBtn.textContent.toLowerCase();
+    if(txt.includes('agustin')) return 'valentina@latinutsa.com';
+    if(txt.includes('valentina')) return 'agustin@latinutsa.com';
+  }
+  // last resort: both
   return 'agustin@latinutsa.com,valentina@latinutsa.com';
 }
 
@@ -906,6 +916,9 @@ function initGoogleAuth(){
       }).then(r=>r.json()).then(info=>{
         window._userEmail = (info.email||'').toLowerCase();
         console.log('Logged in as:', window._userEmail);
+        // Update auth button with name for fallback detection
+        const authBtn = document.getElementById('auth-btn');
+        if(authBtn && info.email) authBtn.dataset.email = info.email.toLowerCase();
       });
       updateAuthUI(true);
       loadData();
@@ -2244,6 +2257,7 @@ async function reclamarCobranzaBulk(rowIndices){
   const customer=(rows[0][COL.CUSTOMER]||'').trim();
   const contactInfo=getContactsForEmpresa(customer);
   const ccSiempre=contacts.filter(c=>c.ccSiempre).map(c=>c.email);
+  const reciprocaBulk=getReciprocaCC().split(',');
 
   const plural=rows.length>1;
   const intro=plural?'los siguientes pagos':'el siguiente pago';
@@ -2267,7 +2281,8 @@ async function reclamarCobranzaBulk(rowIndices){
   document.getElementById('lang-es').classList.add('active');
   document.getElementById('modal-title').textContent=`Reclamo de cobro${plural?' ('+rows.length+' facturas)':''}`;
   document.getElementById('modal-to').textContent=contactInfo.to||`${customer} <sin contacto>`;
-  document.getElementById('modal-cc').textContent=ccSiempre.length?ccSiempre.join(', '):'';
+  const allBulkCC=[...new Set([...ccSiempre,...reciprocaBulk])].filter(Boolean);
+  document.getElementById('modal-cc').textContent=allBulkCC.join(', ');
   document.getElementById('modal-subject').textContent=subject;
   document.getElementById('modal-body').value=body;
   document.getElementById('send-draft-btn').textContent='✉ Crear borrador';
@@ -2680,9 +2695,10 @@ function openMailModal(rowIdx, mailType){
   } else if(mailType==='reclamo_cobro'){
     const contactInfo=getContactsForEmpresa(d.customer);
     toStr=contactInfo.to||`${d.customer} <sin contacto cargado>`;
-    // No Pedro in CC for cobranza - only customer contacts
+    // CC: other contacts from same customer + reciprocal teammate
     const otherCC=contacts.filter(c=>!c.ccSiempre&&c.empresa.toUpperCase()!==d.customer.toUpperCase()&&(c.empresa.toUpperCase().includes(d.customer.toUpperCase())||d.customer.toUpperCase().includes(c.empresa.toUpperCase()))).map(c=>c.email);
-    ccStr=otherCC.join(', ')||'';
+    const reciproca=getReciprocaCC();
+    ccStr=[...new Set([...otherCC,...reciproca.split(',')])].filter(Boolean).join(', ');
   } else {
     const contactInfo=getContactsForEmpresa(d.customer);
     toStr=contactInfo.to||`${d.customer} <sin contacto cargado>`;
