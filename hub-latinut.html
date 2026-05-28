@@ -605,6 +605,15 @@ async function loadContacts(){
   }catch(e){console.error('Error loading contacts',e);}
 }
 
+function getReciprocaCC(){
+  // Returns the email of the teammate based on who's logged in
+  const email = (window._userEmail||'').toLowerCase();
+  if(email.includes('agustin')) return 'valentina@latinutsa.com';
+  if(email.includes('valentina')) return 'agustin@latinutsa.com';
+  // fallback: return both
+  return 'agustin@latinutsa.com,valentina@latinutsa.com';
+}
+
 function getContactsForEmpresa(empresa){
   if(!empresa||!contacts.length) return {to:'', cc:''};
   const emp=empresa.trim().toUpperCase();
@@ -622,7 +631,9 @@ function getContactsForEmpresa(empresa){
   const toContact=principal[0]||match[0];
   const toStr=toContact?`${toContact.contacto} <${toContact.email}>`:'';
   const otherEmails=match.filter(c=>c!==toContact&&!c.ccSiempre).map(c=>c.email);
-  const allCC=[...new Set([...cc,...otherEmails])];
+  // Add reciprocal teammate CC
+  const reciproca=getReciprocaCC();
+  const allCC=[...new Set([...cc,...otherEmails,...reciproca.split(',')])];
   return{to:toStr, cc:allCC.join(', ')||'pberro@axtsolutions.com'};
 }
 
@@ -889,6 +900,13 @@ function initGoogleAuth(){
     callback: (resp) => {
       if(resp.error) { console.error(resp); return; }
       accessToken = resp.access_token;
+      // Get user email to determine CC logic
+      fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
+        headers: {'Authorization': `Bearer ${accessToken}`}
+      }).then(r=>r.json()).then(info=>{
+        window._userEmail = (info.email||'').toLowerCase();
+        console.log('Logged in as:', window._userEmail);
+      });
       updateAuthUI(true);
       loadData();
     }
