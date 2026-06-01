@@ -287,6 +287,11 @@ button{font-family:var(--font);cursor:pointer;border:none;background:none;}
 .mobile-toggle{display:none;align-items:center;justify-content:center;width:34px;height:34px;border-radius:8px;background:var(--bg3);border:1px solid var(--border);cursor:pointer;font-size:15px;color:var(--text2);}
 .overlay-close{display:none;position:fixed;inset:0;z-index:9;background:rgba(0,0,0,.3);}
 
+/* IMPORT PLANILLA */
+.import-btn{display:inline-flex;align-items:center;gap:6px;padding:7px 14px;border-radius:var(--radius);font-size:12px;font-weight:500;cursor:pointer;border:1px dashed var(--accent);background:var(--accent-light);color:var(--accent);transition:all .15s;font-family:var(--font);}
+.import-btn:hover{background:#d4e8fb;}
+.import-drop{border:2px dashed var(--border2);border-radius:var(--radius-lg);padding:24px;text-align:center;color:var(--text3);font-size:12px;margin-bottom:16px;transition:all .15s;cursor:pointer;}
+.import-drop.drag-over{border-color:var(--accent);background:var(--accent-light);color:var(--accent);}
 /* QUICK ACTIONS */
 .quick-action{display:inline-flex;align-items:center;gap:4px;padding:4px 10px;border-radius:6px;font-size:10px;font-weight:600;font-family:var(--font);border:1px solid;cursor:pointer;transition:all .15s;white-space:nowrap;}
 .quick-action.ok{background:var(--ok-light);color:#1a8f40;border-color:rgba(52,199,89,.25);}
@@ -3033,6 +3038,185 @@ function addChatMsg(role, text, isThinking=false){
   return div;
 }
 
+
+// ─── IMPORTAR PLANILLA DESPACHANTE ───────────────────────────────────────────
+
+function detectPacking(text){
+  const t = (text||'').toLowerCase();
+  if(t.includes('big bag')) return 'Big Bags';
+  if(t.includes('pote')) return 'Potes';
+  if(t.includes('caja')) return 'Cajas';
+  if(t.includes('tambor')) return 'Tambores';
+  if(t.includes('bolsa')) return 'Bolsas';
+  if(t.includes('saco')) return 'Sacos';
+  return '';
+}
+
+function detectProduct(lote, desc){
+  const l = (lote||'').toUpperCase();
+  const d = (desc||'').toLowerCase();
+  // Lote-based detection first
+  if(l.startsWith('BL38')) return 'Blanched Peanuts 38/42';
+  if(l.startsWith('BL40')) return 'Blanched Peanuts 40/50';
+  if(l.startsWith('BL')) return 'Blanched Peanuts';
+  // Desc-based fallback
+  if(d.includes('partido') || d.includes('split')) return 'Split Blanched';
+  if(d.includes('tostado') || d.includes('roasted')) return 'Roasted Peanuts';
+  if(d.includes('pasta') || d.includes('paste')) return 'Peanut Paste';
+  return desc||'';
+}
+
+function fmtDateFromExcel(val){
+  if(!val) return '';
+  if(val instanceof Date || (typeof val === 'object' && val.toISOString)){
+    // JS Date
+    const d = new Date(val);
+    return `${String(d.getDate()).padStart(2,'0')}/${String(d.getMonth()+1).padStart(2,'0')}/${d.getFullYear()}`;
+  }
+  return String(val);
+}
+
+function parsePlanillaDespachante(workbook){
+  // workbook is SheetJS workbook object
+  const sheetName = workbook.SheetNames[0];
+  const ws = workbook.Sheets[sheetName];
+  const cellVal = (addr) => {
+    const c = ws[addr];
+    if(!c) return '';
+    // For dates SheetJS uses type 'd' or 'n' with dateNF
+    if(c.t === 'n' && c.w && c.w.match(/\d+\/\d+\/\d+/)) return c.w;
+    if(c.t === 'd') return fmtDateFromExcel(c.v);
+    if(c.v instanceof Date) return fmtDateFromExcel(c.v);
+    return c.v !== undefined ? String(c.v) : '';
+  };
+  const cellNum = (addr) => {
+    const c = ws[addr];
+    return c ? (parseFloat(c.v)||0) : 0;
+  };
+
+  // Fixed fields
+  const vessel   = cellVal('B4');
+  const port     = cellVal('B5');
+  const booking  = cellVal('B6');
+  const shipping = cellVal('B7');
+  const etdRaw   = ws['B8'];
+  const etaRaw   = ws['B9'];
+  const incoterm = cellVal('D9');
+  const exporter = cellVal('D18');
+
+  // Format dates
+  const fmtCell = (c) => {
+    if(!c) return '';
+    if(c.t === 'n' || c.t === 'd'){
+      // SheetJS stores Excel date serial as number
+      const d = new Date(Math.round((c.v - 25569) * 86400 * 1000));
+      return `${String(d.getUTCDate()).padStart(2,'0')}/${String(d.getUTCMonth()+1).padStart(2,'0')}/${d.getUTCFullYear()}`;
+    }
+    return c.w || String(c.v||'');
+  };
+  const etd = fmtCell(etdRaw);
+  const eta = fmtCell(etaRaw);
+
+  // Rows from 21 down - collect lots, product, packing, tns
+  const lots = [];
+  let product = '';
+  let packing = '';
+  let lastTns = 0;
+  let row = 21;
+  while(true){
+    const lote = cellVal(`A${row}`);
+    if(!lote || lote.trim() === '') break;
+    lots.push(lote.trim());
+    if(!product) product = detectProduct(lote, cellVal(`B${row}`));
+    if(!packing) packing = detectPacking(cellVal(`I${row}`));
+    const tns = cellNum(`E${row}`);
+    if(tns) lastTns = tns;
+    row++;
+  }
+
+  return {
+    vessel, port, booking, shipping, etd, eta, incoterm, exporter,
+    lots: lots.join(', '),
+    product,
+    packing,
+    tns: lastTns ? String(lastTns) : ''
+  };
+}
+
+function triggerImportPlanilla(){
+  const inp = document.createElement('input');
+  inp.type = 'file';
+  inp.accept = '.xlsx,.xls';
+  inp.onchange = async (e) => {
+    const file = e.target.files[0];
+    if(!file) return;
+    showToast('Leyendo planilla...');
+    try{
+      const buf = await file.arrayBuffer();
+      // Load SheetJS
+      if(!window.XLSX){
+        showToast('Cargando SheetJS...');
+        await new Promise((res,rej)=>{
+          const s = document.createElement('script');
+          s.src = 'https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js';
+          s.onload = res; s.onerror = rej;
+          document.head.appendChild(s);
+        });
+      }
+      const wb = window.XLSX.read(buf, {type:'array', cellDates:false});
+      const data = parsePlanillaDespachante(wb);
+      fillImportData(data);
+      showToast('✓ Planilla importada');
+    } catch(err){
+      console.error('Import error:', err);
+      alert('Error al leer la planilla: ' + err.message);
+    }
+  };
+  inp.click();
+}
+
+function fillImportData(data){
+  // Fill each smartField - set both select and hidden input
+  const setField = (id, value) => {
+    // Try select first
+    const sel = document.getElementById(`nueva-${id}-sel`);
+    const inp = document.getElementById(`nueva-${id}`);
+    if(sel){
+      // Check if value exists in options
+      const opt = [...sel.options].find(o=>o.value===value);
+      if(opt){ sel.value = value; inp.style.display='none'; inp.value=value; }
+      else {
+        // Use "Escribir otro" option
+        sel.value = '__otro__';
+        inp.style.display = 'block';
+        inp.value = value;
+      }
+    } else if(inp){
+      inp.value = value;
+    }
+  };
+
+  const setDate = (id, value) => {
+    const inp = document.getElementById(`nueva-${id}`);
+    if(inp && inp.type === 'date' && value){
+      // Convert DD/MM/YYYY to YYYY-MM-DD
+      const parts = value.split('/');
+      if(parts.length === 3) inp.value = `${parts[2]}-${parts[1]}-${parts[0]}`;
+    } else if(inp) inp.value = value;
+  };
+
+  setField('vessel',   data.vessel);
+  setField('port',     data.port);
+  setField('booking',  data.booking);
+  setField('shipping', data.shipping);
+  setField('product',  data.product);
+  setField('packing',  data.packing);
+  setField('exporter', data.exporter);
+  setField('lots',     data.lots);
+  setField('tns',      data.tns);
+  setDate('etd', data.etd);
+  setDate('eta', data.eta);
+}
 
 // ─── ACCIONES RÁPIDAS ────────────────────────────────────────────────────────
 
