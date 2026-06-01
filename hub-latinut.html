@@ -3080,62 +3080,70 @@ function fmtDateFromExcel(val){
   return String(val);
 }
 
-function parsePlanillaDespachante(workbook){
-  // workbook is SheetJS workbook object
+ function parsePlanillaDespachante(workbook){
   const sheetName = workbook.SheetNames[0];
   const ws = workbook.Sheets[sheetName];
+
   const cellVal = (addr) => {
     const c = ws[addr];
-    if(!c) return '';
-    // For dates SheetJS uses type 'd' or 'n' with dateNF
-    if(c.t === 'n' && c.w && c.w.match(/\d+\/\d+\/\d+/)) return c.w;
-    if(c.t === 'd') return fmtDateFromExcel(c.v);
-    if(c.v instanceof Date) return fmtDateFromExcel(c.v);
-    return c.v !== undefined ? String(c.v) : '';
+    if(!c || c.v === undefined || c.v === null) return '';
+    // Skip if it's a date type - use fmtDate instead
+    if(c.t === 'n' || c.t === 'd') return String(c.v);
+    return String(c.v).trim();
   };
-  const cellNum = (addr) => {
+
+  // Date formatter - converts Excel serial or Date to DD/MM/YYYY
+  const fmtDate = (addr) => {
     const c = ws[addr];
-    return c ? (parseFloat(c.v)||0) : 0;
-  };
-
-  // Fixed fields
-  const vessel   = cellVal('B4');
-  const port     = cellVal('B5');
-  const booking  = cellVal('B6');
-  const shipping = cellVal('B7');
-  const etdRaw   = ws['B8'];
-  const etaRaw   = ws['B9'];
-  const incoterm = cellVal('D9');
-  const exporter = cellVal('D18');
-
-  // Format dates
-  const fmtCell = (c) => {
     if(!c) return '';
-    if(c.t === 'n' || c.t === 'd'){
-      // SheetJS stores Excel date serial as number
+    // Type 'n': numeric serial (most common in SheetJS without cellDates)
+    if(c.t === 'n'){
       const d = new Date(Math.round((c.v - 25569) * 86400 * 1000));
-      return `${String(d.getUTCDate()).padStart(2,'0')}/${String(d.getUTCMonth()+1).padStart(2,'0')}/${d.getUTCFullYear()}`;
+      return String(d.getUTCDate()).padStart(2,'0')+'/'+String(d.getUTCMonth()+1).padStart(2,'0')+'/'+d.getUTCFullYear();
     }
-    return c.w || String(c.v||'');
+    // Type 'd': already a JS Date
+    if(c.t === 'd' && c.v){
+      const d = new Date(c.v);
+      return String(d.getUTCDate()).padStart(2,'0')+'/'+String(d.getUTCMonth()+1).padStart(2,'0')+'/'+d.getUTCFullYear();
+    }
+    // Fallback: string like "6/8/2026" (MM/DD/YYYY) -> swap to DD/MM/YYYY
+    const w = c.w || String(c.v||'');
+    const m = w.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+    if(m) return m[2].padStart(2,'0')+'/'+m[1].padStart(2,'0')+'/'+m[3];
+    return w;
   };
-  const etd = fmtCell(etdRaw);
-  const eta = fmtCell(etaRaw);
 
-  // Rows from 21 down - collect lots, product, packing, tns
+  const vessel   = String(ws['B4']?.v||'').trim();
+  const port     = String(ws['B5']?.v||'').trim();
+  const booking  = String(ws['B6']?.v||'').trim();
+  const shipping = String(ws['B7']?.v||'').trim();
+  const etd      = fmtDate('B8');
+  const eta      = fmtDate('B9');
+  const incoterm = String(ws['D9']?.v||'').trim();
+  const exporter = 'Argen Peanuts';
+
+  // Rows from 21 down - collect lots, product, packing
   const lots = [];
   let product = '';
   let packing = '';
-  let lastTns = 0;
   let row = 21;
   while(true){
-    const lote = cellVal(`A${row}`);
-    if(!lote || lote.trim() === '') break;
-    lots.push(lote.trim());
-    if(!product) product = detectProduct(lote, cellVal(`B${row}`));
-    if(!packing) packing = detectPacking(cellVal(`I${row}`));
-    const tns = cellNum(`E${row}`);
-    if(tns) lastTns = tns;
+    const c = ws['A'+row];
+    if(!c || !c.v) break;
+    const lote = String(c.v).trim();
+    lots.push(lote);
+    if(!product) product = detectProduct(lote, String(ws['B'+row]?.v||''));
+    if(!packing)  packing  = detectPacking(String(ws['I'+row]?.v||''));
     row++;
+  }
+
+  // Total Tns = last numeric value in col E (includes Total row)
+  let lastTns = 0;
+  for(let r = 21; r <= row + 2; r++){
+    const c = ws['E'+r];
+    if(c && c.v !== undefined && !isNaN(parseFloat(c.v))){
+      lastTns = parseFloat(c.v);
+    }
   }
 
   return {
