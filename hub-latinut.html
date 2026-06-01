@@ -1864,6 +1864,14 @@ function renderNuevaCarga(){
   <div class="config-section">
     <div class="config-title">Nueva Carga</div>
     <div class="config-desc">Completá los campos para agregar una nueva fila a la planilla AXT.</div>
+    <div style="margin-bottom:16px;">
+      <button class="import-btn" onclick="triggerImportPlanilla()">📎 Importar planilla despachante (.xlsx)</button>
+      <span style="font-size:10px;color:var(--text3);margin-left:10px;">Pre-completa los campos automáticamente</span>
+    </div>
+    <div style="margin-bottom:16px;">
+      <button class="import-btn" onclick="triggerImportPlanilla()">📎 Importar planilla despachante (.xlsx)</button>
+      <span style="font-size:10px;color:var(--text3);margin-left:10px;">Pre-completa los campos automáticamente</span>
+    </div>
     ${buildCargaForm('nc')}
     <div class="config-save">
       <button class="btn" onclick="showView('cargas')" style="margin-right:8px;">Cancelar</button>
@@ -3177,10 +3185,11 @@ function triggerImportPlanilla(){
 
 function fillImportData(data){
   // Fill each smartField - set both select and hidden input
+  const prefix = 'nc';
   const setField = (id, value) => {
     // Try select first
-    const sel = document.getElementById(`nueva-${id}-sel`);
-    const inp = document.getElementById(`nueva-${id}`);
+    const sel = document.getElementById(`${prefix}-${id}-sel`);
+    const inp = document.getElementById(`${prefix}-${id}`);
     if(sel){
       // Check if value exists in options
       const opt = [...sel.options].find(o=>o.value===value);
@@ -3216,6 +3225,9 @@ function fillImportData(data){
   setField('tns',      data.tns);
   setDate('etd', data.etd);
   setDate('eta', data.eta);
+  // Also fill incoterm if field exists
+  const incotermInp = document.getElementById(`${prefix}-incoterm`);
+  if(incotermInp && data.incoterm) incotermInp.value = data.incoterm;
 }
 
 // ─── ACCIONES RÁPIDAS ────────────────────────────────────────────────────────
