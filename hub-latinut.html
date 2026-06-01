@@ -3210,14 +3210,13 @@ function fillImportData(data){
   };
 
   const setDate = (id, value) => {
-    const inp = document.getElementById(`nueva-${id}`);
-    if(inp && inp.type === 'date' && value){
-      // Convert DD/MM/YYYY to YYYY-MM-DD
+    const inp = document.getElementById(prefix+'-'+id);
+    if(!inp || !value) return;
+    if(inp.type === 'date'){
       const parts = value.split('/');
-      if(parts.length === 3) inp.value = `${parts[2]}-${parts[1]}-${parts[0]}`;
-    } else if(inp) inp.value = value;
+      if(parts.length === 3) inp.value = parts[2]+'-'+parts[1]+'-'+parts[0];
+    } else { inp.value = value; }
   };
-
   setField('vessel',   data.vessel);
   setField('port',     data.port);
   setField('booking',  data.booking);
