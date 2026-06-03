@@ -287,6 +287,11 @@ button{font-family:var(--font);cursor:pointer;border:none;background:none;}
 .mobile-toggle{display:none;align-items:center;justify-content:center;width:34px;height:34px;border-radius:8px;background:var(--bg3);border:1px solid var(--border);cursor:pointer;font-size:15px;color:var(--text2);}
 .overlay-close{display:none;position:fixed;inset:0;z-index:9;background:rgba(0,0,0,.3);}
 
+/* NEGOCIO PILL */
+.negocio-pill{display:flex;gap:4px;padding:10px 12px;border-bottom:1px solid var(--border);background:var(--bg2);}
+.negocio-btn{flex:1;padding:6px 8px;border-radius:8px;font-size:12px;font-weight:600;font-family:var(--font);cursor:pointer;border:1px solid var(--border);background:var(--bg2);color:var(--text3);transition:all .15s;text-align:center;-webkit-tap-highlight-color:rgba(0,113,227,.1);}
+.negocio-btn:hover{background:var(--bg3);}
+
 /* IMPORT PLANILLA */
 .import-btn{display:inline-flex;align-items:center;gap:6px;padding:7px 14px;border-radius:var(--radius);font-size:12px;font-weight:500;cursor:pointer;border:1px dashed var(--accent);background:var(--accent-light);color:var(--accent);transition:all .15s;font-family:var(--font);}
 .import-btn:hover{background:#d4e8fb;}
@@ -461,7 +466,11 @@ button{font-family:var(--font);cursor:pointer;border:none;background:none;}
 <aside class="sidebar" id="sidebar">
   <div class="logo">
     <div class="logo-text">LATINUT</div>
-    <div class="logo-sub">Hub de Control</div>
+    <div class="logo-sub" id="negocio-label">AXT Solutions</div>
+  </div>
+  <div class="negocio-pill">
+    <button class="negocio-btn" id="pill-axt" onclick="setNegocio('axt')">AXT</button>
+    <button class="negocio-btn" id="pill-buzaram" onclick="setNegocio('buzaram')">Buzaram</button>
   </div>
   <nav class="nav">
     <div class="nav-section">
@@ -471,7 +480,7 @@ button{font-family:var(--font);cursor:pointer;border:none;background:none;}
         <span class="nav-badge" id="badge-alertas"></span>
       </div>
       <div class="nav-item" onclick="showView('cargas')">
-        <span class="icon">📦</span> Cargas AXT
+        <span class="icon">📦</span> <span id="nav-cargas-label">Cargas AXT</span>
       </div>
       <div class="nav-item" onclick="showView('nueva_carga')">
         <span class="icon">＋</span> Nueva Carga
@@ -485,9 +494,9 @@ button{font-family:var(--font);cursor:pointer;border:none;background:none;}
       </div>
       <div class="nav-item" onclick="showView('liberaciones')">
         <span class="icon">🔓</span> Liberaciones
-        <span class="nav-badge warn" id="badge-liberaciones"></span>
+        <span class="nav-badge" id="badge-liberaciones"></span>
       </div>
-      <div class="nav-item" onclick="showView('pagares')">
+      <div class="nav-item" id="nav-pagares" onclick="showView('pagares')">
         <span class="icon">📄</span> Pagarés
       </div>
     </div>
@@ -505,14 +514,13 @@ button{font-family:var(--font);cursor:pointer;border:none;background:none;}
     </div>
   </nav>
   <div class="sidebar-footer">
+    <div style="margin-bottom:8px;">
+      <button id="auth-btn" class="btn" onclick="handleAuth()" style="width:100%;font-size:11px;">Conectar con Google</button>
+    </div>
     <div class="sheet-status">
       <span class="sheet-dot" id="sheet-dot"></span>
       <span id="sheet-status-text">Cargando...</span>
     </div>
-    <div class="auth-status" id="auth-status">
-      <span id="auth-status-text" style="color:var(--muted)">● Sin autenticar</span>
-    </div>
-    <button class="auth-btn" id="auth-btn" onclick="handleAuth()">Conectar con Google</button>
   </div>
 </aside>
 <div class="overlay-close" id="overlay-close" onclick="closeSidebar()"></div>
@@ -576,6 +584,79 @@ let cfg = {...{sheetId:'',sheetName:'Cargas',apiKey:'',clientId:'',alerta_dias:1
 const SCOPES = 'https://www.googleapis.com/auth/spreadsheets https://www.googleapis.com/auth/gmail.compose';
 let tokenClient = null;
 let accessToken = null;
+// ─── NEGOCIO ACTIVO ──────────────────────────────────────────────────────────
+let negocioActivo = localStorage.getItem('hub_negocio') || 'axt';
+
+const BUZARAM_CFG = {
+  sheetId: '1vQaNeo595C3aK1KAF75UsOkbA5LNUMm16WoEpP9Z69w',
+  sheetName: 'CARGAS',
+  appsScriptUrl: 'https://script.google.com/a/macros/latinutsa.com/s/AKfycbyR88OXmMw4zC-INvs8kTI7vwtX4JdFDsMNA9IS0wpHJwpl4ypQk385y2lhgqiTVERR/exec',
+  label: 'Buzaram',
+  COL_FECHA_EST_COBRO: 51,  // AZ col 52 (0-based 51)
+  COL_FECHA_COBRO: 56,       // BE col 57 (0-based 56)
+  ccFijo: 'yaelvaleria.arrua@newsan.com.ar',
+  sinPagares: true,
+};
+
+function getNegocioConfig(){
+  if(negocioActivo==='buzaram') return BUZARAM_CFG;
+  return {
+    sheetId: cfg.sheetId,
+    sheetName: cfg.sheetName,
+    appsScriptUrl: cfg.appsScriptUrl,
+    label: 'AXT Solutions',
+    COL_FECHA_EST_COBRO: COL.FECHA_EST_COBRO,
+    COL_FECHA_COBRO: COL.FECHA_COBRO,
+    ccFijo: 'pberro@axtsolutions.com',
+    sinPagares: false,
+  };
+}
+
+function setNegocio(n){
+  negocioActivo = n;
+  localStorage.setItem('hub_negocio', n);
+  cargasPage = 0;
+  window._alertFilter = 'all';
+  window._alertSubFilter = 'all';
+  updateNegocioPill();
+  loadData();
+}
+
+function updateNegocioPill(){
+  const isBuz = negocioActivo === 'buzaram';
+  ['axt','buzaram'].forEach(n => {
+    const el = document.getElementById('pill-'+n);
+    if(el){
+      el.style.background = negocioActivo===n?'var(--accent)':'var(--bg2)';
+      el.style.color = negocioActivo===n?'#fff':'var(--text3)';
+      el.style.borderColor = negocioActivo===n?'var(--accent)':'var(--border)';
+    }
+  });
+  // Hide pagarés for Buzaram
+  const pagNav = document.getElementById('nav-pagares');
+  if(pagNav) pagNav.style.display = isBuz?'none':'';
+  // Update sidebar subtitle
+  const label = document.getElementById('negocio-label');
+  if(label) label.textContent = isBuz?'Buzaram':'AXT Solutions';
+  // Update nav Cargas label
+  const cargasLabel = document.getElementById('nav-cargas-label');
+  if(cargasLabel) cargasLabel.textContent = isBuz?'Cargas Buzaram':'Cargas AXT';
+  // Update bottom nav cargas label
+  const bnavCargasLabel = document.getElementById('bnav-cargas-label');
+  if(bnavCargasLabel) bnavCargasLabel.textContent = isBuz ? 'Buzaram' : 'Cargas';
+  // Update view titles dynamically
+  window._viewTitles = {
+    alertas:'Alertas',
+    cargas: isBuz?'Cargas Buzaram':'Cargas AXT',
+    nueva_carga: isBuz?'Nueva Carga Buzaram':'Nueva Carga',
+    cobranza:'Cobranza',
+    liberaciones:'Liberaciones',
+    pagares:'Pagarés',
+    log:'Log de acciones',
+    config:'Configuración'
+  };
+}
+
 let allRows = [], currentView = 'alertas', modalData = {}, currentLang = 'en';
 let contacts = []; // Cache de contactos del HUB sheet
 let logRows = []; // Cache del LOG del HUB sheet
@@ -731,8 +812,12 @@ function parseDate(v){
   const d=new Date(v);return isNaN(d)?null:d;
 }
 function daysFrom(v){const d=parseDate(v);if(!d)return null;const t=new Date();const tm=new Date(t.getFullYear(),t.getMonth(),t.getDate());const dm=new Date(d.getFullYear(),d.getMonth(),d.getDate());return Math.round((dm-tm)/86400000);}
+
+// Get FECHA_EST_COBRO for current negocio
+function getCobroCol(){ return getNegocioConfig().COL_FECHA_EST_COBRO; }
+function getCobroFecha(row){ return row[getCobroCol()]||''; }
 function fmtDate(v){const d=parseDate(v);if(!d)return v||'—';return d.toLocaleDateString('es-AR',{day:'2-digit',month:'2-digit',year:'2-digit'});}
-function isClosed(row){return(row[COL.FECHA_EST_COBRO]||'').trim().toUpperCase()==='SI'&&(row[COL.FECHA_COBRO]||'').trim()!=='';}
+function isClosed(row){const nc=getNegocioConfig();const av=(row[nc.COL_FECHA_EST_COBRO]||'').trim().toUpperCase();const aw=(row[nc.COL_FECHA_COBRO]||'').trim();return av==='SI'&&aw!=='';}
 function daysClass(n){if(n===null)return '';if(n<=7)return 'red';if(n<=14)return 'warn';return 'ok';}
 function nowStr(){const n=new Date();return{fecha:n.toLocaleDateString('es-AR'),hora:n.toLocaleTimeString('es-AR',{hour:'2-digit',minute:'2-digit'})};}
 
@@ -868,8 +953,7 @@ function setCargasPage(p){ cargasPage = p; renderCargas(); }
 
 // ─── APPS SCRIPT BRIDGE ──────────────────────────────────────────────────────
 async function callAppScript(accion, filaInicio, filaFin){
-  const url = cfg.appsScriptUrl;
-  if(!url){ alert('URL del AppScript no configurada.'); return false; }
+  const url = getNegocioConfig().appsScriptUrl || cfg.appsScriptUrl;
   try{
     const params = new URLSearchParams({accion, filaInicio, filaFin: filaFin||filaInicio});
     const r = await fetch(url + '?' + params.toString(), {
@@ -961,12 +1045,12 @@ function updateAuthUI(connected){
 // ─── DATA ────────────────────────────────────────────────────────────────────
 async function loadData(){
   if(!cfg.sheetId||!cfg.apiKey){showConfigPrompt();return;}
-  setSheetStatus('loading','Sincronizando...');
+  const nc=getNegocioConfig();
+  setSheetStatus('loading','Sincronizando '+nc.label+'...');
   showProgress();
   try{
-    const range=encodeURIComponent(`${cfg.sheetName}!A4:BI`);
-    const url=`https://sheets.googleapis.com/v4/spreadsheets/${cfg.sheetId}/values/${range}?key=${cfg.apiKey}`;
-    const r=await fetch(url);
+    const range=encodeURIComponent(nc.sheetName+'!A4:BI');
+    const url='https://sheets.googleapis.com/v4/spreadsheets/'+nc.sheetId+'/values/'+range+'?key='+cfg.apiKey;
     if(!r.ok) throw new Error(`HTTP ${r.status}`);
     const data=await r.json();
     const rawRows=(data.values||[]);
@@ -996,7 +1080,7 @@ async function writeCell(row, col, value){
   const sheetRow = allRows[row]&&allRows[row]._sheetRow ? allRows[row]._sheetRow : row + 4;
   const colLetter = String.fromCharCode(65 + col);
   const range = encodeURIComponent(`${cfg.sheetName}!${colLetter}${sheetRow}`);
-  const url = `https://sheets.googleapis.com/v4/spreadsheets/${cfg.sheetId}/values/${range}?valueInputOption=USER_ENTERED`;
+  const url = `https://sheets.googleapis.com/v4/spreadsheets/${(getNegocioConfig().sheetId||cfg.sheetId)}/values/${range}?valueInputOption=USER_ENTERED`;
   const r = await fetch(url, {
     method: 'PUT',
     headers: {'Authorization':`Bearer ${accessToken}`,'Content-Type':'application/json'},
@@ -1231,7 +1315,7 @@ function showView(view){
   updateBottomNav(view);
   currentView=view;
   document.querySelectorAll('.nav-item').forEach(el=>el.classList.remove('active'));
-  const titles={alertas:'Alertas',cargas:'Cargas AXT',nueva_carga:'Nueva Carga',cobranza:'Cobranza',liberaciones:'Liberaciones',pagares:'Pagarés',log:'Log de acciones',config:'Configuración'};
+  const titles=window._viewTitles||{alertas:'Alertas',cargas:'Cargas AXT',nueva_carga:'Nueva Carga',cobranza:'Cobranza',liberaciones:'Liberaciones',pagares:'Pagarés',log:'Log de acciones',config:'Configuración'};
   document.getElementById('view-title').textContent=titles[view]||view;
   document.querySelectorAll('.nav-item').forEach(el=>{if(el.getAttribute('onclick')?.includes(`'${view}'`))el.classList.add('active');});
   renderView(view);
@@ -1601,7 +1685,7 @@ async function writeRow(rowData, sheetRow){
     const colLetter = colIndexToLetter(parseInt(col));
     return {range: `${cfg.sheetName}!${colLetter}${sheetRow}`, values: [[value]]};
   });
-  const url = `https://sheets.googleapis.com/v4/spreadsheets/${cfg.sheetId}/values:batchUpdate`;
+  const url = `https://sheets.googleapis.com/v4/spreadsheets/${(getNegocioConfig().sheetId||cfg.sheetId)}/values:batchUpdate`;
   const r = await fetch(url, {
     method: 'POST',
     headers: {'Authorization': `Bearer ${accessToken}`, 'Content-Type': 'application/json'},
@@ -1611,7 +1695,7 @@ async function writeRow(rowData, sheetRow){
 }
 
 async function getSheetId(){
-  const url = `https://sheets.googleapis.com/v4/spreadsheets/${cfg.sheetId}?key=${cfg.apiKey}`;
+  const url = `https://sheets.googleapis.com/v4/spreadsheets/${(getNegocioConfig().sheetId||cfg.sheetId)}?key=${cfg.apiKey}`;
   const r = await fetch(url);
   const data = await r.json();
   const sheet = (data.sheets||[]).find(s => s.properties.title === cfg.sheetName);
@@ -1621,7 +1705,7 @@ async function getSheetId(){
 async function appendRow(rowData){
   if(!accessToken){ alert('Conectate con Google primero.'); return false; }
   const range = encodeURIComponent(`${cfg.sheetName}!N:N`);
-  const url = `https://sheets.googleapis.com/v4/spreadsheets/${cfg.sheetId}/values/${range}?key=${cfg.apiKey}`;
+  const url = `https://sheets.googleapis.com/v4/spreadsheets/${(getNegocioConfig().sheetId||cfg.sheetId)}/values/${range}?key=${cfg.apiKey}`;
   const r = await fetch(url);
   const data = await r.json();
   const vals = data.values||[];
@@ -1632,7 +1716,7 @@ async function appendRow(rowData){
   const newRow = lastPortRow + 1;
   const sheetId = await getSheetId();
   if(sheetId === null){ alert('No se pudo obtener el ID de la hoja.'); return null; }
-  const insertUrl = `https://sheets.googleapis.com/v4/spreadsheets/${cfg.sheetId}:batchUpdate`;
+  const insertUrl = `https://sheets.googleapis.com/v4/spreadsheets/${(getNegocioConfig().sheetId||cfg.sheetId)}:batchUpdate`;
   const insertR = await fetch(insertUrl, {
     method: 'POST',
     headers: {'Authorization': `Bearer ${accessToken}`, 'Content-Type': 'application/json'},
@@ -2698,6 +2782,12 @@ function openMailModal(rowIdx, mailType){
     const otherCC=contacts.filter(c=>!c.ccSiempre&&c.empresa.toUpperCase()!==d.customer.toUpperCase()&&(c.empresa.toUpperCase().includes(d.customer.toUpperCase())||d.customer.toUpperCase().includes(c.empresa.toUpperCase()))).map(c=>c.email);
     const reciproca=getReciprocaCC().split(',').map(e=>e.trim()).filter(Boolean);
     ccStr=[...new Set([...otherCC,...reciproca])].join(', ');
+  } else if(mailType==='envio_docs'){
+    const contactInfo=getContactsForEmpresa(d.customer);
+    toStr=contactInfo.to||`${d.customer} <sin contacto cargado>`;
+    const reciproca=getReciprocaCC().split(',').map(e=>e.trim()).filter(Boolean);
+    const ccBase=(contactInfo.cc||'').split(',').map(e=>e.trim()).filter(Boolean);
+    ccStr=[...new Set([...ccBase,...reciproca,'josefina@nutrin.com.ar'])].join(', ');
   } else {
     const contactInfo=getContactsForEmpresa(d.customer);
     toStr=contactInfo.to||`${d.customer} <sin contacto cargado>`;
@@ -3433,6 +3523,7 @@ document.addEventListener('keydown', e => {
 
 // ─── INIT ────────────────────────────────────────────────────────────────────
 window.onload=()=>{
+  updateNegocioPill();
   // Restore last view
   const lastView = getLastView();
   updateBottomNav(lastView);
@@ -3473,7 +3564,7 @@ window.onload=()=>{
     </div>
     <div class="bottom-nav-item" id="bnav-cargas" onclick="showView('cargas')">
       <span class="bnav-icon">📦</span>
-      <span class="bnav-label">Cargas</span>
+      <span class="bnav-label" id="bnav-cargas-label">Cargas</span>
     </div>
     <div class="bottom-nav-item" id="bnav-cobranza" onclick="showView('cobranza')">
       <span class="bnav-icon">💰</span>
