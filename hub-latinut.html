@@ -1054,8 +1054,14 @@ async function loadData(){
   showProgress();
   try{
     const range=encodeURIComponent(nc.sheetName+'!A4:BI');
-    const url='https://sheets.googleapis.com/v4/spreadsheets/'+nc.sheetId+'/values/'+range+'?key='+cfg.apiKey;
-    const r=await fetch(url);
+    let url, fetchOpts={};
+    if(accessToken){
+      url='https://sheets.googleapis.com/v4/spreadsheets/'+nc.sheetId+'/values/'+range;
+      fetchOpts={headers:{Authorization:'Bearer '+accessToken}};
+    } else {
+      url='https://sheets.googleapis.com/v4/spreadsheets/'+nc.sheetId+'/values/'+range+'?key='+cfg.apiKey;
+    }
+    const r=await fetch(url, fetchOpts);
     if(!r.ok) throw new Error(`HTTP ${r.status}`);
     const data=await r.json();
     const rawRows=(data.values||[]);
@@ -1164,7 +1170,7 @@ function getAlerts(){
     const inv1 = (row[COL.INVOICE_CLIENTE]||'').trim();
     const inv2raw = (row[COL.INVOICE_FC_SERV]||'').trim();
     const inv2 = (inv2raw==='-'||inv2raw==='--')?'':inv2raw;
-    const fechaCobro = row[COL.FECHA_EST_COBRO];
+    const fechaCobro = row[getCobroCol()];
     const dCobro = daysFrom(fechaCobro);
     const recInfo = getReclamoInfoFromLog(bl, 'solicitar liberacion');
 
@@ -1306,7 +1312,7 @@ function updateBadges(){
   const crit=alerts.filter(a=>a.level==='critical'||a.level==='warning').length;
   const bA=document.getElementById('badge-alertas');
   bA.textContent=crit||'';bA.style.display=crit?'':'none';
-  const cobros=allRows.filter(r=>{const d=daysFrom(r[COL.FECHA_EST_COBRO]);return d!==null&&d<=14;}).length;
+  const cobros=allRows.filter(r=>{const d=daysFrom(r[getCobroCol()]);return d!==null&&d<=14;}).length;
   const bC=document.getElementById('badge-cobranza');
   bC.textContent=cobros||'';bC.style.display=cobros?'':'none';
   const libs=allRows.filter(r=>{const d=daysFrom(r[COL.ETA]);const t=(r[COL.TELEX]||'').trim().toLowerCase();return d!==null&&d>=0&&d<=7&&t!=='si'&&!t.includes('bl orig');}).length;
@@ -1511,7 +1517,7 @@ function renderCargas(showAll, sort){
     if(cargasSort === 'eta_asc' || cargasSort === 'eta_desc'){
       da = dateVal(a[COL.ETA]); db = dateVal(b[COL.ETA]);
     } else if(cargasSort === 'cobro_asc' || cargasSort === 'cobro_desc'){
-      da = dateVal(a[COL.FECHA_EST_COBRO]); db = dateVal(b[COL.FECHA_EST_COBRO]);
+      da = dateVal(a[getCobroCol()]); db = dateVal(b[getCobroCol()]);
     } else {
       da = dateVal(a[COL.ETA]); db = dateVal(b[COL.ETA]);
     }
@@ -1668,7 +1674,7 @@ function renderCargas(showAll, sort){
       <td class="mono" style="color:var(--accent)">${inv2||'—'}</td>
       <td class="mono">${total2?'USD '+total2:'—'}</td>
       <td class="mono" style="font-weight:600;color:var(--text)">${totalCarga!=='—'?'USD '+totalCarga:'—'}</td>
-      <td class="mono" style="color:var(--text3)">${fmtDate(row[COL.FECHA_EST_COBRO])}</td>
+      <td class="mono" style="color:var(--text3)">${fmtDate(row[getCobroCol()])}</td>
       <td><button class="row-action" onclick="openMailModal(${idx},'reclamo_pago')">✉</button></td>
       <td><button class="row-action" onclick="renderEditCarga(${idx})">✎ Editar</button></td>
       <td><button class="row-action" onclick="solicitarFC(${idx})" title="Solicitud FC a AXT" style="color:var(--accent);border-color:var(--accent);">📄 FC</button></td>
@@ -2252,7 +2258,7 @@ function openArchiveModal(rowIdx){
   if(!row) return;
   const bl = (row[COL.BL]||'').trim();
   const customer = (row[COL.CUSTOMER]||'').trim();
-  const due = fmtDate(row[COL.FECHA_EST_COBRO]);
+  const due = fmtDate(row[getCobroCol()]);
   const inv1 = (row[COL.INVOICE_CLIENTE]||'').trim();
 
   document.getElementById('modal-title').textContent = 'Archivar cobro';
@@ -2298,7 +2304,7 @@ function renderCobranzaMobile(rows){
   let html = '';
   rows.forEach((row, localIdx) => {
     const origIdx = allRows.indexOf(row);
-    const d = daysFrom(row[COL.FECHA_EST_COBRO]);
+    const d = daysFrom(row[getCobroCol()]);
     const color = d===null?'var(--text3)':d<=0?'var(--danger)':d<=2?'#f97316':d<=4?'#f97316':d<=10?'#eab308':'var(--ok)';
     const customer = (row[COL.CUSTOMER]||'—').trim();
     const bl = (row[COL.BL]||'—').substring(0,18);
@@ -2307,7 +2313,7 @@ function renderCobranzaMobile(rows){
     const inv2 = (inv2raw==='-'||inv2raw==='--')?'':inv2raw;
     const total = parseSheetNum(row[32]);
     const totalDisplay = isNaN(total)?'—':'USD '+total.toLocaleString('es-AR',{maximumFractionDigits:0});
-    const due = fmtDate(row[COL.FECHA_EST_COBRO]);
+    const due = fmtDate(row[getCobroCol()]);
     const dLabel = d===null?'—':d<=0?`Vencido ${Math.abs(d)}d`:`${d}d`;
     const recInfo = getReclamoInfoFromLog(row[COL.BL]||'','reclamo cobro');
     const level = d!==null&&d<=2?'critical':d!==null&&d<=10?'warning':'info';
@@ -2354,12 +2360,12 @@ async function reclamarCobranzaBulk(rowIndices){
     const inv1=(row[COL.INVOICE_CLIENTE]||'').trim();
     const inv2raw=(row[COL.INVOICE_FC_SERV]||'').trim();
     const inv2=(inv2raw==='-'||inv2raw==='--')?'':inv2raw;
-    const due=fmtDate(row[COL.FECHA_EST_COBRO]);
+    const due=fmtDate(row[getCobroCol()]);
     return `Cliente: ${customer}\nInvoice: ${inv1||'—'}${inv2?'\nFC Servicios: '+inv2:''}\nFecha de vencimiento: ${due}`;
   }).join('\n\n');
 
   // Build dates string - single if all same, comma separated if different
-  const dates=[...new Set(rows.map(r=>fmtDate(r[COL.FECHA_EST_COBRO])).filter(Boolean))];
+  const dates=[...new Set(rows.map(r=>fmtDate(r[getCobroCol()])).filter(Boolean))];
   const datesStr=dates.length===1?dates[0]:dates.join(', ');
   const subject=`Consulta de pago - ${customer} - AXT Trading - Vencimiento ${datesStr}`;
   const body=`Estimado/a,\n\nNos comunicamos para consultar respecto a ${intro}:\n\n${lines}\n\nAgradecemos confirmar estado del pago.\n\nSaludos,\nLATINUT S.A.`;
@@ -2383,7 +2389,7 @@ function renderCobranza(filterKey, filterVal){
 
   // All rows with payment due date, excluding archived
   let allCobRows = allRows.filter(r => {
-    const d = daysFrom(r[COL.FECHA_EST_COBRO]);
+    const d = daysFrom(r[getCobroCol()]);
     const bl = (r[COL.BL]||'').trim();
     return d !== null && !archivedBLs.includes(bl);
   });
@@ -2391,15 +2397,15 @@ function renderCobranza(filterKey, filterVal){
   // Default: show only next 10 days; toggle shows all
   let rows = cobranzaFilters.verTodos
     ? allCobRows
-    : allCobRows.filter(r => { const d = daysFrom(r[COL.FECHA_EST_COBRO]); return d !== null && d <= 10; });
+    : allCobRows.filter(r => { const d = daysFrom(r[getCobroCol()]); return d !== null && d <= 10; });
 
   if(cobranzaFilters.cliente){
     rows = rows.filter(r => (r[COL.CUSTOMER]||'').trim() === cobranzaFilters.cliente);
   }
 
   rows = [...rows].sort((a,b) => {
-    const da = daysFrom(a[COL.FECHA_EST_COBRO]);
-    const db = daysFrom(b[COL.FECHA_EST_COBRO]);
+    const da = daysFrom(a[getCobroCol()]);
+    const db = daysFrom(b[getCobroCol()]);
     if(da===null&&db===null) return 0;
     if(da===null) return 1; if(db===null) return -1;
     return cobranzaFilters.sort==='due_desc' ? db-da : da-db;
@@ -2427,7 +2433,7 @@ function renderCobranza(filterKey, filterVal){
   let html = `<div class="stats-row">
     <div class="stat-card"><div class="stat-label">Cobros en vista</div><div class="stat-value">${rows.length}</div><div class="stat-sub">${cobranzaFilters.verTodos?'Todos':'Próximos 10 días'}</div></div>
     <div class="stat-card warn-card"><div class="stat-label">Total expuesto</div><div class="stat-value" style="font-size:20px;color:var(--warn)">USD ${totalUSD.toLocaleString('es-AR',{maximumFractionDigits:0})}</div></div>
-    <div class="stat-card alert-card"><div class="stat-label">Vencidos / urgentes</div><div class="stat-value" style="color:var(--danger)">${rows.filter(r=>{const d=daysFrom(r[COL.FECHA_EST_COBRO]);return d!==null&&d<=1;}).length}</div><div class="stat-sub">≤ 1 día</div></div>
+    <div class="stat-card alert-card"><div class="stat-label">Vencidos / urgentes</div><div class="stat-value" style="color:var(--danger)">${rows.filter(r=>{const d=daysFrom(r[getCobroCol()]);return d!==null&&d<=1;}).length}</div><div class="stat-sub">≤ 1 día</div></div>
     <div class="stat-card"><div class="stat-label">Archivados</div><div class="stat-value" style="color:var(--text3)">${archivedBLs.length}</div><div class="stat-sub" style="cursor:pointer;color:var(--accent);" onclick="renderCobranzaArchivados()">Ver archivados →</div></div>
   </div>
   <div class="table-wrap">
@@ -2465,7 +2471,7 @@ function renderCobranza(filterKey, filterVal){
 
   rows.forEach((row,localIdx)=>{
     const origIdx=allRows.indexOf(row);
-    const d=daysFrom(row[COL.FECHA_EST_COBRO]);
+    const d=daysFrom(row[getCobroCol()]);
     const color=daysColor(d);
     const inv1=(row[COL.INVOICE_CLIENTE]||'').trim();
     const _inv2r=(row[COL.INVOICE_FC_SERV]||'').trim();
@@ -2486,7 +2492,7 @@ function renderCobranza(filterKey, filterVal){
       <td class="mono">${(row[COL.BL]||'--').substring(0,20)}</td>
       <td class="mono" style="font-size:10px;color:var(--accent)">${invDisplay}</td>
       <td class="mono" style="font-weight:600">${totalDisplay}</td>
-      <td class="mono">${fmtDate(row[COL.FECHA_EST_COBRO])}</td>
+      <td class="mono">${fmtDate(row[getCobroCol()])}</td>
       <td><span style="color:${color};font-weight:700;font-family:var(--mono);font-size:12px;">${dLabel}</span></td>
       <td>${recHtml}</td>
       <td style="font-size:10px;color:var(--text3)">${contactDisplay}</td>
@@ -2535,7 +2541,7 @@ function renderCobranzaArchivados(){
       <td style="font-weight:500">${customer}</td>
       <td class="mono">${bl.substring(0,20)}</td>
       <td class="mono" style="color:var(--accent);font-size:10px">${inv1&&inv2?inv1+' / '+inv2:inv1||'--'}</td>
-      <td class="mono">${fmtDate(row[COL.FECHA_EST_COBRO])}</td>
+      <td class="mono">${fmtDate(row[getCobroCol()])}</td>
       <td style="font-size:11px;color:var(--text3);max-width:200px">${comentario}</td>
       <td><button class="row-action" onclick="unarchiveBL('${bl}')" style="color:var(--accent);">↩ Desarchivar</button></td>
     </tr>`;
@@ -2565,7 +2571,7 @@ function renderPagares(){
       <td class="mono">${fmtDate(row[COL.ETA])}</td>
       <td>${pagEnv==='SI'?'<span class="pagare-status enviado">SI</span>':'<span class="pagare-status pendiente">NO</span>'}</td>
       <td>${pagFirm==='SI'?'<span class="pagare-status enviado">SI</span>':'<span class="pagare-status pendiente">NO</span>'}</td>
-      <td class="mono">${fmtDate(row[COL.FECHA_EST_COBRO])}</td>
+      <td class="mono">${fmtDate(row[getCobroCol()])}</td>
       <td>${recHtml}</td>
       <td>${pagEnv!=='SI'?`<button class="row-action" onclick="openMailModal(${idx},'solicitar_pagare')">✉ Solicitar</button>`:''}</td>
     </tr>`;
@@ -2764,7 +2770,7 @@ function openMailModal(rowIdx, mailType){
     vessel:(row[COL.VESSEL]||'').trim(),
     port:(row[COL.PORT]||'').trim(),
     etaFmt:fmtDate(row[COL.ETA]),
-    paymentDueFmt:fmtDate(row[COL.FECHA_EST_COBRO]),
+    paymentDueFmt:fmtDate(row[getCobroCol()]),
     invoiceInfo:getInvoiceInfo(row),
     docsNote:(row[COL.DOCUMENTOS]||'').trim(),
     inv1:(row[COL.INVOICE_CLIENTE]||'').trim(),
@@ -2915,7 +2921,7 @@ function handleSearch(q){
     const vessel = (row[COL.VESSEL]||'').toUpperCase();
     if([bl,customer,booking,inv1,inv2,vessel].some(f=>f.includes(qUp))){
       const d = daysFrom(row[COL.ETA]);
-      const dCobro = daysFrom(row[COL.FECHA_EST_COBRO]);
+      const dCobro = daysFrom(row[getCobroCol()]);
       results.push({
         title: `${row[COL.CUSTOMER]||'—'} — ${row[COL.BL]||'—'}`,
         sub: `ETA: ${fmtDate(row[COL.ETA])} · Booking: ${row[COL.BOOKING]||'—'} · ${row[COL.INVOICE_CLIENTE]||''}`,
@@ -2964,7 +2970,7 @@ async function generarResumenDia(){
   const alerts = getAlerts();
   const crit = alerts.filter(a=>a.level==='critical');
   const warn = alerts.filter(a=>a.level==='warning');
-  const cobrosUrgentes = allRows.filter(r=>{const d=daysFrom(r[COL.FECHA_EST_COBRO]);return d!==null&&d<=5;});
+  const cobrosUrgentes = allRows.filter(r=>{const d=daysFrom(r[getCobroCol()]);return d!==null&&d<=5;});
   const libPendientes = allRows.filter(r=>{
     const d=daysFrom(r[COL.ETA]);
     const t=(r[COL.TELEX]||'').trim().toLowerCase();
@@ -2982,7 +2988,7 @@ DATOS DE HOY (${new Date().toLocaleDateString('es-AR')}):
 - Alertas críticas: ${crit.length} (${crit.filter(a=>a.subtype==='liberacion_urgente').length} liberaciones urgentes, ${crit.filter(a=>a.subtype==='cobro_urgente').length} cobros urgentes)
 - Advertencias: ${warn.length}
 - Liberaciones pendientes ETA ≤7d: ${libPendientes.length} cargas sin TELEX
-- Cobros urgentes (≤5 días): ${cobrosUrgentes.map(r=>`${r[COL.CUSTOMER]||''} vence ${fmtDate(r[COL.FECHA_EST_COBRO])}`).join(', ')||'ninguno'}
+- Cobros urgentes (≤5 días): ${cobrosUrgentes.map(r=>`${r[COL.CUSTOMER]||''} vence ${fmtDate(r[getCobroCol()])}`).join(', ')||'ninguno'}
 - Pagarés pendientes de envío (ETA ≤21d): ${pagPendientes.length}
 - Cargas activas totales: ${allRows.length}
 
@@ -3037,8 +3043,8 @@ function buildContext(){
   }).length;
 
   // Cobros próximos
-  const cobrosPend = allRows.filter(r=>daysFrom(r[COL.FECHA_EST_COBRO])!==null).length;
-  const cobrosUrgentes = allRows.filter(r=>{const d=daysFrom(r[COL.FECHA_EST_COBRO]);return d!==null&&d<=5;}).length;
+  const cobrosPend = allRows.filter(r=>daysFrom(r[getCobroCol()])!==null).length;
+  const cobrosUrgentes = allRows.filter(r=>{const d=daysFrom(r[getCobroCol()]);return d!==null&&d<=5;}).length;
 
   // Top 10 cargas activas con más detalle
   const topCargas = allRows.slice(0,20).map(r=>({
@@ -3050,8 +3056,8 @@ function buildContext(){
     telex: r[COL.TELEX]||'',
     pagaréEnv: r[COL.PAGARE_ENVIADO]||'',
     pagaréFirm: r[COL.PAGARE_FIRMADO]||'',
-    fechaCobro: r[COL.FECHA_EST_COBRO]||'',
-    diasCobro: daysFrom(r[COL.FECHA_EST_COBRO]),
+    fechaCobro: r[getCobroCol()]||'',
+    diasCobro: daysFrom(r[getCobroCol()]),
     docs: r[COL.DOCUMENTOS]||'',
     inv1: r[COL.INVOICE_CLIENTE]||'',
     inv2: r[COL.INVOICE_FC_SERV]||'',
@@ -3408,7 +3414,7 @@ function updateBottomNavBadges(){
   const bnavAlerta = document.getElementById('bnav-badge-alertas');
   if(bnavAlerta){ bnavAlerta.style.display = critWarn>0?'block':'none'; bnavAlerta.textContent = critWarn||''; }
 
-  const cobros = allRows.filter(r=>{const d=daysFrom(r[COL.FECHA_EST_COBRO]);return d!==null&&d<=10;}).length;
+  const cobros = allRows.filter(r=>{const d=daysFrom(r[getCobroCol()]);return d!==null&&d<=10;}).length;
   const bnavCob = document.getElementById('bnav-badge-cobranza');
   if(bnavCob){ bnavCob.style.display = cobros>0?'block':'none'; bnavCob.textContent = cobros||''; }
 
