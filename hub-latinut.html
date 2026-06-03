@@ -622,7 +622,18 @@ function setNegocio(n){
   cargasPage = 0;
   window._alertFilter = 'all';
   window._alertSubFilter = 'all';
+  currentView = 'alertas';
+  saveLastView('alertas');
   updateNegocioPill();
+  // Update nav active state
+  document.querySelectorAll('.nav-item').forEach(el => el.classList.remove('active'));
+  const alertasNav = document.querySelector('.nav-item[onclick*="alertas"]');
+  if(alertasNav) alertasNav.classList.add('active');
+  updateBottomNav('alertas');
+  // Update topbar title
+  document.getElementById('view-title').textContent = 'Alertas';
+  // Show loading while fetching new negocio data
+  document.getElementById('content').innerHTML = '<div class="spinner"><div class="spin"></div> Cargando ' + (n==='buzaram'?'Buzaram':'AXT Solutions') + '...</div>';
   loadData();
 }
 
