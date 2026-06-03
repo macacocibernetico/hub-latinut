@@ -517,6 +517,7 @@ button{font-family:var(--font);cursor:pointer;border:none;background:none;}
     <div style="margin-bottom:8px;">
       <button id="auth-btn" class="btn" onclick="handleAuth()" style="width:100%;font-size:11px;">Conectar con Google</button>
     </div>
+    <div style="font-size:10px;color:var(--text3);margin-bottom:6px;" id="auth-status-text"></div>
     <div class="sheet-status">
       <span class="sheet-dot" id="sheet-dot"></span>
       <span id="sheet-status-text">Cargando...</span>
@@ -578,7 +579,7 @@ button{font-family:var(--font);cursor:pointer;border:none;background:none;}
 <script>
 // ─── CONFIG ──────────────────────────────────────────────────────────────────
 const CFG_KEY = 'hub_latinut_config';
-let cfg = {...{sheetId:'',sheetName:'Cargas',apiKey:'',clientId:'',alerta_dias:10,hubSheetId:'11r3m9KuXWFRrSjdHf1an2xQDjNwnXhadWk5WbShuLms',appsScriptUrl:'https://script.google.com/macros/s/AKfycbyUy0QaexIIqToupRj1_5zgnFpm5Wyycnt7SLClZMk_zLfhm6CfzLpNr8EgT98aSOY4/exec',claudeApiKey:''},...JSON.parse(localStorage.getItem(CFG_KEY)||'{}')};
+let cfg = {...{sheetId:'',sheetName:'Cargas',apiKey:'',clientId:'',alerta_dias:10,hubSheetId:'11r3m9KuXWFRrSjdHf1an2xQDjNwnXhadWk5WbShuLms',appsScriptUrl:'https://script.google.com/macros/s/AKfycbyUy0QaexIIqToupRj1_5zgnFpm5Wyycnt7SLClZMk_zLfhm6CfzLpNr8EgT98aSOY4/exec',claudeApiKey:'',buzaramSheetId:'1vQaNeo595C3aK1KAF75UsOkbA5LNUMm16WoEpP9Z69w',buzaramAppsScriptUrl:'https://script.google.com/a/macros/latinutsa.com/s/AKfycbyR88OXmMw4zC-INvs8kTI7vwtX4JdFDsMNA9IS0wpHJwpl4ypQk385y2lhgqiTVERR/exec'},...JSON.parse(localStorage.getItem(CFG_KEY)||'{}')};
 
 // ─── OAUTH ───────────────────────────────────────────────────────────────────
 const SCOPES = 'https://www.googleapis.com/auth/spreadsheets https://www.googleapis.com/auth/gmail.compose';
@@ -587,19 +588,22 @@ let accessToken = null;
 // ─── NEGOCIO ACTIVO ──────────────────────────────────────────────────────────
 let negocioActivo = localStorage.getItem('hub_negocio') || 'axt';
 
-const BUZARAM_CFG = {
-  sheetId: '1vQaNeo595C3aK1KAF75UsOkbA5LNUMm16WoEpP9Z69w',
-  sheetName: 'CARGAS',
-  appsScriptUrl: 'https://script.google.com/a/macros/latinutsa.com/s/AKfycbyR88OXmMw4zC-INvs8kTI7vwtX4JdFDsMNA9IS0wpHJwpl4ypQk385y2lhgqiTVERR/exec',
-  label: 'Buzaram',
-  COL_FECHA_EST_COBRO: 51,  // AZ col 52 (0-based 51)
-  COL_FECHA_COBRO: 56,       // BE col 57 (0-based 56)
-  ccFijo: 'yaelvaleria.arrua@newsan.com.ar',
-  sinPagares: true,
-};
+// BUZARAM_CFG is built dynamically from cfg to allow user configuration
+function getBuzaramCfg(){
+  return {
+    sheetId: cfg.buzaramSheetId || '1vQaNeo595C3aK1KAF75UsOkbA5LNUMm16WoEpP9Z69w',
+    sheetName: 'CARGAS',
+    appsScriptUrl: cfg.buzaramAppsScriptUrl || 'https://script.google.com/a/macros/latinutsa.com/s/AKfycbyR88OXmMw4zC-INvs8kTI7vwtX4JdFDsMNA9IS0wpHJwpl4ypQk385y2lhgqiTVERR/exec',
+    label: 'Buzaram',
+    COL_FECHA_EST_COBRO: 51,  // AZ col 52 (0-based 51)
+    COL_FECHA_COBRO: 56,       // BE col 57 (0-based 56)
+    ccFijo: 'yaelvaleria.arrua@newsan.com.ar',
+    sinPagares: true,
+  };
+}
 
 function getNegocioConfig(){
-  if(negocioActivo==='buzaram') return BUZARAM_CFG;
+  if(negocioActivo==='buzaram') return getBuzaramCfg();
   return {
     sheetId: cfg.sheetId,
     sheetName: cfg.sheetName,
@@ -2625,6 +2629,11 @@ function renderConfig(){
     <div class="config-field"><div class="config-label">Google OAuth Client ID (escritura)</div><input class="config-input" id="cfg-clientId" value="${cfg.clientId}" placeholder="309220748877-...apps.googleusercontent.com"></div>
     <div class="config-field"><div class="config-label">ID Planilla HUB LATINUT (LOG + Contactos)</div><input class="config-input" id="cfg-hubSheetId" value="${cfg.hubSheetId||'11r3m9KuXWFRrSjdHf1an2xQDjNwnXhadWk5WbShuLms'}" placeholder="11r3m9K..."></div>
     <div class="config-field"><div class="config-label">URL AppScript (automatizaciones)</div><input class="config-input" id="cfg-appsScriptUrl" value="${cfg.appsScriptUrl||''}" placeholder="https://script.google.com/macros/s/..."></div>
+    <div style="grid-column:1/-1;margin-top:8px;padding:12px;background:var(--bg3);border-radius:8px;border:1px solid var(--border);">
+      <div style="font-size:11px;font-weight:700;color:var(--text);margin-bottom:10px;text-transform:uppercase;letter-spacing:.5px;">🟠 Buzaram</div>
+      <div class="config-field"><div class="config-label">ID Planilla Buzaram</div><input class="config-input" id="cfg-buzaramSheetId" value="${cfg.buzaramSheetId||'1vQaNeo595C3aK1KAF75UsOkbA5LNUMm16WoEpP9Z69w'}" placeholder="1vQaNeo595..."></div>
+      <div class="config-field"><div class="config-label">URL AppScript Buzaram</div><input class="config-input" id="cfg-buzaramAppsScriptUrl" value="${cfg.buzaramAppsScriptUrl||''}" placeholder="https://script.google.com/a/macros/..."></div>
+    </div>
     <div class="config-field"><div class="config-label">Groq API Key (chat IA — gratis)</div><input class="config-input" id="cfg-claudeApiKey" type="password" value="${cfg.claudeApiKey||''}" placeholder="gsk_..."><div style="font-size:10px;color:var(--text3);margin-top:4px;">Gratis en console.groq.com — solo necesitás cuenta Google. Sin tarjeta.</div></div>
     <div class="config-save"><button class="btn primary" onclick="saveConfig()">Guardar y conectar</button></div>
   </div>
@@ -2644,6 +2653,8 @@ function saveConfig(){
   cfg.hubSheetId=document.getElementById('cfg-hubSheetId')?.value?.trim()||cfg.hubSheetId;
   cfg.appsScriptUrl=document.getElementById('cfg-appsScriptUrl')?.value?.trim()||cfg.appsScriptUrl;
   const ck=document.getElementById('cfg-claudeApiKey')?.value?.trim();if(ck) cfg.claudeApiKey=ck;
+  const bsid=document.getElementById('cfg-buzaramSheetId')?.value?.trim();if(bsid) cfg.buzaramSheetId=bsid;
+  const burl=document.getElementById('cfg-buzaramAppsScriptUrl')?.value?.trim();if(burl) cfg.buzaramAppsScriptUrl=burl;
   cfg.alerta_dias=parseInt(document.getElementById('cfg-dias')?.value)||cfg.alerta_dias;
   localStorage.setItem(CFG_KEY,JSON.stringify(cfg));
   initGoogleAuth();
