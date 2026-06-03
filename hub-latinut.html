@@ -1759,7 +1759,7 @@ function colIndexToLetter(idx){
 function getFormValues(prefix){
   const dateFields = ['consol','etd','eta','fechaEstCobro','fechaCobro'];
   const fields = [
-    'negocio','tns','product','packing','lots','containers','booking','bl','shipping',
+    'negocio','tns','product','packing','lots','pricefob','containers','booking','bl','shipping',
     'vessel','consol','etd','eta','port','exporter','customer',
     'documentos','lombard','clienteEnv','telex',
     'invoiceCliente','contractCliente','priceCFR','flete','totalCFR','incoterm',
@@ -1788,6 +1788,7 @@ function formToRowData(d){
   set(1, d.tns);
   set(2, d.product);
   set(3, d.packing);
+  if(d.pricefob) set(21, d.pricefob); // col V = Price FOB
   set(4, d.lots);
   set(5, d.containers);
   set(6, d.booking);
@@ -1923,6 +1924,7 @@ function buildCargaForm(prefix, d={}, fullEdit=false){
     ${field('tns','Tns',d.tns||'','number','ej: 22')}
     ${smartField(prefix,'packing','Packing',d.packing||'','ej: big bags', 3)}
     ${field('lots','Lots',d.lots||'','text','ej: BL38-250022-AP')}
+    ${field('pricefob','Precio FOB',d.pricefob||'','text','ej: 1180')}
     ${field('containers','Containers',d.containers||'','text','ej: FFAU3862300')}
     ${field('booking','Booking',d.booking||'','text','ej: EBKG15971228')}
     ${field('bl','BL',d.bl||'','text','ej: TRANSHBL00048410')}
@@ -3166,26 +3168,27 @@ function addChatMsg(role, text, isThinking=false){
 
 function detectPacking(text){
   const t = (text||'').toLowerCase();
-  if(t.includes('big bag')) return 'Big Bags';
-  if(t.includes('pote')) return 'Potes';
-  if(t.includes('caja')) return 'Cajas';
-  if(t.includes('tambor')) return 'Tambores';
-  if(t.includes('bolsa')) return 'Bolsas';
-  if(t.includes('saco')) return 'Sacos';
+  if(t.includes('big bag')) return 'big bags';
+  if(t.includes('pote')) return 'potes';
+  if(t.includes('caja') || t.includes('box')) return 'boxes';
+  if(t.includes('tambor')) return 'drums';
+  if(t.includes('bolsa') || t.includes('bag')) return 'bags';
+  if(t.includes('saco')) return 'sacks';
   return '';
 }
 
 function detectProduct(lote, desc){
   const l = (lote||'').toUpperCase();
   const d = (desc||'').toLowerCase();
-  // Lote-based detection first
-  if(l.startsWith('BL38')) return 'Blanched Peanuts 38/42';
-  if(l.startsWith('BL40')) return 'Blanched Peanuts 40/50';
-  if(l.startsWith('BL')) return 'Blanched Peanuts';
-  // Desc-based fallback
-  if(d.includes('partido') || d.includes('split')) return 'Split Blanched';
-  if(d.includes('tostado') || d.includes('roasted')) return 'Roasted Peanuts';
-  if(d.includes('pasta') || d.includes('paste')) return 'Peanut Paste';
+  if(l.startsWith('BLS')) return 'Split blanched';
+  if(l.startsWith('TOS')) return 'Roasted peanuts';
+  if(l.startsWith('BL38')) return 'Blanched peanuts 38/42';
+  if(l.startsWith('BL40')) return 'Blanched peanuts 40/50';
+  if(l.startsWith('BL')) return 'Blanched peanuts';
+  if(l.startsWith('PA')) return 'Peanut paste';
+  if(d.includes('partido') || d.includes('split')) return 'Split blanched';
+  if(d.includes('tostado') || d.includes('roasted')) return 'Roasted peanuts';
+  if(d.includes('pasta') || d.includes('paste')) return 'Peanut paste';
   return desc||'';
 }
 
@@ -3233,13 +3236,17 @@ function fmtDateFromExcel(val){
   };
 
   const vessel   = String(ws['B4']?.v||'').trim();
-  const port     = String(ws['B5']?.v||'').trim();
+  const portRaw  = String(ws['B5']?.v||'').trim();
+  const port     = portRaw.toLowerCase().replace(/\b\w/g, c=>c.toUpperCase());
   const booking  = String(ws['B6']?.v||'').trim();
   const shipping = String(ws['B7']?.v||'').trim();
   const etd      = fmtDate('B8');
   const eta      = fmtDate('B9');
   const incoterm = String(ws['D9']?.v||'').trim();
   const exporter = 'Argen Peanuts';
+  // Price FOB from D11
+  const priceFOBRaw = ws['D11']?.v;
+  const priceFOB = priceFOBRaw !== undefined && priceFOBRaw !== null ? String(priceFOBRaw).trim() : '';
 
   // Rows from 21 down - collect lots, product, packing
   const lots = [];
@@ -3270,7 +3277,8 @@ function fmtDateFromExcel(val){
     lots: lots.join(', '),
     product,
     packing,
-    tns: lastTns ? String(lastTns) : ''
+    tns: lastTns ? String(lastTns) : '',
+    priceFOB
   };
 }
 
@@ -3347,6 +3355,7 @@ function fillImportData(data){
   setField('tns',      data.tns);
   setDate('etd', data.etd);
   setDate('eta', data.eta);
+  if(data.priceFOB) setField('pricefob', data.priceFOB);
   // Also fill incoterm if field exists
   const incotermInp = document.getElementById(`${prefix}-incoterm`);
   if(incotermInp && data.incoterm) incotermInp.value = data.incoterm;
