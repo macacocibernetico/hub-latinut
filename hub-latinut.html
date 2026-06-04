@@ -2100,75 +2100,70 @@ async function solicitarLiberacionBulkViaAppScript(rowIndices){
   }
 }
 
-async function marcarPedroOk(rowIdx){
+// ─── LIBERACIONES ────────────────────────────────────────────────────────────
+
+async function marcarPedroOkBulk(rowIndices){
   if(!accessToken){alert('Conectate con Google primero.');return;}
-  const confirmed = await showConfirm('Pedro dio el OK','¿Confirmar que Pedro autorizó la liberación? Se actualizará la planilla.','👍','Confirmar');
+  const label=getNegocioConfig().label;
+  const n=rowIndices.length;
+  const confirmed=await showConfirm(label+' dio el OK','¿Confirmar autorización de '+n+' carga'+(n>1?'s':'')+' ? Se actualizará la planilla.','👍','Confirmar');
   if(!confirmed) return;
-  const row=allRows[rowIdx];
-  if(!row) return;
-  const bl=(row[COL.BL]||'').trim();
-  const customer=(row[COL.CUSTOMER]||'').trim();
-  const inv1=(row[COL.INVOICE_CLIENTE]||'').trim();
-  const inv2=(row[COL.INVOICE_FC_SERV]||'').trim();
-  const ok=await writeCell(rowIdx,COL.TELEX,'recibir');
-  if(ok){
-    showToast('✓ Estado actualizado a "recibir"');
-    await appendLog({fuente:'AXT',fc:inv1||'',fcServ:inv2||'',bl,customer,accion:'pedro dio ok - a recibir',detalle:'TELEX: recibir'});
-    await loadLog();
-    await loadData();
-  } else {
-    alert('Error al actualizar la planilla.');
+  showToast('Actualizando...');
+  for(const rowIdx of rowIndices){
+    const row=allRows[rowIdx];if(!row)continue;
+    await writeCell(rowIdx,COL.TELEX,'recibir');
+    await appendLog({fuente:label,fc:(row[COL.INVOICE_CLIENTE]||'').trim(),fcServ:'',bl:(row[COL.BL]||'').trim(),customer:(row[COL.CUSTOMER]||'').trim(),accion:'ok liberacion - a recibir',detalle:''});
   }
+  showToast('✓ '+n+' carga'+(n>1?'s':'')+' actualizadas');
+  await loadLog();await loadData();
 }
 
-async function marcarLiberado(rowIdx){
+async function marcarLiberadoBulk(rowIndices){
   if(!accessToken){alert('Conectate con Google primero.');return;}
-  const confirmed = await showConfirm('Confirmar liberación','¿Confirmar que se recibió la liberación? Se marcará TELEX = SI en la planilla.','✅','Confirmar');
+  const n=rowIndices.length;
+  const confirmed=await showConfirm('Confirmar liberación recibida','¿Confirmar que se recibió la liberación de '+n+' carga'+(n>1?'s':'')+' ? Se marcará TELEX = SI.','✅','Confirmar');
   if(!confirmed) return;
-  const row=allRows[rowIdx];
-  if(!row) return;
-  const bl=(row[COL.BL]||'').trim();
-  const customer=(row[COL.CUSTOMER]||'').trim();
-  const inv1=(row[COL.INVOICE_CLIENTE]||'').trim();
-  const inv2=(row[COL.INVOICE_FC_SERV]||'').trim();
-  const ok=await writeCell(rowIdx,COL.TELEX,'SI');
-  if(ok){
-    showToast('✓ Liberación marcada como recibida');
-    await appendLog({fuente:'AXT',fc:inv1||'',fcServ:inv2||'',bl,customer,accion:'liberacion recibida',detalle:'TELEX marcado SI'});
-    await loadLog();
-    await loadData();
-  } else {
-    alert('Error al actualizar la planilla.');
+  showToast('Actualizando...');
+  const label=getNegocioConfig().label;
+  for(const rowIdx of rowIndices){
+    const row=allRows[rowIdx];if(!row)continue;
+    await writeCell(rowIdx,COL.TELEX,'SI');
+    await appendLog({fuente:label,fc:(row[COL.INVOICE_CLIENTE]||'').trim(),fcServ:'',bl:(row[COL.BL]||'').trim(),customer:(row[COL.CUSTOMER]||'').trim(),accion:'liberacion recibida',detalle:''});
   }
+  showToast('✓ '+n+' carga'+(n>1?'s':'')+' liberadas');
+  await loadLog();await loadData();
 }
+
+async function marcarPedroOk(rowIdx){ await marcarPedroOkBulk([rowIdx]); }
+async function marcarLiberado(rowIdx){ await marcarLiberadoBulk([rowIdx]); }
 
 function renderLiberaciones(){
   const rows=allRows.filter(r=>{
     const d=daysFrom(r[COL.ETA]);
     if(d===null||d<0||d>7) return false;
-    // Exclude BL Original - no telex needed
-    const telex=(r[COL.TELEX]||'').trim().toLowerCase();
-    if(telex.includes('bl original')||telex.includes('bl orig')) return false;
-    // Exclude already fully liberated
-    if(telex==='si') return false;
+    const t=(r[COL.TELEX]||'').trim().toLowerCase();
+    if(t.includes('bl orig')) return false;
+    if(t==='si') return false;
     return true;
   }).sort((a,b)=>(daysFrom(a[COL.ETA])||999)-(daysFrom(b[COL.ETA])||999));
 
-  if(!rows.length){
-    document.getElementById('content').innerHTML=`<div class="empty"><div class="empty-icon">🔓</div>Sin cargas con ETA en los próximos 7 días.</div>`;
-    return;
-  }
+  const nc=getNegocioConfig();
+  const label=nc.label;
+  const sinLib=rows.filter(r=>(r[COL.TELEX]||'').trim()==='').length;
+  const enProceso=rows.filter(r=>{const t=(r[COL.TELEX]||'').trim().toLowerCase();return t&&t!=='si'&&!t.includes('bl orig');}).length;
+  const liberado=allRows.filter(r=>(r[COL.TELEX]||'').trim().toUpperCase()==='SI').length;
+
+  let html=`<div class="stats-row">
+    <div class="stat-card"><div class="stat-label">Cargas próximas</div><div class="stat-value">${rows.length}</div><div class="stat-sub">ETA ≤ 7 días</div></div>
+    <div class="stat-card alert-card"><div class="stat-label">Sin liberación</div><div class="stat-value" style="color:var(--danger)">${sinLib}</div><div class="stat-sub">TELEX vacío</div></div>
+    <div class="stat-card warn-card"><div class="stat-label">En proceso</div><div class="stat-value" style="color:var(--warn)">${enProceso}</div><div class="stat-sub">Solicitado / pendiente</div></div>
+    <div class="stat-card"><div class="stat-label">Liberado</div><div class="stat-value" style="color:var(--ok)">${liberado}</div><div class="stat-sub">TELEX = SI</div></div>
+  </div>`;
+
+  if(!rows.length){html+=`<div class="empty"><div class="empty-icon">✓</div>Sin liberaciones pendientes.</div>`;document.getElementById('content').innerHTML=html;return;}
 
   window._libSelectedRows=new Set();
   window._libRows=rows;
-
-  window.updateLibBulkBar=function(){
-    const bar=document.getElementById('lib-bulk-bar');
-    if(!bar) return;
-    const n=window._libSelectedRows.size;
-    if(n>0){bar.style.display='block';bar.textContent='📋 Solicitar liberación ('+n+' seleccionadas)';}
-    else{bar.style.display='none';}
-  };
 
   window.toggleLibSelection=function(idx){
     if(window._libSelectedRows.has(idx)) window._libSelectedRows.delete(idx);
@@ -2176,24 +2171,31 @@ function renderLiberaciones(){
     const cb=document.getElementById('lib-cb-'+idx);
     const card=document.getElementById('lib-card-'+idx);
     if(cb) cb.checked=window._libSelectedRows.has(idx);
-    if(card) card.style.outline=window._libSelectedRows.has(idx)?'2px solid var(--accent)':'none';
-    window.updateLibBulkBar();
+    if(card) card.style.background=window._libSelectedRows.has(idx)?'rgba(0,113,227,.06)':'';
+    updateLibBulkBar();
   };
 
-  window.requestBulkLiberation=function(){
-    if(!window._libSelectedRows.size) return;
-    const selected=[...window._libSelectedRows].map(i=>allRows.indexOf(window._libRows[i]));
-    solicitarLiberacionBulkViaAppScript(selected);
-  };
+  function updateLibBulkBar(){
+    const n=window._libSelectedRows.size;
+    const bar=document.getElementById('lib-bulk-bar');
+    if(!bar) return;
+    if(n===0){bar.style.display='none';return;}
+    bar.style.display='flex';
+    const selRows=[...window._libSelectedRows].map(i=>window._libRows[i]);
+    const selOrigIdx=[...window._libSelectedRows].map(i=>allRows.indexOf(window._libRows[i]));
+    const allSolic=selRows.every(r=>(r[COL.TELEX]||'').toLowerCase().includes('solicitado'));
+    const allRecib=selRows.every(r=>(r[COL.TELEX]||'').toLowerCase().includes('recibir'));
+    const anyVacio=selRows.some(r=>(r[COL.TELEX]||'').trim()==='');
+    const btnStyle='padding:8px 18px;border-radius:20px;font-weight:600;font-size:12px;cursor:pointer;border:none;font-family:var(--font);';
+    let btns=`<span style="font-size:12px;font-weight:600;color:var(--text2);">${n} seleccionada${n>1?'s':''}</span>`;
+    if(anyVacio) btns+=`<button onclick="solicitarLiberacionBulkViaAppScript([...window._libSelectedRows].map(i=>allRows.indexOf(window._libRows[i])))" style="${btnStyle}background:var(--accent);color:#fff;">🚢 Solicitar (${n})</button>`;
+    if(allSolic) btns+=`<button onclick="marcarPedroOkBulk([...window._libSelectedRows].map(i=>allRows.indexOf(window._libRows[i])))" style="${btnStyle}background:#f97316;color:#fff;">👍 ${label} OK (${n})</button>`;
+    if(allRecib) btns+=`<button onclick="marcarLiberadoBulk([...window._libSelectedRows].map(i=>allRows.indexOf(window._libRows[i])))" style="${btnStyle}background:var(--ok);color:#fff;">✅ Recibidas (${n})</button>`;
+    bar.innerHTML=btns;
+  }
+  window.updateLibBulkBar=updateLibBulkBar;
 
-  let html=`
-  <div class="stats-row">
-    <div class="stat-card"><div class="stat-label">Cargas próximas</div><div class="stat-value">${rows.length}</div><div class="stat-sub">ETA ≤ 7 días</div></div>
-    <div class="stat-card alert-card"><div class="stat-label">Sin liberación</div><div class="stat-value" style="color:var(--danger)">${rows.filter(r=>!(r[COL.TELEX]||'').trim()).length}</div><div class="stat-sub">TELEX vacío</div></div>
-    <div class="stat-card warn-card"><div class="stat-label">En proceso</div><div class="stat-value" style="color:var(--warn)">${rows.filter(r=>{const t=(r[COL.TELEX]||'').trim();return t&&t.toUpperCase()!=='SI';}).length}</div><div class="stat-sub">Solicitado / pendiente</div></div>
-    <div class="stat-card"><div class="stat-label">Liberado</div><div class="stat-value" style="color:var(--ok)">${rows.filter(r=>(r[COL.TELEX]||'').trim().toUpperCase()==='SI').length}</div><div class="stat-sub">TELEX = SI</div></div>
-  </div>
-  <button style="display:none;position:sticky;bottom:20px;left:50%;transform:translateX(-50%);background:var(--accent);color:#fff;padding:10px 24px;border-radius:30px;font-weight:600;font-size:13px;cursor:pointer;z-index:20;box-shadow:var(--shadow-lg);border:none;font-family:var(--font);" id="lib-bulk-bar" onclick="requestBulkLiberation()"></button>
+  html+=`<div id="lib-bulk-bar" style="display:none;position:sticky;bottom:20px;left:50%;transform:translateX(-50%);background:var(--bg2);border:1px solid var(--border);border-radius:30px;padding:10px 20px;box-shadow:var(--shadow-lg);z-index:20;gap:10px;flex-wrap:wrap;justify-content:center;max-width:90vw;width:fit-content;"></div>
   <div class="alert-list">`;
 
   rows.forEach((row,localIdx)=>{
@@ -2201,87 +2203,56 @@ function renderLiberaciones(){
     const d=daysFrom(row[COL.ETA]);
     const dc=daysClass(d);
     const telex=(row[COL.TELEX]||'').trim();
+    const telexLow=telex.toLowerCase();
     const telexOk=telex.toUpperCase()==='SI';
-    const telexPending=telex&&!telexOk;
-    const customer=(row[COL.CUSTOMER]||'—').trim();
-    const bl=(row[COL.BL]||'').trim();
-    const booking=(row[COL.BOOKING]||'').trim();
-    const containers=(row[COL.CONTAINERS]||'').trim();
-    const shipping=(row[COL.SHIPPING]||'').trim();
-    const vessel=(row[COL.VESSEL]||'').trim();
-    const port=(row[COL.PORT]||'').trim();
+    const esBLOrig=telexLow.includes('bl orig');
+    const esSolic=telexLow.includes('solicitado');
+    const esRecib=telexLow.includes('recibir');
+    const pagNA=(row[COL.PAGARE_ENVIADO]||'').trim()==='-'||(row[COL.PAGARE_FIRMADO]||'').trim()==='-'||nc.sinPagares;
+    const pagFirm=(row[COL.PAGARE_FIRMADO]||'').trim().toUpperCase();
+    const level=esBLOrig?'info':d<=3?'critical':'warning';
     const inv1=(row[COL.INVOICE_CLIENTE]||'').trim();
-    const inv2=(row[COL.INVOICE_FC_SERV]||'').trim();
-    const pagFirmRaw=(row[COL.PAGARE_FIRMADO]||'').trim();
-    const pagFirm=pagFirmRaw==='-'?'NA':pagFirmRaw.toUpperCase();
-    const pagEnvRaw=(row[COL.PAGARE_ENVIADO]||'').trim();
-    const pagEnvLib=pagEnvRaw==='-'?'NA':pagEnvRaw.toUpperCase();
-    const invoiceStr=inv1&&inv2?`${inv1} / ${inv2}`:inv1||inv2||'—';
-    const cardTitle=`${booking} · ${invoiceStr} · ${customer}`;
-    const recInfo=getReclamoInfoFromLog(bl,'solicitar liberacion');
-    const telexVal=telex.toLowerCase();
-    const esSolicitado=telexVal.includes('solicitado');
-    const esRecibir=telexVal.includes('recibir');
-    const esBLOriginal=telexVal.includes('bl original')||telexVal.includes('bl orig');
-    const level=telexOk||esBLOriginal?'info':d<=3?'critical':'warning';
+    const inv2r=(row[COL.INVOICE_FC_SERV]||'').trim();
+    const inv2=(inv2r==='-'||inv2r==='--')?'':inv2r;
 
-    const telexHtml=telexOk
-      ?`<div class="status-label ok">✓ Liberado</div>`
-      :esBLOriginal
-        ?`<div class="status-label info">📄 BL Original</div>`
-        :telexPending
-          ?`<div class="status-label info">● Estado: ${telex}</div>`
-          :`<div class="status-label danger">○ Sin liberación solicitada</div>`;
-    const pagHtml=pagFirm==='NA'||getNegocioConfig().sinPagares?'':
-      `<div class="status-label ${pagFirm==='SI'?'ok':'warn'}">${pagFirm==='SI'?'✓ Pagaré firmado':'○ Pagaré pendiente de firma'}</div>`;
-    const recHtml=recInfo?`<div class="alert-reclamo">⚠ Solicitado ${recInfo.count} vez${recInfo.count>1?'es':''} · último ${recInfo.timeStr}</div>`:'';
-
+    const telexHtml=telexOk?`<div class="status-label ok">✓ Liberado</div>`:esBLOrig?`<div class="status-label info">📄 BL Original</div>`:(telex?`<div class="status-label info">● ${telex}</div>`:`<div class="status-label danger">○ Sin liberación solicitada</div>`);
+    const pagHtml=pagNA?'':`<div class="status-label ${pagFirm==='SI'?'ok':'warn'}">${pagFirm==='SI'?'✓ Pagaré firmado':'○ Pagaré pendiente de firma'}</div>`;
     let actionBtn='';
-    if(telexOk){
-      actionBtn='<span class="status-label ok" style="font-size:11px;font-weight:600;">✓ Liberación completada</span>';
-    } else if(esBLOriginal){
-      actionBtn='<span class="status-label info" style="font-size:11px;">📄 BL Original — no requiere liberación telex</span>';
-    } else if(esRecibir){
-      actionBtn=`<button class="action-btn success-action" onclick="marcarLiberado(${origIdx})">✓ Confirmar liberación recibida</button>`;
-    } else if(esSolicitado){
-      actionBtn=`<button class="action-btn info-action" onclick="marcarPedroOk(${origIdx})">✓ Pedro dio el OK</button>`;
-    } else {
-      actionBtn=`<button class="action-btn write" onclick="solicitarLiberacionViaAppScript(${origIdx})">Solicitar liberación</button>`;
-    }
+    if(telexOk) actionBtn='';
+    else if(esBLOrig) actionBtn=`<span class="status-label info" style="font-size:11px;">📄 BL Original</span>`;
+    else if(esRecib) actionBtn=`<button class="action-btn success-action" onclick="event.stopPropagation();marcarLiberado(${origIdx})">✅ Confirmar recibida</button>`;
+    else if(esSolic) actionBtn=`<button class="action-btn info-action" onclick="event.stopPropagation();marcarPedroOk(${origIdx})">👍 ${label} dio el OK</button>`;
+    else actionBtn=`<button class="action-btn write" onclick="event.stopPropagation();solicitarLiberacionViaAppScript(${origIdx})">Solicitar liberación</button>`;
 
-    html+=`<div class="alert-item ${level}" id="lib-card-${localIdx}" style="cursor:pointer;-webkit-tap-highlight-color:rgba(0,113,227,.1);" onclick="toggleLibSelection(${localIdx})">
-      <div style="display:flex;flex-direction:column;align-items:center;gap:6px;flex-shrink:0;">
-        <input type="checkbox" class="lib-checkbox" id="lib-cb-${localIdx}" onclick="event.stopPropagation();toggleLibSelection(${localIdx})" style="width:20px;height:20px;">
+    html+=`<div class="alert-item ${level}" id="lib-card-${localIdx}" style="cursor:pointer;" onclick="toggleLibSelection(${localIdx})">
+      <div style="display:flex;flex-direction:column;align-items:center;gap:6px;flex-shrink:0;padding-top:2px;">
+        <input type="checkbox" id="lib-cb-${localIdx}" onclick="event.stopPropagation();toggleLibSelection(${localIdx})" style="width:18px;height:18px;accent-color:var(--accent);cursor:pointer;">
         <div class="alert-dot ${level}"></div>
       </div>
       <div class="alert-body">
-        <div class="alert-title">${cardTitle}</div>
-        <div class="alert-meta">BL: ${bl}  ·  ETA: ${fmtDate(row[COL.ETA])}</div>
+        <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:6px;">
+          <div><div class="alert-title">${(row[COL.CUSTOMER]||'—').trim()}</div><div class="alert-meta">${(row[COL.BL]||'—').trim()}</div></div>
+          <div style="text-align:right;flex-shrink:0;"><div class="days-badge ${dc}">${d}</div><div class="days-label">días ETA</div></div>
+        </div>
         <div class="alert-tags">
-          <span class="tag customer">${customer}</span>
-          <span class="tag vessel">${vessel}</span>
-          <span class="tag port">${port}</span>
-          <span class="tag naviera">${shipping}</span>
-          <span class="tag days-${dc}">${d===0?'HOY':d+'d'}</span>
+          <span class="tag vessel">${row[COL.VESSEL]||'—'}</span>
+          <span class="tag port">${row[COL.PORT]||'—'}</span>
+          ${inv1?`<span class="tag customer">${inv1}${inv2?' / '+inv2:''}</span>`:''}
         </div>
-        <div class="alert-logistics">
-          <div class="log-item"><span class="log-label">Containers:</span><span class="log-value">${containers||'—'}</span></div>
-          <div class="log-item"><span class="log-label">Booking:</span><span class="log-value">${booking||'—'}</span></div>
-          <div class="log-item"><span class="log-label">BL:</span><span class="log-value">${bl||'—'}</span></div>
-          <div class="log-item"><span class="log-label">Naviera:</span><span class="log-value">${shipping||'—'}</span></div>
+        <div class="alert-logistics" style="margin:8px 0;">
+          <div class="log-item"><span class="log-label">Containers:</span><span class="log-value">${(row[COL.CONTAINERS]||'').trim()}</span></div>
+          <div class="log-item"><span class="log-label">Booking:</span><span class="log-value">${(row[COL.BOOKING]||'').trim()}</span></div>
         </div>
-        ${pagHtml}${telexHtml}${recHtml}
-        <div class="alert-actions" onclick="event.stopPropagation()">${actionBtn}</div>
-      </div>
-      <div class="alert-right">
-        <div class="days-badge ${dc}" style="font-size:28px">${d}</div>
-        <div class="days-label" style="font-weight:600">DÍAS ETA</div>
+        ${pagHtml}${telexHtml}
+        <div class="alert-actions" style="margin-top:8px;">${actionBtn}</div>
       </div>
     </div>`;
   });
+
   html+=`</div>`;
   document.getElementById('content').innerHTML=html;
 }
+
 
 let cobranzaFilters = { cliente: '', sort: 'due_asc', verTodos: false };
 let archivedBLs = JSON.parse(localStorage.getItem('hub_archived_bls')||'[]');
