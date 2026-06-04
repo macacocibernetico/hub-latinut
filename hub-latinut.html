@@ -1127,7 +1127,7 @@ async function loadData(){
     if(!r.ok) throw new Error(`HTTP ${r.status}`);
     const data=await r.json();
     const rawRows=(data.values||[]);
-    allRows=rawRows.map((row,i)=>{row._sheetRow=i+4;return row;}).filter(row=>row[COL.NEGOCIO]&&!isClosed(row));
+    allRows=rawRows.map((row,i)=>{row._sheetRow=i+4;return row;}).filter(row=>(row[COL.NEGOCIO]||row[COL.PRODUCT]||row[COL.CUSTOMER])&&!isClosed(row));
     await loadContacts();
     await loadLog();
     setSheetStatus('ok',`${allRows.length} cargas activas`);
@@ -1227,7 +1227,7 @@ function getAlerts(){
     const telexVacio = telex === '';
     const pagEnv = (row[COL.PAGARE_ENVIADO]||'').trim();
     const pagFirm = (row[COL.PAGARE_FIRMADO]||'').trim();
-    const pagNA = pagEnv === '-' || pagFirm === '-';
+    const pagNA = pagEnv === '-' || pagFirm === '-' || getNegocioConfig().sinPagares;
     const docs = (row[COL.DOCUMENTOS]||'').trim();
     const inv1 = (row[COL.INVOICE_CLIENTE]||'').trim();
     const inv2raw = (row[COL.INVOICE_FC_SERV]||'').trim();
@@ -1304,7 +1304,7 @@ function getAlerts(){
     }
 
     // W3: Pagaré sin firmar + ETA ≤ 21d
-    if(!pagNA && pagEnv.toUpperCase()==='SI' && pagFirm.toUpperCase()!=='SI' && dETA !== null && dETA <= 21 && dETA >= 0){
+    if(!pagNA && !getNegocioConfig().sinPagares && pagEnv.toUpperCase()==='SI' && pagFirm.toUpperCase()!=='SI' && dETA !== null && dETA <= 21 && dETA >= 0){
       alerts.push({
         level:'warning', subtype:'pagare_firma', rowIdx:idx, dETA,
         title:`Pagaré sin firmar — ${customer}`,
@@ -1330,7 +1330,7 @@ function getAlerts(){
 
     // ── INFO ─────────────────────────────────────────────────
     // I1: Pagaré sin enviar + ETA ≤ 30d
-    if(!pagNA && pagEnv.toUpperCase()!=='SI' && dETA !== null && dETA <= 30 && dETA >= 0){
+    if(!pagNA && !getNegocioConfig().sinPagares && pagEnv.toUpperCase()!=='SI' && dETA !== null && dETA <= 30 && dETA >= 0){
       alerts.push({
         level:'info', subtype:'pagare_envio', rowIdx:idx, dETA,
         title:`Pagaré sin enviar — ${customer}`,
@@ -1661,7 +1661,7 @@ function renderCargas(showAll, sort){
       </div>
       <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
         ${sel('cliente', cargasDropFilters.cliente, 'Cliente', uniqueClientes.map(c=>({val:c,label:c})))}
-        ${sel('pagare', cargasDropFilters.pagare, 'Pagaré', [{val:'sin_enviar',label:'Sin enviar'},{val:'sin_firmar',label:'Sin firmar'},{val:'firmado',label:'Firmado'}])}
+        ${getNegocioConfig().sinPagares?'':sel('pagare', cargasDropFilters.pagare, 'Pagaré', [{val:'sin_enviar',label:'Sin enviar'},{val:'sin_firmar',label:'Sin firmar'},{val:'firmado',label:'Firmado'}])}
         ${sel('docs', cargasDropFilters.docs, 'Docs', [{val:'pendientes',label:'Pendientes'},{val:'completos',label:'Completos'}])}
         ${sel('telex', cargasDropFilters.telex, 'TELEX', [{val:'sin_solicitar',label:'Sin solicitar'},{val:'en_proceso',label:'En proceso'},{val:'liberado',label:'Liberado'}])}
         ${sel('naviera', cargasDropFilters.naviera, 'Naviera', uniqueNavieras.map(n=>({val:n,label:n})))}
@@ -1678,7 +1678,7 @@ function renderCargas(showAll, sort){
         <th onclick="sortCargas('cliente')" style="cursor:pointer;user-select:none;">Customer ${cargasSort==='cliente_az'?'↑':cargasSort==='cliente_za'?'↓':'↕'}</th>
         <th>Vessel</th>
         <th onclick="sortCargas('eta')" style="cursor:pointer;user-select:none;">ETA ${cargasSort==='eta_asc'?'↑':cargasSort==='eta_desc'?'↓':'↕'}</th>
-        <th>Docs</th><th>TELEX</th><th>Pagaré</th>
+        <th>Docs</th><th>TELEX</th>${getNegocioConfig().sinPagares?'':'<th>Pagaré</th>'}
         <th>Invoice FC1</th><th>Total FC1</th><th>Invoice FC2</th><th>Total FC2</th><th>Total</th>
         <th onclick="sortCargas('cobro')" style="cursor:pointer;user-select:none;">Cobro Est. ${cargasSort==='cobro_asc'?'↑':cargasSort==='cobro_desc'?'↓':'↕'}</th>
         <th></th><th></th><th></th>
@@ -1730,7 +1730,7 @@ function renderCargas(showAll, sort){
       <td class="mono">${fmtDate(row[COL.ETA])}</td>
       <td><div class="doc-status"><div class="doc-dot ${docsOk?'green':'red'}"></div><span class="doc-text" title="${docs||'Pendiente'}">${docsOk?'OK':docs||'—'}</span></div></td>
       <td><span style="color:${telexOk?'var(--ok)':telex?'var(--info)':'var(--text3)'};font-family:var(--mono);font-size:10px">${telex||'—'}</span></td>
-      <td><span style="color:${pagColor};font-size:11px;font-family:var(--mono)">${pagLabel}</span></td>
+      ${getNegocioConfig().sinPagares?'<td>—</td>':`<td><span style="color:${pagColor};font-size:11px;font-family:var(--mono)">${pagLabel}</span></td>`}
       <td class="mono" style="color:var(--accent)">${inv1||'—'}</td>
       <td class="mono">${total1?'USD '+total1:'—'}</td>
       <td class="mono" style="color:var(--accent)">${inv2||'—'}</td>
@@ -2593,6 +2593,7 @@ function renderCobranzaArchivados(){
 
 
 function renderPagares(){
+  if(getNegocioConfig().sinPagares){document.getElementById('content').innerHTML='<div class="empty"><div class="empty-icon">—</div>Buzaram no utiliza pagarés.</div>';return;}
   let html=`<div class="table-wrap"><div class="table-top"><span style="font-size:13px;font-weight:700;">Estado de pagarés</span></div><div style="overflow-x:auto;"><table>
     <thead><tr><th>Negocio</th><th>Customer</th><th>BL</th><th>Naviera</th><th>ETA</th><th>Enviado</th><th>Firmado</th><th>Payment Due</th><th>Reclamos</th><th></th></tr></thead><tbody>`;
   allRows.forEach((row,idx)=>{
@@ -3428,7 +3429,7 @@ function buildQuickActions(rowIdx){
   if(!row) return '';
   const pagEnv = (row[COL.PAGARE_ENVIADO]||'').trim().toUpperCase();
   const pagFirm = (row[COL.PAGARE_FIRMADO]||'').trim().toUpperCase();
-  const pagNA = pagEnv==='-'||pagFirm==='-';
+  const pagNA = pagEnv==='-'||pagFirm==='-'||getNegocioConfig().sinPagares;
   const docs = (row[COL.DOCUMENTOS]||'').trim().toUpperCase();
   const btns = [];
   const id = `qa-${rowIdx}`;
