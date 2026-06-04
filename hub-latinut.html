@@ -223,6 +223,9 @@ button{font-family:var(--font);cursor:pointer;border:none;background:none;}
 /* TOAST */
 #toast{position:fixed;bottom:20px;right:20px;background:var(--text);color:#fff;padding:10px 16px;border-radius:10px;font-weight:500;font-size:12px;z-index:999;transition:opacity .3s;pointer-events:none;box-shadow:var(--shadow-lg);}
 
+/* NEGOCIO TOPBAR ACCENT */
+.topbar-accent{height:3px;position:fixed;top:0;left:0;right:0;z-index:9998;transition:background .3s;}
+
 /* PROGRESS BAR */
 .progress-bar{position:fixed;top:0;left:0;right:0;height:3px;background:linear-gradient(90deg,var(--accent),#34c759);z-index:9999;transform-origin:left;transition:transform .3s ease;transform:scaleX(0);border-radius:0 2px 2px 0;}
 .progress-bar.active{animation:progress 1.5s ease-in-out infinite;}
@@ -345,6 +348,8 @@ button{font-family:var(--font);cursor:pointer;border:none;background:none;}
 
 @media(max-width:768px){
   .mobile-toggle{display:flex;}
+  .sidebar-footer{position:sticky;bottom:0;background:var(--bg2);z-index:5;border-top:2px solid var(--border);}
+  #auth-btn{font-size:13px;padding:10px;font-weight:600;}
   .sidebar{transform:translateX(-240px);transition:transform .2s ease;}
   .sidebar.open{transform:translateX(0);}
   .main{margin-left:0;}
@@ -356,6 +361,9 @@ button{font-family:var(--font);cursor:pointer;border:none;background:none;}
   .modal-body{padding:14px 16px;}
   .modal-footer{padding:12px 16px;}
 }
+
+/* NEGOCIO TOPBAR ACCENT */
+.topbar-accent{height:3px;position:fixed;top:0;left:0;right:0;z-index:9998;transition:background .3s;}
 
 /* PROGRESS BAR */
 .progress-bar{position:fixed;top:0;left:0;right:0;height:3px;background:linear-gradient(90deg,var(--accent),#34c759);z-index:9999;transform-origin:left;transition:transform .3s ease;transform:scaleX(0);border-radius:0 2px 2px 0;}
@@ -423,6 +431,8 @@ button{font-family:var(--font);cursor:pointer;border:none;background:none;}
 
 @media(max-width:768px){
   .mobile-toggle{display:flex;}
+  .sidebar-footer{position:sticky;bottom:0;background:var(--bg2);z-index:5;border-top:2px solid var(--border);}
+  #auth-btn{font-size:13px;padding:10px;font-weight:600;}
   .sidebar{transform:translateX(-240px);transition:transform .2s ease;}
   .sidebar.open{transform:translateX(0);}
   .main{margin-left:0;padding-bottom:70px;}
@@ -593,7 +603,7 @@ function getBuzaramCfg(){
   return {
     sheetId: cfg.buzaramSheetId || '1vQaNeo595C3aK1KAF75UsOkbA5LNUMm16WoEpP9Z69w',
     sheetName: 'CARGAS',
-    appsScriptUrl: cfg.buzaramAppsScriptUrl || 'https://script.google.com/a/macros/latinutsa.com/s/AKfycbyR88OXmMw4zC-INvs8kTI7vwtX4JdFDsMNA9IS0wpHJwpl4ypQk385y2lhgqiTVERR/exec',
+    appsScriptUrl: (cfg.buzaramAppsScriptUrl && cfg.buzaramAppsScriptUrl.trim()) ? cfg.buzaramAppsScriptUrl.trim() : 'https://script.google.com/a/macros/latinutsa.com/s/AKfycbyR88OXmMw4zC-INvs8kTI7vwtX4JdFDsMNA9IS0wpHJwpl4ypQk385y2lhgqiTVERR/exec',
     label: 'Buzaram',
     COL_FECHA_EST_COBRO: 51,  // AZ col 52 (0-based 51)
     COL_FECHA_COBRO: 56,       // BE col 57 (0-based 56)
@@ -656,6 +666,16 @@ function updateNegocioPill(){
   // Update nav Cargas label
   const cargasLabel = document.getElementById('nav-cargas-label');
   if(cargasLabel) cargasLabel.textContent = isBuz?'Cargas Buzaram':'Cargas AXT';
+  // Update topbar color based on negocio
+  const topbar = document.getElementById('topbar');
+  const accent = document.getElementById('topbar-accent');
+  if(isBuz){
+    if(topbar){ topbar.style.borderBottom = '1px solid rgba(249,115,22,.3)'; topbar.style.background = 'rgba(249,115,22,.04)'; }
+    if(accent){ accent.style.background = 'linear-gradient(90deg,#f97316,#fb923c)'; }
+  } else {
+    if(topbar){ topbar.style.borderBottom = ''; topbar.style.background = ''; }
+    if(accent){ accent.style.background = 'linear-gradient(90deg,var(--accent),#60a5fa)'; }
+  }
   // Update bottom nav cargas label
   const bnavCargasLabel = document.getElementById('bnav-cargas-label');
   if(bnavCargasLabel) bnavCargasLabel.textContent = isBuz ? 'Buzaram' : 'Cargas';
@@ -968,7 +988,9 @@ function setCargasPage(p){ cargasPage = p; renderCargas(); }
 
 // ─── APPS SCRIPT BRIDGE ──────────────────────────────────────────────────────
 async function callAppScript(accion, filaInicio, filaFin){
-  const url = getNegocioConfig().appsScriptUrl || cfg.appsScriptUrl;
+  const nc = getNegocioConfig();
+  const url = nc.appsScriptUrl;
+  if(!url){ alert('No hay URL de AppScript configurada para ' + nc.label + '. Verificá la configuración.'); return false; }
   try{
     const params = new URLSearchParams({accion, filaInicio, filaFin: filaFin||filaInicio});
     const r = await fetch(url + '?' + params.toString(), {
@@ -2210,7 +2232,7 @@ function renderLiberaciones(){
         :telexPending
           ?`<div class="status-label info">● Estado: ${telex}</div>`
           :`<div class="status-label danger">○ Sin liberación solicitada</div>`;
-    const pagHtml=pagFirm==='NA'?'':
+    const pagHtml=pagFirm==='NA'||getNegocioConfig().sinPagares?'':
       `<div class="status-label ${pagFirm==='SI'?'ok':'warn'}">${pagFirm==='SI'?'✓ Pagaré firmado':'○ Pagaré pendiente de firma'}</div>`;
     const recHtml=recInfo?`<div class="alert-reclamo">⚠ Solicitado ${recInfo.count} vez${recInfo.count>1?'es':''} · último ${recInfo.timeStr}</div>`:'';
 
@@ -3573,6 +3595,8 @@ window.onload=()=>{
 </script>
 <!-- Google Identity Services -->
 <script src="https://accounts.google.com/gsi/client" async defer></script>
+<!-- NEGOCIO ACCENT -->
+<div class="topbar-accent" id="topbar-accent"></div>
 <!-- PROGRESS BAR -->
 <div class="progress-bar" id="progress-bar"></div>
 
