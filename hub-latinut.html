@@ -1466,7 +1466,10 @@ function renderAlertas(){
         return `<button class="action-btn ${cls}" onclick="openMailModal(${a.rowIdx},'${act.mailType}')">${act.label}</button>`;
       }).join('');
       const dN=a.dETA!==undefined?a.dETA:null;
-      const rightHtml=dN!==null?`<div class="alert-right"><div class="days-badge ${daysClass(dN)}">${dN<0?'+'+Math.abs(dN):dN}</div><div class="days-label">días ETA</div></div>`:'';
+      const cobroFecha = fmtDate(a.detail?.cobro || getCobroFecha(allRows[a.rowIdx]));
+      const cobroD = a.rowIdx !== undefined ? daysFrom(getCobroFecha(allRows[a.rowIdx])) : null;
+      const cobroHtml = cobroFecha && cobroFecha !== '—' ? `<div style="margin-top:6px;padding-top:6px;border-top:1px solid var(--border);"><div style="font-size:13px;font-weight:600;color:var(--warn);font-family:var(--mono);">${cobroD!==null?cobroD+'d':'—'}</div><div style="font-size:9px;color:var(--text3);text-transform:uppercase;letter-spacing:1px;margin-top:1px;">cobro est.</div><div style="font-size:9px;color:var(--text3);margin-top:1px;">${cobroFecha}</div></div>` : '';
+      const rightHtml=dN!==null?`<div class="alert-right"><div class="days-badge ${daysClass(dN)}">${dN<0?'+'+Math.abs(dN):dN}</div><div class="days-label">días ETA</div>${cobroHtml}</div>`:(cobroHtml?`<div class="alert-right">${cobroHtml}</div>`:'');
       const l=a.logistics||{};
       const logHtml=`<div class="alert-logistics">
         <div class="log-item"><span class="log-label">Containers:</span><span class="log-value">${l.containers||'—'}</span></div>
