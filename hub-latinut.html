@@ -2339,46 +2339,51 @@ function renderCobranzaMobile(rows){
   let html = '';
   rows.forEach((row, localIdx) => {
     const origIdx = allRows.indexOf(row);
-    const d = daysFrom(row[getCobroCol()]);
-    const color = d===null?'var(--text3)':d<=0?'var(--danger)':d<=2?'#f97316':d<=4?'#f97316':d<=10?'#eab308':'var(--ok)';
+    const d = daysFrom(getCobroFecha(row));
+    const color = d===null?'#9ca3af':d<=0?'#dc2626':d<=2?'#ea580c':d<=4?'#d97706':d<=10?'#ca8a04':'#16a34a';
     const customer = (row[COL.CUSTOMER]||'—').trim();
-    const bl = (row[COL.BL]||'—').substring(0,18);
+    const bl = (row[COL.BL]||'—').trim();
     const inv1 = (row[COL.INVOICE_CLIENTE]||'').trim();
-    const inv2raw = (row[COL.INVOICE_FC_SERV]||'').trim();
-    const inv2 = (inv2raw==='-'||inv2raw==='--')?'':inv2raw;
+    const inv2r = (row[COL.INVOICE_FC_SERV]||'').trim();
+    const inv2 = (inv2r==='-'||inv2r==='--')?'':inv2r;
     const total = parseSheetNum(row[32]);
-    const totalDisplay = isNaN(total)?'—':'USD '+total.toLocaleString('es-AR',{maximumFractionDigits:0});
-    const due = fmtDate(row[getCobroCol()]);
-    const dLabel = d===null?'—':d<=0?`Vencido ${Math.abs(d)}d`:`${d}d`;
+    const due = fmtDate(getCobroFecha(row));
+    const dLabel = d===null?'—':d<=0?`Venc. ${Math.abs(d)}d`:`${d}d`;
     const recInfo = getReclamoInfoFromLog(row[COL.BL]||'','reclamo cobro');
-    const level = d!==null&&d<=2?'critical':d!==null&&d<=10?'warning':'info';
 
-    html += `<div class="alert-item ${level}" style="margin-bottom:8px;">
-      <div class="alert-body">
-        <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:6px;">
-          <div>
-            <div class="alert-title">${customer}</div>
-            <div class="alert-meta">${bl}</div>
-          </div>
-          <div style="text-align:right;flex-shrink:0;">
-            <div style="font-size:22px;font-weight:700;font-family:var(--mono);color:${color};line-height:1;">${dLabel}</div>
-            <div style="font-size:9px;color:var(--text3);text-transform:uppercase;letter-spacing:1px;">Vence ${due}</div>
-          </div>
+    html += `<div style="background:#fff;border:1px solid #e5e7eb;border-radius:16px;padding:16px;margin-bottom:12px;box-shadow:0 1px 3px rgba(0,0,0,.06);border-left:4px solid ${color};">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:12px;">
+        <div style="flex:1;min-width:0;">
+          <div style="font-size:17px;font-weight:700;color:#111;margin-bottom:2px;">${customer}</div>
+          <div style="font-size:12px;color:#6b7280;font-family:monospace;">${bl}</div>
         </div>
-        <div class="alert-tags">
-          ${inv1?`<span class="tag customer">${inv1}${inv2?' / '+inv2:''}</span>`:''}
-          <span class="tag" style="background:var(--bg3);color:var(--text2);">${totalDisplay}</span>
-          ${recInfo?`<span class="tag days-warn">${recInfo.count}x reclamado</span>`:''}
+        <div style="text-align:right;flex-shrink:0;margin-left:12px;">
+          <div style="font-size:28px;font-weight:800;color:${color};line-height:1;">${dLabel}</div>
+          <div style="font-size:11px;color:#6b7280;margin-top:2px;">Vence ${due}</div>
         </div>
-        <div class="alert-actions" style="margin-top:8px;">
-          <button class="action-btn mail" onclick="openMailModal(${origIdx},'reclamo_cobro')">✉ Reclamo</button>
-          <button class="action-btn secondary-action" onclick="openArchiveModal(${origIdx})">📁 Archivar</button>
-        </div>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:12px;">
+        ${inv1?`<div style="background:#f9fafb;border-radius:8px;padding:8px 10px;">
+          <div style="font-size:10px;color:#9ca3af;text-transform:uppercase;letter-spacing:.5px;margin-bottom:2px;">Invoice</div>
+          <div style="font-size:13px;font-weight:500;color:#0071e3;">${inv1}${inv2?' / '+inv2:''}</div>
+        </div>`:''}
+        ${!isNaN(total)?`<div style="background:#f9fafb;border-radius:8px;padding:8px 10px;">
+          <div style="font-size:10px;color:#9ca3af;text-transform:uppercase;letter-spacing:.5px;margin-bottom:2px;">Total</div>
+          <div style="font-size:14px;font-weight:700;color:#111;">USD ${total.toLocaleString('es-AR',{maximumFractionDigits:0})}</div>
+        </div>`:''}
+        ${recInfo?`<div style="background:#fef3c7;border-radius:8px;padding:8px 10px;grid-column:1/-1;">
+          <div style="font-size:11px;color:#92400e;">⚠ Reclamado ${recInfo.count}x · ${recInfo.timeStr}</div>
+        </div>`:''}
+      </div>
+      <div style="display:flex;gap:8px;" onclick="event.stopPropagation()">
+        <button onclick="openMailModal(${origIdx},'reclamo_cobro')" style="flex:1;padding:11px;border-radius:10px;background:#0071e3;border:none;font-size:14px;font-weight:600;cursor:pointer;color:#fff;">✉ Reclamo</button>
+        <button onclick="openArchiveModal(${origIdx})" style="padding:11px 14px;border-radius:10px;background:#f3f4f6;border:none;font-size:14px;cursor:pointer;color:#6b7280;">📁</button>
       </div>
     </div>`;
   });
   return html;
 }
+
 
 async function reclamarCobranzaBulk(rowIndices){
   if(!rowIndices.length) return;
@@ -3508,52 +3513,83 @@ function renderCargasMobileCards(rows, pagedRows){
     const idx = allRows.indexOf(row);
     const d = daysFrom(row[COL.ETA]);
     const dc = daysClass(d);
-    const customer = row[COL.CUSTOMER]||'—';
-    const bl = (row[COL.BL]||'—').substring(0,18);
-    const vessel = (row[COL.VESSEL]||'').substring(0,16);
-    const port = row[COL.PORT]||'';
+    const customer = (row[COL.CUSTOMER]||'—').trim();
+    const bl = (row[COL.BL]||'—').trim();
     const eta = fmtDate(row[COL.ETA]);
-    const pagEnv=(row[COL.PAGARE_ENVIADO]||'').trim().toUpperCase();
-    const pagFirm=(row[COL.PAGARE_FIRMADO]||'').trim().toUpperCase();
-    const pagNA = pagEnv==='-'||pagFirm==='-';
+    const vessel = (row[COL.VESSEL]||'—').trim();
+    const port = (row[COL.PORT]||'—').trim();
+    const inv1 = (row[COL.INVOICE_CLIENTE]||'').trim();
+    const inv2r = (row[COL.INVOICE_FC_SERV]||'').trim();
+    const inv2 = (inv2r==='-'||inv2r==='--')?'':inv2r;
+    const telex = (row[COL.TELEX]||'').trim();
+    const pagEnv = (row[COL.PAGARE_ENVIADO]||'').trim().toUpperCase();
+    const pagFirm = (row[COL.PAGARE_FIRMADO]||'').trim().toUpperCase();
+    const pagNA = pagEnv==='-'||pagFirm==='-'||getNegocioConfig().sinPagares;
+    const docs = (row[COL.DOCUMENTOS]||'').trim();
+    const total = parseSheetNum(row[32]);
     const dColor = dc==='red'?'var(--danger)':dc==='warn'?'var(--warn)':'var(--ok)';
-    const inv1=(row[COL.INVOICE_CLIENTE]||'').trim();
-    const inv2raw=(row[COL.INVOICE_FC_SERV]||'').trim();
-    const inv2=(inv2raw==='-'||inv2raw==='--')?'':inv2raw;
-    const total=parseSheetNum(row[32]);
-    const totalDisplay=isNaN(total)?'—':'USD '+total.toLocaleString('es-AR',{maximumFractionDigits:0});
 
-    let pagBadge='';
+    // Status badges
+    const telexBadge = telex.toUpperCase()==='SI'
+      ? `<span style="background:#d1fae5;color:#065f46;font-size:11px;font-weight:600;padding:3px 8px;border-radius:20px;">TELEX ✓</span>`
+      : telex
+        ? `<span style="background:#fef3c7;color:#92400e;font-size:11px;font-weight:600;padding:3px 8px;border-radius:20px;">${telex.substring(0,15)}</span>`
+        : `<span style="background:#fee2e2;color:#991b1b;font-size:11px;font-weight:600;padding:3px 8px;border-radius:20px;">Sin TELEX</span>`;
+
+    let pagBadge = '';
     if(!pagNA){
-      if(pagFirm==='SI') pagBadge='<span class="tag days-ok">Firmado</span>';
-      else if(pagEnv==='SI') pagBadge='<span class="tag days-warn">Sin firmar</span>';
-      else pagBadge='<span class="tag days-red">Sin enviar</span>';
+      if(pagFirm==='SI') pagBadge=`<span style="background:#d1fae5;color:#065f46;font-size:11px;font-weight:600;padding:3px 8px;border-radius:20px;">Pagaré ✓</span>`;
+      else if(pagEnv==='SI') pagBadge=`<span style="background:#fef3c7;color:#92400e;font-size:11px;font-weight:600;padding:3px 8px;border-radius:20px;">Sin firmar</span>`;
+      else pagBadge=`<span style="background:#fee2e2;color:#991b1b;font-size:11px;font-weight:600;padding:3px 8px;border-radius:20px;">Sin pagaré</span>`;
     }
 
-    html += `<div class="alert-item info" style="margin-bottom:8px;cursor:default;">
-      <div class="alert-body">
-        <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:6px;">
-          <div>
-            <div class="alert-title">${customer}</div>
-            <div class="alert-meta">${bl}</div>
-          </div>
-          <div style="text-align:right;flex-shrink:0;">
-            <div style="font-size:22px;font-weight:700;font-family:var(--mono);color:${dColor};line-height:1;">${d!==null?d+'d':'—'}</div>
-            <div style="font-size:9px;color:var(--text3);text-transform:uppercase;letter-spacing:1px;">ETA ${eta}</div>
-          </div>
+    const docsBadge = docs.toUpperCase()==='SI'
+      ? `<span style="background:#d1fae5;color:#065f46;font-size:11px;font-weight:600;padding:3px 8px;border-radius:20px;">Docs ✓</span>`
+      : docs
+        ? `<span style="background:#fef3c7;color:#92400e;font-size:11px;font-weight:600;padding:3px 8px;border-radius:20px;">Docs pend.</span>`
+        : '';
+
+    html += `<div style="background:#fff;border:1px solid #e5e7eb;border-radius:16px;padding:16px;margin-bottom:12px;box-shadow:0 1px 3px rgba(0,0,0,.06);">
+      <!-- Header: cliente + días -->
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:12px;">
+        <div style="flex:1;min-width:0;">
+          <div style="font-size:17px;font-weight:700;color:#111;margin-bottom:2px;">${customer}</div>
+          <div style="font-size:12px;color:#6b7280;font-family:monospace;">${bl}</div>
         </div>
-        <div class="alert-tags">
-          ${vessel?`<span class="tag vessel">${vessel}</span>`:''}
-          ${port?`<span class="tag port">${port}</span>`:''}
-          ${pagBadge}
-          ${inv1?`<span class="tag customer">${inv1}${inv2?' / '+inv2:''}</span>`:''}
-          ${!isNaN(total)?`<span class="tag" style="background:var(--bg3);color:var(--text2);">${totalDisplay}</span>`:''}
+        <div style="text-align:right;flex-shrink:0;margin-left:12px;">
+          <div style="font-size:28px;font-weight:800;color:${dColor};line-height:1;">${d!==null?(d<0?'+'+Math.abs(d):d):'—'}</div>
+          <div style="font-size:10px;color:#9ca3af;text-transform:uppercase;letter-spacing:.5px;">días ETA</div>
+          <div style="font-size:11px;color:#6b7280;margin-top:1px;">${eta}</div>
         </div>
-        <div class="alert-actions" style="margin-top:8px;">
-          <button class="action-btn mail" onclick="openMailModal(${idx},'reclamo_pago')">✉ Reclamo</button>
-          <button class="action-btn secondary-action" onclick="renderEditCarga(${idx})">✎ Editar</button>
-          <button class="action-btn write" onclick="solicitarFC(${idx})" style="font-size:11px;">📄 FC</button>
+      </div>
+      <!-- Info row -->
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:12px;">
+        <div style="background:#f9fafb;border-radius:8px;padding:8px 10px;">
+          <div style="font-size:10px;color:#9ca3af;text-transform:uppercase;letter-spacing:.5px;margin-bottom:2px;">Vessel</div>
+          <div style="font-size:13px;font-weight:500;color:#111;">${vessel}</div>
         </div>
+        <div style="background:#f9fafb;border-radius:8px;padding:8px 10px;">
+          <div style="font-size:10px;color:#9ca3af;text-transform:uppercase;letter-spacing:.5px;margin-bottom:2px;">Puerto</div>
+          <div style="font-size:13px;font-weight:500;color:#111;">${port}</div>
+        </div>
+        ${inv1?`<div style="background:#f9fafb;border-radius:8px;padding:8px 10px;">
+          <div style="font-size:10px;color:#9ca3af;text-transform:uppercase;letter-spacing:.5px;margin-bottom:2px;">Invoice</div>
+          <div style="font-size:13px;font-weight:500;color:#0071e3;">${inv1}${inv2?' / '+inv2:''}</div>
+        </div>`:''}
+        ${!isNaN(total)?`<div style="background:#f9fafb;border-radius:8px;padding:8px 10px;">
+          <div style="font-size:10px;color:#9ca3af;text-transform:uppercase;letter-spacing:.5px;margin-bottom:2px;">Total</div>
+          <div style="font-size:13px;font-weight:600;color:#111;">USD ${total.toLocaleString('es-AR',{maximumFractionDigits:0})}</div>
+        </div>`:''}
+      </div>
+      <!-- Status badges -->
+      <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px;">
+        ${telexBadge}${pagBadge}${docsBadge}
+      </div>
+      <!-- Actions -->
+      <div style="display:flex;gap:8px;" onclick="event.stopPropagation()">
+        <button onclick="openMailModal(${idx},'reclamo_pago')" style="flex:1;padding:10px;border-radius:10px;background:#f3f4f6;border:none;font-size:13px;font-weight:600;cursor:pointer;color:#374151;">✉ Reclamo</button>
+        <button onclick="renderEditCarga(${idx})" style="flex:1;padding:10px;border-radius:10px;background:#f3f4f6;border:none;font-size:13px;font-weight:600;cursor:pointer;color:#374151;">✎ Editar</button>
+        <button onclick="solicitarFC(${idx})" style="flex:1;padding:10px;border-radius:10px;background:#0071e3;border:none;font-size:13px;font-weight:600;cursor:pointer;color:#fff;">📄 FC</button>
       </div>
     </div>`;
   });
