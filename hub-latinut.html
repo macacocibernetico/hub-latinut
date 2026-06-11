@@ -484,6 +484,48 @@ button{font-family:var(--font);cursor:pointer;border:none;background:none;}
   body{font-size:14px;}
 }
 
+/* CASH FLOW CALENDAR */
+.cf-toggle{display:flex;background:var(--bg3);border:1px solid var(--border);border-radius:var(--radius);padding:3px;gap:3px;width:fit-content;}
+.cf-toggle-btn{padding:5px 18px;border-radius:7px;font-size:12px;font-weight:600;cursor:pointer;border:none;background:transparent;color:var(--text3);transition:all .15s;font-family:var(--font);}
+.cf-toggle-btn.active{background:var(--bg2);color:var(--accent);box-shadow:var(--shadow);}
+.cf-bands{display:grid;grid-template-columns:repeat(5,1fr);gap:10px;margin-bottom:24px;}
+.cf-band{background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius-lg);padding:14px 16px;box-shadow:var(--shadow);text-align:center;}
+.cf-band.vencido{border-color:rgba(255,59,48,.3);background:var(--danger-light);}
+.cf-band.hoy{border-color:rgba(0,113,227,.3);background:var(--accent-light);}
+.cf-band-label{font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.5px;color:var(--text3);margin-bottom:6px;}
+.cf-band-count{font-size:22px;font-weight:700;font-family:var(--mono);line-height:1;color:var(--text);}
+.cf-band-usd{font-size:11px;font-family:var(--mono);color:var(--text3);margin-top:3px;}
+.cf-band.vencido .cf-band-count{color:var(--danger);}
+.cf-band.hoy .cf-band-count{color:var(--accent);}
+.cf-band.prox7 .cf-band-count{color:var(--warn);}
+.cf-calendar-wrap{background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius-lg);overflow:hidden;box-shadow:var(--shadow);}
+.cf-cal-header{display:flex;align-items:center;justify-content:space-between;padding:14px 18px;border-bottom:1px solid var(--border);}
+.cf-cal-title{font-size:14px;font-weight:600;color:var(--text);}
+.cf-nav-btn{width:32px;height:32px;border-radius:8px;border:1px solid var(--border);background:var(--bg3);cursor:pointer;font-size:14px;display:flex;align-items:center;justify-content:center;transition:all .15s;color:var(--text2);}
+.cf-nav-btn:hover{background:var(--bg4);}
+.cf-weekdays{display:grid;grid-template-columns:repeat(7,1fr);border-bottom:1px solid var(--border);}
+.cf-weekday{padding:8px;text-align:center;font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.5px;color:var(--text3);}
+.cf-days{display:grid;grid-template-columns:repeat(7,1fr);}
+.cf-day{min-height:80px;border-right:1px solid var(--border);border-bottom:1px solid var(--border);padding:6px;position:relative;cursor:pointer;transition:background .1s;}
+.cf-day:hover{background:var(--bg3);}
+.cf-day:nth-child(7n){border-right:none;}
+.cf-day.other-month{background:var(--bg3);opacity:.5;}
+.cf-day.today{background:var(--accent-light);}
+.cf-day-num{font-size:11px;font-weight:600;color:var(--text3);margin-bottom:4px;}
+.cf-day.today .cf-day-num{color:var(--accent);font-weight:700;}
+.cf-chips{display:flex;flex-direction:column;gap:2px;}
+.cf-chip{font-size:9px;font-family:var(--mono);padding:2px 5px;border-radius:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-weight:500;}
+.cf-chip.cobro{background:var(--ok-light);color:#1a8f40;border:1px solid rgba(52,199,89,.2);}
+.cf-chip.eta{background:var(--accent-light);color:var(--accent);border:1px solid rgba(0,113,227,.15);}
+.cf-chip.cobro-vencido{background:var(--danger-light);color:var(--danger);border:1px solid rgba(255,59,48,.2);}
+.cf-chip.cobro-warn{background:var(--warn-light);color:#b06a00;border:1px solid rgba(255,149,0,.2);}
+.cf-more{font-size:9px;color:var(--text3);font-family:var(--mono);margin-top:1px;}
+@media(max-width:768px){
+  .cf-bands{grid-template-columns:repeat(3,1fr);}
+  .cf-day{min-height:56px;padding:4px;}
+  .cf-chip{font-size:8px;padding:1px 4px;}
+}
+
 /* LOGIN */
 .login-box{background:#fff;border:1px solid var(--border);border-radius:20px;padding:40px 48px;width:380px;max-width:90vw;box-shadow:0 8px 40px rgba(0,0,0,.12);text-align:center;}
 .login-logo{font-size:28px;font-weight:700;color:var(--text);letter-spacing:-1px;margin-bottom:4px;}
@@ -530,6 +572,9 @@ button{font-family:var(--font);cursor:pointer;border:none;background:none;}
       <div class="nav-item" onclick="showView('cobranza')">
         <span class="icon">💰</span> Cobranza
         <span class="nav-badge warn" id="badge-cobranza"></span>
+      </div>
+      <div class="nav-item" onclick="showView('cashflow')">
+        <span class="icon">📅</span> Cash Flow
       </div>
       <div class="nav-item" onclick="showView('liberaciones')">
         <span class="icon">🔓</span> Liberaciones
@@ -714,6 +759,7 @@ function updateNegocioPill(){
     cargas: isBuz?'Cargas Buzaram':'Cargas AXT',
     nueva_carga: isBuz?'Nueva Carga Buzaram':'Nueva Carga',
     cobranza:'Cobranza',
+    cashflow:'Cash Flow',
     liberaciones:'Liberaciones',
     pagares:'Pagarés',
     log:'Log de acciones',
@@ -1388,13 +1434,13 @@ function showView(view){
   updateBottomNav(view);
   currentView=view;
   document.querySelectorAll('.nav-item').forEach(el=>el.classList.remove('active'));
-  const titles=window._viewTitles||{alertas:'Alertas',cargas:'Cargas AXT',nueva_carga:'Nueva Carga',cobranza:'Cobranza',liberaciones:'Liberaciones',pagares:'Pagarés',log:'Log de acciones',config:'Configuración'};
+  const titles=window._viewTitles||{alertas:'Alertas',cargas:'Cargas AXT',nueva_carga:'Nueva Carga',cobranza:'Cobranza',cashflow:'Cash Flow',liberaciones:'Liberaciones',pagares:'Pagarés',log:'Log de acciones',config:'Configuración'};
   document.getElementById('view-title').textContent=titles[view]||view;
   document.querySelectorAll('.nav-item').forEach(el=>{if(el.getAttribute('onclick')?.includes(`'${view}'`))el.classList.add('active');});
   renderView(view);
   if(window.innerWidth<=768)closeSidebar();
 }
-function renderView(v){({alertas:renderAlertas,cargas:renderCargas,nueva_carga:renderNuevaCarga,cobranza:renderCobranza,liberaciones:renderLiberaciones,pagares:renderPagares,log:renderLog,config:renderConfig}[v]||renderAlertas)();}
+function renderView(v){({alertas:renderAlertas,cargas:renderCargas,nueva_carga:renderNuevaCarga,cobranza:renderCobranza,cashflow:renderCashFlow,liberaciones:renderLiberaciones,pagares:renderPagares,log:renderLog,config:renderConfig}[v]||renderAlertas)();}
 
 function renderAlertas(){
   const alerts=getAlerts();
@@ -3600,6 +3646,144 @@ function renderCargasMobileCards(rows, pagedRows){
   return html;
 }
 
+
+// ─── CASH FLOW ───────────────────────────────────────────────────────────────
+let cfMode = 'cobros'; // 'cobros' | 'eta'
+let cfYear = new Date().getFullYear();
+let cfMonth = new Date().getMonth(); // 0-based
+
+function renderCashFlow(){
+  const today = new Date();
+  const nc = getNegocioConfig();
+  const label = nc.label;
+
+  // Build event map: key = 'YYYY-MM-DD', value = [{customer, amount, bl, daysFrom}]
+  const eventMap = {};
+  const addEvent = (dateVal, customer, amount, bl) => {
+    const d = parseDate(dateVal);
+    if(!d) return;
+    const key = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+    if(!eventMap[key]) eventMap[key] = [];
+    eventMap[key].push({customer, amount, bl, date: d});
+  };
+
+  allRows.forEach(row => {
+    const customer = (row[COL.CUSTOMER]||'—').trim();
+    const bl = (row[COL.BL]||'').trim();
+    const amount = parseSheetNum(row[COL.TOTAL_CFR]);
+    if(cfMode === 'cobros'){
+      const fechaCobro = row[nc.COL_FECHA_EST_COBRO];
+      addEvent(fechaCobro, customer, amount, bl);
+    } else {
+      addEvent(row[COL.ETA], customer, 0, bl);
+    }
+  });
+
+  // Compute bands
+  const todayMs = new Date(today.getFullYear(), today.getMonth(), today.getDate()).getTime();
+  const bands = [
+    {key:'vencido', label:'Vencido', cls:'vencido', min:-999, max:-1},
+    {key:'hoy',    label:'Hoy',     cls:'hoy',     min:0,    max:0},
+    {key:'prox7',  label:'7 días',  cls:'prox7',   min:1,    max:7},
+    {key:'prox30', label:'30 días', cls:'',         min:8,    max:30},
+    {key:'mas30',  label:'+30 días',cls:'',         min:31,   max:999},
+  ];
+  bands.forEach(b => { b.count = 0; b.usd = 0; });
+
+  Object.values(eventMap).forEach(evts => evts.forEach(e => {
+    const diff = Math.round((new Date(e.date.getFullYear(), e.date.getMonth(), e.date.getDate()).getTime() - todayMs) / 86400000);
+    const band = bands.find(b => diff >= b.min && diff <= b.max);
+    if(band){ band.count++; if(!isNaN(e.amount)) band.usd += e.amount; }
+  }));
+
+  const bandsHtml = bands.map(b => `
+    <div class="cf-band ${b.cls}">
+      <div class="cf-band-label">${b.label}</div>
+      <div class="cf-band-count">${b.count}</div>
+      ${cfMode==='cobros'&&b.usd>0?`<div class="cf-band-usd">USD ${b.usd.toLocaleString('es-AR',{maximumFractionDigits:0})}</div>`:''}
+    </div>`).join('');
+
+  // Calendar
+  const firstDay = new Date(cfYear, cfMonth, 1);
+  const lastDay  = new Date(cfYear, cfMonth+1, 0);
+  const startWd  = firstDay.getDay(); // 0=Sun
+  const monthName = firstDay.toLocaleDateString('es-AR', {month:'long', year:'numeric'});
+
+  const weekDays = ['Dom','Lun','Mar','Mié','Jue','Vie','Sáb'];
+  const weekdaysHtml = weekDays.map(d=>`<div class="cf-weekday">${d}</div>`).join('');
+
+  let daysHtml = '';
+  // Pad start
+  for(let i=0; i<startWd; i++){
+    const prevDay = new Date(cfYear, cfMonth, -startWd+i+1);
+    daysHtml += `<div class="cf-day other-month"><div class="cf-day-num">${prevDay.getDate()}</div></div>`;
+  }
+  for(let d=1; d<=lastDay.getDate(); d++){
+    const isToday = today.getFullYear()===cfYear && today.getMonth()===cfMonth && today.getDate()===d;
+    const key = `${cfYear}-${String(cfMonth+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+    const evts = eventMap[key]||[];
+    const diff = Math.round((new Date(cfYear, cfMonth, d).getTime() - todayMs) / 86400000);
+
+    let chipsHtml = '';
+    evts.slice(0,3).forEach(e => {
+      let chipCls;
+      if(cfMode==='cobros'){
+        chipCls = diff < 0 ? 'cobro-vencido' : diff <= 7 ? 'cobro-warn' : 'cobro';
+        const amt = !isNaN(e.amount) ? ` · USD ${Math.round(e.amount/1000)}k` : '';
+        chipsHtml += `<div class="cf-chip ${chipCls}" title="${e.customer} — BL: ${e.bl}">${e.customer.substring(0,10)}${amt}</div>`;
+      } else {
+        chipsHtml += `<div class="cf-chip eta" title="${e.customer} — BL: ${e.bl}">${e.customer.substring(0,12)}</div>`;
+      }
+    });
+    if(evts.length > 3) chipsHtml += `<div class="cf-more">+${evts.length-3} más</div>`;
+
+    daysHtml += `<div class="cf-day${isToday?' today':''}">
+      <div class="cf-day-num">${d}</div>
+      <div class="cf-chips">${chipsHtml}</div>
+    </div>`;
+  }
+  // Pad end
+  const totalCells = startWd + lastDay.getDate();
+  const padEnd = totalCells % 7 === 0 ? 0 : 7 - (totalCells % 7);
+  for(let i=1; i<=padEnd; i++){
+    daysHtml += `<div class="cf-day other-month"><div class="cf-day-num">${i}</div></div>`;
+  }
+
+  const modeLabel = cfMode === 'cobros' ? 'cobros estimados' : 'ETAs de arribo';
+  document.getElementById('content').innerHTML = `
+  <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:18px;flex-wrap:wrap;gap:10px;">
+    <div>
+      <div style="font-size:15px;font-weight:600;color:var(--text);">Cash Flow — ${label}</div>
+      <div style="font-size:11px;color:var(--text3);margin-top:2px;">Mostrando ${modeLabel}</div>
+    </div>
+    <div class="cf-toggle">
+      <button class="cf-toggle-btn${cfMode==='cobros'?' active':''}" onclick="setCFMode('cobros')">💰 Cobros</button>
+      <button class="cf-toggle-btn${cfMode==='eta'?' active':''}" onclick="setCFMode('eta')">🚢 ETA</button>
+    </div>
+  </div>
+  <div class="cf-bands">${bandsHtml}</div>
+  <div class="cf-calendar-wrap">
+    <div class="cf-cal-header">
+      <button class="cf-nav-btn" onclick="cfNavigate(-1)">‹</button>
+      <span class="cf-cal-title" style="text-transform:capitalize;">${monthName}</span>
+      <button class="cf-nav-btn" onclick="cfNavigate(1)">›</button>
+    </div>
+    <div class="cf-weekdays">${weekdaysHtml}</div>
+    <div class="cf-days">${daysHtml}</div>
+  </div>`;
+}
+
+function setCFMode(mode){
+  cfMode = mode;
+  renderCashFlow();
+}
+
+function cfNavigate(dir){
+  cfMonth += dir;
+  if(cfMonth > 11){ cfMonth = 0; cfYear++; }
+  if(cfMonth < 0){ cfMonth = 11; cfYear--; }
+  renderCashFlow();
+}
 
 // ─── KEYBOARD SHORTCUTS ──────────────────────────────────────────────────────
 document.addEventListener('keydown', e => {
