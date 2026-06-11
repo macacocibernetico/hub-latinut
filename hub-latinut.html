@@ -705,6 +705,7 @@ function getBuzaramCfg(){
     label: 'Buzaram',
     COL_FECHA_EST_COBRO: 51,  // AZ col 52 (0-based 51)
     COL_FECHA_COBRO: 56,      // BE col 57 (0-based 56)
+    COL_TOTAL_CFR: 28,        // mismo índice que AXT por ahora
     ccFijo: 'yaelvaleria.arrua@newsan.com.ar',
     sinPagares: true,
     // Pagos forwarder Buzaram: AV=47, AW=48, AX=49, AY=50
@@ -727,6 +728,7 @@ function getNegocioConfig(){
     label: 'AXT Solutions',
     COL_FECHA_EST_COBRO: COL.FECHA_EST_COBRO,
     COL_FECHA_COBRO: COL.FECHA_COBRO,
+    COL_TOTAL_CFR: COL.TOTAL_CFR,
     ccFijo: 'pberro@axtsolutions.com',
     sinPagares: false,
     // Pagos forwarder AXT: AM=38, AN=39, AO=40, AP=41, AQ=42, AR=43, AS=44
@@ -1204,7 +1206,7 @@ async function loadData(){
   setSheetStatus('loading','Sincronizando '+nc.label+'...');
   showProgress();
   try{
-    const range=encodeURIComponent(nc.sheetName+'!A4:BI');
+    const range=encodeURIComponent(nc.sheetName+'!A4:BH');
     let url, fetchOpts={};
     if(accessToken){
       url='https://sheets.googleapis.com/v4/spreadsheets/'+nc.sheetId+'/values/'+range;
@@ -1216,7 +1218,11 @@ async function loadData(){
     if(!r.ok) throw new Error(`HTTP ${r.status}`);
     const data=await r.json();
     const rawRows=(data.values||[]);
-    allRows=rawRows.map((row,i)=>{row._sheetRow=i+4;return row;}).filter(row=>(row[COL.NEGOCIO]||row[COL.PRODUCT]||row[COL.CUSTOMER])&&!isClosed(row));
+    allRows=rawRows.map((row,i)=>{row._sheetRow=i+4;return row;}).filter(row=>{
+      const neg=(row[COL.NEGOCIO]||'').toString().trim().toUpperCase();
+      if(neg==='TOTAL'||neg==='TOTALES') return false;
+      return (row[COL.NEGOCIO]||row[COL.PRODUCT]||row[COL.CUSTOMER])&&!isClosed(row);
+    });
     await loadContacts();
     await loadLog();
     setSheetStatus('ok',`${allRows.length} cargas activas`);
@@ -3721,7 +3727,7 @@ function renderCashFlow(){
       if(d){
         const k = dateKey(d);
         if(!cobrosMap[k]) cobrosMap[k]=[];
-        cobrosMap[k].push({customer, bl, negocio, amount: parseSheetNum(row[COL.TOTAL_CFR]), date:d, rowData:row, type:'cobro'});
+        cobrosMap[k].push({customer, bl, negocio, amount: parseSheetNum(row[nc.COL_TOTAL_CFR]), date:d, rowData:row, type:'cobro'});
       }
       // Pagos forwarder — usa columnas del negocio activo
       const fechaPago = row[nc.PAGO_FECHA];
@@ -3760,12 +3766,21 @@ function renderCashFlow(){
   const firstOfMonth = new Date(cfYear, cfMonth, 1).getTime();
   const lastOfMonth  = new Date(cfYear, cfMonth+1, 0, 23,59,59).getTime();
   let mesEntradas = 0, mesSalidas = 0;
+  let mesCobrosList = [], mesPagosList = [];
   Object.values(cobrosMap).forEach(evts => evts.forEach(e => {
-    if(e.date.getTime()>=firstOfMonth && e.date.getTime()<=lastOfMonth && !isNaN(e.amount) && e.type==='cobro') mesEntradas+=e.amount;
+    if(e.date.getTime()>=firstOfMonth && e.date.getTime()<=lastOfMonth && !isNaN(e.amount) && e.type==='cobro'){
+      mesEntradas+=e.amount; mesCobrosList.push(e);
+    }
   }));
   Object.values(pagosMap).forEach(evts => evts.forEach(e => {
-    if(e.date.getTime()>=firstOfMonth && e.date.getTime()<=lastOfMonth && !isNaN(e.amount)) mesSalidas+=e.amount;
+    if(e.date.getTime()>=firstOfMonth && e.date.getTime()<=lastOfMonth && !isNaN(e.amount)){
+      mesSalidas+=e.amount; mesPagosList.push(e);
+    }
   }));
+  // Debug: log all cobros in map with their parsed dates
+  console.log('[CF] cobrosMap keys:', Object.keys(cobrosMap).sort());
+  console.log('[CF] mes cobros:', mesCobrosList.map(e=>`${e.customer} ${e.date.toISOString().slice(0,10)} USD${e.amount}`));
+  console.log('[CF] mes pagos:', mesPagosList.map(e=>`${e.proveedor} ${e.date.toISOString().slice(0,10)} USD${e.amount}`));
   const mesBalance = mesEntradas - mesSalidas;
 
   // ── Balance semana actual ──
@@ -3784,6 +3799,7 @@ function renderCashFlow(){
   const fmtUSD = n => n===0?'—':`USD ${Math.abs(n).toLocaleString('es-AR',{maximumFractionDigits:0})}`;
   const balColor = n => n>0?'var(--ok)':n<0?'var(--danger)':'var(--text3)';
   const balSign  = n => n>0?'+':'';
+  const mesLabel = new Date(cfYear,cfMonth,1).toLocaleDateString('es-AR',{month:'long',year:'numeric'});
 
   // ── Bands (cobros mode only) ──
   const bands = [
@@ -3808,7 +3824,8 @@ function renderCashFlow(){
   }
 
   const bandsHtml = cfMode==='cobros' ? bands.map(b=>`
-    <div class="cf-band ${b.cls}">
+    <div class="cf-band ${b.cls}" style="${b.cobros+b.pagos>0?'cursor:pointer;':''}" ${b.cobros+b.pagos>0?`onclick="openRangeDetail('band','${b.key}','${b.label}')"`:''}
+      ${b.cobros+b.pagos>0?`title="Ver detalle de ${b.label.toLowerCase()}"`:''}>
       <div class="cf-band-label">${b.label}</div>
       <div class="cf-band-count">${b.cobros+b.pagos}</div>
       ${b.usdCobros>0?`<div class="cf-band-usd" style="color:var(--ok)">▲ ${fmtUSD(b.usdCobros)}</div>`:''}
@@ -3819,11 +3836,14 @@ function renderCashFlow(){
       <div class="cf-band-count">${b.cobros}</div>
     </div>`).join('');
 
-  // ── Balance cards ──
+
+  // Balance cards
   const balanceHtml = cfMode==='cobros' ? `
   <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:20px;">
-    <div style="background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius-lg);padding:16px 18px;box-shadow:var(--shadow);">
-      <div style="font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.5px;color:var(--text3);margin-bottom:10px;">Balance esta semana</div>
+    <div style="background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius-lg);padding:16px 18px;box-shadow:var(--shadow);cursor:pointer;" onclick="openRangeDetail('semana',null,'Esta semana')" title="Ver detalle">
+      <div style="font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.5px;color:var(--text3);margin-bottom:10px;display:flex;justify-content:space-between;align-items:center;">
+        <span>Balance esta semana</span><span style="color:var(--accent);font-size:11px;">Ver detalle →</span>
+      </div>
       <div style="display:flex;justify-content:space-between;margin-bottom:6px;">
         <span style="font-size:12px;color:var(--text3);">▲ Cobros</span>
         <span style="font-size:12px;font-family:var(--mono);color:var(--ok);font-weight:600;">${fmtUSD(semEntradas)}</span>
@@ -3837,8 +3857,10 @@ function renderCashFlow(){
         <span style="font-size:16px;font-weight:700;font-family:var(--mono);color:${balColor(semBalance)};">${balSign(semBalance)}${fmtUSD(semBalance)}</span>
       </div>
     </div>
-    <div style="background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius-lg);padding:16px 18px;box-shadow:var(--shadow);">
-      <div style="font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.5px;color:var(--text3);margin-bottom:10px;">Balance ${new Date(cfYear,cfMonth,1).toLocaleDateString('es-AR',{month:'long',year:'numeric'})}</div>
+    <div style="background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius-lg);padding:16px 18px;box-shadow:var(--shadow);cursor:pointer;" onclick="openRangeDetail('mes',null,mesLabel)" title="Ver detalle del mes">
+      <div style="font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.5px;color:var(--text3);margin-bottom:10px;display:flex;justify-content:space-between;align-items:center;">
+        <span style="text-transform:capitalize;">${mesLabel}</span><span style="color:var(--accent);font-size:11px;">Ver detalle →</span>
+      </div>
       <div style="display:flex;justify-content:space-between;margin-bottom:6px;">
         <span style="font-size:12px;color:var(--text3);">▲ Cobros</span>
         <span style="font-size:12px;font-family:var(--mono);color:var(--ok);font-weight:600;">${fmtUSD(mesEntradas)}</span>
@@ -3940,8 +3962,121 @@ function renderCashFlow(){
   </div>`;
 }
 
+function openRangeDetail(type, bandKey, title){
+  const today = new Date();
+  const todayMs = new Date(today.getFullYear(),today.getMonth(),today.getDate()).getTime();
+  const cobrosMap = window._cfCobrosMap||{};
+  const pagosMap  = window._cfPagosMap||{};
+
+  // Determine date range
+  let fromMs, toMs;
+  if(type==='semana'){
+    const dow = today.getDay();
+    const lunes = new Date(today); lunes.setDate(today.getDate()-(dow===0?6:dow-1)); lunes.setHours(0,0,0,0);
+    const domingo = new Date(lunes); domingo.setDate(lunes.getDate()+6); domingo.setHours(23,59,59,999);
+    fromMs = lunes.getTime(); toMs = domingo.getTime();
+  } else if(type==='mes'){
+    fromMs = new Date(cfYear, cfMonth, 1).getTime();
+    toMs   = new Date(cfYear, cfMonth+1, 0, 23,59,59,999).getTime();
+  } else if(type==='band'){
+    const bands = {
+      vencido:{min:-999,max:-1}, hoy:{min:0,max:0},
+      prox7:{min:1,max:7}, prox30:{min:8,max:30}, mas30:{min:31,max:999}
+    };
+    const b = bands[bandKey];
+    fromMs = todayMs + b.min * 86400000;
+    toMs   = todayMs + b.max * 86400000 + 86399999;
+  }
+
+  // Collect events in range
+  const cobrosIn = [], pagosIn = [];
+  Object.values(cobrosMap).forEach(evts => evts.forEach(e => {
+    if(e.date.getTime()>=fromMs && e.date.getTime()<=toMs) cobrosIn.push(e);
+  }));
+  Object.values(pagosMap).forEach(evts => evts.forEach(e => {
+    if(e.date.getTime()>=fromMs && e.date.getTime()<=toMs) pagosIn.push(e);
+  }));
+
+  // Sort by date
+  cobrosIn.sort((a,b)=>a.date-b.date);
+  pagosIn.sort((a,b)=>a.date-b.date);
+
+  const fmtUSD = n => `USD ${Math.abs(n).toLocaleString('es-AR',{maximumFractionDigits:0})}`;
+  const totalCobros = cobrosIn.reduce((s,e)=>s+(!isNaN(e.amount)?e.amount:0),0);
+  const totalPagos  = pagosIn.reduce((s,e)=>s+(!isNaN(e.amount)?e.amount:0),0);
+  const neto = totalCobros - totalPagos;
+  const netoColor = neto>0?'var(--ok)':neto<0?'var(--danger)':'var(--text3)';
+
+  let html = '';
+
+  // Summary bar
+  html += `<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:16px;">
+    <div style="background:#f0faf4;border:1px solid #c8e6c9;border-radius:8px;padding:10px 12px;text-align:center;">
+      <div style="font-size:10px;color:#2e7d32;font-weight:600;text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px;">▲ Cobros</div>
+      <div style="font-size:14px;font-weight:700;font-family:var(--mono);color:#2e7d32;">${totalCobros>0?fmtUSD(totalCobros):'—'}</div>
+    </div>
+    <div style="background:#fff5f5;border:1px solid #ffcdd2;border-radius:8px;padding:10px 12px;text-align:center;">
+      <div style="font-size:10px;color:#c62828;font-weight:600;text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px;">▼ Pagos</div>
+      <div style="font-size:14px;font-weight:700;font-family:var(--mono);color:#c62828;">${totalPagos>0?fmtUSD(totalPagos):'—'}</div>
+    </div>
+    <div style="background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:10px 12px;text-align:center;">
+      <div style="font-size:10px;color:var(--text3);font-weight:600;text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px;">Neto</div>
+      <div style="font-size:14px;font-weight:700;font-family:var(--mono);color:${netoColor};">${neto!==0?(neto>0?'+':'')+fmtUSD(neto):'—'}</div>
+    </div>
+  </div>`;
+
+  if(!cobrosIn.length && !pagosIn.length){
+    html += `<div style="text-align:center;padding:32px;color:var(--text3);font-size:13px;">Sin movimientos en este período</div>`;
+  }
+
+  // Cobros list
+  if(cobrosIn.length){
+    html += `<div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.8px;color:#2e7d32;margin-bottom:8px;">▲ Cobros · ${cobrosIn.length}</div>`;
+    cobrosIn.forEach(e => {
+      const row = e.rowData; if(!row) return;
+      const idx = allRows.indexOf(row);
+      const diff = Math.round((new Date(e.date.getFullYear(),e.date.getMonth(),e.date.getDate()).getTime()-todayMs)/86400000);
+      const isVencido = diff < 0;
+      const diffStr = diff===0?'Hoy':diff<0?`Hace ${Math.abs(diff)}d`:`En ${diff}d`;
+      const bl = (row[COL.BL]||'—').trim();
+      html += `<div class="cf-event-card cobro-card${isVencido?' vencido':''}">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:3px;">
+          <div class="cf-event-title" style="margin:0;">${e.customer}</div>
+          ${!isNaN(e.amount)?`<span style="font-size:13px;font-weight:700;font-family:var(--mono);color:var(--ok);">USD ${e.amount.toLocaleString('es-AR',{maximumFractionDigits:0})}</span>`:''}
+        </div>
+        <div class="cf-event-meta">BL: ${bl} · Negocio: ${e.negocio} · <span style="color:${isVencido?'var(--danger)':'var(--text2)'};">${diffStr} — ${e.date.toLocaleDateString('es-AR',{day:'2-digit',month:'2-digit'})}</span></div>
+        <div class="cf-event-actions">
+          <button class="action-btn mail" onclick="closeDayDetail();openMailModal(${idx},'reclamo_cobro')">✉ Reclamo de cobro</button>
+        </div>
+      </div>`;
+    });
+  }
+
+  // Pagos list
+  if(pagosIn.length){
+    if(cobrosIn.length) html += `<div style="height:1px;background:var(--border);margin:12px 0;"></div>`;
+    html += `<div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.8px;color:#c62828;margin-bottom:8px;">▼ Pagos · ${pagosIn.length}</div>`;
+    pagosIn.forEach(e => {
+      const diffStr = e.date.toLocaleDateString('es-AR',{day:'2-digit',month:'2-digit'});
+      const diff = Math.round((new Date(e.date.getFullYear(),e.date.getMonth(),e.date.getDate()).getTime()-todayMs)/86400000);
+      const whenStr = diff===0?'Hoy':diff<0?`Hace ${Math.abs(diff)}d`:`En ${diff}d`;
+      html += `<div class="cf-event-card" style="border-left:3px solid var(--danger);">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:3px;">
+          <div class="cf-event-title" style="margin:0;">${e.proveedor||'Forwarder'}</div>
+          ${!isNaN(e.amount)?`<span style="font-size:13px;font-weight:700;font-family:var(--mono);color:var(--danger);">USD ${e.amount.toLocaleString('es-AR',{maximumFractionDigits:0})}</span>`:''}
+        </div>
+        <div class="cf-event-meta">BL: ${e.bl} · Cliente: ${e.customer} · <span style="color:var(--text2);">${whenStr} — ${diffStr}</span></div>
+        ${e.fcFlete?`<div style="font-size:11px;font-family:var(--mono);color:var(--text3);">FC: ${e.fcFlete}${e.fcCourier?' · Courier: '+e.fcCourier:''}</div>`:''}
+      </div>`;
+    });
+  }
+
+  document.getElementById('cf-detail-title').textContent = title;
+  document.getElementById('cf-detail-body').innerHTML = html;
+  document.getElementById('cf-detail-overlay').classList.remove('hidden');
+}
+
 function setCFMode(mode){
-  cfMode = mode;
   renderCashFlow();
 }
 
