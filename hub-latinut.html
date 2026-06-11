@@ -503,45 +503,52 @@ button{font-family:var(--font);cursor:pointer;border:none;background:none;}
 .cf-cal-title{font-size:14px;font-weight:600;color:var(--text);}
 .cf-nav-btn{width:32px;height:32px;border-radius:8px;border:1px solid var(--border);background:var(--bg3);cursor:pointer;font-size:14px;display:flex;align-items:center;justify-content:center;transition:all .15s;color:var(--text2);}
 .cf-nav-btn:hover{background:var(--bg4);}
-.cf-weekdays{display:grid;grid-template-columns:repeat(7,1fr);border-bottom:1px solid var(--border);}
-.cf-weekday{padding:8px;text-align:center;font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.5px;color:var(--text3);}
+.cf-weekdays{display:grid;grid-template-columns:repeat(7,1fr);border-bottom:1px solid var(--border);background:var(--bg3);}
+.cf-weekday{padding:9px 6px;text-align:center;font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.5px;color:var(--text3);}
 .cf-days{display:grid;grid-template-columns:repeat(7,1fr);}
-.cf-day{min-height:80px;border-right:1px solid var(--border);border-bottom:1px solid var(--border);padding:6px;position:relative;cursor:pointer;transition:background .1s;}
+.cf-day{min-height:90px;border-right:1px solid var(--border);border-bottom:1px solid var(--border);padding:8px 6px;position:relative;transition:background .1s;}
 .cf-day:hover{background:var(--bg3);}
 .cf-day:nth-child(7n){border-right:none;}
-.cf-day.other-month{background:var(--bg3);opacity:.5;}
-.cf-day.today{background:#1d3557;border:2px solid var(--accent);}
-.cf-day-num{font-size:11px;font-weight:600;color:var(--text3);margin-bottom:4px;}
-.cf-day.today .cf-day-num{color:#fff;font-weight:800;font-size:12px;background:var(--accent);display:inline-flex;align-items:center;justify-content:center;width:20px;height:20px;border-radius:50%;margin-bottom:4px;}
+.cf-day.other-month{background:var(--bg3);opacity:.4;}
+/* HOY — círculo azul sutil, no invasivo */
+.cf-day.today{background:var(--bg2);}
+.cf-day-num{font-size:12px;font-weight:500;color:var(--text3);margin-bottom:5px;display:flex;align-items:center;justify-content:center;width:24px;height:24px;border-radius:50%;}
+.cf-day.today .cf-day-num{background:var(--accent);color:#fff;font-weight:700;}
+.cf-day.has-events{cursor:pointer;}
+.cf-day.has-events:hover{background:#f0f6ff;}
+/* CHIPS — más grandes y legibles */
+.cf-chips{display:flex;flex-direction:column;gap:3px;}
+.cf-chip{font-size:11px;font-family:var(--mono);padding:3px 7px;border-radius:5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-weight:500;line-height:1.4;}
+.cf-chip.cobro{background:#e8f5e9;color:#2e7d32;border:1px solid #c8e6c9;}
+.cf-chip.eta{background:#e3f2fd;color:#1565c0;border:1px solid #bbdefb;}
+.cf-chip.cobro-vencido{background:#ffebee;color:#c62828;border:1px solid #ffcdd2;}
+.cf-chip.cobro-warn{background:#fff8e1;color:#e65100;border:1px solid #ffe082;}
+.cf-chip.pago{background:#fff0f0;color:#c62828;border:1px solid #ffcdd2;}
+.cf-more{font-size:11px;color:var(--accent);font-family:var(--mono);margin-top:3px;font-weight:600;padding-left:2px;}
 /* DAY DETAIL PANEL */
-.cf-detail-overlay{position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:150;display:flex;align-items:center;justify-content:center;backdrop-filter:blur(6px);}
+.cf-detail-overlay{position:fixed;inset:0;background:rgba(0,0,0,.35);z-index:150;display:flex;align-items:center;justify-content:center;backdrop-filter:blur(6px);}
 .cf-detail-overlay.hidden{display:none;}
-.cf-detail-panel{background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius-xl);width:480px;max-width:95vw;max-height:80vh;overflow:hidden;display:flex;flex-direction:column;box-shadow:0 20px 60px rgba(0,0,0,.2);}
+.cf-detail-panel{background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius-xl);width:520px;max-width:95vw;max-height:82vh;overflow:hidden;display:flex;flex-direction:column;box-shadow:0 24px 64px rgba(0,0,0,.15);}
 .cf-detail-header{padding:16px 20px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;background:var(--bg3);flex-shrink:0;}
 .cf-detail-title{font-size:14px;font-weight:600;color:var(--text);}
 .cf-detail-close{width:28px;height:28px;border-radius:50%;background:var(--bg4);border:none;cursor:pointer;font-size:16px;display:flex;align-items:center;justify-content:center;color:var(--text3);transition:all .15s;}
 .cf-detail-close:hover{background:var(--border);}
 .cf-detail-body{overflow-y:auto;flex:1;padding:16px 20px;}
-.cf-event-card{background:var(--bg3);border:1px solid var(--border);border-radius:var(--radius-lg);padding:14px 16px;margin-bottom:10px;}
+.cf-event-card{background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius-lg);padding:14px 16px;margin-bottom:10px;box-shadow:var(--shadow);}
 .cf-event-card:last-child{margin-bottom:0;}
 .cf-event-card.eta-card{border-left:3px solid var(--accent);}
 .cf-event-card.cobro-card{border-left:3px solid var(--ok);}
 .cf-event-card.cobro-card.vencido{border-left-color:var(--danger);}
-.cf-event-title{font-size:13px;font-weight:600;color:var(--text);margin-bottom:4px;}
-.cf-event-meta{font-size:11px;font-family:var(--mono);color:var(--text3);margin-bottom:10px;}
+.cf-event-title{font-size:14px;font-weight:600;color:var(--text);margin-bottom:3px;}
+.cf-event-meta{font-size:11px;font-family:var(--mono);color:var(--text3);margin-bottom:10px;line-height:1.6;}
 .cf-event-actions{display:flex;gap:6px;flex-wrap:wrap;}
-.cf-chips{display:flex;flex-direction:column;gap:2px;}
-.cf-chip{font-size:9px;font-family:var(--mono);padding:2px 5px;border-radius:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-weight:500;}
-.cf-chip.cobro{background:var(--ok-light);color:#1a8f40;border:1px solid rgba(52,199,89,.2);}
-.cf-chip.eta{background:var(--accent-light);color:var(--accent);border:1px solid rgba(0,113,227,.15);}
-.cf-chip.cobro-vencido{background:var(--danger-light);color:var(--danger);border:1px solid rgba(255,59,48,.2);}
-.cf-chip.cobro-warn{background:var(--warn-light);color:#b06a00;border:1px solid rgba(255,149,0,.2);}
-.cf-more{font-size:9px;color:var(--text3);font-family:var(--mono);margin-top:1px;}
 @media(max-width:768px){
   .cf-bands{grid-template-columns:repeat(3,1fr);}
-  .cf-day{min-height:56px;padding:4px;}
-  .cf-chip{font-size:8px;padding:1px 4px;}
+  .cf-day{min-height:64px;padding:5px 4px;}
+  .cf-chip{font-size:10px;padding:2px 5px;}
+  .cf-more{font-size:10px;}
 }
+
 
 /* LOGIN */
 .login-box{background:#fff;border:1px solid var(--border);border-radius:20px;padding:40px 48px;width:380px;max-width:90vw;box-shadow:0 8px 40px rgba(0,0,0,.12);text-align:center;}
@@ -904,6 +911,9 @@ const COL = {
   DOCUMENTOS:14, LOMBARD:15, CLIENTE_ENV:16, TELEX:17, EXPORTER:18,
   CUSTOMER:23, INVOICE_CLIENTE:24, TOTAL_CFR:28, INCOTERM:29,
   INVOICE_FC_SERV:30,
+  // Pagos (AM=38, AN=39, AO=40, AP=41, AQ=42, AR=43, AS=44)
+  FC_FLETE:38, FC_COURIER:39, PROVEEDOR_FLETE:40,
+  MONTO_FLETE:41, MONTO_COURIER:42, TOTAL_PAGO:43, FECHA_PAGO_FWD:44,
   PAGARE_ENVIADO:45, PAGARE_FIRMADO:46,
   FECHA_EST_COBRO:47, FECHA_COBRO:48
 };
@@ -3673,114 +3683,228 @@ function renderCashFlow(){
   const today = new Date();
   const nc = getNegocioConfig();
   const label = nc.label;
+  const todayMs = new Date(today.getFullYear(), today.getMonth(), today.getDate()).getTime();
 
-  // Build event map: key = 'YYYY-MM-DD', value = [{customer, amount, bl, daysFrom}]
-  const eventMap = {};
-  const addEvent = (dateVal, customer, amount, bl, row) => {
-    const d = parseDate(dateVal);
-    if(!d) return;
-    const key = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
-    if(!eventMap[key]) eventMap[key] = [];
-    eventMap[key].push({customer, amount, bl, date: d, rowData: row});
-  };
+  // ── Helpers ──
+  const dateKey = d => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+
+  // ── Cobros map ──
+  const cobrosMap = {};
+  // ── Pagos map ──
+  const pagosMap  = {};
 
   allRows.forEach(row => {
     const customer = (row[COL.CUSTOMER]||'—').trim();
-    const bl = (row[COL.BL]||'').trim();
-    const amount = parseSheetNum(row[COL.TOTAL_CFR]);
+    const bl       = (row[COL.BL]||'').trim();
+    const negocio  = (row[COL.NEGOCIO]||'').trim();
+
     if(cfMode === 'cobros'){
+      // Cobros
       const fechaCobro = row[nc.COL_FECHA_EST_COBRO];
-      addEvent(fechaCobro, customer, amount, bl, row);
+      const d = parseDate(fechaCobro);
+      if(d){
+        const k = dateKey(d);
+        if(!cobrosMap[k]) cobrosMap[k]=[];
+        cobrosMap[k].push({customer, bl, negocio, amount: parseSheetNum(row[COL.TOTAL_CFR]), date:d, rowData:row, type:'cobro'});
+      }
+      // Pagos (AM-AS) — solo AXT por ahora
+      const fechaPago = row[COL.FECHA_PAGO_FWD];
+      const totalPago = parseSheetNum(row[COL.TOTAL_PAGO]);
+      const dp = parseDate(fechaPago);
+      if(dp && !isNaN(totalPago) && totalPago > 0){
+        const k = dateKey(dp);
+        if(!pagosMap[k]) pagosMap[k]=[];
+        pagosMap[k].push({
+          customer, bl, negocio,
+          amount: totalPago,
+          montoFlete: parseSheetNum(row[COL.MONTO_FLETE]),
+          montoCourier: parseSheetNum(row[COL.MONTO_COURIER]),
+          fcFlete: (row[COL.FC_FLETE]||'').trim(),
+          fcCourier: (row[COL.FC_COURIER]||'').trim(),
+          proveedor: (row[COL.PROVEEDOR_FLETE]||'').trim(),
+          date: dp, rowData: row, type:'pago'
+        });
+      }
     } else {
-      addEvent(row[COL.ETA], customer, 0, bl, row);
+      // Modo ETA — solo cobrosMap se usa para chips
+      const d = parseDate(row[COL.ETA]);
+      if(d){
+        const k = dateKey(d);
+        if(!cobrosMap[k]) cobrosMap[k]=[];
+        cobrosMap[k].push({customer, bl, negocio, amount:0, date:d, rowData:row, type:'eta'});
+      }
     }
   });
 
-  // Guardar para uso en openDayDetail
-  window._cfEventMap = eventMap;
+  // Guardar para openDayDetail
+  window._cfCobrosMap = cobrosMap;
+  window._cfPagosMap  = pagosMap;
 
-  // Compute bands
-  const todayMs = new Date(today.getFullYear(), today.getMonth(), today.getDate()).getTime();
-  const bands = [
-    {key:'vencido', label:'Vencido', cls:'vencido', min:-999, max:-1},
-    {key:'hoy',    label:'Hoy',     cls:'hoy',     min:0,    max:0},
-    {key:'prox7',  label:'7 días',  cls:'prox7',   min:1,    max:7},
-    {key:'prox30', label:'30 días', cls:'',         min:8,    max:30},
-    {key:'mas30',  label:'+30 días',cls:'',         min:31,   max:999},
-  ];
-  bands.forEach(b => { b.count = 0; b.usd = 0; });
-
-  Object.values(eventMap).forEach(evts => evts.forEach(e => {
-    const diff = Math.round((new Date(e.date.getFullYear(), e.date.getMonth(), e.date.getDate()).getTime() - todayMs) / 86400000);
-    const band = bands.find(b => diff >= b.min && diff <= b.max);
-    if(band){ band.count++; if(!isNaN(e.amount)) band.usd += e.amount; }
+  // ── Balance mensual ──
+  const firstOfMonth = new Date(cfYear, cfMonth, 1).getTime();
+  const lastOfMonth  = new Date(cfYear, cfMonth+1, 0, 23,59,59).getTime();
+  let mesEntradas = 0, mesSalidas = 0;
+  Object.values(cobrosMap).forEach(evts => evts.forEach(e => {
+    if(e.date.getTime()>=firstOfMonth && e.date.getTime()<=lastOfMonth && !isNaN(e.amount) && e.type==='cobro') mesEntradas+=e.amount;
   }));
+  Object.values(pagosMap).forEach(evts => evts.forEach(e => {
+    if(e.date.getTime()>=firstOfMonth && e.date.getTime()<=lastOfMonth && !isNaN(e.amount)) mesSalidas+=e.amount;
+  }));
+  const mesBalance = mesEntradas - mesSalidas;
 
-  const bandsHtml = bands.map(b => `
+  // ── Balance semana actual ──
+  const dayOfWeek = today.getDay();
+  const semLunes = new Date(today); semLunes.setDate(today.getDate() - (dayOfWeek===0?6:dayOfWeek-1)); semLunes.setHours(0,0,0,0);
+  const semDomingo = new Date(semLunes); semDomingo.setDate(semLunes.getDate()+6); semDomingo.setHours(23,59,59);
+  let semEntradas=0, semSalidas=0;
+  Object.values(cobrosMap).forEach(evts => evts.forEach(e => {
+    if(e.date>=semLunes && e.date<=semDomingo && !isNaN(e.amount) && e.type==='cobro') semEntradas+=e.amount;
+  }));
+  Object.values(pagosMap).forEach(evts => evts.forEach(e => {
+    if(e.date>=semLunes && e.date<=semDomingo && !isNaN(e.amount)) semSalidas+=e.amount;
+  }));
+  const semBalance = semEntradas - semSalidas;
+
+  const fmtUSD = n => n===0?'—':`USD ${Math.abs(n).toLocaleString('es-AR',{maximumFractionDigits:0})}`;
+  const balColor = n => n>0?'var(--ok)':n<0?'var(--danger)':'var(--text3)';
+  const balSign  = n => n>0?'+':'';
+
+  // ── Bands (cobros mode only) ──
+  const bands = [
+    {key:'vencido',label:'Vencido',  cls:'vencido',min:-999,max:-1},
+    {key:'hoy',    label:'Hoy',      cls:'hoy',    min:0,   max:0},
+    {key:'prox7',  label:'7 días',   cls:'prox7',  min:1,   max:7},
+    {key:'prox30', label:'30 días',  cls:'',       min:8,   max:30},
+    {key:'mas30',  label:'+30 días', cls:'',       min:31,  max:999},
+  ];
+  bands.forEach(b=>{b.cobros=0;b.usdCobros=0;b.pagos=0;b.usdPagos=0;});
+  if(cfMode==='cobros'){
+    Object.values(cobrosMap).forEach(evts=>evts.forEach(e=>{
+      const diff=Math.round((new Date(e.date.getFullYear(),e.date.getMonth(),e.date.getDate()).getTime()-todayMs)/86400000);
+      const band=bands.find(b=>diff>=b.min&&diff<=b.max);
+      if(band){band.cobros++;if(!isNaN(e.amount))band.usdCobros+=e.amount;}
+    }));
+    Object.values(pagosMap).forEach(evts=>evts.forEach(e=>{
+      const diff=Math.round((new Date(e.date.getFullYear(),e.date.getMonth(),e.date.getDate()).getTime()-todayMs)/86400000);
+      const band=bands.find(b=>diff>=b.min&&diff<=b.max);
+      if(band){band.pagos++;if(!isNaN(e.amount))band.usdPagos+=e.amount;}
+    }));
+  }
+
+  const bandsHtml = cfMode==='cobros' ? bands.map(b=>`
     <div class="cf-band ${b.cls}">
       <div class="cf-band-label">${b.label}</div>
-      <div class="cf-band-count">${b.count}</div>
-      ${cfMode==='cobros'&&b.usd>0?`<div class="cf-band-usd">USD ${b.usd.toLocaleString('es-AR',{maximumFractionDigits:0})}</div>`:''}
+      <div class="cf-band-count">${b.cobros+b.pagos}</div>
+      ${b.usdCobros>0?`<div class="cf-band-usd" style="color:var(--ok)">▲ ${fmtUSD(b.usdCobros)}</div>`:''}
+      ${b.usdPagos>0?`<div class="cf-band-usd" style="color:var(--danger)">▼ ${fmtUSD(b.usdPagos)}</div>`:''}
+    </div>`).join('') : bands.map(b=>`
+    <div class="cf-band ${b.cls}">
+      <div class="cf-band-label">${b.label}</div>
+      <div class="cf-band-count">${b.cobros}</div>
     </div>`).join('');
 
-  // Calendar
+  // ── Balance cards ──
+  const balanceHtml = cfMode==='cobros' ? `
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:20px;">
+    <div style="background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius-lg);padding:16px 18px;box-shadow:var(--shadow);">
+      <div style="font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.5px;color:var(--text3);margin-bottom:10px;">Balance esta semana</div>
+      <div style="display:flex;justify-content:space-between;margin-bottom:6px;">
+        <span style="font-size:12px;color:var(--text3);">▲ Cobros</span>
+        <span style="font-size:12px;font-family:var(--mono);color:var(--ok);font-weight:600;">${fmtUSD(semEntradas)}</span>
+      </div>
+      <div style="display:flex;justify-content:space-between;margin-bottom:10px;">
+        <span style="font-size:12px;color:var(--text3);">▼ Pagos</span>
+        <span style="font-size:12px;font-family:var(--mono);color:var(--danger);font-weight:600;">${fmtUSD(semSalidas)}</span>
+      </div>
+      <div style="border-top:1px solid var(--border);padding-top:8px;display:flex;justify-content:space-between;align-items:center;">
+        <span style="font-size:12px;font-weight:600;color:var(--text);">Balance neto</span>
+        <span style="font-size:16px;font-weight:700;font-family:var(--mono);color:${balColor(semBalance)};">${balSign(semBalance)}${fmtUSD(semBalance)}</span>
+      </div>
+    </div>
+    <div style="background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius-lg);padding:16px 18px;box-shadow:var(--shadow);">
+      <div style="font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.5px;color:var(--text3);margin-bottom:10px;">Balance ${new Date(cfYear,cfMonth,1).toLocaleDateString('es-AR',{month:'long',year:'numeric'})}</div>
+      <div style="display:flex;justify-content:space-between;margin-bottom:6px;">
+        <span style="font-size:12px;color:var(--text3);">▲ Cobros</span>
+        <span style="font-size:12px;font-family:var(--mono);color:var(--ok);font-weight:600;">${fmtUSD(mesEntradas)}</span>
+      </div>
+      <div style="display:flex;justify-content:space-between;margin-bottom:10px;">
+        <span style="font-size:12px;color:var(--text3);">▼ Pagos</span>
+        <span style="font-size:12px;font-family:var(--mono);color:var(--danger);font-weight:600;">${fmtUSD(mesSalidas)}</span>
+      </div>
+      <div style="border-top:1px solid var(--border);padding-top:8px;display:flex;justify-content:space-between;align-items:center;">
+        <span style="font-size:12px;font-weight:600;color:var(--text);">Balance neto</span>
+        <span style="font-size:16px;font-weight:700;font-family:var(--mono);color:${balColor(mesBalance)};">${balSign(mesBalance)}${fmtUSD(mesBalance)}</span>
+      </div>
+    </div>
+  </div>` : '';
+
+  // ── Calendar ──
   const firstDay = new Date(cfYear, cfMonth, 1);
   const lastDay  = new Date(cfYear, cfMonth+1, 0);
-  const startWd  = firstDay.getDay(); // 0=Sun
-  const monthName = firstDay.toLocaleDateString('es-AR', {month:'long', year:'numeric'});
-
+  const startWd  = firstDay.getDay();
+  const monthName = firstDay.toLocaleDateString('es-AR',{month:'long',year:'numeric'});
   const weekDays = ['Dom','Lun','Mar','Mié','Jue','Vie','Sáb'];
   const weekdaysHtml = weekDays.map(d=>`<div class="cf-weekday">${d}</div>`).join('');
 
   let daysHtml = '';
-  // Pad start
-  for(let i=0; i<startWd; i++){
-    const prevDay = new Date(cfYear, cfMonth, -startWd+i+1);
-    daysHtml += `<div class="cf-day other-month"><div class="cf-day-num">${prevDay.getDate()}</div></div>`;
+  for(let i=0;i<startWd;i++){
+    const prevDay=new Date(cfYear,cfMonth,-startWd+i+1);
+    daysHtml+=`<div class="cf-day other-month"><div class="cf-day-num">${prevDay.getDate()}</div></div>`;
   }
-  for(let d=1; d<=lastDay.getDate(); d++){
+
+  for(let d=1;d<=lastDay.getDate();d++){
     const isToday = today.getFullYear()===cfYear && today.getMonth()===cfMonth && today.getDate()===d;
     const key = `${cfYear}-${String(cfMonth+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
-    const evts = eventMap[key]||[];
-    const diff = Math.round((new Date(cfYear, cfMonth, d).getTime() - todayMs) / 86400000);
+    const diff = Math.round((new Date(cfYear,cfMonth,d).getTime()-todayMs)/86400000);
+    const cobrosDay = cobrosMap[key]||[];
+    const pagosDay  = pagosMap[key]||[];
+    const totalEvts = cobrosDay.length + pagosDay.length;
+    const hasEvents = totalEvts > 0;
 
     let chipsHtml = '';
-    evts.slice(0,3).forEach(e => {
-      let chipCls;
-      if(cfMode==='cobros'){
-        chipCls = diff < 0 ? 'cobro-vencido' : diff <= 7 ? 'cobro-warn' : 'cobro';
-        const amt = !isNaN(e.amount) ? ` · USD ${Math.round(e.amount/1000)}k` : '';
-        chipsHtml += `<div class="cf-chip ${chipCls}" title="${e.customer} — BL: ${e.bl}">${e.customer.substring(0,10)}${amt}</div>`;
-      } else {
-        chipsHtml += `<div class="cf-chip eta" title="${e.customer} — BL: ${e.bl}">${e.customer.substring(0,12)}</div>`;
-      }
-    });
-    if(evts.length > 3) chipsHtml += `<div class="cf-more">+${evts.length-3} más</div>`;
+    if(cfMode==='cobros'){
+      // Cobros chips
+      cobrosDay.slice(0,2).forEach(e=>{
+        const cls = diff<0?'cobro-vencido':diff<=7?'cobro-warn':'cobro';
+        const amt = !isNaN(e.amount)?` · ${Math.round(e.amount/1000)}k`:'';
+        chipsHtml+=`<div class="cf-chip ${cls}">${e.customer.substring(0,9)}${amt}</div>`;
+      });
+      if(cobrosDay.length>2) chipsHtml+=`<div class="cf-more">+${cobrosDay.length-2} cobros</div>`;
+      // Pagos chips (separador visual)
+      if(pagosDay.length>0 && cobrosDay.length>0) chipsHtml+=`<div style="height:3px;margin:2px 0;border-top:1px dashed var(--border2);"></div>`;
+      pagosDay.slice(0,2).forEach(e=>{
+        const cls='pago';
+        const amt = !isNaN(e.amount)?` · ${Math.round(e.amount/1000)}k`:'';
+        chipsHtml+=`<div class="cf-chip pago">${(e.proveedor||e.customer).substring(0,9)}${amt}</div>`;
+      });
+      if(pagosDay.length>2) chipsHtml+=`<div class="cf-more">+${pagosDay.length-2} pagos</div>`;
+    } else {
+      cobrosDay.slice(0,3).forEach(e=>{
+        chipsHtml+=`<div class="cf-chip eta">${e.customer.substring(0,12)}</div>`;
+      });
+      if(cobrosDay.length>3) chipsHtml+=`<div class="cf-more">+${cobrosDay.length-3} más</div>`;
+    }
 
-    const dateLabel = `${String(d).padStart(2,'0')}/${String(cfMonth+1).padStart(2,'0')}/${cfYear}`;
-    const hasEvents = evts.length > 0;
-    const clickHandler = hasEvents ? `onclick="openDayDetail('${key}','${dateLabel}')"` : '';
-    const cursorStyle = hasEvents ? 'cursor:pointer;' : '';
-    const hoverTitle = hasEvents ? `title="${evts.length} evento${evts.length>1?'s':''} — clic para ver detalle"` : '';
+    const dateLabel=`${String(d).padStart(2,'0')}/${String(cfMonth+1).padStart(2,'0')}/${cfYear}`;
+    const clickHandler=hasEvents?`onclick="openDayDetail('${key}','${dateLabel}')"`:'';
+    const hoverTitle=hasEvents?`title="${totalEvts} evento${totalEvts>1?'s':''} — clic para detalle"`:'';
 
-    daysHtml += `<div class="cf-day${isToday?' today':''}" style="${cursorStyle}" ${clickHandler} ${hoverTitle}>
+    daysHtml+=`<div class="cf-day${isToday?' today':''}${hasEvents?' has-events':''}" ${clickHandler} ${hoverTitle}>
       <div class="cf-day-num">${d}</div>
       <div class="cf-chips">${chipsHtml}</div>
     </div>`;
   }
-  // Pad end
-  const totalCells = startWd + lastDay.getDate();
-  const padEnd = totalCells % 7 === 0 ? 0 : 7 - (totalCells % 7);
-  for(let i=1; i<=padEnd; i++){
-    daysHtml += `<div class="cf-day other-month"><div class="cf-day-num">${i}</div></div>`;
-  }
 
-  const modeLabel = cfMode === 'cobros' ? 'cash flow (cobros y pagos)' : 'ETAs de arribo';
-  document.getElementById('content').innerHTML = `
+  const totalCells=startWd+lastDay.getDate();
+  const padEnd=totalCells%7===0?0:7-(totalCells%7);
+  for(let i=1;i<=padEnd;i++) daysHtml+=`<div class="cf-day other-month"><div class="cf-day-num">${i}</div></div>`;
+
+  const modeLabel = cfMode==='cobros'?'cash flow — cobros y pagos':'ETAs de arribo';
+  document.getElementById('content').innerHTML=`
   <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:18px;flex-wrap:wrap;gap:10px;">
     <div>
-      <div style="font-size:15px;font-weight:600;color:var(--text);">Cash Flow — ${label}</div>
-      <div style="font-size:11px;color:var(--text3);margin-top:2px;">Mostrando ${modeLabel}</div>
+      <div style="font-size:15px;font-weight:600;color:var(--text);">Calendario — ${label}</div>
+      <div style="font-size:11px;color:var(--text3);margin-top:2px;">${modeLabel}</div>
     </div>
     <div class="cf-toggle">
       <button class="cf-toggle-btn${cfMode==='cobros'?' active':''}" onclick="setCFMode('cobros')">💰 Cash Flow</button>
@@ -3788,6 +3912,7 @@ function renderCashFlow(){
     </div>
   </div>
   <div class="cf-bands">${bandsHtml}</div>
+  ${balanceHtml}
   <div class="cf-calendar-wrap">
     <div class="cf-cal-header">
       <button class="cf-nav-btn" onclick="cfNavigate(-1)">‹</button>
@@ -3816,63 +3941,107 @@ function closeDayDetail(){
 }
 
 function openDayDetail(key, dateLabel){
-  const evts = window._cfEventMap ? (window._cfEventMap[key]||[]) : [];
-  if(!evts.length) return;
+  const cobrosDay = (window._cfCobrosMap||{})[key]||[];
+  const pagosDay  = (window._cfPagosMap||{})[key]||[];
+  if(!cobrosDay.length && !pagosDay.length) return;
 
   const today = new Date();
-  const todayMs = new Date(today.getFullYear(), today.getMonth(), today.getDate()).getTime();
+  const todayMs = new Date(today.getFullYear(),today.getMonth(),today.getDate()).getTime();
   const [y,m,d] = key.split('-').map(Number);
-  const diff = Math.round((new Date(y,m-1,d).getTime() - todayMs) / 86400000);
+  const diff = Math.round((new Date(y,m-1,d).getTime()-todayMs)/86400000);
+  const diffLabel = diff===0?'Hoy':diff<0?`Hace ${Math.abs(diff)}d`:`En ${diff}d`;
 
   let html = '';
-  evts.forEach(e => {
-    const row = e.rowData;
-    if(!row) return;
-    const idx = allRows.indexOf(row);
-    const isCobro = cfMode === 'cobros';
-    const isVencido = diff < 0;
-    const cardCls = isCobro ? (isVencido ? 'cobro-card vencido' : 'cobro-card') : 'eta-card';
-    const typeLabel = isCobro ? (isVencido ? '🔴 Cobro vencido' : '💰 Cobro estimado') : '🚢 ETA arribo';
-    const bl = (row[COL.BL]||'—').trim();
-    const booking = (row[COL.BOOKING]||'—').trim();
-    const vessel = (row[COL.VESSEL]||'—').trim();
-    const port = (row[COL.PORT]||'—').trim();
-    const negocio = (row[COL.NEGOCIO]||'—').trim();
-    const amtStr = !isNaN(e.amount) ? `USD ${e.amount.toLocaleString('es-AR',{maximumFractionDigits:0})}` : '';
-    const inv1 = (row[COL.INVOICE_CLIENTE]||'').trim();
 
-    let actions = '';
-    if(isCobro){
-      actions += `<button class="action-btn mail" onclick="closeDayDetail();openMailModal(${idx},'reclamo_cobro')">✉ Reclamo de cobro</button>`;
-    } else {
-      // ETA — ofrecer liberación y reclamo de pago
-      const telex = (row[COL.TELEX]||'').trim().toUpperCase();
-      if(telex !== 'SI'){
-        actions += `<button class="action-btn write" onclick="closeDayDetail();openMailModal(${idx},'solicitar_liberacion')">🔓 Solicitar liberación</button>`;
-      }
-      actions += `<button class="action-btn mail" onclick="closeDayDetail();openMailModal(${idx},'reclamo_pago')">✉ Reclamo de pago</button>`;
-      actions += `<button class="action-btn mail" onclick="closeDayDetail();openMailModal(${idx},'shipment_advice')">📋 Shipment Advice</button>`;
-    }
+  // ── Cobros ──
+  if(cobrosDay.length){
+    html+=`<div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.8px;color:var(--ok);margin-bottom:8px;display:flex;align-items:center;gap:6px;"><span>▲</span> Cobros · ${cobrosDay.length} entrada${cobrosDay.length>1?'s':''}</div>`;
+    cobrosDay.forEach(e=>{
+      const row=e.rowData; if(!row) return;
+      const idx=allRows.indexOf(row);
+      const isVencido=diff<0;
+      const bl=(row[COL.BL]||'—').trim();
+      const booking=(row[COL.BOOKING]||'—').trim();
+      const vessel=(row[COL.VESSEL]||'—').trim();
+      const port=(row[COL.PORT]||'—').trim();
+      const inv1=(row[COL.INVOICE_CLIENTE]||'').trim();
+      const amtStr=!isNaN(e.amount)?`USD ${e.amount.toLocaleString('es-AR',{maximumFractionDigits:0})}`:'';
+      const cardBorder=isVencido?'var(--danger)':'var(--ok)';
+      html+=`<div class="cf-event-card cobro-card${isVencido?' vencido':''}">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;">
+          <span style="font-size:10px;color:var(--text3);font-weight:600;text-transform:uppercase;">${isVencido?'🔴 Cobro vencido':'💰 Cobro estimado'}</span>
+          ${amtStr?`<span style="font-size:14px;font-weight:700;font-family:var(--mono);color:var(--ok);">${amtStr}</span>`:''}
+        </div>
+        <div class="cf-event-title">${e.customer}</div>
+        <div class="cf-event-meta">BL: ${bl}${inv1?' · Inv: '+inv1:''} · Negocio: ${e.negocio}</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:3px 12px;margin-bottom:10px;font-size:11px;font-family:var(--mono);color:var(--text3);">
+          <span>Vessel: <b style="color:var(--text2)">${vessel}</b></span>
+          <span>Puerto: <b style="color:var(--text2)">${port}</b></span>
+          <span>Booking: <b style="color:var(--text2)">${booking}</b></span>
+        </div>
+        <div class="cf-event-actions">
+          <button class="action-btn mail" onclick="closeDayDetail();openMailModal(${idx},'reclamo_cobro')">✉ Reclamo de cobro</button>
+        </div>
+      </div>`;
+    });
+  }
 
-    html += `<div class="cf-event-card ${cardCls}">
-      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;">
-        <span style="font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.5px;color:var(--text3);">${typeLabel}</span>
-        ${amtStr?`<span style="font-size:13px;font-weight:700;font-family:var(--mono);color:var(--text);">${amtStr}</span>`:''}
-      </div>
-      <div class="cf-event-title">${e.customer}</div>
-      <div class="cf-event-meta">BL: ${bl} · Negocio: ${negocio}${inv1?' · Inv: '+inv1:''}</div>
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:4px 12px;margin-bottom:10px;font-size:11px;font-family:var(--mono);">
-        <span style="color:var(--text3);">Vessel: <span style="color:var(--text2);">${vessel}</span></span>
-        <span style="color:var(--text3);">Puerto: <span style="color:var(--text2);">${port}</span></span>
-        <span style="color:var(--text3);">Booking: <span style="color:var(--text2);">${booking}</span></span>
-      </div>
-      <div class="cf-event-actions">${actions}</div>
-    </div>`;
-  });
+  // ── Pagos ──
+  if(pagosDay.length){
+    if(cobrosDay.length) html+=`<div style="height:1px;background:var(--border);margin:12px 0;"></div>`;
+    html+=`<div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.8px;color:var(--danger);margin-bottom:8px;display:flex;align-items:center;gap:6px;"><span>▼</span> Pagos · ${pagosDay.length} salida${pagosDay.length>1?'s':''}</div>`;
+    pagosDay.forEach(e=>{
+      const amtStr=!isNaN(e.amount)?`USD ${e.amount.toLocaleString('es-AR',{maximumFractionDigits:0})}`:'';
+      const fleteStr=!isNaN(e.montoFlete)&&e.montoFlete>0?`USD ${e.montoFlete.toLocaleString('es-AR',{maximumFractionDigits:0})}`:'—';
+      const courierStr=!isNaN(e.montoCourier)&&e.montoCourier>0?`USD ${e.montoCourier.toLocaleString('es-AR',{maximumFractionDigits:0})}`:'—';
+      html+=`<div class="cf-event-card" style="border-left:3px solid var(--danger);">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;">
+          <span style="font-size:10px;color:var(--text3);font-weight:600;text-transform:uppercase;">💸 Pago a forwarder</span>
+          ${amtStr?`<span style="font-size:14px;font-weight:700;font-family:var(--mono);color:var(--danger);">${amtStr}</span>`:''}
+        </div>
+        <div class="cf-event-title">${e.proveedor||'Forwarder'}</div>
+        <div class="cf-event-meta">BL: ${e.bl} · Cliente: ${e.customer} · Negocio: ${e.negocio}</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:3px 12px;margin-bottom:10px;font-size:11px;font-family:var(--mono);color:var(--text3);">
+          ${e.fcFlete?`<span>FC Flete: <b style="color:var(--text2)">${e.fcFlete}</b></span>`:''}
+          ${e.fcCourier?`<span>FC Courier: <b style="color:var(--text2)">${e.fcCourier}</b></span>`:''}
+          <span>Flete: <b style="color:var(--text2)">${fleteStr}</b></span>
+          ${!isNaN(e.montoCourier)&&e.montoCourier>0?`<span>Courier: <b style="color:var(--text2)">${courierStr}</b></span>`:''}
+        </div>
+      </div>`;
+    });
+  }
 
-  const diffLabel = diff === 0 ? 'Hoy' : diff < 0 ? `Hace ${Math.abs(diff)} días` : `En ${diff} días`;
-  document.getElementById('cf-detail-title').textContent = `${dateLabel} — ${diffLabel} · ${evts.length} evento${evts.length>1?'s':''}`;
-  document.getElementById('cf-detail-body').innerHTML = html;
+  // ETA mode
+  if(cfMode==='eta'){
+    cobrosDay.forEach(e=>{
+      const row=e.rowData; if(!row) return;
+      const idx=allRows.indexOf(row);
+      const bl=(row[COL.BL]||'—').trim();
+      const vessel=(row[COL.VESSEL]||'—').trim();
+      const port=(row[COL.PORT]||'—').trim();
+      const booking=(row[COL.BOOKING]||'—').trim();
+      const telex=(row[COL.TELEX]||'').trim().toUpperCase();
+      html+=`<div class="cf-event-card eta-card">
+        <div style="font-size:10px;color:var(--text3);font-weight:600;text-transform:uppercase;margin-bottom:4px;">🚢 ETA arribo</div>
+        <div class="cf-event-title">${e.customer}</div>
+        <div class="cf-event-meta">BL: ${bl} · Negocio: ${e.negocio}</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:3px 12px;margin-bottom:10px;font-size:11px;font-family:var(--mono);color:var(--text3);">
+          <span>Vessel: <b style="color:var(--text2)">${vessel}</b></span>
+          <span>Puerto: <b style="color:var(--text2)">${port}</b></span>
+          <span>Booking: <b style="color:var(--text2)">${booking}</b></span>
+        </div>
+        <div class="cf-event-actions">
+          ${telex!=='SI'?`<button class="action-btn write" onclick="closeDayDetail();openMailModal(${idx},'solicitar_liberacion')">🔓 Solicitar liberación</button>`:''}
+          <button class="action-btn mail" onclick="closeDayDetail();openMailModal(${idx},'reclamo_pago')">✉ Reclamo de pago</button>
+          <button class="action-btn mail" onclick="closeDayDetail();openMailModal(${idx},'shipment_advice')">📋 Shipment Advice</button>
+        </div>
+      </div>`;
+    });
+  }
+
+  const total = cobrosDay.length + pagosDay.length;
+  document.getElementById('cf-detail-title').textContent=`${dateLabel} — ${diffLabel} · ${total} evento${total>1?'s':''}`;
+  document.getElementById('cf-detail-body').innerHTML=html;
   document.getElementById('cf-detail-overlay').classList.remove('hidden');
 }
 
