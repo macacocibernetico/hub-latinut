@@ -574,7 +574,7 @@ button{font-family:var(--font);cursor:pointer;border:none;background:none;}
         <span class="nav-badge warn" id="badge-cobranza"></span>
       </div>
       <div class="nav-item" onclick="showView('cashflow')">
-        <span class="icon">📅</span> Cash Flow
+        <span class="icon">📅</span> Calendario
       </div>
       <div class="nav-item" onclick="showView('liberaciones')">
         <span class="icon">🔓</span> Liberaciones
@@ -759,7 +759,7 @@ function updateNegocioPill(){
     cargas: isBuz?'Cargas Buzaram':'Cargas AXT',
     nueva_carga: isBuz?'Nueva Carga Buzaram':'Nueva Carga',
     cobranza:'Cobranza',
-    cashflow:'Cash Flow',
+    cashflow:'Calendario',
     liberaciones:'Liberaciones',
     pagares:'Pagarés',
     log:'Log de acciones',
@@ -1434,7 +1434,7 @@ function showView(view){
   updateBottomNav(view);
   currentView=view;
   document.querySelectorAll('.nav-item').forEach(el=>el.classList.remove('active'));
-  const titles=window._viewTitles||{alertas:'Alertas',cargas:'Cargas AXT',nueva_carga:'Nueva Carga',cobranza:'Cobranza',cashflow:'Cash Flow',liberaciones:'Liberaciones',pagares:'Pagarés',log:'Log de acciones',config:'Configuración'};
+  const titles=window._viewTitles||{alertas:'Alertas',cargas:'Cargas AXT',nueva_carga:'Nueva Carga',cobranza:'Cobranza',cashflow:'Calendario',liberaciones:'Liberaciones',pagares:'Pagarés',log:'Log de acciones',config:'Configuración'};
   document.getElementById('view-title').textContent=titles[view]||view;
   document.querySelectorAll('.nav-item').forEach(el=>{if(el.getAttribute('onclick')?.includes(`'${view}'`))el.classList.add('active');});
   renderView(view);
@@ -3749,7 +3749,7 @@ function renderCashFlow(){
     daysHtml += `<div class="cf-day other-month"><div class="cf-day-num">${i}</div></div>`;
   }
 
-  const modeLabel = cfMode === 'cobros' ? 'cobros estimados' : 'ETAs de arribo';
+  const modeLabel = cfMode === 'cobros' ? 'cash flow (cobros y pagos)' : 'ETAs de arribo';
   document.getElementById('content').innerHTML = `
   <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:18px;flex-wrap:wrap;gap:10px;">
     <div>
@@ -3757,7 +3757,7 @@ function renderCashFlow(){
       <div style="font-size:11px;color:var(--text3);margin-top:2px;">Mostrando ${modeLabel}</div>
     </div>
     <div class="cf-toggle">
-      <button class="cf-toggle-btn${cfMode==='cobros'?' active':''}" onclick="setCFMode('cobros')">💰 Cobros</button>
+      <button class="cf-toggle-btn${cfMode==='cobros'?' active':''}" onclick="setCFMode('cobros')">💰 Cash Flow</button>
       <button class="cf-toggle-btn${cfMode==='eta'?' active':''}" onclick="setCFMode('eta')">🚢 ETA</button>
     </div>
   </div>
