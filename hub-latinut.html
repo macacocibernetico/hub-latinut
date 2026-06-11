@@ -704,9 +704,17 @@ function getBuzaramCfg(){
     appsScriptUrl: (cfg.buzaramAppsScriptUrl && cfg.buzaramAppsScriptUrl.trim()) ? cfg.buzaramAppsScriptUrl.trim() : 'https://script.google.com/a/macros/latinutsa.com/s/AKfycbyR88OXmMw4zC-INvs8kTI7vwtX4JdFDsMNA9IS0wpHJwpl4ypQk385y2lhgqiTVERR/exec',
     label: 'Buzaram',
     COL_FECHA_EST_COBRO: 51,  // AZ col 52 (0-based 51)
-    COL_FECHA_COBRO: 56,       // BE col 57 (0-based 56)
+    COL_FECHA_COBRO: 56,      // BE col 57 (0-based 56)
     ccFijo: 'yaelvaleria.arrua@newsan.com.ar',
     sinPagares: true,
+    // Pagos forwarder Buzaram: AV=47, AW=48, AX=49, AY=50
+    PAGO_FC_FLETE:   47,  // AV — número de factura
+    PAGO_PROVEEDOR:  48,  // AW — forwarder/proveedor
+    PAGO_MONTO:      49,  // AX — importe
+    PAGO_FECHA:      50,  // AY — fecha de pago
+    PAGO_FC_COURIER: null,
+    PAGO_MONTO_COURIER: null,
+    PAGO_TOTAL:      49,  // mismo que monto (no hay total separado)
   };
 }
 
@@ -721,6 +729,14 @@ function getNegocioConfig(){
     COL_FECHA_COBRO: COL.FECHA_COBRO,
     ccFijo: 'pberro@axtsolutions.com',
     sinPagares: false,
+    // Pagos forwarder AXT: AM=38, AN=39, AO=40, AP=41, AQ=42, AR=43, AS=44
+    PAGO_FC_FLETE:      COL.FC_FLETE,      // 38
+    PAGO_FC_COURIER:    COL.FC_COURIER,    // 39
+    PAGO_PROVEEDOR:     COL.PROVEEDOR_FLETE, // 40
+    PAGO_MONTO:         COL.MONTO_FLETE,   // 41
+    PAGO_MONTO_COURIER: COL.MONTO_COURIER, // 42
+    PAGO_TOTAL:         COL.TOTAL_PAGO,    // 43
+    PAGO_FECHA:         COL.FECHA_PAGO_FWD, // 44
   };
 }
 
@@ -3707,9 +3723,9 @@ function renderCashFlow(){
         if(!cobrosMap[k]) cobrosMap[k]=[];
         cobrosMap[k].push({customer, bl, negocio, amount: parseSheetNum(row[COL.TOTAL_CFR]), date:d, rowData:row, type:'cobro'});
       }
-      // Pagos (AM-AS) — solo AXT por ahora
-      const fechaPago = row[COL.FECHA_PAGO_FWD];
-      const totalPago = parseSheetNum(row[COL.TOTAL_PAGO]);
+      // Pagos forwarder — usa columnas del negocio activo
+      const fechaPago = row[nc.PAGO_FECHA];
+      const totalPago = parseSheetNum(row[nc.PAGO_TOTAL]);
       const dp = parseDate(fechaPago);
       if(dp && !isNaN(totalPago) && totalPago > 0){
         const k = dateKey(dp);
@@ -3717,11 +3733,11 @@ function renderCashFlow(){
         pagosMap[k].push({
           customer, bl, negocio,
           amount: totalPago,
-          montoFlete: parseSheetNum(row[COL.MONTO_FLETE]),
-          montoCourier: parseSheetNum(row[COL.MONTO_COURIER]),
-          fcFlete: (row[COL.FC_FLETE]||'').trim(),
-          fcCourier: (row[COL.FC_COURIER]||'').trim(),
-          proveedor: (row[COL.PROVEEDOR_FLETE]||'').trim(),
+          montoFlete:   parseSheetNum(row[nc.PAGO_MONTO]),
+          montoCourier: nc.PAGO_MONTO_COURIER!=null ? parseSheetNum(row[nc.PAGO_MONTO_COURIER]) : NaN,
+          fcFlete:   (row[nc.PAGO_FC_FLETE]||'').trim(),
+          fcCourier: nc.PAGO_FC_COURIER!=null ? (row[nc.PAGO_FC_COURIER]||'').trim() : '',
+          proveedor: (row[nc.PAGO_PROVEEDOR]||'').trim(),
           date: dp, rowData: row, type:'pago'
         });
       }
