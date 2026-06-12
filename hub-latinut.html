@@ -3762,26 +3762,36 @@ function renderCashFlow(){
   window._cfCobrosMap = cobrosMap;
   window._cfPagosMap  = pagosMap;
 
-  // ── Balance mensual ──
+  // ── Balance mensual (1 del mes hasta hoy) ──
   const firstOfMonth = new Date(cfYear, cfMonth, 1).getTime();
-  const lastOfMonth  = new Date(cfYear, cfMonth+1, 0, 23,59,59).getTime();
-  let mesEntradas = 0, mesSalidas = 0;
-  let mesCobrosList = [], mesPagosList = [];
+  const lastOfMonthFull = new Date(cfYear, cfMonth+1, 0, 23,59,59,999).getTime();
+  const isCurrentMonth = (cfYear === today.getFullYear() && cfMonth === today.getMonth());
+  const lastOfMonthPartial = isCurrentMonth ? todayMs + 86399999 : lastOfMonthFull;
+  const mesLabel2 = isCurrentMonth
+    ? `1 al ${today.getDate()} de ${today.toLocaleDateString('es-AR',{month:'long'})}`
+    : new Date(cfYear,cfMonth,1).toLocaleDateString('es-AR',{month:'long',year:'numeric'});
+  const mesLabelFull = new Date(cfYear,cfMonth,1).toLocaleDateString('es-AR',{month:'long',year:'numeric'});
+
+  let mesEntradas=0, mesSalidas=0;
+  let mesEntradasFull=0, mesSalidasFull=0;
   Object.values(cobrosMap).forEach(evts => evts.forEach(e => {
-    if(e.date.getTime()>=firstOfMonth && e.date.getTime()<=lastOfMonth && !isNaN(e.amount) && e.type==='cobro'){
-      mesEntradas+=e.amount; mesCobrosList.push(e);
+    if(!isNaN(e.amount) && e.type==='cobro'){
+      if(e.date.getTime()>=firstOfMonth && e.date.getTime()<=lastOfMonthPartial) mesEntradas+=e.amount;
+      if(e.date.getTime()>=firstOfMonth && e.date.getTime()<=lastOfMonthFull) mesEntradasFull+=e.amount;
     }
   }));
   Object.values(pagosMap).forEach(evts => evts.forEach(e => {
-    if(e.date.getTime()>=firstOfMonth && e.date.getTime()<=lastOfMonth && !isNaN(e.amount)){
-      mesSalidas+=e.amount; mesPagosList.push(e);
+    if(!isNaN(e.amount)){
+      if(e.date.getTime()>=firstOfMonth && e.date.getTime()<=lastOfMonthPartial) mesSalidas+=e.amount;
+      if(e.date.getTime()>=firstOfMonth && e.date.getTime()<=lastOfMonthFull) mesSalidasFull+=e.amount;
     }
   }));
-  // Debug: log all cobros in map with their parsed dates
-  console.log('[CF] cobrosMap keys:', Object.keys(cobrosMap).sort());
-  console.log('[CF] mes cobros:', mesCobrosList.map(e=>`${e.customer} ${e.date.toISOString().slice(0,10)} USD${e.amount}`));
-  console.log('[CF] mes pagos:', mesPagosList.map(e=>`${e.proveedor} ${e.date.toISOString().slice(0,10)} USD${e.amount}`));
-  const mesBalance = mesEntradas - mesSalidas;
+  window._cfMesFrom     = firstOfMonth;
+  window._cfMesTo       = lastOfMonthPartial;
+  window._cfMesFromFull = firstOfMonth;
+  window._cfMesToFull   = lastOfMonthFull;
+  const mesBalance     = mesEntradas - mesSalidas;
+  const mesBalanceFull = mesEntradasFull - mesSalidasFull;
 
   // ── Balance semana actual ──
   const dayOfWeek = today.getDay(); // 0=Dom
@@ -3839,39 +3849,56 @@ function renderCashFlow(){
 
   // Balance cards
   const balanceHtml = cfMode==='cobros' ? `
-  <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:20px;">
-    <div style="background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius-lg);padding:16px 18px;box-shadow:var(--shadow);cursor:pointer;" onclick="openRangeDetail('semana',null,'Esta semana')" title="Ver detalle">
-      <div style="font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.5px;color:var(--text3);margin-bottom:10px;display:flex;justify-content:space-between;align-items:center;">
-        <span>Balance esta semana</span><span style="color:var(--accent);font-size:11px;">Ver detalle →</span>
+  <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-bottom:20px;">
+    <div style="background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius-lg);padding:14px 16px;box-shadow:var(--shadow);cursor:pointer;" onclick="openRangeDetail('semana',null,'Esta semana')" title="Ver detalle">
+      <div style="font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.5px;color:var(--text3);margin-bottom:8px;display:flex;justify-content:space-between;align-items:center;">
+        <span>Esta semana</span><span style="color:var(--accent);font-size:10px;">Ver →</span>
       </div>
-      <div style="display:flex;justify-content:space-between;margin-bottom:6px;">
-        <span style="font-size:12px;color:var(--text3);">▲ Cobros</span>
-        <span style="font-size:12px;font-family:var(--mono);color:var(--ok);font-weight:600;">${fmtUSD(semEntradas)}</span>
+      <div style="display:flex;justify-content:space-between;margin-bottom:4px;">
+        <span style="font-size:11px;color:var(--text3);">▲ Cobros</span>
+        <span style="font-size:11px;font-family:var(--mono);color:var(--ok);font-weight:600;">${fmtUSD(semEntradas)}</span>
       </div>
-      <div style="display:flex;justify-content:space-between;margin-bottom:10px;">
-        <span style="font-size:12px;color:var(--text3);">▼ Pagos</span>
-        <span style="font-size:12px;font-family:var(--mono);color:var(--danger);font-weight:600;">${fmtUSD(semSalidas)}</span>
+      <div style="display:flex;justify-content:space-between;margin-bottom:8px;">
+        <span style="font-size:11px;color:var(--text3);">▼ Pagos</span>
+        <span style="font-size:11px;font-family:var(--mono);color:var(--danger);font-weight:600;">${fmtUSD(semSalidas)}</span>
       </div>
-      <div style="border-top:1px solid var(--border);padding-top:8px;display:flex;justify-content:space-between;align-items:center;">
-        <span style="font-size:12px;font-weight:600;color:var(--text);">Balance neto</span>
-        <span style="font-size:16px;font-weight:700;font-family:var(--mono);color:${balColor(semBalance)};">${balSign(semBalance)}${fmtUSD(semBalance)}</span>
+      <div style="border-top:1px solid var(--border);padding-top:7px;display:flex;justify-content:space-between;align-items:center;">
+        <span style="font-size:11px;font-weight:600;color:var(--text);">Neto</span>
+        <span style="font-size:15px;font-weight:700;font-family:var(--mono);color:${balColor(semBalance)};">${balSign(semBalance)}${fmtUSD(semBalance)}</span>
       </div>
     </div>
-    <div style="background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius-lg);padding:16px 18px;box-shadow:var(--shadow);cursor:pointer;" onclick="openRangeDetail('mes',null,mesLabel)" title="Ver detalle del mes">
-      <div style="font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.5px;color:var(--text3);margin-bottom:10px;display:flex;justify-content:space-between;align-items:center;">
-        <span style="text-transform:capitalize;">${mesLabel}</span><span style="color:var(--accent);font-size:11px;">Ver detalle →</span>
+    <div style="background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius-lg);padding:14px 16px;box-shadow:var(--shadow);cursor:pointer;" onclick="openRangeDetail('mes',null,'${mesLabel2}')" title="Ver detalle">
+      <div style="font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.5px;color:var(--text3);margin-bottom:8px;display:flex;justify-content:space-between;align-items:center;">
+        <span style="text-transform:capitalize;">${mesLabel2}</span><span style="color:var(--accent);font-size:10px;">Ver →</span>
       </div>
-      <div style="display:flex;justify-content:space-between;margin-bottom:6px;">
-        <span style="font-size:12px;color:var(--text3);">▲ Cobros</span>
-        <span style="font-size:12px;font-family:var(--mono);color:var(--ok);font-weight:600;">${fmtUSD(mesEntradas)}</span>
+      <div style="display:flex;justify-content:space-between;margin-bottom:4px;">
+        <span style="font-size:11px;color:var(--text3);">▲ Cobros</span>
+        <span style="font-size:11px;font-family:var(--mono);color:var(--ok);font-weight:600;">${fmtUSD(mesEntradas)}</span>
       </div>
-      <div style="display:flex;justify-content:space-between;margin-bottom:10px;">
-        <span style="font-size:12px;color:var(--text3);">▼ Pagos</span>
-        <span style="font-size:12px;font-family:var(--mono);color:var(--danger);font-weight:600;">${fmtUSD(mesSalidas)}</span>
+      <div style="display:flex;justify-content:space-between;margin-bottom:8px;">
+        <span style="font-size:11px;color:var(--text3);">▼ Pagos</span>
+        <span style="font-size:11px;font-family:var(--mono);color:var(--danger);font-weight:600;">${fmtUSD(mesSalidas)}</span>
       </div>
-      <div style="border-top:1px solid var(--border);padding-top:8px;display:flex;justify-content:space-between;align-items:center;">
-        <span style="font-size:12px;font-weight:600;color:var(--text);">Balance neto</span>
-        <span style="font-size:16px;font-weight:700;font-family:var(--mono);color:${balColor(mesBalance)};">${balSign(mesBalance)}${fmtUSD(mesBalance)}</span>
+      <div style="border-top:1px solid var(--border);padding-top:7px;display:flex;justify-content:space-between;align-items:center;">
+        <span style="font-size:11px;font-weight:600;color:var(--text);">Neto</span>
+        <span style="font-size:15px;font-weight:700;font-family:var(--mono);color:${balColor(mesBalance)};">${balSign(mesBalance)}${fmtUSD(mesBalance)}</span>
+      </div>
+    </div>
+    <div style="background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius-lg);padding:14px 16px;box-shadow:var(--shadow);cursor:pointer;${isCurrentMonth?'border-style:dashed;':''}" onclick="openRangeDetail('mesfull',null,'${mesLabelFull} (proyección)')" title="Ver proyección del mes completo">
+      <div style="font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.5px;color:var(--text3);margin-bottom:8px;display:flex;justify-content:space-between;align-items:center;">
+        <span style="text-transform:capitalize;">${isCurrentMonth?'Proyección '+mesLabelFull:mesLabelFull}</span><span style="color:var(--accent);font-size:10px;">Ver →</span>
+      </div>
+      <div style="display:flex;justify-content:space-between;margin-bottom:4px;">
+        <span style="font-size:11px;color:var(--text3);">▲ Cobros</span>
+        <span style="font-size:11px;font-family:var(--mono);color:var(--ok);font-weight:600;">${fmtUSD(mesEntradasFull)}</span>
+      </div>
+      <div style="display:flex;justify-content:space-between;margin-bottom:8px;">
+        <span style="font-size:11px;color:var(--text3);">▼ Pagos</span>
+        <span style="font-size:11px;font-family:var(--mono);color:var(--danger);font-weight:600;">${fmtUSD(mesSalidasFull)}</span>
+      </div>
+      <div style="border-top:1px solid var(--border);padding-top:7px;display:flex;justify-content:space-between;align-items:center;">
+        <span style="font-size:11px;font-weight:600;color:var(--text);">Neto</span>
+        <span style="font-size:15px;font-weight:700;font-family:var(--mono);color:${balColor(mesBalanceFull)};">${balSign(mesBalanceFull)}${fmtUSD(mesBalanceFull)}</span>
       </div>
     </div>
   </div>` : '';
@@ -3976,8 +4003,11 @@ function openRangeDetail(type, bandKey, title){
     const sabado = new Date(domingo); sabado.setDate(domingo.getDate()+6); sabado.setHours(23,59,59,999);
     fromMs = domingo.getTime(); toMs = sabado.getTime();
   } else if(type==='mes'){
-    fromMs = new Date(cfYear, cfMonth, 1).getTime();
-    toMs   = new Date(cfYear, cfMonth+1, 0, 23,59,59,999).getTime();
+    fromMs = window._cfMesFrom || new Date(cfYear, cfMonth, 1).getTime();
+    toMs   = window._cfMesTo   || new Date(cfYear, cfMonth+1, 0, 23,59,59,999).getTime();
+  } else if(type==='mesfull'){
+    fromMs = window._cfMesFromFull || new Date(cfYear, cfMonth, 1).getTime();
+    toMs   = window._cfMesToFull   || new Date(cfYear, cfMonth+1, 0, 23,59,59,999).getTime();
   } else if(type==='band'){
     const bands = {
       vencido:{min:-999,max:-1}, hoy:{min:0,max:0},
