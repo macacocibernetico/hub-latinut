@@ -3784,15 +3784,15 @@ function renderCashFlow(){
   const mesBalance = mesEntradas - mesSalidas;
 
   // ── Balance semana actual ──
-  const dayOfWeek = today.getDay();
-  const semLunes = new Date(today); semLunes.setDate(today.getDate() - (dayOfWeek===0?6:dayOfWeek-1)); semLunes.setHours(0,0,0,0);
-  const semDomingo = new Date(semLunes); semDomingo.setDate(semLunes.getDate()+6); semDomingo.setHours(23,59,59);
+  const dayOfWeek = today.getDay(); // 0=Dom
+  const semDomingo = new Date(today); semDomingo.setDate(today.getDate()-dayOfWeek); semDomingo.setHours(0,0,0,0);
+  const semSabado = new Date(semDomingo); semSabado.setDate(semDomingo.getDate()+6); semSabado.setHours(23,59,59);
   let semEntradas=0, semSalidas=0;
   Object.values(cobrosMap).forEach(evts => evts.forEach(e => {
-    if(e.date>=semLunes && e.date<=semDomingo && !isNaN(e.amount) && e.type==='cobro') semEntradas+=e.amount;
+    if(e.date>=semDomingo && e.date<=semSabado && !isNaN(e.amount) && e.type==='cobro') semEntradas+=e.amount;
   }));
   Object.values(pagosMap).forEach(evts => evts.forEach(e => {
-    if(e.date>=semLunes && e.date<=semDomingo && !isNaN(e.amount)) semSalidas+=e.amount;
+    if(e.date>=semDomingo && e.date<=semSabado && !isNaN(e.amount)) semSalidas+=e.amount;
   }));
   const semBalance = semEntradas - semSalidas;
 
@@ -3971,10 +3971,10 @@ function openRangeDetail(type, bandKey, title){
   // Determine date range
   let fromMs, toMs;
   if(type==='semana'){
-    const dow = today.getDay();
-    const lunes = new Date(today); lunes.setDate(today.getDate()-(dow===0?6:dow-1)); lunes.setHours(0,0,0,0);
-    const domingo = new Date(lunes); domingo.setDate(lunes.getDate()+6); domingo.setHours(23,59,59,999);
-    fromMs = lunes.getTime(); toMs = domingo.getTime();
+    const dow = today.getDay(); // 0=Dom, 6=Sab
+    const domingo = new Date(today); domingo.setDate(today.getDate()-dow); domingo.setHours(0,0,0,0);
+    const sabado = new Date(domingo); sabado.setDate(domingo.getDate()+6); sabado.setHours(23,59,59,999);
+    fromMs = domingo.getTime(); toMs = sabado.getTime();
   } else if(type==='mes'){
     fromMs = new Date(cfYear, cfMonth, 1).getTime();
     toMs   = new Date(cfYear, cfMonth+1, 0, 23,59,59,999).getTime();
