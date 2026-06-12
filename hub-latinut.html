@@ -3745,7 +3745,7 @@ function renderCashFlow(){
         if(existing){
           if(!isNaN(amount)) existing.amount += amount;
           if(invServ && !existing.invServList.includes(invServ)) existing.invServList.push(invServ);
-          existing.bls.push(bl);
+          if(!existing.bls.includes(bl)) existing.bls.push(bl);
           existing.rows.push(row);
         } else {
           cobrosMap[k].push({
