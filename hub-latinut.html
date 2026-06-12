@@ -524,6 +524,7 @@ button{font-family:var(--font);cursor:pointer;border:none;background:none;}
 .cf-chip.cobro-vencido{background:#ffebee;color:#c62828;border:1px solid #ffcdd2;}
 .cf-chip.cobro-warn{background:#fff8e1;color:#e65100;border:1px solid #ffe082;}
 .cf-chip.pago{background:#fff0f0;color:#c62828;border:1px solid #ffcdd2;}
+.cf-chip.pago-ok{background:#f1f8e9;color:#558b2f;border:1px solid #dcedc8;text-decoration:line-through;opacity:.7;}
 .cf-more{font-size:11px;color:var(--accent);font-family:var(--mono);margin-top:3px;font-weight:600;padding-left:2px;}
 /* DAY DETAIL PANEL */
 .cf-detail-overlay{position:fixed;inset:0;background:rgba(0,0,0,.35);z-index:150;display:flex;align-items:center;justify-content:center;backdrop-filter:blur(6px);}
@@ -703,19 +704,21 @@ function getBuzaramCfg(){
     sheetName: 'CARGAS',
     appsScriptUrl: (cfg.buzaramAppsScriptUrl && cfg.buzaramAppsScriptUrl.trim()) ? cfg.buzaramAppsScriptUrl.trim() : 'https://script.google.com/a/macros/latinutsa.com/s/AKfycbyR88OXmMw4zC-INvs8kTI7vwtX4JdFDsMNA9IS0wpHJwpl4ypQk385y2lhgqiTVERR/exec',
     label: 'Buzaram',
-    COL_FECHA_EST_COBRO: 51,  // AZ col 52 (0-based 51)
-    COL_FECHA_COBRO: 56,      // BE col 57 (0-based 56)
+    COL_FECHA_EST_COBRO: 52,  // BA
+    COL_FECHA_COBRO: 57,      // BF
     COL_TOTAL_CFR: 32,        // AG — Total CFR + FC servicios Buzaram
     ccFijo: 'yaelvaleria.arrua@newsan.com.ar',
     sinPagares: true,
-    // Pagos forwarder Buzaram: AV=47, AW=48, AX=49, AY=50
-    PAGO_FC_FLETE:   47,  // AV — número de factura
-    PAGO_PROVEEDOR:  48,  // AW — forwarder/proveedor
-    PAGO_MONTO:      49,  // AX — importe
-    PAGO_FECHA:      50,  // AY — fecha de pago
-    PAGO_FC_COURIER: null,
+    // Pagos forwarder Buzaram: AV=47(FC), AW=48(proveedor), AX=49(importe)
+    // AY=50 fecha estimada pago, AZ=51 fecha real pago
+    PAGO_FC_FLETE:      47,
+    PAGO_PROVEEDOR:     48,
+    PAGO_MONTO:         49,
+    PAGO_FECHA:         50,  // AY — fecha estimada
+    PAGO_FECHA_REAL:    51,  // AZ — fecha real
+    PAGO_FC_COURIER:    null,
     PAGO_MONTO_COURIER: null,
-    PAGO_TOTAL:      49,  // mismo que monto (no hay total separado)
+    PAGO_TOTAL:         49,
   };
 }
 
@@ -731,14 +734,16 @@ function getNegocioConfig(){
     COL_TOTAL_CFR: COL.TOTAL_CFR,
     ccFijo: 'pberro@axtsolutions.com',
     sinPagares: false,
-    // Pagos forwarder AXT: AM=38, AN=39, AO=40, AP=41, AQ=42, AR=43, AS=44
-    PAGO_FC_FLETE:      COL.FC_FLETE,      // 38
-    PAGO_FC_COURIER:    COL.FC_COURIER,    // 39
+    // Pagos forwarder AXT: AM=38, AN=39, AO=40, AP=41, AQ=42, AR=43
+    // AS=44 fecha estimada pago, AT=45 fecha real pago
+    PAGO_FC_FLETE:      COL.FC_FLETE,        // 38
+    PAGO_FC_COURIER:    COL.FC_COURIER,      // 39
     PAGO_PROVEEDOR:     COL.PROVEEDOR_FLETE, // 40
-    PAGO_MONTO:         COL.MONTO_FLETE,   // 41
-    PAGO_MONTO_COURIER: COL.MONTO_COURIER, // 42
-    PAGO_TOTAL:         COL.TOTAL_PAGO,    // 43
-    PAGO_FECHA:         COL.FECHA_PAGO_FWD, // 44
+    PAGO_MONTO:         COL.MONTO_FLETE,     // 41
+    PAGO_MONTO_COURIER: COL.MONTO_COURIER,   // 42
+    PAGO_TOTAL:         COL.TOTAL_PAGO,      // 43
+    PAGO_FECHA:         COL.FECHA_PAGO_FWD,  // 44 — estimada
+    PAGO_FECHA_REAL:    COL.FECHA_PAGO_FWD_REAL, // 45 — real
   };
 }
 
@@ -929,11 +934,14 @@ const COL = {
   DOCUMENTOS:14, LOMBARD:15, CLIENTE_ENV:16, TELEX:17, EXPORTER:18,
   CUSTOMER:23, INVOICE_CLIENTE:24, TOTAL_CFR:32, INCOTERM:29,
   INVOICE_FC_SERV:30,
-  // Pagos (AM=38, AN=39, AO=40, AP=41, AQ=42, AR=43, AS=44)
+  // Pagos forwarder AXT: AM=38, AN=39, AO=40, AP=41, AQ=42, AR=43
   FC_FLETE:38, FC_COURIER:39, PROVEEDOR_FLETE:40,
-  MONTO_FLETE:41, MONTO_COURIER:42, TOTAL_PAGO:43, FECHA_PAGO_FWD:44,
-  PAGARE_ENVIADO:45, PAGARE_FIRMADO:46,
-  FECHA_EST_COBRO:47, FECHA_COBRO:48
+  MONTO_FLETE:41, MONTO_COURIER:42, TOTAL_PAGO:43,
+  // AS=44 fecha pago estimada flete, AT=45 fecha pago real flete
+  FECHA_PAGO_FWD:44, FECHA_PAGO_FWD_REAL:45,
+  // AU=46, AV=47, AW=48, AX=49
+  PAGARE_ENVIADO:46, PAGARE_FIRMADO:47,
+  FECHA_EST_COBRO:48, FECHA_COBRO:49
 };
 
 // ─── UTILS ───────────────────────────────────────────────────────────────────
@@ -3748,8 +3756,25 @@ function renderCashFlow(){
       const customer = (row[COL.CUSTOMER]||'—').trim();
       const bl       = (row[COL.BL]||'').trim();
       const negocio  = (row[COL.NEGOCIO]||'').trim();
-      const fechaPago = row[nc.PAGO_FECHA];
+      const fechaPagoEst  = (row[nc.PAGO_FECHA]||'').trim();
+      const fechaPagoReal = (row[nc.PAGO_FECHA_REAL]||'').trim();
       const totalPago = parseSheetNum(row[nc.PAGO_TOTAL]);
+
+      // Determinar fecha a usar y si está pagado
+      let fechaPago, pagado;
+      if(fechaPagoEst.toUpperCase() === 'SI' && fechaPagoReal){
+        // Pagado — usar fecha real
+        fechaPago = fechaPagoReal;
+        pagado = true;
+      } else if(fechaPagoEst && fechaPagoEst.toUpperCase() !== 'SI'){
+        // Pendiente — usar fecha estimada
+        fechaPago = fechaPagoEst;
+        pagado = false;
+      } else {
+        fechaPago = null;
+        pagado = false;
+      }
+
       const dp = parseDate(fechaPago);
       if(dp && !isNaN(totalPago) && totalPago > 0){
         const k = dateKey(dp);
@@ -3762,6 +3787,7 @@ function renderCashFlow(){
           fcFlete:   (row[nc.PAGO_FC_FLETE]||'').trim(),
           fcCourier: nc.PAGO_FC_COURIER!=null ? (row[nc.PAGO_FC_COURIER]||'').trim() : '',
           proveedor: (row[nc.PAGO_PROVEEDOR]||'').trim(),
+          pagado, fechaReal: fechaPagoReal,
           date: dp, rowData: row, type:'pago'
         });
       }
@@ -3948,9 +3974,9 @@ function renderCashFlow(){
       // Pagos chips (separador visual)
       if(pagosDay.length>0 && cobrosDay.length>0) chipsHtml+=`<div style="height:3px;margin:2px 0;border-top:1px dashed var(--border2);"></div>`;
       pagosDay.slice(0,2).forEach(e=>{
-        const cls='pago';
         const amt = !isNaN(e.amount)?` · ${Math.round(e.amount/1000)}k`:'';
-        chipsHtml+=`<div class="cf-chip pago">${(e.proveedor||e.customer).substring(0,9)}${amt}</div>`;
+        const chipCls = e.pagado ? 'pago-ok' : 'pago';
+        chipsHtml+=`<div class="cf-chip ${chipCls}">${(e.proveedor||e.customer).substring(0,9)}${amt}</div>`;
       });
       if(pagosDay.length>2) chipsHtml+=`<div class="cf-more">+${pagosDay.length-2} pagos</div>`;
     } else {
@@ -4103,7 +4129,10 @@ function openRangeDetail(type, bandKey, title){
       html += `<div class="cf-event-card" style="border-left:3px solid var(--danger);">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:3px;">
           <div class="cf-event-title" style="margin:0;">${e.proveedor||'Forwarder'}</div>
-          ${!isNaN(e.amount)?`<span style="font-size:13px;font-weight:700;font-family:var(--mono);color:var(--danger);">USD ${e.amount.toLocaleString('es-AR',{maximumFractionDigits:0})}</span>`:''}
+          <div style="display:flex;align-items:center;gap:8px;">
+            <span style="font-size:10px;font-weight:600;padding:2px 8px;border-radius:4px;${e.pagado?'background:#f1f8e9;color:#558b2f;':'background:#fff0f0;color:#c62828;'}">${e.pagado?'✓ Pagado':'Pendiente'}</span>
+            ${!isNaN(e.amount)?`<span style="font-size:13px;font-weight:700;font-family:var(--mono);color:var(--danger);">USD ${e.amount.toLocaleString('es-AR',{maximumFractionDigits:0})}</span>`:''}
+          </div>
         </div>
         <div class="cf-event-meta">BL: ${e.bl} · Cliente: ${e.customer} · <span style="color:var(--text2);">${whenStr} — ${diffStr}</span></div>
         ${e.fcFlete?`<div style="font-size:11px;font-family:var(--mono);color:var(--text3);">FC: ${e.fcFlete}${e.fcCourier?' · Courier: '+e.fcCourier:''}</div>`:''}
