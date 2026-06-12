@@ -809,7 +809,7 @@ function updateNegocioPill(){
   };
 }
 
-let allRows = [], currentView = 'alertas', modalData = {}, currentLang = 'en';
+let allRows = [], allRowsAll = [], currentView = 'alertas', modalData = {}, currentLang = 'en';
 let contacts = []; // Cache de contactos del HUB sheet
 let logRows = []; // Cache del LOG del HUB sheet
 
@@ -1218,11 +1218,13 @@ async function loadData(){
     if(!r.ok) throw new Error(`HTTP ${r.status}`);
     const data=await r.json();
     const rawRows=(data.values||[]);
-    allRows=rawRows.map((row,i)=>{row._sheetRow=i+4;return row;}).filter(row=>{
+    const validRows = rawRows.map((row,i)=>{row._sheetRow=i+4;return row;}).filter(row=>{
       const neg=(row[COL.NEGOCIO]||'').toString().trim().toUpperCase();
       if(neg==='TOTAL'||neg==='TOTALES') return false;
-      return (row[COL.NEGOCIO]||row[COL.PRODUCT]||row[COL.CUSTOMER])&&!isClosed(row);
+      return !!(row[COL.NEGOCIO]||row[COL.PRODUCT]||row[COL.CUSTOMER]);
     });
+    allRowsAll = validRows; // todas, incluyendo cerradas — para pagos
+    allRows = validRows.filter(row=>!isClosed(row)); // solo activas
     await loadContacts();
     await loadLog();
     setSheetStatus('ok',`${allRows.length} cargas activas`);
@@ -3721,7 +3723,7 @@ function renderCashFlow(){
     const negocio  = (row[COL.NEGOCIO]||'').trim();
 
     if(cfMode === 'cobros'){
-      // Cobros
+      // Cobros — solo cargas activas (allRows)
       const fechaCobro = row[nc.COL_FECHA_EST_COBRO];
       const d = parseDate(fechaCobro);
       if(d){
@@ -3729,7 +3731,23 @@ function renderCashFlow(){
         if(!cobrosMap[k]) cobrosMap[k]=[];
         cobrosMap[k].push({customer, bl, negocio, amount: parseSheetNum(row[nc.COL_TOTAL_CFR]), date:d, rowData:row, type:'cobro'});
       }
-      // Pagos forwarder — usa columnas del negocio activo
+    } else {
+      // ETA
+      const d = parseDate(row[COL.ETA]);
+      if(d){
+        const k = dateKey(d);
+        if(!cobrosMap[k]) cobrosMap[k]=[];
+        cobrosMap[k].push({customer, bl, negocio, amount:0, date:d, rowData:row, type:'eta'});
+      }
+    }
+  });
+
+  // Pagos — usar allRowsAll (incluye cargas cerradas)
+  if(cfMode === 'cobros'){
+    allRowsAll.forEach(row => {
+      const customer = (row[COL.CUSTOMER]||'—').trim();
+      const bl       = (row[COL.BL]||'').trim();
+      const negocio  = (row[COL.NEGOCIO]||'').trim();
       const fechaPago = row[nc.PAGO_FECHA];
       const totalPago = parseSheetNum(row[nc.PAGO_TOTAL]);
       const dp = parseDate(fechaPago);
@@ -3747,16 +3765,8 @@ function renderCashFlow(){
           date: dp, rowData: row, type:'pago'
         });
       }
-    } else {
-      // Modo ETA — solo cobrosMap se usa para chips
-      const d = parseDate(row[COL.ETA]);
-      if(d){
-        const k = dateKey(d);
-        if(!cobrosMap[k]) cobrosMap[k]=[];
-        cobrosMap[k].push({customer, bl, negocio, amount:0, date:d, rowData:row, type:'eta'});
-      }
-    }
-  });
+    });
+  }
 
   // Guardar para openDayDetail
   window._cfCobrosMap = cobrosMap;
