@@ -3729,23 +3729,40 @@ function renderCashFlow(){
     const customer = (row[COL.CUSTOMER]||'—').trim();
     const bl       = (row[COL.BL]||'').trim();
     const negocio  = (row[COL.NEGOCIO]||'').trim();
+    const invoice  = (row[24]||'').trim();   // Y — FC cliente
+    const invServ  = (row[30]||'').trim();   // AE — FC servicios
 
     if(cfMode === 'cobros'){
-      // Cobros — solo cargas activas (allRows)
       const fechaCobro = row[nc.COL_FECHA_EST_COBRO];
       const d = parseDate(fechaCobro);
       if(d){
         const k = dateKey(d);
         if(!cobrosMap[k]) cobrosMap[k]=[];
-        cobrosMap[k].push({customer, bl, negocio, amount: parseSheetNum(row[nc.COL_TOTAL_CFR]), date:d, rowData:row, type:'cobro'});
+        const amount = parseSheetNum(row[nc.COL_TOTAL_CFR]);
+        // Agrupar por invoice + fecha
+        const groupKey = invoice || bl;
+        const existing = cobrosMap[k].find(e => e.groupKey === groupKey);
+        if(existing){
+          if(!isNaN(amount)) existing.amount += amount;
+          if(invServ && !existing.invServList.includes(invServ)) existing.invServList.push(invServ);
+          existing.bls.push(bl);
+          existing.rows.push(row);
+        } else {
+          cobrosMap[k].push({
+            customer, bl, negocio, invoice, groupKey,
+            invServList: invServ ? [invServ] : [],
+            bls: [bl], rows: [row],
+            amount: isNaN(amount)?0:amount,
+            date:d, rowData:row, type:'cobro'
+          });
+        }
       }
     } else {
-      // ETA
       const d = parseDate(row[COL.ETA]);
       if(d){
         const k = dateKey(d);
         if(!cobrosMap[k]) cobrosMap[k]=[];
-        cobrosMap[k].push({customer, bl, negocio, amount:0, date:d, rowData:row, type:'eta'});
+        cobrosMap[k].push({customer, bl, negocio, invoice, invServList:[], bls:[bl], rows:[row], amount:0, date:d, rowData:row, type:'eta'});
       }
     }
   });
@@ -3756,40 +3773,43 @@ function renderCashFlow(){
       const customer = (row[COL.CUSTOMER]||'—').trim();
       const bl       = (row[COL.BL]||'').trim();
       const negocio  = (row[COL.NEGOCIO]||'').trim();
+      const invoice  = (row[24]||'').trim();
       const fechaPagoEst  = (row[nc.PAGO_FECHA]||'').trim();
       const fechaPagoReal = (row[nc.PAGO_FECHA_REAL]||'').trim();
       const totalPago = parseSheetNum(row[nc.PAGO_TOTAL]);
 
-      // Determinar fecha a usar y si está pagado
       let fechaPago, pagado;
       if(fechaPagoEst.toUpperCase() === 'SI' && fechaPagoReal){
-        // Pagado — usar fecha real
-        fechaPago = fechaPagoReal;
-        pagado = true;
+        fechaPago = fechaPagoReal; pagado = true;
       } else if(fechaPagoEst && fechaPagoEst.toUpperCase() !== 'SI'){
-        // Pendiente — usar fecha estimada
-        fechaPago = fechaPagoEst;
-        pagado = false;
+        fechaPago = fechaPagoEst; pagado = false;
       } else {
-        fechaPago = null;
-        pagado = false;
+        fechaPago = null; pagado = false;
       }
 
       const dp = parseDate(fechaPago);
       if(dp && !isNaN(totalPago) && totalPago > 0){
         const k = dateKey(dp);
         if(!pagosMap[k]) pagosMap[k]=[];
-        pagosMap[k].push({
-          customer, bl, negocio,
-          amount: totalPago,
-          montoFlete:   parseSheetNum(row[nc.PAGO_MONTO]),
-          montoCourier: nc.PAGO_MONTO_COURIER!=null ? parseSheetNum(row[nc.PAGO_MONTO_COURIER]) : NaN,
-          fcFlete:   (row[nc.PAGO_FC_FLETE]||'').trim(),
-          fcCourier: nc.PAGO_FC_COURIER!=null ? (row[nc.PAGO_FC_COURIER]||'').trim() : '',
-          proveedor: (row[nc.PAGO_PROVEEDOR]||'').trim(),
-          pagado, fechaReal: fechaPagoReal,
-          date: dp, rowData: row, type:'pago'
-        });
+        const groupKey = (invoice||bl)+'_pago';
+        const existing = pagosMap[k].find(e => e.groupKey === groupKey && e.pagado === pagado);
+        if(existing){
+          existing.amount += totalPago;
+          existing.bls.push(bl);
+        } else {
+          pagosMap[k].push({
+            customer, bl, negocio, invoice, groupKey,
+            bls: [bl],
+            amount: totalPago,
+            montoFlete:   parseSheetNum(row[nc.PAGO_MONTO]),
+            montoCourier: nc.PAGO_MONTO_COURIER!=null ? parseSheetNum(row[nc.PAGO_MONTO_COURIER]) : NaN,
+            fcFlete:   (row[nc.PAGO_FC_FLETE]||'').trim(),
+            fcCourier: nc.PAGO_FC_COURIER!=null ? (row[nc.PAGO_FC_COURIER]||'').trim() : '',
+            proveedor: (row[nc.PAGO_PROVEEDOR]||'').trim(),
+            pagado, fechaReal: fechaPagoReal,
+            date: dp, rowData: row, type:'pago'
+          });
+        }
       }
     });
   }
@@ -4180,20 +4200,21 @@ function openDayDetail(key, dateLabel){
       const row=e.rowData; if(!row) return;
       const idx=allRows.indexOf(row);
       const isVencido=diff<0;
-      const bl=(row[COL.BL]||'—').trim();
       const booking=(row[COL.BOOKING]||'—').trim();
       const vessel=(row[COL.VESSEL]||'—').trim();
       const port=(row[COL.PORT]||'—').trim();
-      const inv1=(row[COL.INVOICE_CLIENTE]||'').trim();
+      const inv1 = e.invoice || (row[COL.INVOICE_CLIENTE]||'').trim();
+      const invServStr = (e.invServList||[]).filter(Boolean).join(', ');
+      const blsStr = (e.bls||[e.bl||(row[COL.BL]||'')]).join(', ');
       const amtStr=!isNaN(e.amount)?`USD ${e.amount.toLocaleString('es-AR',{maximumFractionDigits:0})}`:'';
-      const cardBorder=isVencido?'var(--danger)':'var(--ok)';
       html+=`<div class="cf-event-card cobro-card${isVencido?' vencido':''}">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;">
           <span style="font-size:10px;color:var(--text3);font-weight:600;text-transform:uppercase;">${isVencido?'🔴 Cobro vencido':'💰 Cobro estimado'}</span>
           ${amtStr?`<span style="font-size:14px;font-weight:700;font-family:var(--mono);color:var(--ok);">${amtStr}</span>`:''}
         </div>
         <div class="cf-event-title">${e.customer}</div>
-        <div class="cf-event-meta">BL: ${bl}${inv1?' · Inv: '+inv1:''} · Negocio: ${e.negocio}</div>
+        <div class="cf-event-meta">${inv1?`FC Cliente: ${inv1}`:''}${invServStr?` · FC Serv: ${invServStr}`:''} · ${e.negocio}</div>
+        <div style="font-size:11px;font-family:var(--mono);color:var(--text3);margin-bottom:8px;">BL: ${blsStr}</div>
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:3px 12px;margin-bottom:10px;font-size:11px;font-family:var(--mono);color:var(--text3);">
           <span>Vessel: <b style="color:var(--text2)">${vessel}</b></span>
           <span>Puerto: <b style="color:var(--text2)">${port}</b></span>
@@ -4220,7 +4241,8 @@ function openDayDetail(key, dateLabel){
           ${amtStr?`<span style="font-size:14px;font-weight:700;font-family:var(--mono);color:var(--danger);">${amtStr}</span>`:''}
         </div>
         <div class="cf-event-title">${e.proveedor||'Forwarder'}</div>
-        <div class="cf-event-meta">BL: ${e.bl} · Cliente: ${e.customer} · Negocio: ${e.negocio}</div>
+        <div class="cf-event-meta">${e.invoice?`FC Cliente: ${e.invoice} · `:''}Cliente: ${e.customer} · ${e.negocio}</div>
+        <div style="font-size:11px;font-family:var(--mono);color:var(--text3);margin-bottom:8px;">BL: ${(e.bls||[e.bl]).join(', ')}</div>
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:3px 12px;margin-bottom:10px;font-size:11px;font-family:var(--mono);color:var(--text3);">
           ${e.fcFlete?`<span>FC Flete: <b style="color:var(--text2)">${e.fcFlete}</b></span>`:''}
           ${e.fcCourier?`<span>FC Courier: <b style="color:var(--text2)">${e.fcCourier}</b></span>`:''}
