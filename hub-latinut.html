@@ -700,7 +700,7 @@ const CFG_KEY = 'hub_latinut_config';
 let cfg = {...{sheetId:'',sheetName:'Cargas',apiKey:'',clientId:'',alerta_dias:10,hubSheetId:'11r3m9KuXWFRrSjdHf1an2xQDjNwnXhadWk5WbShuLms',appsScriptUrl:'https://script.google.com/macros/s/AKfycbyUy0QaexIIqToupRj1_5zgnFpm5Wyycnt7SLClZMk_zLfhm6CfzLpNr8EgT98aSOY4/exec',claudeApiKey:'',buzaramSheetId:'1vQaNeo595C3aK1KAF75UsOkbA5LNUMm16WoEpP9Z69w',buzaramAppsScriptUrl:'https://script.google.com/a/macros/latinutsa.com/s/AKfycbyR88OXmMw4zC-INvs8kTI7vwtX4JdFDsMNA9IS0wpHJwpl4ypQk385y2lhgqiTVERR/exec'},...JSON.parse(localStorage.getItem(CFG_KEY)||'{}')};
 
 // ─── OAUTH ───────────────────────────────────────────────────────────────────
-const SCOPES = 'https://www.googleapis.com/auth/spreadsheets https://www.googleapis.com/auth/gmail.compose';
+const SCOPES = 'https://www.googleapis.com/auth/spreadsheets https://www.googleapis.com/auth/gmail.compose https://www.googleapis.com/auth/drive.file';
 let tokenClient = null;
 let accessToken = null;
 // ─── NEGOCIO ACTIVO ──────────────────────────────────────────────────────────
@@ -1861,6 +1861,10 @@ function renderCargas(showAll, sort){
       <td><button class="row-action" onclick="openMailModal(${idx},'reclamo_pago')">✉</button></td>
       <td><button class="row-action" onclick="renderEditCarga(${idx})">✎ Editar</button></td>
       <td><button class="row-action" onclick="solicitarFC(${idx})" title="Solicitud FC a AXT" style="color:var(--accent);border-color:var(--accent);">📄 FC</button></td>
+      <td onclick="event.stopPropagation()" style="white-space:nowrap;">
+        <button class="row-action" onclick="triggerDriveUpload(${idx})" title="Subir documentos al Drive" style="color:#4285f4;border-color:#4285f4;">📎 Subir</button>
+        <button class="row-action" onclick="driveOpenFolder(${idx})" title="Abrir carpeta en Drive" style="margin-left:4px;">📁</button>
+      </td>
     </tr>`;
   });
 
@@ -4448,6 +4452,99 @@ function openDayDetail(key, dateLabel){
   document.getElementById('cf-detail-title').textContent=`${dateLabel} — ${diffLabel} · ${total} evento${total>1?'s':''}`;
   document.getElementById('cf-detail-body').innerHTML=html;
   document.getElementById('cf-detail-overlay').classList.remove('hidden');
+}
+
+// ─── GOOGLE DRIVE ────────────────────────────────────────────────────────────
+const DRIVE_ROOT_ID = '1BaXJJxy2dn8T4zqSxmlxlxRuD9WCL8km'; // Brokerage Maní
+
+async function driveGetOrCreateFolder(name, parentId){
+  // Buscar si ya existe
+  const q = encodeURIComponent(`name='${name}' and '${parentId}' in parents and mimeType='application/vnd.google-apps.folder' and trashed=false`);
+  const r = await fetch(`https://www.googleapis.com/drive/v3/files?q=${q}&fields=files(id,name)`, {
+    headers: { 'Authorization': `Bearer ${accessToken}` }
+  });
+  const data = await r.json();
+  if(data.files && data.files.length > 0) return data.files[0].id;
+  // Crear si no existe
+  const cr = await fetch('https://www.googleapis.com/drive/v3/files', {
+    method: 'POST',
+    headers: { 'Authorization': `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name, mimeType: 'application/vnd.google-apps.folder', parents: [parentId] })
+  });
+  const folder = await cr.json();
+  return folder.id;
+}
+
+async function driveGetFolderForRow(row){
+  const nc = getNegocioConfig();
+  const negocioActual = negocioActivo;
+  // Estructura: Brokerage Maní / [Proveedor] / [Negocio] / [Producto] / [Año] / [Lote]
+  const proveedor = negocioActual === 'buzaram' ? 'Nutrin' : 'Argen Peanuts';
+  const negocioLabel = negocioActual === 'buzaram' ? 'Buzaram' : 'AXT Solutions';
+  const producto = (row[COL.PRODUCT] || 'Sin producto').trim();
+  const etd = parseDate(row[COL.ETD]);
+  const anio = etd ? String(etd.getFullYear()) : String(new Date().getFullYear());
+  const lote = (row[COL.LOTS] || row[COL.NEGOCIO] || 'Sin lote').trim();
+
+  let folderId = DRIVE_ROOT_ID;
+  for(const name of [proveedor, negocioLabel, producto, anio, lote]){
+    folderId = await driveGetOrCreateFolder(name, folderId);
+  }
+  return folderId;
+}
+
+async function driveUploadFile(file, folderId){
+  const metadata = { name: file.name, parents: [folderId] };
+  const form = new FormData();
+  form.append('metadata', new Blob([JSON.stringify(metadata)], { type: 'application/json' }));
+  form.append('file', file);
+  const r = await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id,name,webViewLink', {
+    method: 'POST',
+    headers: { 'Authorization': `Bearer ${accessToken}` },
+    body: form
+  });
+  return await r.json();
+}
+
+async function driveOpenFolder(rowIdx){
+  const row = allRows[rowIdx];
+  if(!row){ alert('Carga no encontrada'); return; }
+  if(!accessToken){ alert('Conectate con Google primero'); return; }
+  showToast('Buscando carpeta en Drive...', 'info');
+  try {
+    const folderId = await driveGetFolderForRow(row);
+    window.open(`https://drive.google.com/drive/folders/${folderId}`, '_blank');
+  } catch(e) {
+    showToast('Error al acceder al Drive: ' + e.message, 'err');
+  }
+}
+
+async function driveUploadForRow(rowIdx, files){
+  const row = allRows[rowIdx];
+  if(!row || !files.length) return;
+  if(!accessToken){ alert('Conectate con Google primero'); return; }
+  showToast(`Subiendo ${files.length} archivo${files.length>1?'s':''}...`, 'info');
+  try {
+    const folderId = await driveGetFolderForRow(row);
+    let ok = 0;
+    for(const file of files){
+      const result = await driveUploadFile(file, folderId);
+      if(result.id) ok++;
+    }
+    showToast(`✓ ${ok} archivo${ok>1?'s':''} subido${ok>1?'s':''} al Drive`, 'ok');
+    logAction('drive_upload', row, `${ok} archivo(s) subido(s)`);
+  } catch(e) {
+    showToast('Error al subir: ' + e.message, 'err');
+  }
+}
+
+function triggerDriveUpload(rowIdx){
+  const input = document.createElement('input');
+  input.type = 'file';
+  input.multiple = true;
+  input.accept = '.pdf,.jpg,.jpeg,.png,.xlsx,.xls,.docx,.doc,.msg,.eml';
+  input.onchange = e => driveUploadForRow(rowIdx, Array.from(e.target.files));
+  input.click();
 }
 
 // ─── KEYBOARD SHORTCUTS ──────────────────────────────────────────────────────
