@@ -484,7 +484,15 @@ button{font-family:var(--font);cursor:pointer;border:none;background:none;}
   body{font-size:14px;}
 }
 
-/* CASH FLOW CALENDAR */
+/* CASH FLOW FILTERS */
+.cf-filter-wrap{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:16px;align-items:center;}
+.cf-filter-label{font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.5px;color:var(--text3);margin-right:4px;}
+.cf-filter-pill{font-size:11px;font-family:var(--mono);padding:4px 10px;border-radius:20px;border:1px solid var(--border);background:var(--bg3);color:var(--text3);cursor:pointer;transition:all .15s;font-weight:500;}
+.cf-filter-pill:hover{border-color:var(--accent);color:var(--text);}
+.cf-filter-pill.active.cliente{background:#e8f5e9;color:#2e7d32;border-color:#c8e6c9;font-weight:600;}
+.cf-filter-pill.active.proveedor{background:#ffebee;color:#c62828;border-color:#ffcdd2;font-weight:600;}
+.cf-filter-clear{font-size:10px;color:var(--accent);cursor:pointer;padding:4px 8px;font-weight:600;margin-left:4px;}
+.cf-filter-clear:hover{text-decoration:underline;}
 .cf-toggle{display:flex;background:var(--bg3);border:1px solid var(--border);border-radius:var(--radius);padding:3px;gap:3px;width:fit-content;}
 .cf-toggle-btn{padding:5px 18px;border-radius:7px;font-size:12px;font-weight:600;cursor:pointer;border:none;background:transparent;color:var(--text3);transition:all .15s;font-family:var(--font);}
 .cf-toggle-btn.active{background:var(--bg2);color:var(--accent);box-shadow:var(--shadow);}
@@ -752,6 +760,7 @@ function setNegocio(n){
   negocioActivo = n;
   localStorage.setItem('hub_negocio', n);
   cargasPage = 0;
+  cfFiltros = [];
   window._alertFilter = 'all';
   window._alertSubFilter = 'all';
   currentView = 'alertas';
@@ -3713,6 +3722,7 @@ function renderCargasMobileCards(rows, pagedRows){
 let cfMode = 'cobros'; // 'cobros' | 'eta'
 let cfYear = new Date().getFullYear();
 let cfMonth = new Date().getMonth(); // 0-based
+let cfFiltros = []; // array de nombres seleccionados (vacío = todos)
 
 function renderCashFlow(){
   const today = new Date();
@@ -3723,12 +3733,28 @@ function renderCashFlow(){
   // ── Helpers ──
   const dateKey = d => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
 
+  // ── Extraer todos los clientes y proveedores únicos para los filtros ──
+  const clientesSet = new Set();
+  const proveedoresSet = new Set();
+  allRows.forEach(r => { if(r[COL.CUSTOMER]) clientesSet.add(r[COL.CUSTOMER].trim()); });
+  allRowsAll.forEach(r => { const p=(r[nc.PAGO_PROVEEDOR]||'').trim(); if(p&&p!=='-') proveedoresSet.add(p); });
+
+  // ── Aplicar filtro ──
+  const filtroActivo = cfFiltros.length > 0;
+  const rowFiltrada = row => {
+    if(!filtroActivo) return true;
+    const customer = (row[COL.CUSTOMER]||'').trim();
+    const proveedor = (row[nc.PAGO_PROVEEDOR]||'').trim();
+    return cfFiltros.includes(customer) || cfFiltros.includes(proveedor);
+  };
+
   // ── Cobros map ──
   const cobrosMap = {};
   // ── Pagos map ──
   const pagosMap  = {};
 
   allRows.forEach(row => {
+    if(!rowFiltrada(row)) return;
     const customer = (row[COL.CUSTOMER]||'—').trim();
     const bl       = (row[COL.BL]||'').trim();
     const negocio  = (row[COL.NEGOCIO]||'').trim();
@@ -3775,6 +3801,7 @@ function renderCashFlow(){
   // Pagos — usar allRowsAll (incluye cargas cerradas)
   if(cfMode === 'cobros'){
     allRowsAll.forEach(row => {
+      if(!rowFiltrada(row)) return;
       const customer = (row[COL.CUSTOMER]||'—').trim();
       const bl       = (row[COL.BL]||'').trim();
       const negocio  = (row[COL.NEGOCIO]||'').trim();
@@ -4026,11 +4053,26 @@ function renderCashFlow(){
   const padEnd=totalCells%7===0?0:7-(totalCells%7);
   for(let i=1;i<=padEnd;i++) daysHtml+=`<div class="cf-day other-month"><div class="cf-day-num">${i}</div></div>`;
 
+  // ── Filtros HTML ──
+  const todosNombres = [
+    ...[...clientesSet].sort().map(n=>({n, tipo:'cliente'})),
+    ...[...proveedoresSet].sort().map(n=>({n, tipo:'proveedor'}))
+  ];
+  const filtrosHtml = todosNombres.length ? `
+  <div class="cf-filter-wrap">
+    <span class="cf-filter-label">Filtrar:</span>
+    ${todosNombres.map(({n,tipo})=>`
+      <span class="cf-filter-pill ${cfFiltros.includes(n)?'active '+tipo:''}" onclick="toggleCFFiltro('${n.replace(/'/g,"\\'")}')">
+        ${tipo==='cliente'?'▲':'▼'} ${n}
+      </span>`).join('')}
+    ${filtroActivo?`<span class="cf-filter-clear" onclick="clearCFFiltros()">✕ Limpiar filtros</span>`:''}
+  </div>` : '';
+
   const modeLabel = cfMode==='cobros'?'cash flow — cobros y pagos':'ETAs de arribo';
   document.getElementById('content').innerHTML=`
-  <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:18px;flex-wrap:wrap;gap:10px;">
+  <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;flex-wrap:wrap;gap:10px;">
     <div>
-      <div style="font-size:15px;font-weight:600;color:var(--text);">Calendario — ${label}</div>
+      <div style="font-size:15px;font-weight:600;color:var(--text);">Calendario — ${label}${filtroActivo?` <span style="font-size:11px;color:var(--accent);font-weight:400;">(${cfFiltros.length} filtro${cfFiltros.length>1?'s':''})</span>`:''}</div>
       <div style="font-size:11px;color:var(--text3);margin-top:2px;">${modeLabel}</div>
     </div>
     <div class="cf-toggle">
@@ -4038,7 +4080,7 @@ function renderCashFlow(){
       <button class="cf-toggle-btn${cfMode==='eta'?' active':''}" onclick="setCFMode('eta')">🚢 ETA</button>
     </div>
   </div>
-  <div class="cf-bands">${bandsHtml}</div>
+  ${filtrosHtml}
   ${balanceHtml}
   <div class="cf-calendar-wrap">
     <div class="cf-cal-header">
@@ -4169,6 +4211,18 @@ function openRangeDetail(type, bandKey, title){
   document.getElementById('cf-detail-title').textContent = title;
   document.getElementById('cf-detail-body').innerHTML = html;
   document.getElementById('cf-detail-overlay').classList.remove('hidden');
+}
+
+function toggleCFFiltro(nombre){
+  const idx = cfFiltros.indexOf(nombre);
+  if(idx === -1) cfFiltros.push(nombre);
+  else cfFiltros.splice(idx, 1);
+  renderCashFlow();
+}
+
+function clearCFFiltros(){
+  cfFiltros = [];
+  renderCashFlow();
 }
 
 function setCFMode(mode){
