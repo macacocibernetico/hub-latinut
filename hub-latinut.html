@@ -3791,18 +3791,20 @@ function renderCashFlow(){
         const amount = parseSheetNum(row[nc.COL_TOTAL_CFR]);
         const fechaCobroReal = (row[nc.COL_FECHA_COBRO]||'').trim();
         const cobrado = fechaCobroReal !== '' && fechaCobroReal.toUpperCase() !== 'SI';
-        // Agrupar por invoice + fecha
+        const fcFlete = (row[nc.PAGO_FC_FLETE]||'').trim();
         const groupKey = invoice || bl;
         const existing = cobrosMap[k].find(e => e.groupKey === groupKey);
         if(existing){
           if(!isNaN(amount)) existing.amount += amount;
           if(invServ && !existing.invServList.includes(invServ)) existing.invServList.push(invServ);
           if(!existing.bls.includes(bl)) existing.bls.push(bl);
+          if(fcFlete && !existing.fcFleteList.includes(fcFlete)) existing.fcFleteList.push(fcFlete);
           existing.rows.push(row);
         } else {
           cobrosMap[k].push({
             customer, bl, negocio, invoice, groupKey, cobrado,
             invServList: invServ ? [invServ] : [],
+            fcFleteList: fcFlete ? [fcFlete] : [],
             bls: [bl], rows: [row],
             amount: isNaN(amount)?0:amount,
             date:d, rowData:row, type:'cobro'
@@ -4320,7 +4322,8 @@ function openDayDetail(key, dateLabel){
       const port=(row[COL.PORT]||'—').trim();
       const inv1 = e.invoice || (row[COL.INVOICE_CLIENTE]||'').trim();
       const invServStr = (e.invServList||[]).filter(Boolean).join(', ');
-      const blsStr = (e.bls||[e.bl||(row[COL.BL]||'')]).join(', ');
+      const fcFleteStr = (e.fcFleteList||[]).filter(Boolean).join(', ');
+      const blsStr = (e.bls||[e.bl||(row[COL.BL]||'')]).join(' · ');
       const amtStr=!isNaN(e.amount)?`USD ${e.amount.toLocaleString('es-AR',{maximumFractionDigits:0})}`:'';
       html+=`<div class="cf-event-card cobro-card${isVencido?' vencido':''}">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;">
@@ -4329,7 +4332,8 @@ function openDayDetail(key, dateLabel){
         </div>
         <div class="cf-event-title">${e.customer}</div>
         <div class="cf-event-meta">${inv1?`FC Cliente: ${inv1}`:''}${invServStr?` · FC Serv: ${invServStr}`:''} · ${e.negocio}</div>
-        <div style="font-size:11px;font-family:var(--mono);color:var(--text3);margin-bottom:8px;">BL: ${blsStr}</div>
+        <div style="font-size:11px;font-family:var(--mono);color:var(--text3);margin-bottom:4px;">BL: ${blsStr}</div>
+        ${fcFleteStr?`<div style="font-size:11px;font-family:var(--mono);color:var(--text3);margin-bottom:8px;">FC Flete: ${fcFleteStr}</div>`:'<div style="margin-bottom:8px;"></div>'}
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:3px 12px;margin-bottom:10px;font-size:11px;font-family:var(--mono);color:var(--text3);">
           <span>Vessel: <b style="color:var(--text2)">${vessel}</b></span>
           <span>Puerto: <b style="color:var(--text2)">${port}</b></span>
