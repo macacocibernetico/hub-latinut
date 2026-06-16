@@ -762,6 +762,8 @@ function setNegocio(n){
   cargasPage = 0;
   cfFiltros = [];
   cfFiltroEntidades = new Set();
+  cfFiltroClientes   = new Set();
+  cfFiltroForwarders = new Set();
   window._alertFilter = 'all';
   window._alertSubFilter = 'all';
   currentView = 'alertas';
@@ -3724,7 +3726,9 @@ let cfMode = 'cobros'; // 'cobros' | 'eta'
 let cfYear = new Date().getFullYear();
 let cfMonth = new Date().getMonth(); // 0-based
 let cfFiltros = []; // ya no usado
-let cfFiltroEntidades = new Set(); // multi-select
+let cfFiltroEntidades = new Set(); // ya no usado
+let cfFiltroClientes   = new Set();
+let cfFiltroForwarders = new Set();
 
 function renderCashFlow(){
   const today = new Date();
@@ -3742,13 +3746,19 @@ function renderCashFlow(){
   allRowsAll.forEach(r => { const p=(r[nc.PAGO_PROVEEDOR]||'').trim(); if(p&&p!=='-'&&p!=='—') proveedoresSet.add(p); });
 
   // ── Aplicar filtros ──
-  const filtroActivo = cfFiltroEntidades.size > 0;
+  const hasFiltroCliente   = cfFiltroClientes.size > 0;
+  const hasFiltroForwarder = cfFiltroForwarders.size > 0;
 
-  const rowMatchEntidad = row => {
-    if(!filtroActivo) return true;
-    const customer  = (row[COL.CUSTOMER]||'').trim();
-    const proveedor = (row[nc.PAGO_PROVEEDOR]||'').trim();
-    return cfFiltroEntidades.has(customer) || cfFiltroEntidades.has(proveedor);
+  // Cobros: filtrar por cliente seleccionado
+  const rowMatchCobro = row => {
+    if(!hasFiltroCliente) return true;
+    return cfFiltroClientes.has((row[COL.CUSTOMER]||'').trim());
+  };
+
+  // Pagos: filtrar por forwarder seleccionado
+  const rowMatchPago = row => {
+    if(!hasFiltroForwarder) return true;
+    return cfFiltroForwarders.has((row[nc.PAGO_PROVEEDOR]||'').trim());
   };
 
   const cobroMatchEstado = e => true;
@@ -3761,7 +3771,7 @@ function renderCashFlow(){
   const pagosMap  = {};
 
   allRows.forEach(row => {
-    if(!rowMatchEntidad(row)) return;
+    if(!rowMatchCobro(row)) return;
     const customer = (row[COL.CUSTOMER]||'—').trim();
     const bl       = (row[COL.BL]||'').trim();
     const negocio  = (row[COL.NEGOCIO]||'').trim();
@@ -3810,7 +3820,7 @@ function renderCashFlow(){
   // Pagos — usar allRowsAll (incluye cargas cerradas)
   if(cfMode === 'cobros'){
     allRowsAll.forEach(row => {
-      if(!rowMatchEntidad(row)) return;
+      if(!rowMatchPago(row)) return;
       const customer = (row[COL.CUSTOMER]||'—').trim();
       const bl       = (row[COL.BL]||'').trim();
       const negocio  = (row[COL.NEGOCIO]||'').trim();
@@ -4069,30 +4079,46 @@ function renderCashFlow(){
   for(let i=1;i<=padEnd;i++) daysHtml+=`<div class="cf-day other-month"><div class="cf-day-num">${i}</div></div>`;
 
   // ── Filtros HTML ──
-  const hasFiltro = cfFiltroEntidades.size > 0;
+  const hasFiltro = hasFiltroCliente || hasFiltroForwarder;
 
-  // Pills multi-select para entidades
-  const allEntidades = [
-    ...[...clientesSet].sort().map(n=>({n, tipo:'cliente'})),
-    ...[...proveedoresSet].sort().map(n=>({n, tipo:'proveedor'}))
-  ];
+  // Dropdown items con checkmark
+  const mkItems = (set, items, tipo) => items.sort().map(n => {
+    const active = set.has(n);
+    const fn = tipo==='cliente'?'cfToggleCliente':'cfToggleForwarder';
+    return `<div onclick="${fn}('${n.replace(/'/g,"\'")}")" style="display:flex;align-items:center;gap:8px;padding:8px 14px;cursor:pointer;transition:background .1s;font-size:12px;${active?'background:var(--bg3);font-weight:600;':''}" onmouseover="this.style.background='var(--bg3)'" onmouseout="this.style.background='${active?'var(--bg3)':'transparent'}'">
+      <span style="width:16px;height:16px;border-radius:4px;border:1.5px solid ${active?(tipo==='cliente'?'#2e7d32':'#c62828'):'var(--border2)'};background:${active?(tipo==='cliente'?'#e8f5e9':'#ffebee'):'transparent'};display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:10px;">${active?'✓':''}</span>
+      <span style="color:${active?(tipo==='cliente'?'#2e7d32':'#c62828'):'var(--text)'}">${n}</span>
+    </div>`;
+  }).join('');
 
-  const filtrosHtml = allEntidades.length ? `
-  <div class="cf-filters" style="flex-direction:column;align-items:flex-start;gap:6px;">
-    <div style="font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.5px;color:var(--text3);">
-      Filtrar por entidad ${hasFiltro?`<span style="color:var(--accent);font-weight:400;">(${cfFiltroEntidades.size} seleccionado${cfFiltroEntidades.size>1?'s':''})</span>`:''}
+  const clientesItems  = mkItems(cfFiltroClientes,  [...clientesSet],   'cliente');
+  const forwItems      = mkItems(cfFiltroForwarders, [...proveedoresSet],'forwarder');
+
+  const filtrosHtml = `
+  <div style="display:flex;gap:10px;margin-bottom:16px;flex-wrap:wrap;align-items:flex-start;">
+    <div style="position:relative;">
+      <button onclick="cfDropdown('clientes')" style="background:var(--bg3);border:1px solid ${hasFiltroCliente?'#2e7d32':'var(--border)'};border-radius:8px;padding:7px 14px;font-size:12px;font-weight:600;cursor:pointer;font-family:var(--font);color:${hasFiltroCliente?'#2e7d32':'var(--text)'};display:flex;align-items:center;gap:6px;">
+        ▲ Clientes ${hasFiltroCliente?`<span style="background:#e8f5e9;color:#2e7d32;border-radius:10px;padding:1px 7px;font-size:10px;">${cfFiltroClientes.size}</span>`:''}
+        <span style="font-size:10px;color:var(--text3);">▾</span>
+      </button>
+      <div id="dd-clientes" style="display:none;position:absolute;top:calc(100% + 4px);left:0;background:var(--bg2);border:1px solid var(--border);border-radius:10px;min-width:200px;max-height:280px;overflow-y:auto;z-index:200;box-shadow:0 8px 24px rgba(0,0,0,.12);">
+        ${clientesItems||'<div style="padding:12px 14px;font-size:12px;color:var(--text3);">Sin clientes</div>'}
+        ${hasFiltroCliente?`<div onclick="cfClearClientes()" style="padding:8px 14px;font-size:11px;color:var(--accent);cursor:pointer;border-top:1px solid var(--border);font-weight:600;">✕ Limpiar selección</div>`:''}
+      </div>
     </div>
-    <div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;">
-      ${allEntidades.map(({n,tipo})=>{
-        const active = cfFiltroEntidades.has(n);
-        const bg = active ? (tipo==='cliente'?'#e8f5e9':'#ffebee') : 'var(--bg3)';
-        const color = active ? (tipo==='cliente'?'#2e7d32':'#c62828') : 'var(--text3)';
-        const border = active ? (tipo==='cliente'?'#c8e6c9':'#ffcdd2') : 'var(--border)';
-        return `<span style="font-size:11px;font-family:var(--mono);padding:4px 10px;border-radius:20px;border:1px solid ${border};background:${bg};color:${color};cursor:pointer;font-weight:${active?'600':'400'};" onclick="cfToggleEntidad('${n.replace(/'/g,"\'")}')">${tipo==='cliente'?'▲':'▼'} ${n}</span>`;
-      }).join('')}
-      ${hasFiltro?`<span style="font-size:11px;color:var(--accent);cursor:pointer;font-weight:600;padding:4px 8px;" onclick="cfClearFiltros()">✕ Limpiar</span>`:''}
+    <div style="position:relative;">
+      <button onclick="cfDropdown('forwarders')" style="background:var(--bg3);border:1px solid ${hasFiltroForwarder?'#c62828':'var(--border)'};border-radius:8px;padding:7px 14px;font-size:12px;font-weight:600;cursor:pointer;font-family:var(--font);color:${hasFiltroForwarder?'#c62828':'var(--text)'};display:flex;align-items:center;gap:6px;">
+        ▼ Forwarders ${hasFiltroForwarder?`<span style="background:#ffebee;color:#c62828;border-radius:10px;padding:1px 7px;font-size:10px;">${cfFiltroForwarders.size}</span>`:''}
+        <span style="font-size:10px;color:var(--text3);">▾</span>
+      </button>
+      <div id="dd-forwarders" style="display:none;position:absolute;top:calc(100% + 4px);left:0;background:var(--bg2);border:1px solid var(--border);border-radius:10px;min-width:200px;max-height:280px;overflow-y:auto;z-index:200;box-shadow:0 8px 24px rgba(0,0,0,.12);">
+        ${forwItems||'<div style="padding:12px 14px;font-size:12px;color:var(--text3);">Sin forwarders</div>'}
+        ${hasFiltroForwarder?`<div onclick="cfClearForwarders()" style="padding:8px 14px;font-size:11px;color:var(--accent);cursor:pointer;border-top:1px solid var(--border);font-weight:600;">✕ Limpiar selección</div>`:''}
+      </div>
     </div>
-  </div>` : '';
+    ${hasFiltro?`<button onclick="cfClearFiltros()" style="background:transparent;border:1px solid var(--border);border-radius:8px;padding:7px 12px;font-size:11px;font-weight:600;cursor:pointer;font-family:var(--font);color:var(--text3);align-self:flex-start;">✕ Limpiar todo</button>`:''}
+  </div>`;
+
 
   const modeLabel = cfMode==='cobros'?'cash flow — cobros y pagos':'ETAs de arribo';
   document.getElementById('content').innerHTML=`
@@ -4239,18 +4265,44 @@ function openRangeDetail(type, bandKey, title){
   document.getElementById('cf-detail-overlay').classList.remove('hidden');
 }
 
-function cfToggleEntidad(nombre){
-  if(cfFiltroEntidades.has(nombre)) cfFiltroEntidades.delete(nombre);
-  else cfFiltroEntidades.add(nombre);
+function cfDropdown(id){
+  const dd = document.getElementById('dd-'+id);
+  if(!dd) return;
+  const other = id==='clientes'?'dd-forwarders':'dd-clientes';
+  const otherEl = document.getElementById(other);
+  if(otherEl) otherEl.style.display='none';
+  dd.style.display = dd.style.display==='none'?'block':'none';
+}
+
+document.addEventListener('click', e => {
+  if(!e.target.closest('[onclick*="cfDropdown"]') && !e.target.closest('#dd-clientes') && !e.target.closest('#dd-forwarders')){
+    ['dd-clientes','dd-forwarders'].forEach(id => { const el=document.getElementById(id); if(el) el.style.display='none'; });
+  }
+});
+
+function cfToggleCliente(n){
+  if(cfFiltroClientes.has(n)) cfFiltroClientes.delete(n);
+  else cfFiltroClientes.add(n);
   renderCashFlow();
 }
+
+function cfToggleForwarder(n){
+  if(cfFiltroForwarders.has(n)) cfFiltroForwarders.delete(n);
+  else cfFiltroForwarders.add(n);
+  renderCashFlow();
+}
+
+function cfClearClientes(){ cfFiltroClientes = new Set(); renderCashFlow(); }
+function cfClearForwarders(){ cfFiltroForwarders = new Set(); renderCashFlow(); }
 
 function cfClearFiltros(){
-  cfFiltroEntidades = new Set();
+  cfFiltroClientes   = new Set();
+  cfFiltroForwarders = new Set();
   renderCashFlow();
 }
 
-function cfSetFiltro(tipo, valor){ if(tipo==='entidad') cfToggleEntidad(valor); }
+function cfToggleEntidad(n){ cfToggleCliente(n); }
+function cfSetFiltro(){}
 
 function setCFMode(mode){
   renderCashFlow();
