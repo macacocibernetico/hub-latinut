@@ -761,9 +761,7 @@ function setNegocio(n){
   localStorage.setItem('hub_negocio', n);
   cargasPage = 0;
   cfFiltros = [];
-  cfFiltroEntidad = '';
-  cfFiltroEstadoCobro = 'todos';
-  cfFiltroEstadoPago = 'todos';
+  cfFiltroEntidades = new Set();
   window._alertFilter = 'all';
   window._alertSubFilter = 'all';
   currentView = 'alertas';
@@ -3726,9 +3724,7 @@ let cfMode = 'cobros'; // 'cobros' | 'eta'
 let cfYear = new Date().getFullYear();
 let cfMonth = new Date().getMonth(); // 0-based
 let cfFiltros = []; // ya no usado
-let cfFiltroEntidad = ''; // nombre del cliente/forwarder seleccionado
-let cfFiltroEstadoCobro = 'todos'; // 'todos' | 'por_cobrar' | 'cobrado'
-let cfFiltroEstadoPago = 'todos'; // 'todos' | 'por_pagar' | 'pagado'
+let cfFiltroEntidades = new Set(); // multi-select
 
 function renderCashFlow(){
   const today = new Date();
@@ -3746,28 +3742,18 @@ function renderCashFlow(){
   allRowsAll.forEach(r => { const p=(r[nc.PAGO_PROVEEDOR]||'').trim(); if(p&&p!=='-'&&p!=='—') proveedoresSet.add(p); });
 
   // ── Aplicar filtros ──
-  const filtroActivo = cfFiltroEntidad || cfFiltroEstadoCobro!=='todos' || cfFiltroEstadoPago!=='todos';
+  const filtroActivo = cfFiltroEntidades.size > 0;
 
   const rowMatchEntidad = row => {
-    if(!cfFiltroEntidad) return true;
-    const customer = (row[COL.CUSTOMER]||'').trim();
+    if(!filtroActivo) return true;
+    const customer  = (row[COL.CUSTOMER]||'').trim();
     const proveedor = (row[nc.PAGO_PROVEEDOR]||'').trim();
-    return customer === cfFiltroEntidad || proveedor === cfFiltroEntidad;
+    return cfFiltroEntidades.has(customer) || cfFiltroEntidades.has(proveedor);
   };
 
-  const cobroMatchEstado = e => {
-    if(cfFiltroEstadoCobro === 'todos') return true;
-    if(cfFiltroEstadoCobro === 'cobrado') return e.cobrado;
-    if(cfFiltroEstadoCobro === 'por_cobrar') return !e.cobrado;
-    return true;
-  };
+  const cobroMatchEstado = e => true;
+  const pagoMatchEstado  = e => true;
 
-  const pagoMatchEstado = e => {
-    if(cfFiltroEstadoPago === 'todos') return true;
-    if(cfFiltroEstadoPago === 'pagado') return e.pagado;
-    if(cfFiltroEstadoPago === 'por_pagar') return !e.pagado;
-    return true;
-  };
 
   // ── Cobros map ──
   const cobrosMap = {};
@@ -4083,42 +4069,30 @@ function renderCashFlow(){
   for(let i=1;i<=padEnd;i++) daysHtml+=`<div class="cf-day other-month"><div class="cf-day-num">${i}</div></div>`;
 
   // ── Filtros HTML ──
-  const entidadesOpts = [
-    '<option value="">Todos</option>',
-    '<optgroup label="▲ Clientes">',
-    ...[...clientesSet].sort().map(n=>`<option value="${n}" ${cfFiltroEntidad===n?'selected':''}>${n}</option>`),
-    '</optgroup>',
-    '<optgroup label="▼ Forwarders">',
-    ...[...proveedoresSet].sort().map(n=>`<option value="${n}" ${cfFiltroEntidad===n?'selected':''}>${n}</option>`),
-    '</optgroup>'
-  ].join('');
+  const hasFiltro = cfFiltroEntidades.size > 0;
 
-  const hasFiltro = cfFiltroEntidad || cfFiltroEstadoCobro!=='todos' || cfFiltroEstadoPago!=='todos';
+  // Pills multi-select para entidades
+  const allEntidades = [
+    ...[...clientesSet].sort().map(n=>({n, tipo:'cliente'})),
+    ...[...proveedoresSet].sort().map(n=>({n, tipo:'proveedor'}))
+  ];
 
-  const filtrosHtml = `
-  <div class="cf-filters">
-    <div class="cf-filter-group">
-      <label>Entidad</label>
-      <select class="cf-filter-select${cfFiltroEntidad?' active':''}" onchange="cfSetFiltro('entidad',this.value)">${entidadesOpts}</select>
+  const filtrosHtml = allEntidades.length ? `
+  <div class="cf-filters" style="flex-direction:column;align-items:flex-start;gap:6px;">
+    <div style="font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.5px;color:var(--text3);">
+      Filtrar por entidad ${hasFiltro?`<span style="color:var(--accent);font-weight:400;">(${cfFiltroEntidades.size} seleccionado${cfFiltroEntidades.size>1?'s':''})</span>`:''}
     </div>
-    <div class="cf-filter-group">
-      <label>Cobros</label>
-      <select class="cf-filter-select${cfFiltroEstadoCobro!=='todos'?' active':''}" onchange="cfSetFiltro('cobro',this.value)">
-        <option value="todos" ${cfFiltroEstadoCobro==='todos'?'selected':''}>Todos</option>
-        <option value="por_cobrar" ${cfFiltroEstadoCobro==='por_cobrar'?'selected':''}>Por cobrar</option>
-        <option value="cobrado" ${cfFiltroEstadoCobro==='cobrado'?'selected':''}>Cobrado</option>
-      </select>
+    <div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;">
+      ${allEntidades.map(({n,tipo})=>{
+        const active = cfFiltroEntidades.has(n);
+        const bg = active ? (tipo==='cliente'?'#e8f5e9':'#ffebee') : 'var(--bg3)';
+        const color = active ? (tipo==='cliente'?'#2e7d32':'#c62828') : 'var(--text3)';
+        const border = active ? (tipo==='cliente'?'#c8e6c9':'#ffcdd2') : 'var(--border)';
+        return `<span style="font-size:11px;font-family:var(--mono);padding:4px 10px;border-radius:20px;border:1px solid ${border};background:${bg};color:${color};cursor:pointer;font-weight:${active?'600':'400'};" onclick="cfToggleEntidad('${n.replace(/'/g,"\'")}')">${tipo==='cliente'?'▲':'▼'} ${n}</span>`;
+      }).join('')}
+      ${hasFiltro?`<span style="font-size:11px;color:var(--accent);cursor:pointer;font-weight:600;padding:4px 8px;" onclick="cfClearFiltros()">✕ Limpiar</span>`:''}
     </div>
-    <div class="cf-filter-group">
-      <label>Pagos</label>
-      <select class="cf-filter-select${cfFiltroEstadoPago!=='todos'?' active':''}" onchange="cfSetFiltro('pago',this.value)">
-        <option value="todos" ${cfFiltroEstadoPago==='todos'?'selected':''}>Todos</option>
-        <option value="por_pagar" ${cfFiltroEstadoPago==='por_pagar'?'selected':''}>Por pagar</option>
-        <option value="pagado" ${cfFiltroEstadoPago==='pagado'?'selected':''}>Pagado</option>
-      </select>
-    </div>
-    ${hasFiltro?`<button class="cf-filter-clear" onclick="cfClearFiltros()">✕ Limpiar</button>`:''}
-  </div>`;
+  </div>` : '';
 
   const modeLabel = cfMode==='cobros'?'cash flow — cobros y pagos':'ETAs de arribo';
   document.getElementById('content').innerHTML=`
@@ -4265,22 +4239,18 @@ function openRangeDetail(type, bandKey, title){
   document.getElementById('cf-detail-overlay').classList.remove('hidden');
 }
 
-function cfSetFiltro(tipo, valor){
-  if(tipo==='entidad') cfFiltroEntidad = valor;
-  if(tipo==='cobro')   cfFiltroEstadoCobro = valor;
-  if(tipo==='pago')    cfFiltroEstadoPago = valor;
+function cfToggleEntidad(nombre){
+  if(cfFiltroEntidades.has(nombre)) cfFiltroEntidades.delete(nombre);
+  else cfFiltroEntidades.add(nombre);
   renderCashFlow();
 }
 
 function cfClearFiltros(){
-  cfFiltroEntidad = '';
-  cfFiltroEstadoCobro = 'todos';
-  cfFiltroEstadoPago = 'todos';
+  cfFiltroEntidades = new Set();
   renderCashFlow();
 }
 
-function toggleCFFiltro(nombre){ cfSetFiltro('entidad', nombre); }
-function clearCFFiltros(){ cfClearFiltros(); }
+function cfSetFiltro(tipo, valor){ if(tipo==='entidad') cfToggleEntidad(valor); }
 
 function setCFMode(mode){
   renderCashFlow();
