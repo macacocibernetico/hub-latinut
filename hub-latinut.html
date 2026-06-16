@@ -520,12 +520,12 @@ button{font-family:var(--font);cursor:pointer;border:none;background:none;}
 .cf-chips{display:flex;flex-direction:column;gap:3px;}
 .cf-chip{font-size:11px;font-family:var(--mono);padding:3px 7px;border-radius:5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-weight:500;line-height:1.4;}
 .cf-chip.cobro{background:#e8f5e9;color:#2e7d32;border:1px solid #c8e6c9;}
-.cf-chip.cobro-ok{background:#f5f5f5;color:#9e9e9e;border:1px solid #e0e0e0;text-decoration:line-through;opacity:.8;}
+.cf-chip.cobro-ok{background:#c8e6c9;color:#1b5e20;border:1px solid #a5d6a7;text-decoration:line-through;opacity:.85;}
 .cf-chip.eta{background:#e3f2fd;color:#1565c0;border:1px solid #bbdefb;}
-.cf-chip.cobro-vencido{background:#ffebee;color:#c62828;border:1px solid #ffcdd2;}
-.cf-chip.cobro-warn{background:#fff8e1;color:#e65100;border:1px solid #ffe082;}
+.cf-chip.cobro-vencido{background:#e8f5e9;color:#2e7d32;border:1px solid #c8e6c9;}
+.cf-chip.cobro-warn{background:#e8f5e9;color:#2e7d32;border:1px solid #c8e6c9;}
 .cf-chip.pago{background:#ffebee;color:#c62828;border:1px solid #ffcdd2;}
-.cf-chip.pago-ok{background:#f5f5f5;color:#9e9e9e;border:1px solid #e0e0e0;text-decoration:line-through;opacity:.8;}
+.cf-chip.pago-ok{background:#4a0010;color:#f8bbd0;border:1px solid #880e4f;text-decoration:line-through;opacity:.85;}
 .cf-more{font-size:11px;color:var(--accent);font-family:var(--mono);margin-top:3px;font-weight:600;padding-left:2px;}
 /* DAY DETAIL PANEL */
 .cf-detail-overlay{position:fixed;inset:0;background:rgba(0,0,0,.35);z-index:150;display:flex;align-items:center;justify-content:center;backdrop-filter:blur(6px);}
@@ -1877,10 +1877,12 @@ async function writeRow(rowData, sheetRow){
 }
 
 async function getSheetId(){
-  const url = `https://sheets.googleapis.com/v4/spreadsheets/${(getNegocioConfig().sheetId||cfg.sheetId)}?key=${cfg.apiKey}`;
+  const nc = getNegocioConfig();
+  const url = `https://sheets.googleapis.com/v4/spreadsheets/${(nc.sheetId||cfg.sheetId)}?key=${cfg.apiKey}`;
   const r = await fetch(url);
   const data = await r.json();
-  const sheet = (data.sheets||[]).find(s => s.properties.title === cfg.sheetName);
+  const sheetName = nc.sheetName || cfg.sheetName;
+  const sheet = (data.sheets||[]).find(s => s.properties.title.toLowerCase() === sheetName.toLowerCase());
   return sheet ? sheet.properties.sheetId : null;
 }
 
@@ -3740,6 +3742,8 @@ function renderCashFlow(){
         const k = dateKey(d);
         if(!cobrosMap[k]) cobrosMap[k]=[];
         const amount = parseSheetNum(row[nc.COL_TOTAL_CFR]);
+        const fechaCobroReal = (row[nc.COL_FECHA_COBRO]||'').trim();
+        const cobrado = fechaCobroReal !== '' && fechaCobroReal.toUpperCase() !== 'SI';
         // Agrupar por invoice + fecha
         const groupKey = invoice || bl;
         const existing = cobrosMap[k].find(e => e.groupKey === groupKey);
@@ -3750,7 +3754,7 @@ function renderCashFlow(){
           existing.rows.push(row);
         } else {
           cobrosMap[k].push({
-            customer, bl, negocio, invoice, groupKey,
+            customer, bl, negocio, invoice, groupKey, cobrado,
             invServList: invServ ? [invServ] : [],
             bls: [bl], rows: [row],
             amount: isNaN(amount)?0:amount,
@@ -3985,14 +3989,15 @@ function renderCashFlow(){
 
     let chipsHtml = '';
     if(cfMode==='cobros'){
-      // Cobros chips
+      // Cobros chips — verde pendiente, verde oscuro tachado si cobrado
       cobrosDay.slice(0,2).forEach(e=>{
-        const cls = diff<0?'cobro-vencido':diff<=7?'cobro-warn':'cobro';
+        const cobrado = e.cobrado || false;
+        const cls = cobrado ? 'cobro-ok' : 'cobro';
         const amt = !isNaN(e.amount)?` · ${Math.round(e.amount/1000)}k`:'';
         chipsHtml+=`<div class="cf-chip ${cls}">${e.customer.substring(0,9)}${amt}</div>`;
       });
       if(cobrosDay.length>2) chipsHtml+=`<div class="cf-more">+${cobrosDay.length-2} cobros</div>`;
-      // Pagos chips (separador visual)
+      // Pagos chips — rojo pendiente, bordó tachado si pagado
       if(pagosDay.length>0 && cobrosDay.length>0) chipsHtml+=`<div style="height:3px;margin:2px 0;border-top:1px dashed var(--border2);"></div>`;
       pagosDay.slice(0,2).forEach(e=>{
         const amt = !isNaN(e.amount)?` · ${Math.round(e.amount/1000)}k`:'';
