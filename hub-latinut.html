@@ -3968,9 +3968,40 @@ function renderCashFlow(){
     </div>`).join('');
 
 
+  // ── Vencidos (cobros no cobrados + pagos no pagados con fecha pasada) ──
+  let vencCobros=0, vencUSDCobros=0, vencPagos=0, vencUSDPagos=0;
+  Object.values(cobrosMap).forEach(evts => evts.forEach(e => {
+    if(e.date.getTime() < todayMs && !e.cobrado && !isNaN(e.amount)){
+      vencCobros++; vencUSDCobros += e.amount;
+    }
+  }));
+  Object.values(pagosMap).forEach(evts => evts.forEach(e => {
+    if(e.date.getTime() < todayMs && !e.pagado && !isNaN(e.amount)){
+      vencPagos++; vencUSDPagos += e.amount;
+    }
+  }));
+  const hayVencidos = vencCobros > 0 || vencPagos > 0;
+
   // Balance cards
   const balanceHtml = cfMode==='cobros' ? `
-  <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-bottom:20px;">
+  <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:20px;">
+    <div style="background:var(--bg2);border:1px solid ${hayVencidos?'rgba(255,59,48,.4)':'var(--border)'};border-radius:var(--radius-lg);padding:14px 16px;box-shadow:var(--shadow);cursor:pointer;${hayVencidos?'background:rgba(255,59,48,.04);':''}" onclick="openRangeDetail('vencido',null,'Vencidos')" title="Ver vencidos">
+      <div style="font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.5px;color:${hayVencidos?'var(--danger)':'var(--text3)'};margin-bottom:8px;display:flex;justify-content:space-between;align-items:center;">
+        <span>⚠ Vencido</span><span style="color:var(--accent);font-size:10px;">${hayVencidos?'Ver →':''}</span>
+      </div>
+      <div style="display:flex;justify-content:space-between;margin-bottom:4px;">
+        <span style="font-size:11px;color:var(--text3);">▲ Cobros</span>
+        <span style="font-size:11px;font-family:var(--mono);color:${vencCobros?'var(--danger)':'var(--text3)'};font-weight:600;">${vencCobros?fmtUSD(vencUSDCobros):'—'}</span>
+      </div>
+      <div style="display:flex;justify-content:space-between;margin-bottom:8px;">
+        <span style="font-size:11px;color:var(--text3);">▼ Pagos</span>
+        <span style="font-size:11px;font-family:var(--mono);color:${vencPagos?'var(--danger)':'var(--text3)'};font-weight:600;">${vencPagos?fmtUSD(vencUSDPagos):'—'}</span>
+      </div>
+      <div style="border-top:1px solid var(--border);padding-top:7px;display:flex;justify-content:space-between;align-items:center;">
+        <span style="font-size:11px;font-weight:600;color:var(--text);">Total</span>
+        <span style="font-size:15px;font-weight:700;font-family:var(--mono);color:${hayVencidos?'var(--danger)':'var(--text3)'};">${hayVencidos?fmtUSD(vencUSDCobros+vencUSDPagos):'—'}</span>
+      </div>
+    </div>
     <div style="background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius-lg);padding:14px 16px;box-shadow:var(--shadow);cursor:pointer;" onclick="openRangeDetail('semana',null,'Esta semana')" title="Ver detalle">
       <div style="font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.5px;color:var(--text3);margin-bottom:8px;display:flex;justify-content:space-between;align-items:center;">
         <span>Esta semana</span><span style="color:var(--accent);font-size:10px;">Ver →</span>
@@ -4179,6 +4210,9 @@ function openRangeDetail(type, bandKey, title){
   } else if(type==='mesfull'){
     fromMs = window._cfMesFromFull || new Date(cfYear, cfMonth, 1).getTime();
     toMs   = window._cfMesToFull   || new Date(cfYear, cfMonth+1, 0, 23,59,59,999).getTime();
+  } else if(type==='vencido'){
+    fromMs = 0;
+    toMs   = todayMs - 1;
   } else if(type==='band'){
     const bands = {
       vencido:{min:-999,max:-1}, hoy:{min:0,max:0},
@@ -4192,10 +4226,16 @@ function openRangeDetail(type, bandKey, title){
   // Collect events in range
   const cobrosIn = [], pagosIn = [];
   Object.values(cobrosMap).forEach(evts => evts.forEach(e => {
-    if(e.date.getTime()>=fromMs && e.date.getTime()<=toMs) cobrosIn.push(e);
+    if(e.date.getTime()>=fromMs && e.date.getTime()<=toMs){
+      if(type==='vencido' && e.cobrado) return; // solo no cobrados
+      cobrosIn.push(e);
+    }
   }));
   Object.values(pagosMap).forEach(evts => evts.forEach(e => {
-    if(e.date.getTime()>=fromMs && e.date.getTime()<=toMs) pagosIn.push(e);
+    if(e.date.getTime()>=fromMs && e.date.getTime()<=toMs){
+      if(type==='vencido' && e.pagado) return; // solo no pagados
+      pagosIn.push(e);
+    }
   }));
 
   // Sort by date
