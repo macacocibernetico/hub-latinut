@@ -485,14 +485,14 @@ button{font-family:var(--font);cursor:pointer;border:none;background:none;}
 }
 
 /* CASH FLOW FILTERS */
-.cf-filter-wrap{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:16px;align-items:center;}
-.cf-filter-label{font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.5px;color:var(--text3);margin-right:4px;}
-.cf-filter-pill{font-size:11px;font-family:var(--mono);padding:4px 10px;border-radius:20px;border:1px solid var(--border);background:var(--bg3);color:var(--text3);cursor:pointer;transition:all .15s;font-weight:500;}
-.cf-filter-pill:hover{border-color:var(--accent);color:var(--text);}
-.cf-filter-pill.active.cliente{background:#e8f5e9;color:#2e7d32;border-color:#c8e6c9;font-weight:600;}
-.cf-filter-pill.active.proveedor{background:#ffebee;color:#c62828;border-color:#ffcdd2;font-weight:600;}
-.cf-filter-clear{font-size:10px;color:var(--accent);cursor:pointer;padding:4px 8px;font-weight:600;margin-left:4px;}
-.cf-filter-clear:hover{text-decoration:underline;}
+.cf-filters{display:flex;gap:10px;margin-bottom:16px;flex-wrap:wrap;align-items:center;}
+.cf-filter-group{display:flex;flex-direction:column;gap:3px;}
+.cf-filter-group label{font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.5px;color:var(--text3);}
+.cf-filter-select{background:var(--bg3);border:1px solid var(--border);border-radius:8px;color:var(--text);font-family:var(--font);font-size:12px;padding:6px 10px;cursor:pointer;min-width:160px;transition:border-color .15s;}
+.cf-filter-select:focus{outline:none;border-color:var(--accent);}
+.cf-filter-select.active{border-color:var(--accent);color:var(--accent);font-weight:600;}
+.cf-filter-clear{font-size:11px;color:var(--accent);cursor:pointer;font-weight:600;padding:6px 10px;border:1px solid var(--accent);border-radius:8px;background:transparent;font-family:var(--font);transition:all .15s;align-self:flex-end;}
+.cf-filter-clear:hover{background:var(--accent);color:#fff;}
 .cf-toggle{display:flex;background:var(--bg3);border:1px solid var(--border);border-radius:var(--radius);padding:3px;gap:3px;width:fit-content;}
 .cf-toggle-btn{padding:5px 18px;border-radius:7px;font-size:12px;font-weight:600;cursor:pointer;border:none;background:transparent;color:var(--text3);transition:all .15s;font-family:var(--font);}
 .cf-toggle-btn.active{background:var(--bg2);color:var(--accent);box-shadow:var(--shadow);}
@@ -761,6 +761,9 @@ function setNegocio(n){
   localStorage.setItem('hub_negocio', n);
   cargasPage = 0;
   cfFiltros = [];
+  cfFiltroEntidad = '';
+  cfFiltroEstadoCobro = 'todos';
+  cfFiltroEstadoPago = 'todos';
   window._alertFilter = 'all';
   window._alertSubFilter = 'all';
   currentView = 'alertas';
@@ -3722,7 +3725,10 @@ function renderCargasMobileCards(rows, pagedRows){
 let cfMode = 'cobros'; // 'cobros' | 'eta'
 let cfYear = new Date().getFullYear();
 let cfMonth = new Date().getMonth(); // 0-based
-let cfFiltros = []; // array de nombres seleccionados (vacío = todos)
+let cfFiltros = []; // ya no usado
+let cfFiltroEntidad = ''; // nombre del cliente/forwarder seleccionado
+let cfFiltroEstadoCobro = 'todos'; // 'todos' | 'por_cobrar' | 'cobrado'
+let cfFiltroEstadoPago = 'todos'; // 'todos' | 'por_pagar' | 'pagado'
 
 function renderCashFlow(){
   const today = new Date();
@@ -3733,19 +3739,34 @@ function renderCashFlow(){
   // ── Helpers ──
   const dateKey = d => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
 
-  // ── Extraer todos los clientes y proveedores únicos para los filtros ──
+  // ── Extraer entidades únicas ──
   const clientesSet = new Set();
   const proveedoresSet = new Set();
   allRows.forEach(r => { if(r[COL.CUSTOMER]) clientesSet.add(r[COL.CUSTOMER].trim()); });
-  allRowsAll.forEach(r => { const p=(r[nc.PAGO_PROVEEDOR]||'').trim(); if(p&&p!=='-') proveedoresSet.add(p); });
+  allRowsAll.forEach(r => { const p=(r[nc.PAGO_PROVEEDOR]||'').trim(); if(p&&p!=='-'&&p!=='—') proveedoresSet.add(p); });
 
-  // ── Aplicar filtro ──
-  const filtroActivo = cfFiltros.length > 0;
-  const rowFiltrada = row => {
-    if(!filtroActivo) return true;
+  // ── Aplicar filtros ──
+  const filtroActivo = cfFiltroEntidad || cfFiltroEstadoCobro!=='todos' || cfFiltroEstadoPago!=='todos';
+
+  const rowMatchEntidad = row => {
+    if(!cfFiltroEntidad) return true;
     const customer = (row[COL.CUSTOMER]||'').trim();
     const proveedor = (row[nc.PAGO_PROVEEDOR]||'').trim();
-    return cfFiltros.includes(customer) || cfFiltros.includes(proveedor);
+    return customer === cfFiltroEntidad || proveedor === cfFiltroEntidad;
+  };
+
+  const cobroMatchEstado = e => {
+    if(cfFiltroEstadoCobro === 'todos') return true;
+    if(cfFiltroEstadoCobro === 'cobrado') return e.cobrado;
+    if(cfFiltroEstadoCobro === 'por_cobrar') return !e.cobrado;
+    return true;
+  };
+
+  const pagoMatchEstado = e => {
+    if(cfFiltroEstadoPago === 'todos') return true;
+    if(cfFiltroEstadoPago === 'pagado') return e.pagado;
+    if(cfFiltroEstadoPago === 'por_pagar') return !e.pagado;
+    return true;
   };
 
   // ── Cobros map ──
@@ -3754,7 +3775,7 @@ function renderCashFlow(){
   const pagosMap  = {};
 
   allRows.forEach(row => {
-    if(!rowFiltrada(row)) return;
+    if(!rowMatchEntidad(row)) return;
     const customer = (row[COL.CUSTOMER]||'—').trim();
     const bl       = (row[COL.BL]||'').trim();
     const negocio  = (row[COL.NEGOCIO]||'').trim();
@@ -3801,7 +3822,7 @@ function renderCashFlow(){
   // Pagos — usar allRowsAll (incluye cargas cerradas)
   if(cfMode === 'cobros'){
     allRowsAll.forEach(row => {
-      if(!rowFiltrada(row)) return;
+      if(!rowMatchEntidad(row)) return;
       const customer = (row[COL.CUSTOMER]||'—').trim();
       const bl       = (row[COL.BL]||'').trim();
       const negocio  = (row[COL.NEGOCIO]||'').trim();
@@ -3850,6 +3871,10 @@ function renderCashFlow(){
   window._cfCobrosMap = cobrosMap;
   window._cfPagosMap  = pagosMap;
 
+  // Helpers para filtrar por estado en balances y chips
+  const cobrosFiltered = key => (cobrosMap[key]||[]).filter(cobroMatchEstado);
+  const pagosFiltered  = key => (pagosMap[key]||[]).filter(pagoMatchEstado);
+
   // ── Balance mensual (1 del mes hasta hoy) ──
   const firstOfMonth = new Date(cfYear, cfMonth, 1).getTime();
   const lastOfMonthFull = new Date(cfYear, cfMonth+1, 0, 23,59,59,999).getTime();
@@ -3862,13 +3887,13 @@ function renderCashFlow(){
 
   let mesEntradas=0, mesSalidas=0;
   let mesEntradasFull=0, mesSalidasFull=0;
-  Object.values(cobrosMap).forEach(evts => evts.forEach(e => {
+  Object.entries(cobrosMap).forEach(([k,evts]) => evts.filter(cobroMatchEstado).forEach(e => {
     if(!isNaN(e.amount) && e.type==='cobro'){
       if(e.date.getTime()>=firstOfMonth && e.date.getTime()<=lastOfMonthPartial) mesEntradas+=e.amount;
       if(e.date.getTime()>=firstOfMonth && e.date.getTime()<=lastOfMonthFull) mesEntradasFull+=e.amount;
     }
   }));
-  Object.values(pagosMap).forEach(evts => evts.forEach(e => {
+  Object.entries(pagosMap).forEach(([k,evts]) => evts.filter(pagoMatchEstado).forEach(e => {
     if(!isNaN(e.amount)){
       if(e.date.getTime()>=firstOfMonth && e.date.getTime()<=lastOfMonthPartial) mesSalidas+=e.amount;
       if(e.date.getTime()>=firstOfMonth && e.date.getTime()<=lastOfMonthFull) mesSalidasFull+=e.amount;
@@ -3886,10 +3911,10 @@ function renderCashFlow(){
   const semDomingo = new Date(today); semDomingo.setDate(today.getDate()-dayOfWeek); semDomingo.setHours(0,0,0,0);
   const semSabado = new Date(semDomingo); semSabado.setDate(semDomingo.getDate()+6); semSabado.setHours(23,59,59);
   let semEntradas=0, semSalidas=0;
-  Object.values(cobrosMap).forEach(evts => evts.forEach(e => {
+  Object.entries(cobrosMap).forEach(([k,evts]) => evts.filter(cobroMatchEstado).forEach(e => {
     if(e.date>=semDomingo && e.date<=semSabado && !isNaN(e.amount) && e.type==='cobro') semEntradas+=e.amount;
   }));
-  Object.values(pagosMap).forEach(evts => evts.forEach(e => {
+  Object.entries(pagosMap).forEach(([k,evts]) => evts.filter(pagoMatchEstado).forEach(e => {
     if(e.date>=semDomingo && e.date<=semSabado && !isNaN(e.amount)) semSalidas+=e.amount;
   }));
   const semBalance = semEntradas - semSalidas;
@@ -4009,8 +4034,8 @@ function renderCashFlow(){
     const isToday = today.getFullYear()===cfYear && today.getMonth()===cfMonth && today.getDate()===d;
     const key = `${cfYear}-${String(cfMonth+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
     const diff = Math.round((new Date(cfYear,cfMonth,d).getTime()-todayMs)/86400000);
-    const cobrosDay = cobrosMap[key]||[];
-    const pagosDay  = pagosMap[key]||[];
+    const cobrosDay = cobrosFiltered(key);
+    const pagosDay  = pagosFiltered(key);
     const totalEvts = cobrosDay.length + pagosDay.length;
     const hasEvents = totalEvts > 0;
 
@@ -4054,25 +4079,48 @@ function renderCashFlow(){
   for(let i=1;i<=padEnd;i++) daysHtml+=`<div class="cf-day other-month"><div class="cf-day-num">${i}</div></div>`;
 
   // ── Filtros HTML ──
-  const todosNombres = [
-    ...[...clientesSet].sort().map(n=>({n, tipo:'cliente'})),
-    ...[...proveedoresSet].sort().map(n=>({n, tipo:'proveedor'}))
-  ];
-  const filtrosHtml = todosNombres.length ? `
-  <div class="cf-filter-wrap">
-    <span class="cf-filter-label">Filtrar:</span>
-    ${todosNombres.map(({n,tipo})=>`
-      <span class="cf-filter-pill ${cfFiltros.includes(n)?'active '+tipo:''}" onclick="toggleCFFiltro('${n.replace(/'/g,"\\'")}')">
-        ${tipo==='cliente'?'▲':'▼'} ${n}
-      </span>`).join('')}
-    ${filtroActivo?`<span class="cf-filter-clear" onclick="clearCFFiltros()">✕ Limpiar filtros</span>`:''}
-  </div>` : '';
+  const entidadesOpts = [
+    '<option value="">Todos</option>',
+    '<optgroup label="▲ Clientes">',
+    ...[...clientesSet].sort().map(n=>`<option value="${n}" ${cfFiltroEntidad===n?'selected':''}>${n}</option>`),
+    '</optgroup>',
+    '<optgroup label="▼ Forwarders">',
+    ...[...proveedoresSet].sort().map(n=>`<option value="${n}" ${cfFiltroEntidad===n?'selected':''}>${n}</option>`),
+    '</optgroup>'
+  ].join('');
+
+  const hasFiltro = cfFiltroEntidad || cfFiltroEstadoCobro!=='todos' || cfFiltroEstadoPago!=='todos';
+
+  const filtrosHtml = `
+  <div class="cf-filters">
+    <div class="cf-filter-group">
+      <label>Entidad</label>
+      <select class="cf-filter-select${cfFiltroEntidad?' active':''}" onchange="cfSetFiltro('entidad',this.value)">${entidadesOpts}</select>
+    </div>
+    <div class="cf-filter-group">
+      <label>Cobros</label>
+      <select class="cf-filter-select${cfFiltroEstadoCobro!=='todos'?' active':''}" onchange="cfSetFiltro('cobro',this.value)">
+        <option value="todos" ${cfFiltroEstadoCobro==='todos'?'selected':''}>Todos</option>
+        <option value="por_cobrar" ${cfFiltroEstadoCobro==='por_cobrar'?'selected':''}>Por cobrar</option>
+        <option value="cobrado" ${cfFiltroEstadoCobro==='cobrado'?'selected':''}>Cobrado</option>
+      </select>
+    </div>
+    <div class="cf-filter-group">
+      <label>Pagos</label>
+      <select class="cf-filter-select${cfFiltroEstadoPago!=='todos'?' active':''}" onchange="cfSetFiltro('pago',this.value)">
+        <option value="todos" ${cfFiltroEstadoPago==='todos'?'selected':''}>Todos</option>
+        <option value="por_pagar" ${cfFiltroEstadoPago==='por_pagar'?'selected':''}>Por pagar</option>
+        <option value="pagado" ${cfFiltroEstadoPago==='pagado'?'selected':''}>Pagado</option>
+      </select>
+    </div>
+    ${hasFiltro?`<button class="cf-filter-clear" onclick="cfClearFiltros()">✕ Limpiar</button>`:''}
+  </div>`;
 
   const modeLabel = cfMode==='cobros'?'cash flow — cobros y pagos':'ETAs de arribo';
   document.getElementById('content').innerHTML=`
   <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;flex-wrap:wrap;gap:10px;">
     <div>
-      <div style="font-size:15px;font-weight:600;color:var(--text);">Calendario — ${label}${filtroActivo?` <span style="font-size:11px;color:var(--accent);font-weight:400;">(${cfFiltros.length} filtro${cfFiltros.length>1?'s':''})</span>`:''}</div>
+      <div style="font-size:15px;font-weight:600;color:var(--text);">Calendario — ${label}${hasFiltro?` <span style="font-size:11px;color:var(--accent);font-weight:400;">(filtrado)</span>`:''}</div>
       <div style="font-size:11px;color:var(--text3);margin-top:2px;">${modeLabel}</div>
     </div>
     <div class="cf-toggle">
@@ -4213,17 +4261,22 @@ function openRangeDetail(type, bandKey, title){
   document.getElementById('cf-detail-overlay').classList.remove('hidden');
 }
 
-function toggleCFFiltro(nombre){
-  const idx = cfFiltros.indexOf(nombre);
-  if(idx === -1) cfFiltros.push(nombre);
-  else cfFiltros.splice(idx, 1);
+function cfSetFiltro(tipo, valor){
+  if(tipo==='entidad') cfFiltroEntidad = valor;
+  if(tipo==='cobro')   cfFiltroEstadoCobro = valor;
+  if(tipo==='pago')    cfFiltroEstadoPago = valor;
   renderCashFlow();
 }
 
-function clearCFFiltros(){
-  cfFiltros = [];
+function cfClearFiltros(){
+  cfFiltroEntidad = '';
+  cfFiltroEstadoCobro = 'todos';
+  cfFiltroEstadoPago = 'todos';
   renderCashFlow();
 }
+
+function toggleCFFiltro(nombre){ cfSetFiltro('entidad', nombre); }
+function clearCFFiltros(){ cfClearFiltros(); }
 
 function setCFMode(mode){
   renderCashFlow();
