@@ -3749,15 +3749,19 @@ function renderCashFlow(){
   const hasFiltroCliente   = cfFiltroClientes.size > 0;
   const hasFiltroForwarder = cfFiltroForwarders.size > 0;
 
-  // Cobros: filtrar por cliente seleccionado
+  // Cobros: mostrar solo si hay cliente seleccionado que coincide,
+  // o si no hay ningún filtro activo
   const rowMatchCobro = row => {
-    if(!hasFiltroCliente) return true;
+    if(!hasFiltroCliente && !hasFiltroForwarder) return true; // sin filtros: mostrar todo
+    if(hasFiltroForwarder && !hasFiltroCliente) return false; // solo forwarder seleccionado: ocultar cobros
     return cfFiltroClientes.has((row[COL.CUSTOMER]||'').trim());
   };
 
-  // Pagos: filtrar por forwarder seleccionado
+  // Pagos: mostrar solo si hay forwarder seleccionado que coincide,
+  // o si no hay ningún filtro activo
   const rowMatchPago = row => {
-    if(!hasFiltroForwarder) return true;
+    if(!hasFiltroCliente && !hasFiltroForwarder) return true; // sin filtros: mostrar todo
+    if(hasFiltroCliente && !hasFiltroForwarder) return false; // solo cliente seleccionado: ocultar pagos
     return cfFiltroForwarders.has((row[nc.PAGO_PROVEEDOR]||'').trim());
   };
 
