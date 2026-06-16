@@ -3844,21 +3844,23 @@ function renderCashFlow(){
       if(dp && !isNaN(totalPago) && totalPago > 0){
         const k = dateKey(dp);
         if(!pagosMap[k]) pagosMap[k]=[];
-        const groupKey = (invoice||bl)+'_pago';
-        const existing = pagosMap[k].find(e => e.groupKey === groupKey && e.pagado === pagado);
+        const fcFlete   = (row[nc.PAGO_FC_FLETE]||'').trim();
+        const fcCourier = nc.PAGO_FC_COURIER!=null ? (row[nc.PAGO_FC_COURIER]||'').trim() : '';
+        const proveedor = (row[nc.PAGO_PROVEEDOR]||'').trim();
+        const groupKey  = (fcFlete||invoice||bl)+'_pago';
+        const existing  = pagosMap[k].find(e => e.groupKey === groupKey && e.pagado === pagado);
         if(existing){
           existing.amount += totalPago;
-          existing.bls.push(bl);
+          if(!existing.bls.includes(bl)) existing.bls.push(bl);
+          if(invoice && !existing.invoices.includes(invoice)) existing.invoices.push(invoice);
         } else {
           pagosMap[k].push({
-            customer, bl, negocio, invoice, groupKey,
-            bls: [bl],
+            customer, bl, negocio, invoice, invoices: invoice?[invoice]:[],
+            groupKey, bls: [bl],
             amount: totalPago,
             montoFlete:   parseSheetNum(row[nc.PAGO_MONTO]),
             montoCourier: nc.PAGO_MONTO_COURIER!=null ? parseSheetNum(row[nc.PAGO_MONTO_COURIER]) : NaN,
-            fcFlete:   (row[nc.PAGO_FC_FLETE]||'').trim(),
-            fcCourier: nc.PAGO_FC_COURIER!=null ? (row[nc.PAGO_FC_COURIER]||'').trim() : '',
-            proveedor: (row[nc.PAGO_PROVEEDOR]||'').trim(),
+            fcFlete, fcCourier, proveedor,
             pagado, fechaReal: fechaPagoReal,
             date: dp, rowData: row, type:'pago'
           });
@@ -4363,8 +4365,8 @@ function openDayDetail(key, dateLabel){
           ${amtStr?`<span style="font-size:14px;font-weight:700;font-family:var(--mono);color:${amtColor};${amtStyle}">${amtStr}</span>`:''}
         </div>
         <div class="cf-event-title" style="${e.pagado?'color:var(--text3);':''}">${e.proveedor||'Forwarder'}</div>
-        <div class="cf-event-meta">${e.invoice?`FC Cliente: ${e.invoice} · `:''}Cliente: ${e.customer} · ${e.negocio}</div>
-        <div style="font-size:11px;font-family:var(--mono);color:var(--text3);margin-bottom:8px;">BL: ${(e.bls||[e.bl]).join(', ')}</div>
+        <div class="cf-event-meta">${e.fcFlete?`FC Flete: ${e.fcFlete} · `:''}${(e.invoices&&e.invoices.length?e.invoices:e.invoice?[e.invoice]:[]).length?`FC Cliente: ${(e.invoices||[e.invoice]).join(', ')} · `:''}Cliente: ${e.customer} · ${e.negocio}</div>
+        <div style="font-size:11px;font-family:var(--mono);color:var(--text3);margin-bottom:8px;">BL: ${(e.bls||[e.bl]).join(' · ')}</div>
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:3px 12px;font-size:11px;font-family:var(--mono);color:var(--text3);">
           ${e.fcFlete?`<span>FC Flete: <b style="color:var(--text2)">${e.fcFlete}</b></span>`:''}
           ${e.fcCourier?`<span>FC Courier: <b style="color:var(--text2)">${e.fcCourier}</b></span>`:''}
