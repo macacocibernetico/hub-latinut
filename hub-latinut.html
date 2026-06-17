@@ -1795,7 +1795,7 @@ function renderCargas(showAll, sort){
     <table class="sticky-table">
       <thead><tr>
         <th style="width:30px"></th>
-        <th>BL</th><th>Booking</th><th>Naviera</th>
+        <th>BL</th><th>Booking</th><th>Lote</th><th>Naviera</th>
         <th onclick="sortCargas('cliente')" style="cursor:pointer;user-select:none;">Customer ${cargasSort==='cliente_az'?'↑':cargasSort==='cliente_za'?'↓':'↕'}</th>
         <th>Vessel</th>
         <th onclick="sortCargas('eta')" style="cursor:pointer;user-select:none;">ETA ${cargasSort==='eta_asc'?'↑':cargasSort==='eta_desc'?'↓':'↕'}</th>
@@ -1845,6 +1845,7 @@ function renderCargas(showAll, sort){
       <td onclick="event.stopPropagation()"><input type="checkbox" id="fc-cb-${localIdx}" onclick="toggleFCSelection(${localIdx})" style="accent-color:var(--accent);cursor:pointer;"></td>
       <td class="mono">${(row[COL.BL]||'—').substring(0,20)}</td>
       <td class="mono">${(row[COL.BOOKING]||'—').substring(0,14)}</td>
+      <td class="mono" style="color:var(--accent);font-size:11px">${(row[COL.LOTS]||'—').substring(0,18)}</td>
       <td style="color:var(--text3);font-size:11px">${(row[COL.SHIPPING]||'—').substring(0,14)}</td>
       <td style="font-weight:500">${row[COL.CUSTOMER]||'—'}</td>
       <td style="color:var(--text3);font-size:11px">${(row[COL.VESSEL]||'—').substring(0,16)}</td>
