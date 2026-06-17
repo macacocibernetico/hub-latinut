@@ -1820,8 +1820,9 @@ function renderCargas(showAll, sort){
     const pagFirm = (row[COL.PAGARE_FIRMADO]||'').trim().toUpperCase();
     let pagLabel, pagColor;
     if(pagFirm === 'SI'){ pagLabel='Firmado'; pagColor='var(--ok)'; }
-    else if(pagEnv === 'SI'){ pagLabel='Sin firmar'; pagColor='var(--warn)'; }
-    else if(pagEnv === '-' || pagFirm === '-'){ pagLabel='N/A'; pagColor='var(--text3)'; }
+    else if(pagEnv === 'SI'){ pagLabel='En Docusign'; pagColor='var(--info)'; }
+    else if(pagEnv === 'AXT'){ pagLabel='En AXT'; pagColor='var(--warn)'; }
+    else if(pagEnv === '-'){ pagLabel='N/A'; pagColor='var(--text3)'; }
     else { pagLabel='Sin enviar'; pagColor='var(--danger)'; }
 
     const docs = (row[COL.DOCUMENTOS]||'').trim();
