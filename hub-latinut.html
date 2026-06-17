@@ -1616,6 +1616,8 @@ function renderAlertas(){
 
 let cargasShowAll = false;
 let cargasSort = 'eta_asc';
+let cargasSearch = ''; // búsqueda libre
+let cargasPagareStates = new Set(); // multi-select pagaré
 let cargasDropFilters = {
   cliente: '',
   pagare: '',
@@ -1632,6 +1634,26 @@ function sortCargas(field){
   cargasPage = 0;
   renderCargas();
 }
+
+function togglePagareDD(){
+  const dd = document.getElementById('dd-pagare');
+  if(dd) dd.style.display = dd.style.display==='none'?'block':'none';
+}
+
+function togglePagareState(val){
+  if(cargasPagareStates.has(val)) cargasPagareStates.delete(val);
+  else cargasPagareStates.add(val);
+  cargasPage = 0;
+  renderCargas();
+  setTimeout(()=>{ const dd=document.getElementById('dd-pagare'); if(dd) dd.style.display='block'; }, 0);
+}
+
+document.addEventListener('click', e => {
+  if(!e.target.closest('[onclick*="togglePagareDD"]') && !e.target.closest('#dd-pagare')){
+    const dd = document.getElementById('dd-pagare');
+    if(dd) dd.style.display='none';
+  }
+});
 
 function setCargasFilter(key, value){
   cargasDropFilters[key] = value;
@@ -1657,15 +1679,31 @@ function renderCargas(showAll, sort){
   if(cargasDropFilters.cliente){
     rows = rows.filter(r => (r[COL.CUSTOMER]||'').trim() === cargasDropFilters.cliente);
   }
-  if(cargasDropFilters.pagare){
+  if(cargasPagareStates.size > 0){
     rows = rows.filter(r => {
       const env=(r[COL.PAGARE_ENVIADO]||'').trim().toUpperCase();
       const firm=(r[COL.PAGARE_FIRMADO]||'').trim().toUpperCase();
-      if(cargasDropFilters.pagare === 'sin_enviar') return env !== 'SI';
-      if(cargasDropFilters.pagare === 'sin_firmar') return env === 'SI' && firm !== 'SI';
-      if(cargasDropFilters.pagare === 'firmado') return firm === 'SI';
-      return true;
+      let estado;
+      if(firm === 'SI') estado = 'firmado';
+      else if(env === 'SI') estado = 'docusign';
+      else if(env === 'AXT') estado = 'axt';
+      else if(env === '-') estado = 'na';
+      else estado = 'sin_enviar';
+      return cargasPagareStates.has(estado);
     });
+  }
+
+  // Búsqueda libre
+  if(cargasSearch.trim()){
+    const q = cargasSearch.trim().toLowerCase();
+    rows = rows.filter(r =>
+      (r[COL.BL]||'').toLowerCase().includes(q) ||
+      (r[COL.BOOKING]||'').toLowerCase().includes(q) ||
+      (r[COL.LOTS]||'').toLowerCase().includes(q) ||
+      (r[COL.CUSTOMER]||'').toLowerCase().includes(q) ||
+      (r[COL.NEGOCIO]||'').toLowerCase().includes(q) ||
+      (r[COL.VESSEL]||'').toLowerCase().includes(q)
+    );
   }
   if(cargasDropFilters.docs){
     rows = rows.filter(r => {
@@ -1735,9 +1773,49 @@ function renderCargas(showAll, sort){
     <option value="cliente_az" ${cargasSort==='cliente_az'?'selected':''}>Cliente A → Z</option>
   </select>`;
 
-  const resetBtn = Object.values(cargasDropFilters).some(v=>v!=='')
-    ? `<span onclick="Object.keys(cargasDropFilters).forEach(k=>cargasDropFilters[k]='');renderCargas();" style="font-size:11px;font-family:var(--mono);padding:5px 10px;border-radius:8px;border:1px solid var(--danger);color:var(--danger);cursor:pointer;background:var(--danger-light);">✕ Limpiar</span>`
+  const resetBtn = Object.values(cargasDropFilters).some(v=>v!=='') || cargasPagareStates.size>0 || cargasSearch
+    ? `<span onclick="Object.keys(cargasDropFilters).forEach(k=>cargasDropFilters[k]='');cargasPagareStates=new Set();cargasSearch='';renderCargas();" style="font-size:11px;font-family:var(--mono);padding:5px 10px;border-radius:8px;border:1px solid var(--danger);color:var(--danger);cursor:pointer;background:var(--danger-light);">✕ Limpiar</span>`
     : '';
+
+  // Pagaré multi-select dropdown HTML
+  const pagareOpts = [
+    {val:'sin_enviar', label:'Sin enviar'},
+    {val:'axt',        label:'En AXT'},
+    {val:'docusign',   label:'En Docusign'},
+    {val:'firmado',    label:'Firmado'},
+    {val:'na',         label:'N/A'},
+  ];
+  const hasPagFiltro = cargasPagareStates.size > 0;
+  const pagareDropHtml = getNegocioConfig().sinPagares ? '' : `
+  <div style="position:relative;display:inline-block;">
+    <button onclick="togglePagareDD()" style="font-size:11px;font-family:var(--mono);padding:5px 10px;border-radius:8px;border:1px solid ${hasPagFiltro?'var(--accent)':'var(--border)'};background:${hasPagFiltro?'var(--accent-light)':'var(--bg2)'};color:${hasPagFiltro?'var(--accent)':'var(--text2)'};cursor:pointer;min-width:100px;display:flex;align-items:center;gap:5px;">
+      Pagaré${hasPagFiltro?` (${cargasPagareStates.size})`:''}
+      <span style="font-size:9px;color:var(--text3);">▾</span>
+    </button>
+    <div id="dd-pagare" style="display:none;position:absolute;top:calc(100% + 4px);left:0;background:var(--bg2);border:1px solid var(--border);border-radius:10px;min-width:160px;z-index:200;box-shadow:0 8px 24px rgba(0,0,0,.12);overflow:hidden;">
+      ${pagareOpts.map(o => {
+        const active = cargasPagareStates.has(o.val);
+        return `<div onclick="togglePagareState('${o.val}')" style="display:flex;align-items:center;gap:8px;padding:8px 14px;cursor:pointer;font-size:12px;background:${active?'var(--bg3)':'transparent'};" onmouseover="this.style.background='var(--bg3)'" onmouseout="this.style.background='${active?'var(--bg3)':'transparent'}'">
+          <span style="width:16px;height:16px;border-radius:4px;border:1.5px solid ${active?'var(--accent)':'var(--border2)'};background:${active?'var(--accent-light)':'transparent'};display:inline-flex;align-items:center;justify-content:center;font-size:10px;">${active?'✓':''}</span>
+          <span style="color:${active?'var(--accent)':'var(--text)'};font-weight:${active?'600':'400'}">${o.label}</span>
+        </div>`;
+      }).join('')}
+    </div>
+  </div>`;
+
+  // Buscador
+  const searchHtml = `<div style="position:relative;display:flex;align-items:center;">
+    <span style="position:absolute;left:9px;font-size:13px;color:var(--text3);">🔍</span>
+    <input
+      id="cargas-search-input"
+      type="text"
+      placeholder="BL, lote, booking, cliente..."
+      value="${cargasSearch.replace(/"/g,'&quot;')}"
+      oninput="cargasSearch=this.value;cargasPage=0;renderCargas();"
+      style="font-size:11px;font-family:var(--mono);padding:5px 10px 5px 30px;border-radius:8px;border:1px solid ${cargasSearch?'var(--accent)':'var(--border)'};background:${cargasSearch?'var(--accent-light)':'var(--bg2)'};color:var(--text);width:220px;outline:none;"
+    >
+    ${cargasSearch?`<span onclick="cargasSearch='';cargasPage=0;renderCargas();" style="position:absolute;right:8px;cursor:pointer;font-size:12px;color:var(--text3);">×</span>`:''}
+  </div>`;
 
   // FC bulk selection
   window._fcSelectedRows = new Set();
@@ -1781,12 +1859,14 @@ function renderCargas(showAll, sort){
         </div>
       </div>
       <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
+        ${searchHtml}
         ${sel('cliente', cargasDropFilters.cliente, 'Cliente', uniqueClientes.map(c=>({val:c,label:c})))}
-        ${getNegocioConfig().sinPagares?'':sel('pagare', cargasDropFilters.pagare, 'Pagaré', [{val:'sin_enviar',label:'Sin enviar'},{val:'sin_firmar',label:'Sin firmar'},{val:'firmado',label:'Firmado'}])}
+        ${pagareDropHtml}
         ${sel('docs', cargasDropFilters.docs, 'Docs', [{val:'pendientes',label:'Pendientes'},{val:'completos',label:'Completos'}])}
         ${sel('telex', cargasDropFilters.telex, 'TELEX', [{val:'sin_solicitar',label:'Sin solicitar'},{val:'en_proceso',label:'En proceso'},{val:'liberado',label:'Liberado'}])}
         ${sel('naviera', cargasDropFilters.naviera, 'Naviera', uniqueNavieras.map(n=>({val:n,label:n})))}
         ${sel('puerto', cargasDropFilters.puerto, 'Puerto', uniquePuertos.map(p=>({val:p,label:p})))}
+        ${resetBtn}
       </div>
 
     </div>
