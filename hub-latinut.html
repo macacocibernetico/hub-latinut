@@ -1799,7 +1799,7 @@ function renderCargas(showAll, sort){
         <th onclick="sortCargas('cliente')" style="cursor:pointer;user-select:none;">Customer ${cargasSort==='cliente_az'?'↑':cargasSort==='cliente_za'?'↓':'↕'}</th>
         <th>Vessel</th>
         <th onclick="sortCargas('eta')" style="cursor:pointer;user-select:none;">ETA ${cargasSort==='eta_asc'?'↑':cargasSort==='eta_desc'?'↓':'↕'}</th>
-        <th>Docs</th><th>TELEX</th>${getNegocioConfig().sinPagares?'':'<th>Pagaré</th>'}
+        <th>Docs</th><th>Env. Cliente</th><th>TELEX</th>${getNegocioConfig().sinPagares?'':'<th>Pagaré</th>'}
         <th>Invoice FC1</th><th>Total FC1</th><th>Invoice FC2</th><th>Total FC2</th><th>Total</th>
         <th onclick="sortCargas('cobro')" style="cursor:pointer;user-select:none;">Cobro Est. ${cargasSort==='cobro_asc'?'↑':cargasSort==='cobro_desc'?'↓':'↕'}</th>
         <th></th><th></th><th></th>
@@ -1850,6 +1850,7 @@ function renderCargas(showAll, sort){
       <td style="color:var(--text3);font-size:11px">${(row[COL.VESSEL]||'—').substring(0,16)}</td>
       <td class="mono">${fmtDate(row[COL.ETA])}</td>
       <td><div class="doc-status"><div class="doc-dot ${docsOk?'green':'red'}"></div><span class="doc-text" title="${docs||'Pendiente'}">${docsOk?'OK':docs||'—'}</span></div></td>
+      <td><span style="color:${(row[COL.CLIENTE_ENV]||'').trim().toUpperCase()==='SI'?'var(--ok)':'var(--text3)'};font-family:var(--mono);font-size:10px">${(row[COL.CLIENTE_ENV]||'—').trim()}</span></td>
       <td><span style="color:${telexOk?'var(--ok)':telex?'var(--info)':'var(--text3)'};font-family:var(--mono);font-size:10px">${telex||'—'}</span></td>
       ${getNegocioConfig().sinPagares?'<td>—</td>':`<td><span style="color:${pagColor};font-size:11px;font-family:var(--mono)">${pagLabel}</span></td>`}
       <td class="mono" style="color:var(--accent)">${inv1||'—'}</td>
