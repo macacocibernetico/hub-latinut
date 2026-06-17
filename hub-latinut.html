@@ -4578,7 +4578,8 @@ function openDayDetail(key, dateLabel){
 }
 
 // ─── GOOGLE DRIVE ────────────────────────────────────────────────────────────
-const DRIVE_ROOT_ID = '1BaXJJxy2dn8T4zqSxmlxlxRuD9WCL8km'; // Brokerage Maní
+const DRIVE_AXT_ROOT  = '1L7eOE6CmlER4Nr8WPlmYoStZVXU0vzJy'; // Brokerage Maní/Argen Peanuts/AXT Solutions
+const DRIVE_BUZ_ROOT  = '1wbh3fUph3P2Q8KzY0dFcfbFvcUSuCO_K'; // Brokerage Maní/Nutrin/Buzaram
 
 async function driveGetOrCreateFolder(name, parentId){
   // Buscar si ya existe
@@ -4599,18 +4600,26 @@ async function driveGetOrCreateFolder(name, parentId){
 }
 
 async function driveGetFolderForRow(row){
-  const nc = getNegocioConfig();
-  const negocioActual = negocioActivo;
-  // Estructura: Brokerage Maní / [Proveedor] / [Negocio] / [Producto] / [Año] / [Lote]
-  const proveedor = negocioActual === 'buzaram' ? 'Nutrin' : 'Argen Peanuts';
-  const negocioLabel = negocioActual === 'buzaram' ? 'Buzaram' : 'AXT Solutions';
-  const producto = (row[COL.PRODUCT] || 'Sin producto').trim();
+  const rootId = negocioActivo === 'buzaram' ? DRIVE_BUZ_ROOT : DRIVE_AXT_ROOT;
+
+  const PRODUCT_MAP = {
+    'blanched 38/42': 'Blanched', 'blanched 40/50': 'Blanched',
+    'split blanched': 'Blanched', 'blanched': 'Blanched',
+    'peanut paste': 'Pasta de mani', 'pasta de mani': 'Pasta de mani',
+    'nop': 'Pasta de mani', 'peanut paste nop': 'Pasta de mani',
+    'roasted peanuts': 'Tostado', 'roasted peanuts nop': 'Tostado', 'tostado': 'Tostado',
+    'peanut oil': 'Aceite flexis', 'aceite flexis': 'Aceite flexis',
+    'peanut flour': 'Harina', 'harina': 'Harina',
+  };
+
+  const productoRaw = (row[COL.PRODUCT] || '').trim().toLowerCase();
+  const producto = PRODUCT_MAP[productoRaw] || (row[COL.PRODUCT] || 'Sin producto').trim();
   const etd = parseDate(row[COL.ETD]);
   const anio = etd ? String(etd.getFullYear()) : String(new Date().getFullYear());
   const lote = (row[COL.LOTS] || row[COL.NEGOCIO] || 'Sin lote').trim();
 
-  let folderId = DRIVE_ROOT_ID;
-  for(const name of [proveedor, negocioLabel, producto, anio, lote]){
+  let folderId = rootId;
+  for(const name of [producto, anio, lote]){
     folderId = await driveGetOrCreateFolder(name, folderId);
   }
   return folderId;
