@@ -700,7 +700,7 @@ const CFG_KEY = 'hub_latinut_config';
 let cfg = {...{sheetId:'',sheetName:'Cargas',apiKey:'',clientId:'',alerta_dias:10,hubSheetId:'11r3m9KuXWFRrSjdHf1an2xQDjNwnXhadWk5WbShuLms',appsScriptUrl:'https://script.google.com/macros/s/AKfycbyUy0QaexIIqToupRj1_5zgnFpm5Wyycnt7SLClZMk_zLfhm6CfzLpNr8EgT98aSOY4/exec',claudeApiKey:'',buzaramSheetId:'1vQaNeo595C3aK1KAF75UsOkbA5LNUMm16WoEpP9Z69w',buzaramAppsScriptUrl:'https://script.google.com/a/macros/latinutsa.com/s/AKfycbyR88OXmMw4zC-INvs8kTI7vwtX4JdFDsMNA9IS0wpHJwpl4ypQk385y2lhgqiTVERR/exec'},...JSON.parse(localStorage.getItem(CFG_KEY)||'{}')};
 
 // ─── OAUTH ───────────────────────────────────────────────────────────────────
-const SCOPES = 'https://www.googleapis.com/auth/spreadsheets https://www.googleapis.com/auth/gmail.compose https://www.googleapis.com/auth/drive.file';
+const SCOPES = 'https://www.googleapis.com/auth/spreadsheets https://www.googleapis.com/auth/gmail.compose https://www.googleapis.com/auth/gmail.readonly https://www.googleapis.com/auth/drive.file';
 let tokenClient = null;
 let accessToken = null;
 // ─── NEGOCIO ACTIVO ──────────────────────────────────────────────────────────
@@ -2893,6 +2893,11 @@ function renderConfig(){
       <div class="config-field"><div class="config-label">URL AppScript Buzaram</div><input class="config-input" id="cfg-buzaramAppsScriptUrl" value="${cfg.buzaramAppsScriptUrl||''}" placeholder="https://script.google.com/a/macros/..."></div>
     </div>
     <div class="config-field"><div class="config-label">Groq API Key (chat IA — gratis)</div><input class="config-input" id="cfg-claudeApiKey" type="password" value="${cfg.claudeApiKey||''}" placeholder="gsk_..."><div style="font-size:10px;color:var(--text3);margin-top:4px;">Gratis en console.groq.com — solo necesitás cuenta Google. Sin tarjeta.</div></div>
+    <div class="config-field">
+      <div class="config-label">Anthropic API Key (IA avanzada — análisis de mails)</div>
+      <input class="config-input" id="cfg-anthropicKey" type="password" value="${cfg.anthropicKey||''}" placeholder="sk-ant-...">
+      <div style="font-size:10px;color:var(--text3);margin-top:4px;">Obtené una en <b>console.anthropic.com</b> → cargá USD 5 de crédito → API Keys → Create Key.</div>
+    </div>
     <div class="config-save"><button class="btn primary" onclick="saveConfig()">Guardar y conectar</button></div>
   </div>
   <div class="config-section">
@@ -2911,6 +2916,7 @@ function saveConfig(){
   cfg.hubSheetId=document.getElementById('cfg-hubSheetId')?.value?.trim()||cfg.hubSheetId;
   cfg.appsScriptUrl=document.getElementById('cfg-appsScriptUrl')?.value?.trim()||cfg.appsScriptUrl;
   const ck=document.getElementById('cfg-claudeApiKey')?.value?.trim();if(ck) cfg.claudeApiKey=ck;
+  const ak=document.getElementById('cfg-anthropicKey')?.value?.trim();if(ak) cfg.anthropicKey=ak;
   const bsid=document.getElementById('cfg-buzaramSheetId')?.value?.trim();if(bsid) cfg.buzaramSheetId=bsid;
   const burl=document.getElementById('cfg-buzaramAppsScriptUrl')?.value?.trim();if(burl) cfg.buzaramAppsScriptUrl=burl;
   cfg.alerta_dias=parseInt(document.getElementById('cfg-dias')?.value)||cfg.alerta_dias;
@@ -3530,7 +3536,6 @@ function triggerImportPlanilla(){
     showToast('Leyendo planilla...');
     try{
       const buf = await file.arrayBuffer();
-      // Load SheetJS
       if(!window.XLSX){
         showToast('Cargando SheetJS...');
         await new Promise((res,rej)=>{
@@ -3544,6 +3549,41 @@ function triggerImportPlanilla(){
       const data = parsePlanillaDespachante(wb);
       fillImportData(data);
       showToast('✓ Planilla importada');
+
+      // Buscar mail del despachante con ese adjunto y completar campos faltantes
+      if(accessToken){
+        showToast('🔍 Buscando mail del despachante...');
+        const mailData = await buscarMailDespachante(file.name);
+        if(mailData){
+          showToast('🤖 Analizando mail con IA...');
+          // Campos que típicamente faltan del xlsx
+          const camposFaltantes = ['fecha_consolidacion', 'containers', 'consolidacion'];
+          const extraidos = await extraerDatosMailConClaude(mailData, camposFaltantes);
+          if(extraidos){
+            // Completar campos encontrados
+            if(extraidos.fecha_consolidacion){
+              const inp = document.getElementById('nc-consolidacion');
+              if(inp){
+                const parts = extraidos.fecha_consolidacion.split('/');
+                if(parts.length===3) inp.value = `${parts[2]}-${parts[1]}-${parts[0]}`;
+              }
+            }
+            if(extraidos.containers){
+              const inp = document.getElementById('nc-containers');
+              if(inp) inp.value = extraidos.containers;
+            }
+            if(extraidos.consolidacion){
+              const inp = document.getElementById('nc-consolidacion-txt');
+              if(inp) inp.value = extraidos.consolidacion;
+            }
+            showToast('✓ Datos del mail completados con IA', 'ok');
+          } else {
+            showToast('✓ Planilla importada — mail encontrado pero sin datos adicionales');
+          }
+        } else {
+          showToast('✓ Planilla importada — no se encontró mail con ese adjunto');
+        }
+      }
     } catch(err){
       console.error('Import error:', err);
       alert('Error al leer la planilla: ' + err.message);
@@ -4577,6 +4617,89 @@ function openDayDetail(key, dateLabel){
   document.getElementById('cf-detail-overlay').classList.remove('hidden');
 }
 
+
+// ─── GMAIL + CLAUDE: EXTRAER DATOS DEL MAIL DEL DESPACHANTE ─────────────────
+async function buscarMailDespachante(filename){
+  if(!accessToken) return null;
+  try {
+    const q = encodeURIComponent('filename:"' + filename + '" in:anywhere');
+    const r = await fetch('https://gmail.googleapis.com/gmail/v1/users/me/messages?q=' + q + '&maxResults=3', {
+      headers: { 'Authorization': 'Bearer ' + accessToken }
+    });
+    const data = await r.json();
+    if(!data.messages || !data.messages.length) return null;
+    const msgId = data.messages[0].id;
+    const r2 = await fetch('https://gmail.googleapis.com/gmail/v1/users/me/messages/' + msgId + '?format=full', {
+      headers: { 'Authorization': 'Bearer ' + accessToken }
+    });
+    const msg = await r2.json();
+    const headers = msg.payload?.headers || [];
+    const subject = headers.find(h=>h.name==='Subject')?.value || '';
+    const from    = headers.find(h=>h.name==='From')?.value || '';
+    const date    = headers.find(h=>h.name==='Date')?.value || '';
+    let body = '';
+    const extractBody = (parts) => {
+      for(const part of parts||[]){
+        if(part.mimeType === 'text/plain' && part.body?.data){
+          body += atob(part.body.data.replace(/-/g,'+').replace(/_/g,'/'));
+        }
+        if(part.parts) extractBody(part.parts);
+      }
+    };
+    if(msg.payload?.body?.data){
+      body = atob(msg.payload.body.data.replace(/-/g,'+').replace(/_/g,'/'));
+    } else {
+      extractBody(msg.payload?.parts);
+    }
+    return { subject, from, date, body: body.substring(0, 3000) };
+  } catch(e) {
+    console.error('Error buscando mail:', e);
+    return null;
+  }
+}
+
+async function extraerDatosMailConClaude(mailData, camposFaltantes){
+  if(!cfg.anthropicKey){
+    showToast('⚠ Configurá la Anthropic API Key en Configuración', 'err');
+    return null;
+  }
+  const prompt = `Sos un asistente de una empresa exportadora de maní argentina.
+Analizá este mail de un despachante de aduanas y extraé los datos solicitados.
+
+ASUNTO: ${mailData.subject}
+DE: ${mailData.from}
+FECHA: ${mailData.date}
+CUERPO:
+${mailData.body}
+
+Extraé SOLO los siguientes campos que faltan completar: ${camposFaltantes.join(', ')}
+
+Respondé ÚNICAMENTE con un JSON válido sin markdown, con los campos encontrados.
+Si no encontrás un valor, poné null.
+Formato de fechas: DD/MM/YYYY
+Ejemplo: {"fecha_consolidacion": "15/06/2026", "etd": null}`;
+
+  const r = await fetch('https://api.anthropic.com/v1/messages', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'x-api-key': cfg.anthropicKey,
+      'anthropic-version': '2023-06-01',
+      'anthropic-dangerous-direct-browser-calls': 'true'
+    },
+    body: JSON.stringify({
+      model: 'claude-sonnet-4-6',
+      max_tokens: 500,
+      messages: [{ role: 'user', content: prompt }]
+    })
+  });
+  const data = await r.json();
+  const text = data.content?.[0]?.text || '';
+  try {
+    return JSON.parse(text.replace(/```json|```/g,'').trim());
+  } catch(e) { return null; }
+}
+
 // ─── GOOGLE DRIVE ────────────────────────────────────────────────────────────
 const DRIVE_AXT_ROOT  = '1L7eOE6CmlER4Nr8WPlmYoStZVXU0vzJy'; // Brokerage Maní/Argen Peanuts/AXT Solutions
 const DRIVE_BUZ_ROOT  = '1wbh3fUph3P2Q8KzY0dFcfbFvcUSuCO_K'; // Brokerage Maní/Nutrin/Buzaram
@@ -4646,6 +4769,16 @@ async function driveOpenFolder(rowIdx){
   try {
     const folderId = await driveGetFolderForRow(row);
     window.open(`https://drive.google.com/drive/folders/${folderId}`, '_blank');
+    const nc3 = getNegocioConfig();
+    await appendLog({
+      fuente: nc3.label,
+      fc: (row[COL.INVOICE_CLIENTE]||'').trim(),
+      fcServ: '',
+      bl: (row[COL.BL]||'').trim(),
+      customer: (row[COL.CUSTOMER]||'').trim(),
+      accion: 'abrir carpeta drive',
+      detalle: `Lote: ${(row[COL.LOTS]||'').trim()}`
+    });
   } catch(e) {
     showToast('Error al acceder al Drive: ' + e.message, 'err');
   }
@@ -4664,7 +4797,7 @@ async function driveUploadForRow(rowIdx, files){
       if(result.id) ok++;
     }
     showToast(`✓ ${ok} archivo${ok>1?'s':''} subido${ok>1?'s':''} al Drive`, 'ok');
-    logAction('drive_upload', row, `${ok} archivo(s) subido(s)`);
+    const nc2 = getNegocioConfig(); await appendLog({fuente:nc2.label, fc:(row[COL.INVOICE_CLIENTE]||'').trim(), fcServ:(row[COL.INVOICE_FC_SERV]||'').trim(), bl:(row[COL.BL]||'').trim(), customer:(row[COL.CUSTOMER]||'').trim(), accion:'subida drive', detalle:ok+' archivo(s): '+Array.from(files).map(f=>f.name).join(', ')});
   } catch(e) {
     showToast('Error al subir: ' + e.message, 'err');
   }
