@@ -3557,10 +3557,11 @@ function triggerImportPlanilla(){
         if(mailData){
           showToast('🤖 Analizando mail con IA...');
           // Campos que típicamente faltan del xlsx
-          const camposFaltantes = ['fecha_consolidacion', 'containers', 'consolidacion'];
-          const extraidos = await extraerDatosMailConClaude(mailData, camposFaltantes);
+          const camposFaltantes = ['fecha_consolidacion', 'containers', 'customer'];
+          // Clientes conocidos para matching
+          const clientesConocidos = [...new Set(allRows.map(r=>(r[COL.CUSTOMER]||'').trim()).filter(Boolean))];
+          const extraidos = await extraerDatosMailConClaude(mailData, camposFaltantes, clientesConocidos);
           if(extraidos){
-            // Completar campos encontrados
             if(extraidos.fecha_consolidacion){
               const inp = document.getElementById('nc-consolidacion');
               if(inp){
@@ -3572,12 +3573,17 @@ function triggerImportPlanilla(){
               const inp = document.getElementById('nc-containers');
               if(inp) inp.value = extraidos.containers;
             }
-            if(extraidos.consolidacion){
-              const inp = document.getElementById('nc-consolidacion-txt');
-              if(inp) inp.value = extraidos.consolidacion;
+            if(extraidos.customer){
+              const sel = document.getElementById('nc-customer-sel');
+              const inp2 = document.getElementById('nc-customer');
+              if(sel){
+                const opt = [...sel.options].find(o => o.value === extraidos.customer);
+                if(opt){ sel.value = extraidos.customer; if(inp2){ inp2.style.display='none'; inp2.value=extraidos.customer; } }
+                else { sel.value='__otro__'; if(inp2){ inp2.style.display='block'; inp2.value=extraidos.customer; } }
+              } else if(inp2){ inp2.value = extraidos.customer; }
             }
-            showToast('✓ Datos del mail completados con IA', 'ok');
-          } else {
+            const completados = Object.entries(extraidos).filter(([k,v])=>v!==null).map(([k])=>k).join(', ');
+            showToast('✓ IA completó: ' + (completados||'sin datos nuevos'), 'ok');
             showToast('✓ Planilla importada — mail encontrado pero sin datos adicionales');
           }
         } else {
@@ -4658,39 +4664,44 @@ async function buscarMailDespachante(filename){
   }
 }
 
-async function extraerDatosMailConClaude(mailData, camposFaltantes){
+async function extraerDatosMailConClaude(mailData, camposFaltantes, clientesConocidos=[]){
   if(!cfg.anthropicKey){
     showToast('⚠ Configurá la Anthropic API Key en Configuración', 'err');
     return null;
   }
-  const prompt = `Sos un asistente de una empresa exportadora de maní argentina.
+
+  const clientesStr = clientesConocidos.length
+    ? `\nCLIENTES CONOCIDOS (elegí el más parecido al consignatario del mail):\n${clientesConocidos.join(', ')}`
+    : '';
+
+  const prompt = `Sos un asistente de una empresa exportadora de maní argentina (LATINUT SA).
 Analizá este mail de un despachante de aduanas y extraé los datos solicitados.
 
 ASUNTO: ${mailData.subject}
 DE: ${mailData.from}
-FECHA: ${mailData.date}
+FECHA DEL MAIL: ${mailData.date}
 CUERPO:
 ${mailData.body}
+${clientesStr}
 
-Extraé SOLO los siguientes campos que faltan completar: ${camposFaltantes.join(', ')}
+INSTRUCCIONES:
+- "fecha_consolidacion": buscala como "fecha de carga", "loading date" o similar. Formato DD/MM/YYYY.
+- "containers": número o cantidad de contenedores mencionados.
+- "customer": buscá el consignatario en el Certificado de Origen (CO) o Fitosanitario (FITO). Comparalo con la lista de CLIENTES CONOCIDOS y devolvé el nombre más parecido de esa lista. Si no hay lista o no encontrás coincidencia, devolvé el nombre tal como aparece en el mail.
 
-Respondé ÚNICAMENTE con un JSON válido sin markdown, con los campos encontrados.
+Respondé ÚNICAMENTE con un JSON válido sin markdown ni explicaciones.
 Si no encontrás un valor, poné null.
-Formato de fechas: DD/MM/YYYY
-Ejemplo: {"fecha_consolidacion": "15/06/2026", "etd": null}`;
+Ejemplo: {"fecha_consolidacion": "15/06/2026", "containers": "2x20'", "customer": "IDI"}`;
 
-  const r = await fetch('https://api.anthropic.com/v1/messages', {
+  // Llamar via AppScript proxy (evita CORS)
+  const proxyUrl = 'https://script.google.com/macros/s/AKfycbwLhCPz9PTMIxi3cny-3s5k4dQRKxsZA2TPb1TOMY244-rubMmYCBZQ9zpA_fsUIm5D/exec';
+  const r = await fetch(proxyUrl, {
     method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'x-api-key': cfg.anthropicKey,
-      'anthropic-version': '2023-06-01',
-      'anthropic-dangerous-direct-browser-calls': 'true'
-    },
+    headers: { 'Content-Type': 'text/plain' },
     body: JSON.stringify({
-      model: 'claude-sonnet-4-6',
-      max_tokens: 500,
-      messages: [{ role: 'user', content: prompt }]
+      action: 'claudeProxy',
+      anthropicKey: cfg.anthropicKey,
+      prompt
     })
   });
   const data = await r.json();
