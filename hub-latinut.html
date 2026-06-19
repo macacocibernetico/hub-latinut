@@ -3563,9 +3563,9 @@ function triggerImportPlanilla(){
           const extraidos = await extraerDatosMailConClaude(mailData, camposFaltantes, clientesConocidos);
           if(extraidos){
             if(extraidos.fecha_consolidacion){
-              const inp = document.getElementById('nc-consolidacion');
+              const inp = document.getElementById('nc-consol');
               if(inp){
-                const parts = extraidos.fecha_consolidacion.split('/');
+                const parts = extraidos.fecha_consolidacion.replace(/\s*\(.*?\)/g,'').trim().split('/');
                 if(parts.length===3) inp.value = `${parts[2]}-${parts[1]}-${parts[0]}`;
               }
             }
@@ -4685,7 +4685,7 @@ ${mailData.body}
 ${clientesStr}
 
 INSTRUCCIONES:
-- "fecha_consolidacion": buscala como "fecha de carga", "loading date" o similar. Formato DD/MM/YYYY.
+- "fecha_consolidacion": buscala como "Fecha de carga:" en el mail. Extraé SOLO la fecha en formato DD/MM/YYYY, ignorá cualquier texto adicional como el día de la semana entre paréntesis (ej: si dice "11/05/2026 (LUN)" devolvé "11/05/2026").
 - "containers": número o cantidad de contenedores mencionados.
 - "customer": buscá el consignatario en el Certificado de Origen (CO) o Fitosanitario (FITO). Comparalo con la lista de CLIENTES CONOCIDOS y devolvé el nombre más parecido de esa lista. Si no hay lista o no encontrás coincidencia, devolvé el nombre tal como aparece en el mail.
 
