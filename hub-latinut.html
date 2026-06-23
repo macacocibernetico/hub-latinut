@@ -2478,6 +2478,7 @@ function renderLiberaciones(){
           <span class="tag vessel">${row[COL.VESSEL]||'—'}</span>
           <span class="tag port">${row[COL.PORT]||'—'}</span>
           ${inv1?`<span class="tag customer">${inv1}${inv2?' / '+inv2:''}</span>`:''}
+          ${(row[nc.PAGO_PROVEEDOR]||'').trim()?`<span class="tag" style="background:rgba(255,170,34,.1);color:var(--warn);">🚢 ${(row[nc.PAGO_PROVEEDOR]||'').trim()}</span>`:''}
         </div>
         <div class="alert-logistics" style="margin:8px 0;">
           <div class="log-item"><span class="log-label">Containers:</span><span class="log-value">${(row[COL.CONTAINERS]||'').trim()}</span></div>
@@ -4117,20 +4118,16 @@ function renderCashFlow(){
   const balanceHtml = cfMode==='cobros' ? `
   <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:20px;">
     <div style="background:var(--bg2);border:1px solid ${hayVencidos?'rgba(255,59,48,.4)':'var(--border)'};border-radius:var(--radius-lg);padding:14px 16px;box-shadow:var(--shadow);cursor:pointer;${hayVencidos?'background:rgba(255,59,48,.04);':''}" onclick="openRangeDetail('vencido',null,'Vencidos')" title="Ver vencidos">
-      <div style="font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.5px;color:${hayVencidos?'var(--danger)':'var(--text3)'};margin-bottom:8px;display:flex;justify-content:space-between;align-items:center;">
+      <div style="font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.5px;color:${hayVencidos?'var(--danger)':'var(--text3)'};margin-bottom:10px;display:flex;justify-content:space-between;align-items:center;">
         <span>⚠ Vencido</span><span style="color:var(--accent);font-size:10px;">${hayVencidos?'Ver →':''}</span>
       </div>
-      <div style="display:flex;justify-content:space-between;margin-bottom:4px;">
-        <span style="font-size:11px;color:var(--text3);">▲ Cobros</span>
-        <span style="font-size:11px;font-family:var(--mono);color:${vencCobros?'var(--danger)':'var(--text3)'};font-weight:600;">${vencCobros?fmtUSD(vencUSDCobros):'—'}</span>
+      <div style="margin-bottom:10px;">
+        <div style="font-size:10px;color:var(--text3);margin-bottom:3px;">▲ Cobros vencidos</div>
+        <div style="font-size:18px;font-weight:700;font-family:var(--mono);color:${vencCobros?'var(--danger)':'var(--text3)'};">${vencCobros?fmtUSD(vencUSDCobros):'—'}</div>
       </div>
-      <div style="display:flex;justify-content:space-between;margin-bottom:8px;">
-        <span style="font-size:11px;color:var(--text3);">▼ Pagos</span>
-        <span style="font-size:11px;font-family:var(--mono);color:${vencPagos?'var(--danger)':'var(--text3)'};font-weight:600;">${vencPagos?fmtUSD(vencUSDPagos):'—'}</span>
-      </div>
-      <div style="border-top:1px solid var(--border);padding-top:7px;display:flex;justify-content:space-between;align-items:center;">
-        <span style="font-size:11px;font-weight:600;color:var(--text);">Total</span>
-        <span style="font-size:15px;font-weight:700;font-family:var(--mono);color:${hayVencidos?'var(--danger)':'var(--text3)'};">${hayVencidos?fmtUSD(vencUSDCobros+vencUSDPagos):'—'}</span>
+      <div>
+        <div style="font-size:10px;color:var(--text3);margin-bottom:3px;">▼ Pagos vencidos</div>
+        <div style="font-size:18px;font-weight:700;font-family:var(--mono);color:${vencPagos?'var(--danger)':'var(--text3)'};">${vencPagos?fmtUSD(vencUSDPagos):'—'}</div>
       </div>
     </div>
     <div style="background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius-lg);padding:14px 16px;box-shadow:var(--shadow);cursor:pointer;" onclick="openRangeDetail('semana',null,'Esta semana')" title="Ver detalle">
@@ -4938,18 +4935,23 @@ function closeTasksModal(){
 }
 
 // ─── GOOGLE DRIVE ────────────────────────────────────────────────────────────
-const DRIVE_AXT_ROOT  = '1L7eOE6CmlER4Nr8WPlmYoStZVXU0vzJy'; // Brokerage Maní/Argen Peanuts/AXT Solutions
-const DRIVE_BUZ_ROOT  = '1wbh3fUph3P2Q8KzY0dFcfbFvcUSuCO_K'; // Brokerage Maní/Nutrin/Buzaram
+const DRIVE_AXT_ROOT  = '1L7eOE6CmlER4Nr8WPlmYoStZVXU0vzJy'; // AXT Solutions
+const DRIVE_BUZ_ROOT  = '1wbh3fUph3P2Q8KzY0dFcfbFvcUSuCO_K'; // Buzaram
+
+// IDs fijos de carpetas de producto AXT (evita duplicados)
+const DRIVE_AXT_PRODUCTO_IDS = {
+  'Blanched':      '1M8LFIFLMkdv8_vh5SV4mZhc2jSshhZH3',
+  'Tostado':       '1NejcsKPbz84hyi1NebACB_QuDjaMfi6B',
+  'Pasta de mani': '1LoWmylsK0wbJP8wtfF7Vebb8k5UPuAGU',
+};
 
 async function driveGetOrCreateFolder(name, parentId){
-  // Buscar si ya existe
   const q = encodeURIComponent(`name='${name}' and '${parentId}' in parents and mimeType='application/vnd.google-apps.folder' and trashed=false`);
   const r = await fetch(`https://www.googleapis.com/drive/v3/files?q=${q}&fields=files(id,name)`, {
     headers: { 'Authorization': `Bearer ${accessToken}` }
   });
   const data = await r.json();
   if(data.files && data.files.length > 0) return data.files[0].id;
-  // Crear si no existe
   const cr = await fetch('https://www.googleapis.com/drive/v3/files', {
     method: 'POST',
     headers: { 'Authorization': `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
@@ -4960,11 +4962,9 @@ async function driveGetOrCreateFolder(name, parentId){
 }
 
 async function driveGetFolderForRow(row){
-  const rootId = negocioActivo === 'buzaram' ? DRIVE_BUZ_ROOT : DRIVE_AXT_ROOT;
-
   const PRODUCT_MAP = {
     'blanched 38/42': 'Blanched', 'blanched 40/50': 'Blanched',
-    'split blanched': 'Blanched', 'blanched': 'Blanched',
+    'split blanched': 'Blanched', 'split blanched peanuts': 'Blanched', 'blanched': 'Blanched',
     'peanut paste': 'Pasta de mani', 'pasta de mani': 'Pasta de mani',
     'nop': 'Pasta de mani', 'peanut paste nop': 'Pasta de mani',
     'roasted peanuts': 'Tostado', 'roasted peanuts nop': 'Tostado', 'tostado': 'Tostado',
@@ -4978,6 +4978,15 @@ async function driveGetFolderForRow(row){
   const anio = etd ? String(etd.getFullYear()) : String(new Date().getFullYear());
   const lote = (row[COL.LOTS] || row[COL.NEGOCIO] || 'Sin lote').trim();
 
+  // Para AXT usar ID fijo de carpeta de producto si existe
+  if(negocioActivo !== 'buzaram' && DRIVE_AXT_PRODUCTO_IDS[producto]){
+    const productoId = DRIVE_AXT_PRODUCTO_IDS[producto];
+    const anioId = await driveGetOrCreateFolder(anio, productoId);
+    return await driveGetOrCreateFolder(lote, anioId);
+  }
+
+  // Para Buzaram o productos sin ID fijo, navegar desde la raíz
+  const rootId = negocioActivo === 'buzaram' ? DRIVE_BUZ_ROOT : DRIVE_AXT_ROOT;
   let folderId = rootId;
   for(const name of [producto, anio, lote]){
     folderId = await driveGetOrCreateFolder(name, folderId);
