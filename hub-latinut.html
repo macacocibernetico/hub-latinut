@@ -4990,7 +4990,6 @@ async function driveGetFolderForRow(row){
   // 1. Buscar el lote por nombre en todo Drive
   const loteExistente = await driveBuscarLoteEnAXT(lote);
   if(loteExistente){
-    Logger && Logger.log && Logger.log('Carpeta lote encontrada: ' + lote);
     return loteExistente;
   }
 
