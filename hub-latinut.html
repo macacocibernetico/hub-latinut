@@ -700,7 +700,7 @@ const CFG_KEY = 'hub_latinut_config';
 let cfg = {...{sheetId:'',sheetName:'Cargas',apiKey:'',clientId:'',alerta_dias:10,hubSheetId:'11r3m9KuXWFRrSjdHf1an2xQDjNwnXhadWk5WbShuLms',appsScriptUrl:'https://script.google.com/macros/s/AKfycbyUy0QaexIIqToupRj1_5zgnFpm5Wyycnt7SLClZMk_zLfhm6CfzLpNr8EgT98aSOY4/exec',claudeApiKey:'',buzaramSheetId:'1vQaNeo595C3aK1KAF75UsOkbA5LNUMm16WoEpP9Z69w',buzaramAppsScriptUrl:'https://script.google.com/a/macros/latinutsa.com/s/AKfycbyR88OXmMw4zC-INvs8kTI7vwtX4JdFDsMNA9IS0wpHJwpl4ypQk385y2lhgqiTVERR/exec'},...JSON.parse(localStorage.getItem(CFG_KEY)||'{}')};
 
 // ─── OAUTH ───────────────────────────────────────────────────────────────────
-const SCOPES = 'https://www.googleapis.com/auth/spreadsheets https://www.googleapis.com/auth/gmail.compose https://www.googleapis.com/auth/gmail.readonly https://www.googleapis.com/auth/drive.file';
+const SCOPES = 'https://www.googleapis.com/auth/spreadsheets https://www.googleapis.com/auth/gmail.compose https://www.googleapis.com/auth/gmail.readonly https://www.googleapis.com/auth/drive.file https://www.googleapis.com/auth/tasks';
 let tokenClient = null;
 let accessToken = null;
 // ─── NEGOCIO ACTIVO ──────────────────────────────────────────────────────────
@@ -1947,6 +1947,7 @@ function renderCargas(showAll, sort){
       <td onclick="event.stopPropagation()" style="white-space:nowrap;">
         <button class="row-action" onclick="triggerDriveUpload(${idx})" title="Subir documentos al Drive" style="color:#4285f4;border-color:#4285f4;">📎 Subir</button>
         <button class="row-action" onclick="driveOpenFolder(${idx})" title="Abrir carpeta en Drive" style="margin-left:4px;">📁</button>
+        <button class="row-action" onclick="openTasksModal(${idx})" title="Tasks" style="margin-left:4px;">📋</button>
       </td>
     </tr>`;
   });
@@ -3424,13 +3425,13 @@ function detectPacking(text){
 function detectProduct(lote, desc){
   const l = (lote||'').toUpperCase();
   const d = (desc||'').toLowerCase();
-  if(l.startsWith('BLS')) return 'Split blanched';
+  if(l.startsWith('BLS')) return 'Split blanched peanuts';
   if(l.startsWith('TOS')) return 'Roasted peanuts';
   if(l.startsWith('BL38')) return 'Blanched peanuts 38/42';
   if(l.startsWith('BL40')) return 'Blanched peanuts 40/50';
   if(l.startsWith('BL')) return 'Blanched peanuts';
   if(l.startsWith('PA')) return 'Peanut paste';
-  if(d.includes('partido') || d.includes('split')) return 'Split blanched';
+  if(d.includes('partido') || d.includes('split')) return 'Split blanched peanuts';
   if(d.includes('tostado') || d.includes('roasted')) return 'Roasted peanuts';
   if(d.includes('pasta') || d.includes('paste')) return 'Peanut paste';
   return desc||'';
@@ -3556,10 +3557,11 @@ function triggerImportPlanilla(){
         const mailData = await buscarMailDespachante(file.name);
         if(mailData){
           showToast('🤖 Analizando mail con IA...');
-          // Campos que típicamente faltan del xlsx
           const camposFaltantes = ['fecha_consolidacion', 'containers', 'customer'];
-          // Clientes conocidos para matching
           const clientesConocidos = [...new Set(allRows.map(r=>(r[COL.CUSTOMER]||'').trim()).filter(Boolean))];
+          // Pasar el lote actual para que detecte el consignatario correcto cuando hay múltiples
+          const loteActual = document.getElementById('nc-lots')?.value?.trim() || '';
+          mailData.loteActual = loteActual;
           const extraidos = await extraerDatosMailConClaude(mailData, camposFaltantes, clientesConocidos);
           if(extraidos){
             if(extraidos.fecha_consolidacion){
@@ -4686,6 +4688,8 @@ async function extraerDatosMailConClaude(mailData, camposFaltantes, clientesCono
     ? `\nCLIENTES CONOCIDOS (elegí el más parecido al consignatario del mail):\n${clientesConocidos.join(', ')}`
     : '';
 
+  const loteActual = mailData.loteActual || '';
+
   const prompt = `Sos un asistente de una empresa exportadora de maní argentina (LATINUT SA).
 Analizá este mail de un despachante de aduanas y extraé los datos solicitados.
 
@@ -4699,7 +4703,11 @@ ${clientesStr}
 INSTRUCCIONES:
 - "fecha_consolidacion": buscala como "Fecha de carga:" en el mail. Extraé SOLO la fecha en formato DD/MM/YYYY, ignorá cualquier texto adicional como el día de la semana entre paréntesis (ej: si dice "11/05/2026 (LUN)" devolvé "11/05/2026").
 - "containers": número o cantidad de contenedores mencionados.
-- "customer": buscá el consignatario en el Certificado de Origen (CO) o Fitosanitario (FITO). Comparalo con la lista de CLIENTES CONOCIDOS y devolvé el nombre más parecido de esa lista. Si no hay lista o no encontrás coincidencia, devolvé el nombre tal como aparece en el mail.
+- "customer": buscá el consignatario en el Certificado de Origen (CO) o Fitosanitario (FITO).
+  IMPORTANTE: si el mail detalla consignatarios distintos por lote (ej: "BL38-250030-AP: Pata S.p.a." / "BL40-250046-AP: ARSAL SRL"),
+  devolvé SOLO el consignatario que corresponde al lote "${loteActual}".
+  Si no hay distinción por lote o no se menciona "${loteActual}", devolvé el consignatario general.
+  Comparalo con la lista de CLIENTES CONOCIDOS y devolvé el nombre más parecido de esa lista.
 
 Respondé ÚNICAMENTE con un JSON válido sin markdown ni explicaciones.
 Si no encontrás un valor, poné null.
@@ -4722,6 +4730,211 @@ Ejemplo: {"fecha_consolidacion": "15/06/2026", "containers": "2x20'", "customer"
   try {
     return JSON.parse(text.replace(/```json|```/g,'').trim());
   } catch(e) { return null; }
+}
+
+
+// ─── GOOGLE TASKS ────────────────────────────────────────────────────────────
+
+async function tasksGetLists(){
+  const r = await fetch('https://tasks.googleapis.com/tasks/v1/users/@me/lists', {
+    headers: { 'Authorization': `Bearer ${accessToken}` }
+  });
+  const data = await r.json();
+  return data.items || [];
+}
+
+async function tasksGetPending(listId){
+  const r = await fetch(`https://tasks.googleapis.com/tasks/v1/lists/${listId}/tasks?showCompleted=false&maxResults=100`, {
+    headers: { 'Authorization': `Bearer ${accessToken}` }
+  });
+  const data = await r.json();
+  return (data.items || []).filter(t => t.status !== 'completed');
+}
+
+async function tasksCreate(listId, title, notes){
+  const body = { title, notes: notes || '' };
+  const r = await fetch(`https://tasks.googleapis.com/tasks/v1/lists/${listId}/tasks`, {
+    method: 'POST',
+    headers: { 'Authorization': `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify(body)
+  });
+  return await r.json();
+}
+
+async function tasksComplete(listId, taskId){
+  const r = await fetch(`https://tasks.googleapis.com/tasks/v1/lists/${listId}/tasks/${taskId}`, {
+    method: 'PATCH',
+    headers: { 'Authorization': `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ status: 'completed' })
+  });
+  return await r.json();
+}
+
+async function tasksGenerarTextoConClaude(miRespuesta, carga){
+  if(!cfg.anthropicKey) return null;
+  const prompt = `Sos un asistente de una empresa exportadora argentina.
+El usuario escribio esta respuesta de mail:
+"${miRespuesta}"
+
+Datos de la operacion:
+- Cliente: ${carga.customer}
+- BL: ${carga.bl}
+- Booking: ${carga.booking}
+- Lote: ${carga.lote}
+
+Genera el texto de una tarea pendiente en base a lo que dice la respuesta del mail.
+Formato: "[accion pendiente] - [cliente] - BKG [booking o BL]"
+Ejemplos:
+- "Recibir PL y seguro para pasarle al cliente - Newsan - BKG 269321777"
+- "Aguardar ok de Pedro para liberar - PIDCO - BL TRANSHBL00050588"
+Responde SOLO con el texto de la tarea, sin explicaciones ni comillas.`;
+
+  try {
+    const r = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-api-key': cfg.anthropicKey,
+        'anthropic-version': '2023-06-01',
+        'anthropic-dangerous-direct-browser-calls': 'true'
+      },
+      body: JSON.stringify({
+        model: getAnthropicModel('chat_consulta'),
+        max_tokens: 100,
+        messages: [{ role: 'user', content: prompt }]
+      })
+    });
+    const data = await r.json();
+    return data.content?.[0]?.text?.trim() || null;
+  } catch(e) { return null; }
+}
+
+async function tasksDetectarCompletadas(miRespuesta, tareasPendientes){
+  if(!cfg.anthropicKey || !tareasPendientes.length) return [];
+  const listaTareas = tareasPendientes.map((t,i) => `${i+1}. "${t.title}"`).join('\n');
+  const prompt = `El usuario escribio esta respuesta de mail:
+"${miRespuesta}"
+
+Estas son las tareas pendientes:
+${listaTareas}
+
+Cual o cuales de estas tareas quedaron resueltas con esta respuesta?
+Responde SOLO con los numeros separados por coma (ej: "1,3") o "ninguna" si no resuelve ninguna.`;
+
+  try {
+    const r = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-api-key': cfg.anthropicKey,
+        'anthropic-version': '2023-06-01',
+        'anthropic-dangerous-direct-browser-calls': 'true'
+      },
+      body: JSON.stringify({
+        model: getAnthropicModel('chat_consulta'),
+        max_tokens: 50,
+        messages: [{ role: 'user', content: prompt }]
+      })
+    });
+    const data = await r.json();
+    const texto = data.content?.[0]?.text?.trim() || 'ninguna';
+    if(texto.toLowerCase() === 'ninguna') return [];
+    return texto.split(',').map(n => parseInt(n.trim()) - 1).filter(n => !isNaN(n));
+  } catch(e) { return []; }
+}
+
+let tasksModalRowIdx = null;
+let tasksListId = null;
+let tasksPendientes = [];
+
+async function openTasksModal(rowIdx){
+  if(!accessToken){ alert('Conectate con Google primero'); return; }
+  tasksModalRowIdx = rowIdx;
+  const row = allRows[rowIdx];
+  if(!row) return;
+  showToast('Cargando tareas...', 'info');
+  const listas = await tasksGetLists();
+  if(!listas.length){ showToast('No se encontraron listas de Tasks', 'err'); return; }
+  tasksListId = listas[0].id;
+  tasksPendientes = await tasksGetPending(tasksListId);
+  const carga = {
+    customer: (row[COL.CUSTOMER]||'').trim(),
+    bl: (row[COL.BL]||'').trim(),
+    booking: (row[COL.BOOKING]||'').trim(),
+    lote: (row[COL.LOTS]||'').trim()
+  };
+  const tareasRelacionadas = tasksPendientes.filter(t =>
+    (carga.bl && t.title && t.title.includes(carga.bl)) ||
+    (carga.booking && t.title && t.title.includes(carga.booking)) ||
+    (carga.customer && t.title && t.title.toLowerCase().includes(carga.customer.toLowerCase()))
+  );
+  const tareasHtml = tareasRelacionadas.length
+    ? tareasRelacionadas.map(t =>
+      `<div style="display:flex;align-items:center;gap:10px;padding:10px 14px;background:var(--bg3);border-radius:8px;margin-bottom:6px;">
+        <button onclick="completarTarea('${t.id}')" style="width:20px;height:20px;border-radius:50%;border:2px solid var(--border2);background:transparent;cursor:pointer;flex-shrink:0;" title="Tachar">✓</button>
+        <span style="font-size:12px;color:var(--text);flex:1;">${t.title}</span>
+      </div>`).join('')
+    : '<div style="font-size:12px;color:var(--text3);padding:12px 0;">Sin tareas pendientes para esta carga.</div>';
+  document.getElementById('tasks-modal-carga').textContent = carga.customer + ' · ' + (carga.bl||carga.booking);
+  document.getElementById('tasks-pendientes').innerHTML = tareasHtml;
+  document.getElementById('tasks-texto').value = '';
+  document.getElementById('tasks-respuesta').value = '';
+  document.getElementById('tasks-completadas-aviso').innerHTML = '';
+  document.getElementById('tasks-modal').classList.remove('hidden');
+}
+
+async function tasksGenerarTexto(){
+  const row = allRows[tasksModalRowIdx];
+  if(!row) return;
+  const miRespuesta = document.getElementById('tasks-respuesta').value.trim();
+  if(!miRespuesta){ alert('Pega tu respuesta de mail primero'); return; }
+  showToast('Generando con IA...', 'info');
+  const carga = {
+    customer: (row[COL.CUSTOMER]||'').trim(),
+    bl: (row[COL.BL]||'').trim(),
+    booking: (row[COL.BOOKING]||'').trim(),
+    lote: (row[COL.LOTS]||'').trim()
+  };
+  const texto = await tasksGenerarTextoConClaude(miRespuesta, carga);
+  if(texto) document.getElementById('tasks-texto').value = texto;
+  if(tasksPendientes.length){
+    const completadasIdx = await tasksDetectarCompletadas(miRespuesta, tasksPendientes);
+    if(completadasIdx.length){
+      const nombres = completadasIdx.map(i => tasksPendientes[i]?.title).filter(Boolean);
+      document.getElementById('tasks-completadas-aviso').innerHTML =
+        '<div style="background:#e8f5e9;border:1px solid #c8e6c9;border-radius:8px;padding:10px 14px;font-size:12px;color:#2e7d32;margin-top:8px;">' +
+        '<b>✓ Claude detecto que estas tareas quedaron resueltas:</b><br>' + nombres.join('<br>') +
+        '<br><button onclick="tasksCompletarDetectadas([' + completadasIdx.join(',') + '])" style="margin-top:8px;font-size:11px;background:#2e7d32;color:#fff;border:none;border-radius:6px;padding:5px 12px;cursor:pointer;font-family:var(--font);">Tachar ahora</button></div>';
+    }
+  }
+  showToast('Listo', 'ok');
+}
+
+async function tasksCompletarDetectadas(indices){
+  for(const i of indices){
+    const t = tasksPendientes[i];
+    if(t) await tasksComplete(tasksListId, t.id);
+  }
+  showToast('Tareas tachadas', 'ok');
+  openTasksModal(tasksModalRowIdx);
+}
+
+async function completarTarea(taskId){
+  await tasksComplete(tasksListId, taskId);
+  showToast('Tarea tachada', 'ok');
+  openTasksModal(tasksModalRowIdx);
+}
+
+async function crearTarea(){
+  const texto = document.getElementById('tasks-texto').value.trim();
+  if(!texto){ alert('El texto esta vacio'); return; }
+  await tasksCreate(tasksListId, texto);
+  showToast('Tarea creada en Google Tasks', 'ok');
+  openTasksModal(tasksModalRowIdx);
+}
+
+function closeTasksModal(){
+  document.getElementById('tasks-modal').classList.add('hidden');
 }
 
 // ─── GOOGLE DRIVE ────────────────────────────────────────────────────────────
@@ -4944,6 +5157,41 @@ window.onload=()=>{
       <button class="cf-detail-close" onclick="closeDayDetail()">×</button>
     </div>
     <div class="cf-detail-body" id="cf-detail-body"></div>
+  </div>
+</div>
+
+<!-- TASKS MODAL -->
+<div class="modal-overlay hidden" id="tasks-modal" onclick="if(event.target===this)closeTasksModal()">
+  <div class="modal" style="width:560px;">
+    <div class="modal-header">
+      <div>
+        <span class="modal-title">📋 Google Tasks</span>
+        <div id="tasks-modal-carga" style="font-size:11px;color:var(--text3);margin-top:2px;"></div>
+      </div>
+      <span class="modal-close" onclick="closeTasksModal()">×</span>
+    </div>
+    <div class="modal-body">
+      <div class="mail-field">
+        <div class="mail-label">Tareas pendientes de esta carga</div>
+        <div id="tasks-pendientes"></div>
+      </div>
+      <div class="mail-field" style="margin-top:14px;">
+        <div class="mail-label">Tu respuesta de mail (pegala acá)</div>
+        <textarea class="mail-textarea" id="tasks-respuesta" rows="3" placeholder="Ej: Lean, buenos días! Aguardamos por el PL y el seguro..."></textarea>
+      </div>
+      <div id="tasks-completadas-aviso"></div>
+      <div class="mail-field" style="margin-top:10px;">
+        <div class="mail-label">Texto de la nueva tarea</div>
+        <div style="display:flex;gap:8px;">
+          <input class="config-input" id="tasks-texto" placeholder="Recibir PL y seguro - Cliente - BKG XXXXX" style="flex:1;">
+          <button class="btn" onclick="tasksGenerarTexto()" style="white-space:nowrap;">🤖 Generar</button>
+        </div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn" onclick="closeTasksModal()">Cerrar</button>
+      <button class="btn primary" onclick="crearTarea()">+ Crear tarea</button>
+    </div>
   </div>
 </div>
 
