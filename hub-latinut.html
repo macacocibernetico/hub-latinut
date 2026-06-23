@@ -4945,15 +4945,22 @@ const DRIVE_AXT_PRODUCTO_IDS = {
   'Pasta de mani': '1LoWmylsK0wbJP8wtfF7Vebb8k5UPuAGU',
 };
 
-async function driveGetOrCreateFolder(name, parentId){
-  // Buscar incluyendo drives compartidos
-  const q = encodeURIComponent(`name='${name}' and '${parentId}' in parents and mimeType='application/vnd.google-apps.folder' and trashed=false`);
-  const r = await fetch(`https://www.googleapis.com/drive/v3/files?q=${q}&fields=files(id,name)&supportsAllDrives=true&includeItemsFromAllDrives=true`, {
+async function driveFindOrCreateFolder(name, parentId){
+  // Primero buscar por nombre en todo el drive (más confiable con shortcuts/shared drives)
+  const q = encodeURIComponent(`name='${name}' and mimeType='application/vnd.google-apps.folder' and trashed=false`);
+  const r = await fetch(`https://www.googleapis.com/drive/v3/files?q=${q}&fields=files(id,name,parents)&supportsAllDrives=true&includeItemsFromAllDrives=true`, {
     headers: { 'Authorization': `Bearer ${accessToken}` }
   });
   const data = await r.json();
-  if(data.files && data.files.length > 0) return data.files[0].id;
-  // Crear si no existe
+  // Verificar que alguna esté dentro del parent correcto
+  if(data.files && data.files.length > 0){
+    const match = data.files.find(f => f.parents && f.parents.includes(parentId));
+    if(match) return match.id;
+    // Si no tiene parent exacto, devolver la primera que se llame igual (fallback)
+    // Solo para nombres únicos como lotes
+    if(data.files.length === 1) return data.files[0].id;
+  }
+  // No encontrada, crear
   const cr = await fetch('https://www.googleapis.com/drive/v3/files?supportsAllDrives=true', {
     method: 'POST',
     headers: { 'Authorization': `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
@@ -4961,6 +4968,10 @@ async function driveGetOrCreateFolder(name, parentId){
   });
   const folder = await cr.json();
   return folder.id;
+}
+
+async function driveGetOrCreateFolder(name, parentId){
+  return driveFindOrCreateFolder(name, parentId);
 }
 
 async function driveGetFolderForRow(row){
