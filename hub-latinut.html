@@ -4946,13 +4946,15 @@ const DRIVE_AXT_PRODUCTO_IDS = {
 };
 
 async function driveGetOrCreateFolder(name, parentId){
+  // Buscar incluyendo drives compartidos
   const q = encodeURIComponent(`name='${name}' and '${parentId}' in parents and mimeType='application/vnd.google-apps.folder' and trashed=false`);
-  const r = await fetch(`https://www.googleapis.com/drive/v3/files?q=${q}&fields=files(id,name)`, {
+  const r = await fetch(`https://www.googleapis.com/drive/v3/files?q=${q}&fields=files(id,name)&supportsAllDrives=true&includeItemsFromAllDrives=true`, {
     headers: { 'Authorization': `Bearer ${accessToken}` }
   });
   const data = await r.json();
   if(data.files && data.files.length > 0) return data.files[0].id;
-  const cr = await fetch('https://www.googleapis.com/drive/v3/files', {
+  // Crear si no existe
+  const cr = await fetch('https://www.googleapis.com/drive/v3/files?supportsAllDrives=true', {
     method: 'POST',
     headers: { 'Authorization': `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
     body: JSON.stringify({ name, mimeType: 'application/vnd.google-apps.folder', parents: [parentId] })
@@ -4999,7 +5001,7 @@ async function driveUploadFile(file, folderId){
   const form = new FormData();
   form.append('metadata', new Blob([JSON.stringify(metadata)], { type: 'application/json' }));
   form.append('file', file);
-  const r = await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id,name,webViewLink', {
+  const r = await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id,name,webViewLink&supportsAllDrives=true', {
     method: 'POST',
     headers: { 'Authorization': `Bearer ${accessToken}` },
     body: form
