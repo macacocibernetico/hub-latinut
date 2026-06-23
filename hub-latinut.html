@@ -4945,22 +4945,15 @@ const DRIVE_AXT_PRODUCTO_IDS = {
   'Pasta de mani': '1LoWmylsK0wbJP8wtfF7Vebb8k5UPuAGU',
 };
 
-async function driveFindOrCreateFolder(name, parentId){
-  // Primero buscar por nombre en todo el drive (más confiable con shortcuts/shared drives)
-  const q = encodeURIComponent(`name='${name}' and mimeType='application/vnd.google-apps.folder' and trashed=false`);
-  const r = await fetch(`https://www.googleapis.com/drive/v3/files?q=${q}&fields=files(id,name,parents)&supportsAllDrives=true&includeItemsFromAllDrives=true`, {
+async function driveGetOrCreateFolder(name, parentId){
+  // Búsqueda estándar por parent (para año dentro de producto)
+  const q = encodeURIComponent(`name='${name}' and '${parentId}' in parents and mimeType='application/vnd.google-apps.folder' and trashed=false`);
+  const r = await fetch(`https://www.googleapis.com/drive/v3/files?q=${q}&fields=files(id,name)&supportsAllDrives=true&includeItemsFromAllDrives=true`, {
     headers: { 'Authorization': `Bearer ${accessToken}` }
   });
   const data = await r.json();
-  // Verificar que alguna esté dentro del parent correcto
-  if(data.files && data.files.length > 0){
-    const match = data.files.find(f => f.parents && f.parents.includes(parentId));
-    if(match) return match.id;
-    // Si no tiene parent exacto, devolver la primera que se llame igual (fallback)
-    // Solo para nombres únicos como lotes
-    if(data.files.length === 1) return data.files[0].id;
-  }
-  // No encontrada, crear
+  if(data.files && data.files.length > 0) return data.files[0].id;
+  // Crear si no existe
   const cr = await fetch('https://www.googleapis.com/drive/v3/files?supportsAllDrives=true', {
     method: 'POST',
     headers: { 'Authorization': `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
@@ -4970,8 +4963,15 @@ async function driveFindOrCreateFolder(name, parentId){
   return folder.id;
 }
 
-async function driveGetOrCreateFolder(name, parentId){
-  return driveFindOrCreateFolder(name, parentId);
+async function driveBuscarLoteEnAXT(lote){
+  // Buscar por nombre en todo el Drive — encuentra aunque esté en shortcut/shared drive
+  const q = encodeURIComponent(`name='${lote}' and mimeType='application/vnd.google-apps.folder' and trashed=false`);
+  const r = await fetch(`https://www.googleapis.com/drive/v3/files?q=${q}&fields=files(id,name)&supportsAllDrives=true&includeItemsFromAllDrives=true`, {
+    headers: { 'Authorization': `Bearer ${accessToken}` }
+  });
+  const data = await r.json();
+  if(data.files && data.files.length > 0) return data.files[0].id;
+  return null;
 }
 
 async function driveGetFolderForRow(row){
@@ -4985,26 +4985,31 @@ async function driveGetFolderForRow(row){
     'peanut flour': 'Harina', 'harina': 'Harina',
   };
 
+  const lote = (row[COL.LOTS] || row[COL.NEGOCIO] || 'Sin lote').trim();
+
+  // 1. Buscar el lote por nombre en todo Drive
+  const loteExistente = await driveBuscarLoteEnAXT(lote);
+  if(loteExistente){
+    Logger && Logger.log && Logger.log('Carpeta lote encontrada: ' + lote);
+    return loteExistente;
+  }
+
+  // 2. No existe → crear en jerarquía correcta: Producto (ID fijo) → Año → Lote
   const productoRaw = (row[COL.PRODUCT] || '').trim().toLowerCase();
   const producto = PRODUCT_MAP[productoRaw] || (row[COL.PRODUCT] || 'Sin producto').trim();
   const etd = parseDate(row[COL.ETD]);
   const anio = etd ? String(etd.getFullYear()) : String(new Date().getFullYear());
-  const lote = (row[COL.LOTS] || row[COL.NEGOCIO] || 'Sin lote').trim();
 
-  // Para AXT usar ID fijo de carpeta de producto si existe
+  let productoId;
   if(negocioActivo !== 'buzaram' && DRIVE_AXT_PRODUCTO_IDS[producto]){
-    const productoId = DRIVE_AXT_PRODUCTO_IDS[producto];
-    const anioId = await driveGetOrCreateFolder(anio, productoId);
-    return await driveGetOrCreateFolder(lote, anioId);
+    productoId = DRIVE_AXT_PRODUCTO_IDS[producto];
+  } else {
+    const rootId = negocioActivo === 'buzaram' ? DRIVE_BUZ_ROOT : DRIVE_AXT_ROOT;
+    productoId = await driveGetOrCreateFolder(producto, rootId);
   }
 
-  // Para Buzaram o productos sin ID fijo, navegar desde la raíz
-  const rootId = negocioActivo === 'buzaram' ? DRIVE_BUZ_ROOT : DRIVE_AXT_ROOT;
-  let folderId = rootId;
-  for(const name of [producto, anio, lote]){
-    folderId = await driveGetOrCreateFolder(name, folderId);
-  }
-  return folderId;
+  const anioId = await driveGetOrCreateFolder(anio, productoId);
+  return await driveGetOrCreateFolder(lote, anioId);
 }
 
 async function driveUploadFile(file, folderId){
