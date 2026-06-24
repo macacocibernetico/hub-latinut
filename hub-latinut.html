@@ -993,7 +993,7 @@ function daysFrom(v){const d=parseDate(v);if(!d)return null;const t=new Date();c
 function getCobroCol(){ return getNegocioConfig().COL_FECHA_EST_COBRO; }
 function getCobroFecha(row){ return row[getCobroCol()]||''; }
 function fmtDate(v){const d=parseDate(v);if(!d)return v||'—';return d.toLocaleDateString('es-AR',{day:'2-digit',month:'2-digit',year:'2-digit'});}
-function isClosed(row){const nc=getNegocioConfig();const av=(row[nc.COL_FECHA_EST_COBRO]||'').trim().toUpperCase();const aw=(row[nc.COL_FECHA_COBRO]||'').trim();return av==='SI'&&aw!=='';}
+function isClosed(row){const nc=getNegocioConfig();const aw=(row[nc.COL_FECHA_COBRO]||'').trim();return aw!==''&&aw.toUpperCase()!=='SI';}
 function daysClass(n){if(n===null)return '';if(n<=7)return 'red';if(n<=14)return 'warn';return 'ok';}
 function nowStr(){const n=new Date();return{fecha:n.toLocaleDateString('es-AR'),hora:n.toLocaleTimeString('es-AR',{hour:'2-digit',minute:'2-digit'})};}
 
