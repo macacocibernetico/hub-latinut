@@ -5032,7 +5032,7 @@ function exportCashFlowPDF(){
 }
 
 // ─── GOOGLE DRIVE ────────────────────────────────────────────────────────────
-const APPSCRIPT_URL = 'https://script.google.com/macros/s/AKfycbwuoQC8eJjKYBtVWygtoTp9r6EVQHyNLgjF2TfdBGoACipqBxD6jvOTrRq1kLz0SGVO/exec';
+const APPSCRIPT_URL = 'https://script.google.com/macros/s/AKfycbw4dFqHm17ht_1aUHGfxqWBVX26EYXNKi3JQSP1W4i0PGtXYjNQUNVywDJip0JzAbpY/exec';
 
 // driveGetOrCreateFolder sigue disponible para Buzaram (API directa)
 async function driveGetOrCreateFolder(name, parentId){
@@ -5071,7 +5071,7 @@ async function driveGetFolderForRow(row){
 
   if(negocioActivo !== 'buzaram'){
     // AXT: usar AppScript como proxy — navega Drive correctamente
-    const url = APPSCRIPT_URL + '?accion=getLoteFolder&lote=' + encodeURIComponent(lote) + '&producto=' + encodeURIComponent(producto) + '&anio=' + anio;
+    const url = APPSCRIPT_URL + '?accion=getLoteUrl&lote=' + encodeURIComponent(lote) + '&producto=' + encodeURIComponent(producto) + '&anio=' + anio;
     const r = await fetch(url);
     const data = await r.json();
     if(!data.ok) throw new Error(data.error || 'Error en AppScript Drive');
