@@ -5032,22 +5032,9 @@ function exportCashFlowPDF(){
 }
 
 // ─── GOOGLE DRIVE ────────────────────────────────────────────────────────────
-const DRIVE_AXT_ROOT  = '1L7eOE6CmlER4Nr8WPlmYoStZVXU0vzJy';
-const DRIVE_BUZ_ROOT  = '1wbh3fUph3P2Q8KzY0dFcfbFvcUSuCO_K';
+const APPSCRIPT_URL = 'https://script.google.com/macros/s/AKfycbwuoQC8eJjKYBtVWygtoTp9r6EVQHyNLgjF2TfdBGoACipqBxD6jvOTrRq1kLz0SGVO/exec';
 
-// IDs fijos por producto y año — agregar nueva línea cada enero
-const DRIVE_AXT_ANIO_IDS = {
-  'Blanched':      { '2026': '1WeWJeX7uWVkEcJoPcTlFoI2o8283vPgK' },
-  'Tostado':       { '2026': '1sbl5BZ-DBqKQy8puaPqz5-_JdTBFLjLl' },
-  'Pasta de mani': { '2026': '1svBuZYCgsW7wFTuWDUBGAm1JDJ2Awrxw' },
-};
-
-const DRIVE_AXT_PRODUCTO_IDS = {
-  'Blanched':      '1M8LFIFLMkdv8_vh5SV4mZhc2jSshhZH3',
-  'Tostado':       '1NejcsKPbz84hyi1NebACB_QuDjaMfi6B',
-  'Pasta de mani': '1LoWmylsK0wbJP8wtfF7Vebb8k5UPuAGU',
-};
-
+// driveGetOrCreateFolder sigue disponible para Buzaram (API directa)
 async function driveGetOrCreateFolder(name, parentId){
   const q = encodeURIComponent(`name='${name}' and '${parentId}' in parents and mimeType='application/vnd.google-apps.folder' and trashed=false`);
   const r = await fetch(`https://www.googleapis.com/drive/v3/files?q=${q}&fields=files(id,name)&supportsAllDrives=true&includeItemsFromAllDrives=true`, {
@@ -5074,27 +5061,32 @@ async function driveGetFolderForRow(row){
     'peanut oil': 'Aceite flexis', 'aceite flexis': 'Aceite flexis',
     'peanut flour': 'Harina', 'harina': 'Harina',
   };
-
-  const lote = (row[COL.LOTS] || row[COL.NEGOCIO] || 'Sin lote').trim();
   const productoRaw = (row[COL.PRODUCT] || '').trim().toLowerCase();
-  const producto = PRODUCT_MAP[productoRaw] || (row[COL.PRODUCT] || 'Sin producto').trim();
+  const producto = PRODUCT_MAP[productoRaw] || (row[COL.PRODUCT] || '').trim();
   const etd = parseDate(row[COL.ETD]);
   const anio = etd ? String(etd.getFullYear()) : String(new Date().getFullYear());
+  const lote = (row[COL.LOTS] || row[COL.NEGOCIO] || '').trim();
 
-  // Obtener ID del año — fijo si existe, sino crear dentro del producto fijo
-  let anioId;
-  if(negocioActivo !== 'buzaram' && DRIVE_AXT_ANIO_IDS[producto]?.[anio]){
-    anioId = DRIVE_AXT_ANIO_IDS[producto][anio];
-  } else if(negocioActivo !== 'buzaram' && DRIVE_AXT_PRODUCTO_IDS[producto]){
-    anioId = await driveGetOrCreateFolder(anio, DRIVE_AXT_PRODUCTO_IDS[producto]);
-  } else {
-    const productoId = await driveGetOrCreateFolder(producto, DRIVE_BUZ_ROOT);
-    anioId = await driveGetOrCreateFolder(anio, productoId);
+  if(!lote) throw new Error('Sin lote');
+
+  if(negocioActivo !== 'buzaram'){
+    // AXT: usar AppScript como proxy — navega Drive correctamente
+    const url = APPSCRIPT_URL + '?accion=getLoteFolder&lote=' + encodeURIComponent(lote) + '&producto=' + encodeURIComponent(producto) + '&anio=' + anio;
+    const r = await fetch(url);
+    const data = await r.json();
+    if(!data.ok) throw new Error(data.error || 'Error en AppScript Drive');
+    return data.id;
   }
 
-  // Buscar o crear lote dentro del año (ID 100% confiable)
-  return await driveGetOrCreateFolder(lote, anioId);
+  // Buzaram: API directa
+  const DRIVE_BUZ_ROOT = '1wbh3fUph3P2Q8KzY0dFcfbFvcUSuCO_K';
+  let folderId = DRIVE_BUZ_ROOT;
+  for(const name of [producto, anio, lote]){
+    folderId = await driveGetOrCreateFolder(name, folderId);
+  }
+  return folderId;
 }
+
 
 
 async function driveUploadFile(file, folderId){
