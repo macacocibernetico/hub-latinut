@@ -1811,7 +1811,7 @@ function renderCargas(showAll, sort){
       type="text"
       placeholder="BL, lote, booking, cliente..."
       value="${cargasSearch.replace(/"/g,'&quot;')}"
-      oninput="cargasSearch=this.value;cargasPage=0;renderCargas();"
+      oninput="cargasSearch=this.value;cargasPage=0;if(this._t)clearTimeout(this._t);this._t=setTimeout(()=>{const v=this.value;renderCargas();setTimeout(()=>{const el=document.getElementById('cargas-search-input');if(el){el.focus();el.setSelectionRange(v.length,v.length);}},0);},300);"
       style="font-size:11px;font-family:var(--mono);padding:5px 10px 5px 30px;border-radius:8px;border:1px solid ${cargasSearch?'var(--accent)':'var(--border)'};background:${cargasSearch?'var(--accent-light)':'var(--bg2)'};color:var(--text);width:220px;outline:none;"
     >
     ${cargasSearch?`<span onclick="cargasSearch='';cargasPage=0;renderCargas();" style="position:absolute;right:8px;cursor:pointer;font-size:12px;color:var(--text3);">×</span>`:''}
