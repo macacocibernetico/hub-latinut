@@ -5070,21 +5070,20 @@ async function driveGetFolderForRow(row){
   if(!lote) throw new Error('Sin lote');
 
   if(negocioActivo !== 'buzaram'){
-    // AXT: usar AppScript como proxy — navega Drive correctamente
     const url = APPSCRIPT_URL + '?accion=getLoteUrl&lote=' + encodeURIComponent(lote) + '&producto=' + encodeURIComponent(producto) + '&anio=' + anio;
     const r = await fetch(url);
     const data = await r.json();
     if(!data.ok) throw new Error(data.error || 'Error en AppScript Drive');
-    return data.id;
+    // Devolver la URL limpia sin parámetros extra
+    return { id: data.id, url: data.url ? data.url.split('?')[0] : `https://drive.google.com/drive/folders/${data.id}` };
   }
 
-  // Buzaram: API directa
   const DRIVE_BUZ_ROOT = '1wbh3fUph3P2Q8KzY0dFcfbFvcUSuCO_K';
   let folderId = DRIVE_BUZ_ROOT;
   for(const name of [producto, anio, lote]){
     folderId = await driveGetOrCreateFolder(name, folderId);
   }
-  return folderId;
+  return { id: folderId, url: `https://drive.google.com/drive/folders/${folderId}` };
 }
 
 
@@ -5108,8 +5107,8 @@ async function driveOpenFolder(rowIdx){
   if(!accessToken){ alert('Conectate con Google primero'); return; }
   showToast('Buscando carpeta en Drive...', 'info');
   try {
-    const folderId = await driveGetFolderForRow(row);
-    window.open(`https://drive.google.com/drive/folders/${folderId}`, '_blank');
+    const folder = await driveGetFolderForRow(row);
+    window.open(folder.url, '_blank');
     const nc3 = getNegocioConfig();
     await appendLog({
       fuente: nc3.label,
@@ -5131,7 +5130,8 @@ async function driveUploadForRow(rowIdx, files){
   if(!accessToken){ alert('Conectate con Google primero'); return; }
   showToast(`Subiendo ${files.length} archivo${files.length>1?'s':''}...`, 'info');
   try {
-    const folderId = await driveGetFolderForRow(row);
+    const folder = await driveGetFolderForRow(row);
+    const folderId = folder.id;
     let ok = 0;
     for(const file of files){
       const result = await driveUploadFile(file, folderId);
