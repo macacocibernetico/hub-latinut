@@ -2900,6 +2900,11 @@ function renderConfig(){
       <input class="config-input" id="cfg-anthropicKey" type="password" value="${cfg.anthropicKey||''}" placeholder="sk-ant-...">
       <div style="font-size:10px;color:var(--text3);margin-top:4px;">Obtené una en <b>console.anthropic.com</b> → cargá USD 5 de crédito → API Keys → Create Key.</div>
     </div>
+    <div class="config-field">
+      <div class="config-label">Gemini API Key (fallback gratuito cuando Claude no tiene crédito)</div>
+      <input class="config-input" id="cfg-geminiKey" type="password" value="${cfg.geminiKey||''}" placeholder="AIzaSy...">
+      <div style="font-size:10px;color:var(--text3);margin-top:4px;">Gratis en <b>aistudio.google.com</b> → Get API Key. Sin tarjeta, 1500 requests/día.</div>
+    </div>
     <div class="config-save"><button class="btn primary" onclick="saveConfig()">Guardar y conectar</button></div>
   </div>
   <div class="config-section">
@@ -2919,6 +2924,7 @@ function saveConfig(){
   cfg.appsScriptUrl=document.getElementById('cfg-appsScriptUrl')?.value?.trim()||cfg.appsScriptUrl;
   const ck=document.getElementById('cfg-claudeApiKey')?.value?.trim();if(ck) cfg.claudeApiKey=ck;
   const ak=document.getElementById('cfg-anthropicKey')?.value?.trim();if(ak) cfg.anthropicKey=ak;
+  const gk=document.getElementById('cfg-geminiKey')?.value?.trim();if(gk) cfg.geminiKey=gk;
   const bsid=document.getElementById('cfg-buzaramSheetId')?.value?.trim();if(bsid) cfg.buzaramSheetId=bsid;
   const burl=document.getElementById('cfg-buzaramAppsScriptUrl')?.value?.trim();if(burl) cfg.buzaramAppsScriptUrl=burl;
   cfg.alerta_dias=parseInt(document.getElementById('cfg-dias')?.value)||cfg.alerta_dias;
@@ -4734,7 +4740,7 @@ Ejemplo: {"fecha_consolidacion": "15/06/2026", "containers": "2x20'", "customer"
   if(!claudeOk){
     showToast('🔄 Usando Gemini...', 'info');
     try {
-      const GEMINI_KEY = 'AIzaSyCOMqs_XaEIrYN3hx7AbtWHDHlag-v8pqk';
+      const GEMINI_KEY = cfg.geminiKey;
       const gr = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${GEMINI_KEY}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
