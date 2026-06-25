@@ -4713,36 +4713,38 @@ Ejemplo: {"fecha_consolidacion": "15/06/2026", "containers": "2x20'", "customer"
 
   // Llamar via AppScript proxy (evita CORS)
   const proxyUrl = 'https://script.google.com/macros/s/AKfycbzKFa-oSUlsqPaa5zBJ7wH6b7xiEy0qIHhHfeLta-9f5D-3axcOWUywDzLhVZ8nFuIJ/exec';
-  try {
-    const r = await fetch(proxyUrl, {
-      method: 'POST',
-      headers: { 'Content-Type': 'text/plain' },
-      body: JSON.stringify({
-        action: 'claudeProxy',
-        anthropicKey: cfg.anthropicKey,
-        model: getAnthropicModel('extraccion_mail'),
-        prompt
-      })
-    });
-    const data = await r.json();
-    const text = data.content?.[0]?.text || '';
-    if(text){
-      try { return JSON.parse(text.replace(/```json|```/g,'').trim()); } catch(e) {}
-    }
-  } catch(e) { console.warn('Claude falló, intentando Gemini...', e); }
+  let claudeOk = false;
+  if(cfg.anthropicKey){
+    try {
+      const r = await fetch(proxyUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'text/plain' },
+        body: JSON.stringify({ action: 'claudeProxy', anthropicKey: cfg.anthropicKey, model: getAnthropicModel('extraccion_mail'), prompt })
+      });
+      const data = await r.json();
+      const text = data.content?.[0]?.text || '';
+      if(text){
+        const parsed = JSON.parse(text.replace(/```json|```/g,'').trim());
+        if(parsed){ claudeOk = true; return parsed; }
+      }
+    } catch(e) { console.warn('Claude falló:', e); }
+  }
 
-  // Fallback Gemini
-  try {
-    const GEMINI_KEY = 'AIzaSyCOMqs_XaEIrYN3hx7AbtWHDHlag-v8pqk';
-    const gr = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${GEMINI_KEY}`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }], generationConfig: { maxOutputTokens: 200 } })
-    });
-    const gdata = await gr.json();
-    const gtext = gdata.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || '';
-    if(gtext) return JSON.parse(gtext.replace(/```json|```/g,'').trim());
-  } catch(e) { console.warn('Gemini también falló:', e); }
+  // Fallback Gemini — siempre se intenta si Claude no devolvió datos
+  if(!claudeOk){
+    showToast('🔄 Usando Gemini...', 'info');
+    try {
+      const GEMINI_KEY = 'AIzaSyCOMqs_XaEIrYN3hx7AbtWHDHlag-v8pqk';
+      const gr = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${GEMINI_KEY}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }], generationConfig: { maxOutputTokens: 300 } })
+      });
+      const gdata = await gr.json();
+      const gtext = gdata.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || '';
+      if(gtext) return JSON.parse(gtext.replace(/```json|```/g,'').trim());
+    } catch(e) { console.warn('Gemini también falló:', e); }
+  }
 
   return null;
 }
