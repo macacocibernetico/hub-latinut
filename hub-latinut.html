@@ -3911,12 +3911,12 @@ function renderCashFlow(){
   const pagoMatchEstado  = e => true;
 
 
-  // ── Cobros map ──
+  // ── Cobros map — usar allRowsAll para incluir cargas ya cobradas ──
   const cobrosMap = {};
   // ── Pagos map ──
   const pagosMap  = {};
 
-  allRows.forEach(row => {
+  allRowsAll.forEach(row => {
     if(!rowMatchCobro(row)) return;
     const customer = (row[COL.CUSTOMER]||'—').trim();
     const bl       = (row[COL.BL]||'').trim();
