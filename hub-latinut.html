@@ -3871,6 +3871,8 @@ let cfYear = new Date().getFullYear();
 let cfMonth = new Date().getMonth(); // 0-based
 let cfVista = 'mes'; // 'mes' | 'semana' | 'periodo'
 let cfSemanaBase = null; // Date del lunes de la semana actual
+let cfIncluirVencidos = false; // escenario: traer vencidos al mes actual
+let cfPesimista = false;       // escenario: +7 días a fechas estimadas
 let cfPeriodoStart = null; // Date inicio período seleccionado
 let cfPeriodoEnd = null;   // Date fin período seleccionado
 let cfDragStart = null;    // para drag de período
@@ -3936,9 +3938,20 @@ function renderCashFlow(){
       const fechaCobroReal = (row[nc.COL_FECHA_COBRO]||'').trim();
       const cobrado = fechaCobroReal !== '' && fechaCobroReal.toUpperCase() !== 'SI';
       // Si ya cobrado usar fecha real (AX), si no usar fecha estimada (AW)
-      const fechaParaCalendario = cobrado ? fechaCobroReal : row[nc.COL_FECHA_EST_COBRO];
-      const d = parseDate(fechaParaCalendario);
-      if(d){
+      let fechaBase = cobrado ? fechaCobroReal : row[nc.COL_FECHA_EST_COBRO];
+      let d = parseDate(fechaBase);
+      if(!d) { /* sin fecha, ignorar */ }
+      else {
+        // Escenario pesimista: +7 días a pendientes
+        if(cfPesimista && !cobrado){
+          d = new Date(d.getTime() + 7*86400000);
+        }
+        // Escenario incluir vencidos: traer al 1ro del mes actual si ya venció
+        const mesActualStart = new Date(cfYear, cfMonth, 1);
+        if(cfIncluirVencidos && !cobrado && d < mesActualStart){
+          d = mesActualStart;
+        }
+
         const k = dateKey(d);
         if(!cobrosMap[k]) cobrosMap[k]=[];
         const amount = parseSheetNum(row[nc.COL_TOTAL_CFR]);
@@ -3958,7 +3971,8 @@ function renderCashFlow(){
             fcFleteList: fcFlete ? [fcFlete] : [],
             bls: [bl], rows: [row],
             amount: isNaN(amount)?0:amount,
-            date:d, rowData:row, type:'cobro'
+            date:d, rowData:row, type:'cobro',
+            esEscenario: (cfPesimista && !cobrado) || (cfIncluirVencidos && !cobrado && parseDate(fechaBase) < mesActualStart)
           });
         }
       }
@@ -4323,10 +4337,23 @@ function renderCashFlow(){
         <button onclick="setCFVista('semana')" style="font-size:11px;font-weight:600;padding:6px 12px;border:none;background:${cfVista==='semana'?'var(--accent)':'transparent'};color:${cfVista==='semana'?'#0d0d0d':'var(--text3)'};cursor:pointer;font-family:var(--font);">📆 Semana</button>
         <button onclick="setCFVista('periodo')" style="font-size:11px;font-weight:600;padding:6px 12px;border:none;background:${cfVista==='periodo'?'var(--accent)':'transparent'};color:${cfVista==='periodo'?'#0d0d0d':'var(--text3)'};cursor:pointer;font-family:var(--font);">🗓 Período</button>
       </div>
+      <div style="display:flex;gap:6px;">
+        <button onclick="cfIncluirVencidos=!cfIncluirVencidos;renderCashFlow();" title="Traer todos los cobros vencidos al mes actual" style="font-size:11px;font-weight:600;padding:6px 12px;border-radius:8px;border:1px solid ${cfIncluirVencidos?'var(--accent)':'var(--border)'};background:${cfIncluirVencidos?'rgba(200,240,80,.15)':'var(--bg2)'};color:${cfIncluirVencidos?'var(--accent)':'var(--text3)'};cursor:pointer;font-family:var(--font);">📥 Vencidos</button>
+        <button onclick="cfPesimista=!cfPesimista;renderCashFlow();" title="Correr fechas estimadas +7 días" style="font-size:11px;font-weight:600;padding:6px 12px;border-radius:8px;border:1px solid ${cfPesimista?'#ff9800':'var(--border)'};background:${cfPesimista?'rgba(255,152,0,.12)':'var(--bg2)'};color:${cfPesimista?'#ff9800':'var(--text3)'};cursor:pointer;font-family:var(--font);">⏱ +7d</button>
+      </div>
       <button class="cf-toggle-btn${cfMode==='cobros'?' active':''}" onclick="setCFMode('cobros')">💰 Cash Flow</button>
       <button class="cf-toggle-btn${cfMode==='eta'?' active':''}" onclick="setCFMode('eta')">🚢 ETA</button>
     </div>
   </div>
+  ${(cfIncluirVencidos || cfPesimista) ? `
+  <div style="display:flex;align-items:center;gap:10px;padding:9px 14px;border-radius:8px;background:rgba(200,240,80,.07);border:1px solid rgba(200,240,80,.25);margin-bottom:12px;flex-wrap:wrap;">
+    <span style="font-size:13px;">📊</span>
+    <span style="font-size:12px;color:var(--accent);font-weight:600;">Vista proyectada</span>
+    <span style="font-size:11px;color:var(--text3);">—</span>
+    ${cfIncluirVencidos ? '<span style="font-size:11px;color:var(--text2);background:rgba(200,240,80,.1);padding:2px 8px;border-radius:4px;">vencidos incluidos en este mes</span>' : ''}
+    ${cfPesimista ? '<span style="font-size:11px;color:#ff9800;background:rgba(255,152,0,.1);padding:2px 8px;border-radius:4px;">fechas corridas +7 días</span>' : ''}
+    <span style="font-size:10px;color:var(--text3);margin-left:auto;">Las fechas no son las reales · solo para planificación</span>
+  </div>` : ''}
   ${filtrosHtml}
   ${balanceHtml}
   ${cfVista === 'semana' ? renderCFSemanaHTML(cobrosMap, pagosMap, cobrosFiltered, pagosFiltered) :
