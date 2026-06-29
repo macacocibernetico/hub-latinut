@@ -514,6 +514,7 @@ button{font-family:var(--font);cursor:pointer;border:none;background:none;}
 .cf-day-periodo.periodo-selected{background:rgba(200,240,80,.1)!important;border-color:var(--accent)!important;}
 .cf-day-periodo:hover{background:rgba(200,240,80,.06)!important;}
 .cf-weekdays{display:grid;grid-template-columns:repeat(7,1fr);border-bottom:1px solid var(--border);background:var(--bg3);}
+.cf-chip.cobro-escenario{background:rgba(200,240,80,.15);color:var(--accent);border:1px dashed rgba(200,240,80,.5);font-style:italic;}
 .cf-weekday{padding:9px 6px;text-align:center;font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.5px;color:var(--text3);}
 .cf-days{display:grid;grid-template-columns:repeat(7,1fr);}
 .cf-day{min-height:90px;border-right:1px solid var(--border);border-bottom:1px solid var(--border);padding:8px 6px;position:relative;transition:background .1s;}
@@ -3972,7 +3973,8 @@ function renderCashFlow(){
             bls: [bl], rows: [row],
             amount: isNaN(amount)?0:amount,
             date:d, rowData:row, type:'cobro',
-            esEscenario: (cfPesimista && !cobrado) || (cfIncluirVencidos && !cobrado && parseDate(fechaBase) < mesActualStart)
+            fechaOriginal: parseDate(fechaBase),
+            esEscenario: (cfPesimista && !cobrado) || (cfIncluirVencidos && !cobrado && parseDate(fechaBase) < new Date(cfYear, cfMonth, 1))
           });
         }
       }
@@ -4240,9 +4242,12 @@ function renderCashFlow(){
       // Cobros chips — verde pendiente, verde oscuro tachado si cobrado
       cobrosDay.slice(0,2).forEach(e=>{
         const cobrado = e.cobrado || false;
-        const cls = cobrado ? 'cobro-ok' : 'cobro';
+        const cls = cobrado ? 'cobro-ok' : (e.esEscenario ? 'cobro-escenario' : 'cobro');
         const amt = !isNaN(e.amount)?` · ${Math.round(e.amount/1000)}k`:'';
-        chipsHtml+=`<div class="cf-chip ${cls}">${e.customer.substring(0,9)}${amt}</div>`;
+        const fechaOrigStr = e.esEscenario && e.fechaOriginal
+          ? `<span style="text-decoration:line-through;opacity:.5;font-size:9px;margin-left:3px;">${e.fechaOriginal.getDate()}/${e.fechaOriginal.getMonth()+1}</span>`
+          : '';
+        chipsHtml+=`<div class="cf-chip ${cls}">${e.customer.substring(0,9)}${amt}${fechaOrigStr}</div>`;
       });
       if(cobrosDay.length>2) chipsHtml+=`<div class="cf-more">+${cobrosDay.length-2} cobros</div>`;
       // Pagos chips — rojo pendiente, bordó tachado si pagado
