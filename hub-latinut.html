@@ -511,7 +511,8 @@ button{font-family:var(--font);cursor:pointer;border:none;background:none;}
 .cf-cal-title{font-size:14px;font-weight:600;color:var(--text);}
 .cf-nav-btn{width:32px;height:32px;border-radius:8px;border:1px solid var(--border);background:var(--bg3);cursor:pointer;font-size:14px;display:flex;align-items:center;justify-content:center;transition:all .15s;color:var(--text2);}
 .cf-nav-btn:hover{background:var(--bg4);}
-.cf-weekdays{display:grid;grid-template-columns:repeat(7,1fr);border-bottom:1px solid var(--border);background:var(--bg3);}
+.cf-day-periodo.periodo-selected{background:rgba(200,240,80,.1)!important;border-color:var(--accent)!important;}
+.cf-day-periodo:hover{background:rgba(200,240,80,.06)!important;}
 .cf-weekday{padding:9px 6px;text-align:center;font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.5px;color:var(--text3);}
 .cf-days{display:grid;grid-template-columns:repeat(7,1fr);}
 .cf-day{min-height:90px;border-right:1px solid var(--border);border-bottom:1px solid var(--border);padding:8px 6px;position:relative;transition:background .1s;}
@@ -3867,6 +3868,11 @@ function renderCargasMobileCards(rows, pagedRows){
 let cfMode = 'cobros'; // 'cobros' | 'eta'
 let cfYear = new Date().getFullYear();
 let cfMonth = new Date().getMonth(); // 0-based
+let cfVista = 'mes'; // 'mes' | 'semana' | 'periodo'
+let cfSemanaBase = null; // Date del lunes de la semana actual
+let cfPeriodoStart = null; // Date inicio período seleccionado
+let cfPeriodoEnd = null;   // Date fin período seleccionado
+let cfDragStart = null;    // para drag de período
 let cfFiltros = []; // ya no usado
 let cfFiltroEntidades = new Set(); // ya no usado
 let cfFiltroClientes   = new Set();
@@ -3925,14 +3931,15 @@ function renderCashFlow(){
     const invServ  = (row[30]||'').trim();   // AE — FC servicios
 
     if(cfMode === 'cobros'){
-      const fechaCobro = row[nc.COL_FECHA_EST_COBRO];
-      const d = parseDate(fechaCobro);
+      const fechaCobroReal = (row[nc.COL_FECHA_COBRO]||'').trim();
+      const cobrado = fechaCobroReal !== '' && fechaCobroReal.toUpperCase() !== 'SI';
+      // Si ya cobrado usar fecha real (AX), si no usar fecha estimada (AW)
+      const fechaParaCalendario = cobrado ? fechaCobroReal : row[nc.COL_FECHA_EST_COBRO];
+      const d = parseDate(fechaParaCalendario);
       if(d){
         const k = dateKey(d);
         if(!cobrosMap[k]) cobrosMap[k]=[];
         const amount = parseSheetNum(row[nc.COL_TOTAL_CFR]);
-        const fechaCobroReal = (row[nc.COL_FECHA_COBRO]||'').trim();
-        const cobrado = fechaCobroReal !== '' && fechaCobroReal.toUpperCase() !== 'SI';
         const fcFlete = (row[nc.PAGO_FC_FLETE]||'').trim();
         const groupKey = invoice || bl;
         const existing = cobrosMap[k].find(e => e.groupKey === groupKey);
@@ -4309,13 +4316,20 @@ function renderCashFlow(){
     </div>
     <div class="cf-toggle">
       <button onclick="exportCashFlowPDF()" style="font-size:12px;font-weight:600;padding:6px 14px;border-radius:8px;border:1px solid var(--border);background:var(--bg2);color:var(--text);cursor:pointer;font-family:var(--font);">📄 PDF</button>
+      <div style="display:flex;background:var(--bg3);border:1px solid var(--border);border-radius:8px;overflow:hidden;">
+        <button onclick="setCFVista('mes')" style="font-size:11px;font-weight:600;padding:6px 12px;border:none;background:${cfVista==='mes'?'var(--accent)':'transparent'};color:${cfVista==='mes'?'#0d0d0d':'var(--text3)'};cursor:pointer;font-family:var(--font);">Mes</button>
+        <button onclick="setCFVista('semana')" style="font-size:11px;font-weight:600;padding:6px 12px;border:none;background:${cfVista==='semana'?'var(--accent)':'transparent'};color:${cfVista==='semana'?'#0d0d0d':'var(--text3)'};cursor:pointer;font-family:var(--font);">Semana</button>
+        <button onclick="setCFVista('periodo')" style="font-size:11px;font-weight:600;padding:6px 12px;border:none;background:${cfVista==='periodo'?'var(--accent)':'transparent'};color:${cfVista==='periodo'?'#0d0d0d':'var(--text3)'};cursor:pointer;font-family:var(--font);">Período</button>
+      </div>
       <button class="cf-toggle-btn${cfMode==='cobros'?' active':''}" onclick="setCFMode('cobros')">💰 Cash Flow</button>
       <button class="cf-toggle-btn${cfMode==='eta'?' active':''}" onclick="setCFMode('eta')">🚢 ETA</button>
     </div>
   </div>
   ${filtrosHtml}
   ${balanceHtml}
-  <div class="cf-calendar-wrap">
+  ${cfVista === 'semana' ? renderCFSemanaHTML(cobrosMap, pagosMap, cobrosFiltered, pagosFiltered) :
+    cfVista === 'periodo' ? renderCFPeriodoHTML(cobrosMap, pagosMap, cobrosFiltered, pagosFiltered) :
+    `<div class="cf-calendar-wrap">
     <div class="cf-cal-header">
       <button class="cf-nav-btn" onclick="cfNavigate(-1)">‹</button>
       <span class="cf-cal-title" style="text-transform:capitalize;">${monthName}</span>
@@ -4323,6 +4337,181 @@ function renderCashFlow(){
     </div>
     <div class="cf-weekdays">${weekdaysHtml}</div>
     <div class="cf-days">${daysHtml}</div>
+  </div>`}
+  `;
+}
+
+function renderCFSemanaHTML(cobrosMap, pagosMap, cobrosFiltered, pagosFiltered){
+  if(!cfSemanaBase){
+    const hoy = new Date();
+    const wd = hoy.getDay()===0?6:hoy.getDay()-1;
+    cfSemanaBase = new Date(hoy.getFullYear(), hoy.getMonth(), hoy.getDate()-wd);
+  }
+  const weekDayNames = ['Lun','Mar','Mié','Jue','Vie','Sáb','Dom'];
+  const hoy = new Date();
+  const todayKey = `${hoy.getFullYear()}-${String(hoy.getMonth()+1).padStart(2,'0')}-${String(hoy.getDate()).padStart(2,'0')}`;
+
+  let totalCobros = 0, totalPagos = 0;
+  let diasHtml = '';
+
+  for(let i=0; i<7; i++){
+    const dia = new Date(cfSemanaBase.getTime() + i*86400000);
+    const key = `${dia.getFullYear()}-${String(dia.getMonth()+1).padStart(2,'0')}-${String(dia.getDate()).padStart(2,'0')}`;
+    const isHoy = key === todayKey;
+    const cobros = cobrosFiltered(key);
+    const pagos  = pagosFiltered(key);
+
+    cobros.forEach(e => { if(!isNaN(e.amount)) totalCobros += e.amount; });
+    pagos.forEach(e  => { if(!isNaN(e.amount)) totalPagos  += e.amount; });
+
+    const cobrosHtml = cobros.map(e => {
+      const amt = !isNaN(e.amount) ? `USD ${Math.round(e.amount/1000)}k` : '';
+      const cobrado = e.cobrado||false;
+      return `<div onclick="openDayDetail('${key}','${String(dia.getDate()).padStart(2,'0')}/${String(dia.getMonth()+1).padStart(2,'0')}')" style="cursor:pointer;padding:6px 10px;border-radius:6px;margin-bottom:4px;background:${cobrado?'rgba(46,125,50,.15)':'rgba(46,125,50,.08)'};border:1px solid ${cobrado?'rgba(46,125,50,.4)':'rgba(46,125,50,.2)'};display:flex;justify-content:space-between;align-items:center;">
+        <span style="font-size:11px;font-weight:600;color:#2e7d32;">${cobrado?'✓ ':''} ${e.customer}</span>
+        <span style="font-size:11px;font-family:var(--mono);color:#2e7d32;font-weight:700;">${amt}</span>
+      </div>`;
+    }).join('');
+
+    const pagosHtml = pagos.map(e => {
+      const amt = !isNaN(e.amount) ? `USD ${Math.round(e.amount/1000)}k` : '';
+      const pagado = e.pagado||false;
+      return `<div onclick="openDayDetail('${key}','${String(dia.getDate()).padStart(2,'0')}/${String(dia.getMonth()+1).padStart(2,'0')}')" style="cursor:pointer;padding:6px 10px;border-radius:6px;margin-bottom:4px;background:${pagado?'rgba(183,28,28,.1)':'rgba(183,28,28,.06)'};border:1px solid ${pagado?'rgba(183,28,28,.3)':'rgba(183,28,28,.15)'};display:flex;justify-content:space-between;align-items:center;">
+        <span style="font-size:11px;font-weight:600;color:#c62828;">${pagado?'✓ ':''} ${e.proveedor||e.customer}</span>
+        <span style="font-size:11px;font-family:var(--mono);color:#c62828;font-weight:700;">${amt}</span>
+      </div>`;
+    }).join('');
+
+    const neto = cobros.reduce((s,e)=>s+(!isNaN(e.amount)?e.amount:0),0) - pagos.reduce((s,e)=>s+(!isNaN(e.amount)?e.amount:0),0);
+    const netoColor = neto>0?'#2e7d32':neto<0?'#c62828':'var(--text3)';
+
+    diasHtml += `<div style="border:1px solid ${isHoy?'var(--accent)':'var(--border)'};border-radius:10px;background:${isHoy?'rgba(200,240,80,.04)':'var(--bg2)'};overflow:hidden;min-width:0;">
+      <div style="padding:10px 12px;border-bottom:1px solid var(--border);background:${isHoy?'rgba(200,240,80,.08)':'var(--bg3)'};display:flex;justify-content:space-between;align-items:center;">
+        <div>
+          <div style="font-size:11px;font-weight:700;color:${isHoy?'var(--accent)':'var(--text3)'};text-transform:uppercase;letter-spacing:.5px;">${weekDayNames[i]}</div>
+          <div style="font-size:18px;font-weight:800;font-family:var(--mono);color:${isHoy?'var(--accent)':'var(--text)'};line-height:1.1;">${dia.getDate()}</div>
+        </div>
+        ${neto!==0?`<div style="font-size:12px;font-weight:700;font-family:var(--mono);color:${netoColor};">${neto>0?'+':''}${Math.round(neto/1000)}k</div>`:''}
+      </div>
+      <div style="padding:10px 12px;min-height:80px;">
+        ${cobrosHtml}
+        ${cobrosHtml && pagosHtml ? '<div style="height:1px;background:var(--border);margin:6px 0;"></div>' : ''}
+        ${pagosHtml}
+        ${!cobrosHtml && !pagosHtml ? '<div style="font-size:11px;color:var(--text3);text-align:center;padding:16px 0;">Sin movimientos</div>' : ''}
+      </div>
+    </div>`;
+  }
+
+  const lunes = cfSemanaBase;
+  const domingo = new Date(cfSemanaBase.getTime()+6*86400000);
+  const titulo = `${lunes.getDate()}/${lunes.getMonth()+1} — ${domingo.getDate()}/${domingo.getMonth()+1}/${domingo.getFullYear()}`;
+
+  return `<div class="cf-calendar-wrap">
+    <div class="cf-cal-header">
+      <button class="cf-nav-btn" onclick="cfSemanaNav(-1)">‹</button>
+      <span class="cf-cal-title">${titulo}</span>
+      <button class="cf-nav-btn" onclick="cfSemanaNav(1)">›</button>
+    </div>
+    <div style="display:grid;grid-template-columns:repeat(7,1fr);gap:8px;padding:16px 12px;">
+      ${diasHtml}
+    </div>
+    <div style="padding:0 12px 16px;display:flex;gap:16px;justify-content:flex-end;border-top:1px solid var(--border);padding-top:12px;margin-top:4px;">
+      <span style="font-size:12px;font-weight:600;color:#2e7d32;">▲ Cobros: USD ${totalCobros.toLocaleString('es-AR',{maximumFractionDigits:0})}</span>
+      <span style="font-size:12px;font-weight:600;color:#c62828;">▼ Pagos: USD ${totalPagos.toLocaleString('es-AR',{maximumFractionDigits:0})}</span>
+      <span style="font-size:12px;font-weight:700;font-family:var(--mono);color:${totalCobros-totalPagos>=0?'#2e7d32':'#c62828'};">${totalCobros-totalPagos>=0?'+':''}USD ${Math.abs(totalCobros-totalPagos).toLocaleString('es-AR',{maximumFractionDigits:0})}</span>
+    </div>
+  </div>`;
+}
+
+function renderCFPeriodoHTML(cobrosMap, pagosMap, cobrosFiltered, pagosFiltered){
+  // Construir grilla del mes actual con selección de período
+  const hoy = new Date();
+  const anio = cfPeriodoStart ? cfPeriodoStart.getFullYear() : cfYear;
+  const mes  = cfPeriodoStart ? cfPeriodoStart.getMonth()    : cfMonth;
+  const firstDay = new Date(anio, mes, 1);
+  const lastDay  = new Date(anio, mes+1, 0);
+  const startWd  = firstDay.getDay();
+  const weekDays = ['Dom','Lun','Mar','Mié','Jue','Vie','Sáb'];
+  const weekdaysHtml = weekDays.map(d=>`<div class="cf-weekday">${d}</div>`).join('');
+  const todayKey = `${hoy.getFullYear()}-${String(hoy.getMonth()+1).padStart(2,'0')}-${String(hoy.getDate()).padStart(2,'0')}`;
+
+  let daysHtml = '';
+  for(let i=0;i<startWd;i++) daysHtml+=`<div class="cf-day other-month"></div>`;
+
+  for(let d=1;d<=lastDay.getDate();d++){
+    const key = `${anio}-${String(mes+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+    const dia = new Date(anio,mes,d);
+    const isHoy = key===todayKey;
+    const inRange = cfPeriodoStart && cfPeriodoEnd && dia>=cfPeriodoStart && dia<=cfPeriodoEnd;
+    const cobros = cobrosFiltered(key);
+    const pagos  = pagosFiltered(key);
+    const hasCobros = cobros.length>0, hasPagos = pagos.length>0;
+
+    let chipsHtml = '';
+    cobros.slice(0,2).forEach(e=>{
+      const cobrado=e.cobrado||false;
+      const amt=!isNaN(e.amount)?` · ${Math.round(e.amount/1000)}k`:'';
+      chipsHtml+=`<div class="cf-chip ${cobrado?'cobro-ok':'cobro'}">${e.customer.substring(0,9)}${amt}</div>`;
+    });
+    if(cobros.length>2) chipsHtml+=`<div class="cf-more">+${cobros.length-2}</div>`;
+    pagos.slice(0,2).forEach(e=>{
+      const pagado=e.pagado||false;
+      const amt=!isNaN(e.amount)?` · ${Math.round(e.amount/1000)}k`:'';
+      chipsHtml+=`<div class="cf-chip ${pagado?'pago-ok':'pago'}">${(e.proveedor||e.customer).substring(0,9)}${amt}</div>`;
+    });
+    if(pagos.length>2) chipsHtml+=`<div class="cf-more">+${pagos.length-2}</div>`;
+
+    daysHtml+=`<div class="cf-day cf-day-periodo${isHoy?' today':''}${inRange?' periodo-selected':''}" data-date="${key}"
+      style="cursor:pointer;${inRange?'background:rgba(200,240,80,.1);border-color:var(--accent);':''}"
+      onmousedown="cfPeriodoDragStart('${key}')"
+      onmousemove="cfPeriodoDragMove('${key}')"
+      onmouseup="cfPeriodoDragEnd('${key}')"
+      onclick="${hasCobros||hasPagos?`openDayDetail('${key}','${String(d).padStart(2,'0')}/${String(mes+1).padStart(2,'0')}')`:''}"
+    >
+      <div class="cf-day-num">${d}</div>
+      <div class="cf-chips">${chipsHtml}</div>
+    </div>`;
+  }
+
+  const padEnd = (startWd+lastDay.getDate())%7===0?0:7-((startWd+lastDay.getDate())%7);
+  for(let i=1;i<=padEnd;i++) daysHtml+=`<div class="cf-day other-month"></div>`;
+
+  // Resumen del período seleccionado
+  let resumenHtml = '';
+  if(cfPeriodoStart && cfPeriodoEnd){
+    let totC=0, totP=0;
+    const d1 = new Date(cfPeriodoStart), d2 = new Date(cfPeriodoEnd);
+    for(let d=new Date(d1); d<=d2; d.setDate(d.getDate()+1)){
+      const k = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+      cobrosFiltered(k).forEach(e=>{ if(!isNaN(e.amount)) totC+=e.amount; });
+      pagosFiltered(k).forEach(e=>{ if(!isNaN(e.amount)) totP+=e.amount; });
+    }
+    const neto = totC-totP;
+    const desde = `${d1.getDate()}/${d1.getMonth()+1}`;
+    const hasta  = `${d2.getDate()}/${d2.getMonth()+1}`;
+    resumenHtml = `<div style="padding:12px 16px;background:var(--bg3);border-top:1px solid var(--border);display:flex;gap:20px;align-items:center;flex-wrap:wrap;">
+      <span style="font-size:11px;color:var(--text3);font-weight:600;">📅 ${desde} → ${hasta}</span>
+      <span style="font-size:12px;font-weight:700;color:#2e7d32;">▲ USD ${totC.toLocaleString('es-AR',{maximumFractionDigits:0})}</span>
+      <span style="font-size:12px;font-weight:700;color:#c62828;">▼ USD ${totP.toLocaleString('es-AR',{maximumFractionDigits:0})}</span>
+      <span style="font-size:13px;font-weight:800;font-family:var(--mono);color:${neto>=0?'#2e7d32':'#c62828'};">${neto>=0?'+':''}USD ${Math.abs(neto).toLocaleString('es-AR',{maximumFractionDigits:0})}</span>
+      <span style="font-size:10px;color:var(--text3);">Arrastrá para cambiar el período</span>
+    </div>`;
+  } else {
+    resumenHtml = `<div style="padding:12px 16px;background:var(--bg3);border-top:1px solid var(--border);font-size:11px;color:var(--text3);text-align:center;">
+      🖱 Hacé click y arrastrá sobre los días para seleccionar un período
+    </div>`;
+  }
+
+  const monthName2 = firstDay.toLocaleDateString('es-AR',{month:'long',year:'numeric'});
+  return `<div class="cf-calendar-wrap" style="user-select:none;" onmouseleave="cfDragStart=null;">
+    <div class="cf-cal-header">
+      <button class="cf-nav-btn" onclick="cfNavigate(-1)">‹</button>
+      <span class="cf-cal-title" style="text-transform:capitalize;">${monthName2}</span>
+      <button class="cf-nav-btn" onclick="cfNavigate(1)">›</button>
+    </div>
+    <div class="cf-weekdays">${weekdaysHtml}</div>
+    <div class="cf-days">${daysHtml}</div>
+    ${resumenHtml}
   </div>`;
 }
 
@@ -4495,6 +4684,54 @@ function cfClearFiltros(){
 
 function cfToggleEntidad(n){ cfToggleCliente(n); }
 function cfSetFiltro(){}
+
+function setCFVista(v){
+  cfVista = v;
+  if(v === 'semana' && !cfSemanaBase){
+    // Calcular lunes de la semana actual
+    const hoy = new Date();
+    const wd = hoy.getDay() === 0 ? 6 : hoy.getDay()-1;
+    cfSemanaBase = new Date(hoy.getFullYear(), hoy.getMonth(), hoy.getDate()-wd);
+  }
+  if(v === 'periodo'){
+    cfPeriodoStart = null; cfPeriodoEnd = null;
+  }
+  renderCashFlow();
+}
+
+function cfSemanaNav(dir){
+  if(!cfSemanaBase) return;
+  cfSemanaBase = new Date(cfSemanaBase.getTime() + dir*7*86400000);
+  renderCashFlow();
+}
+
+function cfPeriodoDragStart(dateStr){
+  cfDragStart = dateStr;
+  cfPeriodoStart = new Date(dateStr);
+  cfPeriodoEnd = new Date(dateStr);
+  renderCashFlow();
+}
+
+function cfPeriodoDragMove(dateStr){
+  if(!cfDragStart) return;
+  const d = new Date(dateStr);
+  const start = new Date(cfDragStart);
+  if(d < start){ cfPeriodoStart = d; cfPeriodoEnd = start; }
+  else { cfPeriodoStart = start; cfPeriodoEnd = d; }
+  // Re-render solo los días sin reconstruir todo
+  document.querySelectorAll('.cf-day-periodo').forEach(el => {
+    const ds = el.dataset.date;
+    const dd = new Date(ds);
+    const inRange = dd >= cfPeriodoStart && dd <= cfPeriodoEnd;
+    el.style.background = inRange ? 'rgba(200,240,80,.12)' : '';
+    el.style.borderColor = inRange ? 'var(--accent)' : 'var(--border)';
+  });
+}
+
+function cfPeriodoDragEnd(dateStr){
+  cfDragStart = null;
+  renderCashFlow();
+}
 
 function setCFMode(mode){
   renderCashFlow();
