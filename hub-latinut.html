@@ -3875,6 +3875,7 @@ let cfVista = 'mes'; // 'mes' | 'semana' | 'periodo'
 let cfSemanaBase = null; // Date del lunes de la semana actual
 let cfIncluirVencidos = false; // escenario: traer vencidos al mes actual
 let cfPesimista = false;       // escenario: +7 días a fechas estimadas
+let cfFiltroProductos = new Set(); // filtro de productos para consolidaciones
 let cfPeriodoStart = null; // Date inicio período seleccionado
 let cfPeriodoEnd = null;   // Date fin período seleccionado
 let cfDragStart = null;    // para drag de período
@@ -3885,6 +3886,10 @@ let cfFiltroForwarders = new Set();
 
 function renderCashFlow(){
   if(cfVista !== 'mes' && cfVista !== 'semana' && cfVista !== 'periodo') cfVista = 'mes';
+  if(cfMode === 'consolidaciones'){
+    document.getElementById('content').innerHTML = renderConsolidaciones();
+    return;
+  }
   const today = new Date();
   const nc = getNegocioConfig();
   const label = nc.label;
@@ -4349,6 +4354,7 @@ function renderCashFlow(){
       </div>
       <button class="cf-toggle-btn${cfMode==='cobros'?' active':''}" onclick="setCFMode('cobros')">💰 Cash Flow</button>
       <button class="cf-toggle-btn${cfMode==='eta'?' active':''}" onclick="setCFMode('eta')">🚢 ETA</button>
+      <button class="cf-toggle-btn${cfMode==='consolidaciones'?' active':''}" onclick="setCFMode('consolidaciones')">📦 Consolidaciones</button>
     </div>
   </div>
   ${(cfIncluirVencidos || cfPesimista) ? `
@@ -4780,6 +4786,223 @@ function cfPeriodoDragMove(dateStr){
 function cfPeriodoDragEnd(dateStr){
   cfDragStart = null;
   renderCashFlow();
+}
+
+function cfToggleProducto(nombre){
+  if(cfFiltroProductos.has(nombre)) cfFiltroProductos.delete(nombre);
+  else cfFiltroProductos.add(nombre);
+  renderCashFlow();
+}
+
+function renderConsolidaciones(){
+  const nc = getNegocioConfig();
+  const today = new Date();
+  const todayMs = new Date(today.getFullYear(), today.getMonth(), today.getDate()).getTime();
+  const firstDay = new Date(cfYear, cfMonth, 1);
+  const lastDay  = new Date(cfYear, cfMonth+1, 0);
+  const monthName = firstDay.toLocaleDateString('es-AR',{month:'long',year:'numeric'});
+
+  // Colores por producto
+  const PRODUCT_COLORS = {
+    'blanched_3842': {bg:'rgba(77,159,255,.12)',  border:'rgba(77,159,255,.4)',  text:'#4d9fff',        label:'Blanched 38/42'},
+    'blanched_4050': {bg:'rgba(100,180,255,.12)', border:'rgba(100,180,255,.4)', text:'#64b4ff',        label:'Blanched 40/50'},
+    'blanched_5060': {bg:'rgba(130,200,255,.12)', border:'rgba(130,200,255,.4)', text:'#82c8ff',        label:'Blanched 50/60'},
+    'split':         {bg:'rgba(200,240,80,.12)',  border:'rgba(200,240,80,.4)',  text:'var(--accent)',   label:'Split Blanched'},
+    'tostado':       {bg:'rgba(255,170,34,.12)',  border:'rgba(255,170,34,.4)',  text:'var(--warn)',     label:'Roasted'},
+    'tostado_nop':   {bg:'rgba(255,140,0,.15)',   border:'rgba(255,140,0,.5)',   text:'#ff8c00',        label:'Roasted NOP'},
+    'pasta':         {bg:'rgba(61,214,140,.12)',  border:'rgba(61,214,140,.4)',  text:'var(--ok)',       label:'Paste'},
+    'pasta_nop':     {bg:'rgba(30,180,100,.15)',  border:'rgba(30,180,100,.5)',  text:'#1eb464',        label:'Paste NOP'},
+    'pasta_vit':     {bg:'rgba(150,230,180,.15)', border:'rgba(150,230,180,.5)', text:'#55b87a',        label:'Paste + Vitamins'},
+    'harina':        {bg:'rgba(255,220,100,.12)', border:'rgba(255,220,100,.4)', text:'#d4a017',        label:'Flour'},
+    'aceite':        {bg:'rgba(255,100,100,.12)', border:'rgba(255,100,100,.4)', text:'#ff6464',        label:'Oil'},
+    'otro':          {bg:'rgba(150,150,150,.12)', border:'rgba(150,150,150,.4)', text:'var(--muted2)',   label:'Otro'},
+  };
+
+  function getProductKey(prod){
+    const p = (prod||'').toLowerCase();
+    if(p.includes('split') || p.includes('partido'))        return 'split';
+    if(p.includes('38/42') || p.includes('38-42'))          return 'blanched_3842';
+    if(p.includes('40/50') || p.includes('40-50'))          return 'blanched_4050';
+    if(p.includes('50/60') || p.includes('50-60'))          return 'blanched_5060';
+    if(p.includes('blanch'))                                 return 'blanched_3842'; // fallback blanched genérico
+    if((p.includes('toast')||p.includes('tostado')||p.includes('roast')) && p.includes('nop')) return 'tostado_nop';
+    if(p.includes('toast') || p.includes('tostado') || p.includes('roast')) return 'tostado';
+    if(p.includes('vitamin'))                                return 'pasta_vit';
+    if((p.includes('pasta')||p.includes('paste')) && p.includes('nop')) return 'pasta_nop';
+    if(p.includes('pasta') || p.includes('paste'))          return 'pasta';
+    if(p.includes('flour') || p.includes('harina'))         return 'harina';
+    if(p.includes('oil') || p.includes('aceite'))           return 'aceite';
+    return 'otro';
+  }
+
+  // Armar mapa de consolidaciones por día
+  const consolMap = {};
+  const productosDisponibles = new Set();
+  let totalTns = 0, totalOps = 0;
+  const tnsPorProducto = {};
+
+  allRowsAll.forEach(row => {
+    const fechaRaw = row[COL.CONSOLIDACION];
+    const d = parseDate(fechaRaw);
+    if(!d) return;
+    const producto = (row[COL.PRODUCT]||'').trim();
+    const prodKey = getProductKey(producto);
+    productosDisponibles.add(producto);
+
+    // Aplicar filtro de productos
+    if(cfFiltroProductos.size > 0 && !cfFiltroProductos.has(producto)) return;
+
+    const tns = parseFloat(String(row[COL.TNS]||'').replace(',','.')) || 0;
+    const k = dateKey(d);
+    if(!consolMap[k]) consolMap[k] = [];
+    consolMap[k].push({ producto, prodKey, tns, lote:(row[COL.LOTS]||'').trim(), negocio:(row[COL.NEGOCIO]||'').trim(), row });
+  });
+
+  // Totales del mes
+  Object.entries(consolMap).forEach(([k, items]) => {
+    const d = new Date(k);
+    if(d >= firstDay && d <= lastDay){
+      items.forEach(e => {
+        totalTns += e.tns;
+        totalOps++;
+        tnsPorProducto[e.prodKey] = (tnsPorProducto[e.prodKey]||0) + e.tns;
+      });
+    }
+  });
+
+  // Filtro de productos dropdown
+  const prodList = [...productosDisponibles].sort();
+  const filtroHtml = `
+    <div style="display:flex;gap:8px;align-items:center;margin-bottom:14px;flex-wrap:wrap;">
+      <span style="font-size:11px;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:.5px;">Producto</span>
+      ${prodList.map(p => {
+        const key = getProductKey(p);
+        const col = PRODUCT_COLORS[key];
+        const activo = cfFiltroProductos.has(p);
+        return `<button onclick="cfToggleProducto('${p.replace(/'/g,"\\'")}') " style="font-size:11px;font-weight:600;padding:4px 10px;border-radius:6px;border:1px solid ${activo?col.border:'var(--border)'};background:${activo?col.bg:'var(--bg3)'};color:${activo?col.text:'var(--text3)'};cursor:pointer;font-family:var(--font);">${p}</button>`;
+      }).join('')}
+      ${cfFiltroProductos.size>0?`<button onclick="cfFiltroProductos.clear();renderCashFlow();" style="font-size:10px;padding:3px 8px;border-radius:5px;border:1px solid var(--border);background:transparent;color:var(--muted2);cursor:pointer;font-family:var(--font);">✕ Limpiar</button>`:''}
+    </div>`;
+
+  // Métricas arriba
+  const metricsHtml = `
+    <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:16px;">
+      <div style="background:var(--bg2);border:1px solid var(--border);border-radius:10px;padding:14px 16px;">
+        <div style="font-size:10px;text-transform:uppercase;letter-spacing:1px;color:var(--text3);margin-bottom:6px;">Total mes</div>
+        <div style="font-size:26px;font-weight:800;font-family:var(--mono);color:var(--text);">${totalTns.toLocaleString('es-AR',{maximumFractionDigits:1})} tn</div>
+        <div style="font-size:11px;color:var(--text3);margin-top:2px;">${totalOps} operaciones</div>
+      </div>
+      ${Object.entries(tnsPorProducto).map(([key,tns])=>{
+        const col = PRODUCT_COLORS[key]||PRODUCT_COLORS.otro;
+        return `<div style="background:${col.bg};border:1px solid ${col.border};border-radius:10px;padding:14px 16px;">
+          <div style="font-size:10px;text-transform:uppercase;letter-spacing:1px;color:${col.text};margin-bottom:6px;">${col.label}</div>
+          <div style="font-size:22px;font-weight:800;font-family:var(--mono);color:${col.text};">${tns.toLocaleString('es-AR',{maximumFractionDigits:1})} tn</div>
+        </div>`;
+      }).join('')}
+    </div>`;
+
+  // Grilla del calendario
+  const weekDays = ['Dom','Lun','Mar','Mié','Jue','Vie','Sáb'];
+  const weekdaysHtml = weekDays.map(d=>`<div class="cf-weekday">${d}</div>`).join('');
+  const startWd = firstDay.getDay();
+  let daysHtml = '';
+  for(let i=0;i<startWd;i++) daysHtml+=`<div class="cf-day other-month"></div>`;
+
+  for(let d=1;d<=lastDay.getDate();d++){
+    const key = `${cfYear}-${String(cfMonth+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+    const fecha = new Date(cfYear,cfMonth,d);
+    const isHoy = fecha.getTime()===todayMs;
+    const items = consolMap[key]||[];
+    const diaTns = items.reduce((s,e)=>s+e.tns,0);
+
+    let chipsHtml = '';
+    items.slice(0,3).forEach(e=>{
+      const col = PRODUCT_COLORS[e.prodKey]||PRODUCT_COLORS.otro;
+      chipsHtml+=`<div class="cf-chip" style="background:${col.bg};color:${col.text};border:1px solid ${col.border};" title="${e.producto} · ${e.tns} tn · ${e.lote}">${e.tns>0?e.tns.toLocaleString('es-AR',{maximumFractionDigits:1})+'tn ':''}</div>`;
+    });
+    if(items.length>3) chipsHtml+=`<div class="cf-more">+${items.length-3}</div>`;
+
+    daysHtml+=`<div class="cf-day${isHoy?' today':''}" onclick="${items.length?`openConsolDayDetail('${key}','${String(d).padStart(2,'0')}/${String(cfMonth+1).padStart(2,'0')}')`:''}" style="${items.length?'cursor:pointer;':''}">
+      <div class="cf-day-num">${d}${diaTns>0?`<span style="float:right;font-size:9px;font-family:var(--mono);color:var(--text3);font-weight:400;">${diaTns.toLocaleString('es-AR',{maximumFractionDigits:0})}tn</span>`:''}</div>
+      <div class="cf-chips">${chipsHtml}</div>
+    </div>`;
+  }
+
+  const padEnd = (startWd+lastDay.getDate())%7===0?0:7-((startWd+lastDay.getDate())%7);
+  for(let i=1;i<=padEnd;i++) daysHtml+=`<div class="cf-day other-month"></div>`;
+
+  return `${filtroHtml}${metricsHtml}
+  <div class="cf-calendar-wrap">
+    <div class="cf-cal-header">
+      <button class="cf-nav-btn" onclick="cfNavigate(-1)">‹</button>
+      <span class="cf-cal-title" style="text-transform:capitalize;">${monthName}</span>
+      <button class="cf-nav-btn" onclick="cfNavigate(1)">›</button>
+    </div>
+    <div class="cf-weekdays">${weekdaysHtml}</div>
+    <div class="cf-days">${daysHtml}</div>
+  </div>`;
+}
+
+function openConsolDayDetail(key, label){
+  const consolMap = {};
+  allRowsAll.forEach(row => {
+    const d = parseDate(row[COL.CONSOLIDACION]);
+    if(!d) return;
+    const k = dateKey(d);
+    if(!consolMap[k]) consolMap[k]=[];
+    consolMap[k].push(row);
+  });
+  const items = consolMap[key]||[];
+  if(!items.length) return;
+  const PRODUCT_COLORS = {
+    'blanched_3842':{bg:'rgba(77,159,255,.12)',border:'rgba(77,159,255,.4)',text:'#4d9fff'},
+    'blanched_4050':{bg:'rgba(100,180,255,.12)',border:'rgba(100,180,255,.4)',text:'#64b4ff'},
+    'blanched_5060':{bg:'rgba(130,200,255,.12)',border:'rgba(130,200,255,.4)',text:'#82c8ff'},
+    'split':{bg:'rgba(200,240,80,.12)',border:'rgba(200,240,80,.4)',text:'var(--accent)'},
+    'tostado':{bg:'rgba(255,170,34,.12)',border:'rgba(255,170,34,.4)',text:'var(--warn)'},
+    'tostado_nop':{bg:'rgba(255,140,0,.15)',border:'rgba(255,140,0,.5)',text:'#ff8c00'},
+    'pasta':{bg:'rgba(61,214,140,.12)',border:'rgba(61,214,140,.4)',text:'var(--ok)'},
+    'pasta_nop':{bg:'rgba(30,180,100,.15)',border:'rgba(30,180,100,.5)',text:'#1eb464'},
+    'pasta_vit':{bg:'rgba(150,230,180,.15)',border:'rgba(150,230,180,.5)',text:'#55b87a'},
+    'harina':{bg:'rgba(255,220,100,.12)',border:'rgba(255,220,100,.4)',text:'#d4a017'},
+    'aceite':{bg:'rgba(255,100,100,.12)',border:'rgba(255,100,100,.4)',text:'#ff6464'},
+    'otro':{bg:'rgba(150,150,150,.12)',border:'rgba(150,150,150,.4)',text:'var(--muted2)'},
+  };
+  function getPK(p){
+    const s=(p||'').toLowerCase();
+    if(s.includes('split')||s.includes('partido')) return 'split';
+    if(s.includes('38/42')||s.includes('38-42')) return 'blanched_3842';
+    if(s.includes('40/50')||s.includes('40-50')) return 'blanched_4050';
+    if(s.includes('50/60')||s.includes('50-60')) return 'blanched_5060';
+    if(s.includes('blanch')) return 'blanched_3842';
+    if((s.includes('toast')||s.includes('tostado')||s.includes('roast'))&&s.includes('nop')) return 'tostado_nop';
+    if(s.includes('toast')||s.includes('tostado')||s.includes('roast')) return 'tostado';
+    if(s.includes('vitamin')) return 'pasta_vit';
+    if((s.includes('pasta')||s.includes('paste'))&&s.includes('nop')) return 'pasta_nop';
+    if(s.includes('pasta')||s.includes('paste')) return 'pasta';
+    if(s.includes('flour')||s.includes('harina')) return 'harina';
+    if(s.includes('oil')||s.includes('aceite')) return 'aceite';
+    return 'otro';
+  }
+  let html = `<div style="font-size:13px;font-weight:700;margin-bottom:14px;">📦 Consolidaciones — ${label}</div>`;
+  let totalDia = 0;
+  items.forEach(row => {
+    const prod = (row[COL.PRODUCT]||'').trim();
+    const tns  = parseFloat(String(row[COL.TNS]||'').replace(',','.')) || 0;
+    const lote = (row[COL.LOTS]||'').trim();
+    const neg  = (row[COL.NEGOCIO]||'').trim();
+    const col  = PRODUCT_COLORS[getPK(prod)]||PRODUCT_COLORS.otro;
+    totalDia += tns;
+    html += `<div style="padding:10px 12px;border-radius:8px;border:1px solid ${col.border};background:${col.bg};margin-bottom:8px;display:flex;justify-content:space-between;align-items:center;">
+      <div>
+        <div style="font-size:12px;font-weight:700;color:${col.text};">${prod}</div>
+        <div style="font-size:11px;color:var(--text3);margin-top:2px;">${lote}${neg?' · '+neg:''}</div>
+      </div>
+      <div style="font-size:18px;font-weight:800;font-family:var(--mono);color:${col.text};">${tns.toLocaleString('es-AR',{maximumFractionDigits:1})} tn</div>
+    </div>`;
+  });
+  html += `<div style="border-top:1px solid var(--border);margin-top:10px;padding-top:10px;display:flex;justify-content:space-between;"><span style="font-size:12px;font-weight:600;color:var(--text);">Total</span><span style="font-size:16px;font-weight:800;font-family:var(--mono);color:var(--text);">${totalDia.toLocaleString('es-AR',{maximumFractionDigits:1})} tn</span></div>`;
+  showModal('Consolidaciones', html);
 }
 
 function setCFMode(mode){
