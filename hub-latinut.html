@@ -4847,7 +4847,7 @@ function renderConsolidaciones(){
     const fechaRaw = row[COL.CONSOLIDACION];
     const d = parseDate(fechaRaw);
     if(!d) return;
-    const producto = (row[COL.PRODUCT]||'').trim();
+    const producto = normalizarProducto((row[COL.PRODUCT]||'').trim());
     const prodKey = getProductKey(producto);
     productosDisponibles.add(producto);
 
@@ -4872,19 +4872,45 @@ function renderConsolidaciones(){
     }
   });
 
-  // Filtro de productos dropdown
+  // Normalizar nombres de productos para unificar variantes
+  function normalizarProducto(prod){
+    const p = prod.toLowerCase();
+    if(p.includes('split')||p.includes('partido'))       return 'Split blanched peanuts';
+    if(p.includes('38/42')||p.includes('38-42'))         return 'Blanched peanuts 38/42';
+    if(p.includes('40/50')||p.includes('40-50'))         return 'Blanched peanuts 40/50';
+    if(p.includes('50/60')||p.includes('50-60'))         return 'Blanched peanuts 50/60';
+    if(p.includes('blanch'))                             return 'Blanched peanuts';
+    if((p.includes('toast')||p.includes('tostado')||p.includes('roast'))&&p.includes('nop')) return 'Roasted peanuts NOP';
+    if(p.includes('toast')||p.includes('tostado')||p.includes('roast')) return 'Roasted peanuts';
+    if(p.includes('vitamin'))                            return 'Peanut paste with vitamins';
+    if((p.includes('pasta')||p.includes('paste'))&&p.includes('nop')) return 'Peanut paste NOP';
+    if(p.includes('pasta')||p.includes('paste'))         return 'Peanut paste';
+    if(p.includes('flour')||p.includes('harina'))        return 'Peanut flour';
+    if(p.includes('oil')||p.includes('aceite'))          return 'Peanut oil';
+    return prod;
+  }
+
+  // Filtro de productos dropdown — estético
   const prodList = [...productosDisponibles].sort();
-  const filtroHtml = `
-    <div style="display:flex;gap:8px;align-items:center;margin-bottom:14px;flex-wrap:wrap;">
-      <span style="font-size:11px;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:.5px;">Producto</span>
+  const filtroHtml = prodList.length ? `
+    <div style="display:flex;gap:6px;align-items:center;margin-bottom:16px;flex-wrap:wrap;padding:10px 14px;background:var(--bg2);border:1px solid var(--border);border-radius:10px;">
+      <span style="font-size:9px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:var(--text3);margin-right:4px;">Producto</span>
       ${prodList.map(p => {
         const key = getProductKey(p);
-        const col = PRODUCT_COLORS[key];
+        const col = PRODUCT_COLORS[key] || PRODUCT_COLORS.otro;
         const activo = cfFiltroProductos.has(p);
-        return `<button onclick="cfToggleProducto('${p.replace(/'/g,"\\'")}') " style="font-size:11px;font-weight:600;padding:4px 10px;border-radius:6px;border:1px solid ${activo?col.border:'var(--border)'};background:${activo?col.bg:'var(--bg3)'};color:${activo?col.text:'var(--text3)'};cursor:pointer;font-family:var(--font);">${p}</button>`;
+        const label = p.replace('Blanched peanuts','Blanch').replace('Roasted peanuts','Roasted').replace('Peanut paste','Paste').replace('Split blanched peanuts','Split').replace('Peanut flour','Flour').replace('Peanut oil','Oil').replace('with vitamins','+ Vit').replace(' NOP',' NOP');
+        return `<button onclick="cfToggleProducto('${p.replace(/'/g,"\\'")}');" 
+          style="font-size:11px;font-weight:${activo?'700':'500'};padding:5px 12px;border-radius:20px;
+          border:1.5px solid ${activo?col.border:'var(--border)'};
+          background:${activo?col.bg:'transparent'};
+          color:${activo?col.text:'var(--text3)'};
+          cursor:pointer;font-family:var(--font);transition:all .15s;
+          box-shadow:${activo?`0 0 0 1px ${col.border}`:'none'};">${label}</button>`;
       }).join('')}
-      ${cfFiltroProductos.size>0?`<button onclick="cfFiltroProductos.clear();renderCashFlow();" style="font-size:10px;padding:3px 8px;border-radius:5px;border:1px solid var(--border);background:transparent;color:var(--muted2);cursor:pointer;font-family:var(--font);">✕ Limpiar</button>`:''}
-    </div>`;
+      ${cfFiltroProductos.size>0?`<button onclick="cfFiltroProductos.clear();renderCashFlow();" 
+        style="font-size:10px;padding:4px 10px;border-radius:20px;border:1px solid var(--border);background:transparent;color:var(--muted2);cursor:pointer;font-family:var(--font);margin-left:4px;">✕ Limpiar</button>`:''}
+    </div>` : '';
 
   // Métricas arriba
   const metricsHtml = `
