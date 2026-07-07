@@ -4903,12 +4903,16 @@ function renderConsolidaciones(){
       }).join('')}
     </div>`;
 
-  // Grilla del calendario
+  // Grilla con totales semanales
   const weekDays = ['Dom','Lun','Mar','Mié','Jue','Vie','Sáb'];
-  const weekdaysHtml = weekDays.map(d=>`<div class="cf-weekday">${d}</div>`).join('');
+  const weekdaysHtml = weekDays.map(d=>`<div class="cf-weekday">${d}</div>`).join('') +
+    `<div class="cf-weekday" style="background:rgba(200,240,80,.06);color:var(--accent);">Semana</div>`;
   const startWd = firstDay.getDay();
   let daysHtml = '';
   for(let i=0;i<startWd;i++) daysHtml+=`<div class="cf-day other-month"></div>`;
+
+  let semanaActual = 0;
+  let semTns = 0;
 
   for(let d=1;d<=lastDay.getDate();d++){
     const key = `${cfYear}-${String(cfMonth+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
@@ -4916,8 +4920,9 @@ function renderConsolidaciones(){
     const isHoy = fecha.getTime()===todayMs;
     const items = consolMap[key]||[];
     const diaTns = items.reduce((s,e)=>s+e.tns,0);
+    semTns += diaTns;
 
-    // Agrupar items por prodKey sumando tns
+    // Agrupar por producto
     const agrupado = {};
     items.forEach(e => {
       if(!agrupado[e.prodKey]) agrupado[e.prodKey] = { prodKey:e.prodKey, producto:e.producto, tns:0, col:PRODUCT_COLORS[e.prodKey]||PRODUCT_COLORS.otro };
@@ -4940,14 +4945,29 @@ function renderConsolidaciones(){
 
     daysHtml+=`<div class="cf-day${isHoy?' today':''}${items.length?' cf-day-consol':''}" 
       onclick="${items.length?`openConsolDayDetail('${key}','${String(d).padStart(2,'0')}/${String(cfMonth+1).padStart(2,'0')}')`:''}" 
-      style="${items.length?'cursor:pointer;':''};${items.length?'border-left:3px solid var(--accent);':''}" >
+      style="${items.length?'cursor:pointer;':''};${items.length?'border-left:3px solid var(--accent);':''}">
       <div class="cf-day-num" style="margin-bottom:${diaTns>0?'2':'4'}px;">${d}</div>
       ${diaTnsStr}
       <div class="cf-chips">${chipsHtml}</div>
     </div>`;
+
+    // Al final de cada semana agregar celda de total
+    const diaSemana = fecha.getDay();
+    if(diaSemana === 6 || d === lastDay.getDate()){
+      daysHtml += `<div style="background:rgba(200,240,80,.06);border:1px solid rgba(200,240,80,.2);border-radius:4px;display:flex;align-items:center;justify-content:center;min-height:90px;">
+        <div style="text-align:center;">
+          <div style="font-size:9px;text-transform:uppercase;letter-spacing:.5px;color:var(--accent);margin-bottom:4px;">Total</div>
+          <div style="font-size:${semTns>0?'15':'12'}px;font-weight:800;font-family:var(--mono);color:${semTns>0?'var(--accent)':'var(--text3)'};">${semTns>0?semTns.toLocaleString('es-AR',{maximumFractionDigits:1})+' tn':'—'}</div>
+        </div>
+      </div>`;
+      semanaActual++;
+      semTns = 0;
+    }
   }
 
-  const padEnd = (startWd+lastDay.getDate())%7===0?0:7-((startWd+lastDay.getDate())%7);
+  // Si la última semana no terminó en sábado, completar días vacíos y agregar total
+  const ultimoDia = new Date(cfYear,cfMonth,lastDay.getDate());
+  const padEnd = ultimoDia.getDay()===6 ? 0 : 6-ultimoDia.getDay();
   for(let i=1;i<=padEnd;i++) daysHtml+=`<div class="cf-day other-month"></div>`;
 
   return `${filtroHtml}${metricsHtml}
@@ -4957,8 +4977,8 @@ function renderConsolidaciones(){
       <span class="cf-cal-title" style="text-transform:capitalize;">${monthName}</span>
       <button class="cf-nav-btn" onclick="cfNavigate(1)">›</button>
     </div>
-    <div class="cf-weekdays">${weekdaysHtml}</div>
-    <div class="cf-days">${daysHtml}</div>
+    <div class="cf-weekdays" style="grid-template-columns:repeat(8,1fr);">${weekdaysHtml}</div>
+    <div class="cf-days" style="grid-template-columns:repeat(8,1fr);">${daysHtml}</div>
   </div>`;
 }
 
@@ -5044,7 +5064,12 @@ function openConsolDayDetail(key, label){
     </div>`;
   });
   html += `<div style="border-top:1px solid var(--border);margin-top:10px;padding-top:10px;display:flex;justify-content:space-between;"><span style="font-size:12px;font-weight:600;color:var(--text);">Total día</span><span style="font-size:18px;font-weight:800;font-family:var(--mono);color:var(--accent);">${totalDia.toLocaleString('es-AR',{maximumFractionDigits:1})} tn</span></div>`;
-  showModal('Consolidaciones', html);
+
+  // Usar el panel de detalle del hub
+  const overlay = document.getElementById('cf-detail-overlay');
+  document.getElementById('cf-detail-title').textContent = '📦 Consolidaciones — ' + label;
+  document.getElementById('cf-detail-body').innerHTML = html;
+  overlay.classList.remove('hidden');
 }
 
 function setCFMode(mode){
