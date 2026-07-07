@@ -3522,8 +3522,12 @@ function fmtDateFromExcel(val){
   let lastTns = 0;
   for(let r = 21; r <= row + 2; r++){
     const c = ws['E'+r];
-    if(c && c.v !== undefined && !isNaN(parseFloat(c.v))){
-      lastTns = parseFloat(c.v);
+    if(c && c.v !== undefined){
+      // Forzar número puro — evitar que SheetJS interprete decimales como fecha serial
+      const raw = c.t === 'n' ? c.v : parseFloat(c.v);
+      if(!isNaN(raw) && raw > 0 && raw < 10000){ // sanity check: tns razonables
+        lastTns = Math.round(raw * 1000) / 1000; // máximo 3 decimales
+      }
     }
   }
 
@@ -3532,7 +3536,7 @@ function fmtDateFromExcel(val){
     lots: lots.join(', '),
     product,
     packing,
-    tns: lastTns ? String(lastTns) : '',
+    tns: lastTns ? String(lastTns).replace('.', ',') : '',
     priceFOB
   };
 }
