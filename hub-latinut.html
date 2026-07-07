@@ -3523,11 +3523,8 @@ function fmtDateFromExcel(val){
   for(let r = 21; r <= row + 2; r++){
     const c = ws['E'+r];
     if(c && c.v !== undefined){
-      // Forzar número puro — evitar que SheetJS interprete decimales como fecha serial
       const raw = c.t === 'n' ? c.v : parseFloat(c.v);
-      if(!isNaN(raw) && raw > 0 && raw < 10000){ // sanity check: tns razonables
-        lastTns = Math.round(raw * 1000) / 1000; // máximo 3 decimales
-      }
+      if(!isNaN(raw) && raw > 0 && raw < 10000) lastTns = raw;
     }
   }
 
