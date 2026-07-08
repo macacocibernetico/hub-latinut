@@ -873,6 +873,22 @@ function getReciprocaCC(){
   return 'agustin@latinutsa.com,valentina@latinutsa.com';
 }
 
+// Filtro de seguridad: Yael NUNCA en AXT, Pedro NUNCA en Buzaram
+function sanitizarCC(ccStr){
+  if(!ccStr) return ccStr;
+  const YAEL = 'yaelvaleria.arrua@newsan.com.ar';
+  const PEDRO = 'pberro@axtsolutions.com';
+  let emails = ccStr.split(',').map(e=>e.trim()).filter(Boolean);
+  if(negocioActivo === 'axt'){
+    // AXT: sacar a Yael bajo cualquier concepto
+    emails = emails.filter(e => !e.toLowerCase().includes('yaelvaleria') && !e.toLowerCase().includes(YAEL.toLowerCase()));
+  } else if(negocioActivo === 'buzaram'){
+    // Buzaram: sacar a Pedro bajo cualquier concepto
+    emails = emails.filter(e => !e.toLowerCase().includes(PEDRO.toLowerCase()) && !e.toLowerCase().includes('pberro'));
+  }
+  return emails.join(', ');
+}
+
 function getContactsForEmpresa(empresa){
   if(!empresa||!contacts.length) return {to:'', cc:''};
   const emp=empresa.trim().toUpperCase();
@@ -893,7 +909,7 @@ function getContactsForEmpresa(empresa){
   const otherEmails=match.filter(c=>c!==toContact&&!c.ccSiempre).map(c=>c.email);
   const reciproca=getReciprocaCC().split(',').map(e=>e.trim()).filter(Boolean);
   const allCC=[...new Set([...cc,...otherEmails,...reciproca])];
-  return{to:toStr, cc:allCC.join(', ')||''};
+  return{to:toStr, cc:sanitizarCC(allCC.join(', '))||''};
 }
 
 // ─── LOG CACHE ───────────────────────────────────────────────────────────────
@@ -2631,7 +2647,7 @@ async function reclamarCobranzaBulk(rowIndices){
   document.getElementById('modal-title').textContent=`Reclamo de cobro${plural?' ('+rows.length+' facturas)':''}`;
   document.getElementById('modal-to').textContent=contactInfo.to||`${customer} <sin contacto>`;
   const allBulkCC=[...new Set([...ccSiempre,...reciprocaBulk])].filter(Boolean);
-  document.getElementById('modal-cc').textContent=allBulkCC.join(', ');
+  document.getElementById('modal-cc').textContent=sanitizarCC(allBulkCC.join(', '));
   document.getElementById('modal-subject').textContent=subject;
   document.getElementById('modal-body').value=body;
   document.getElementById('send-draft-btn').textContent='✉ Crear borrador';
@@ -3080,7 +3096,7 @@ function openMailModal(rowIdx, mailType){
     ccStr=contactInfo.cc||'pedro@axt.com';
   }
   document.getElementById('modal-to').textContent=toStr;
-  document.getElementById('modal-cc').textContent=ccStr;
+  document.getElementById('modal-cc').textContent=sanitizarCC(ccStr);
   const tpl=buildMailBody(mailType,d,'en');
   document.getElementById('modal-subject').textContent=tpl.subject;
   document.getElementById('modal-body').value=tpl.body;
@@ -5129,7 +5145,24 @@ function openDayDetail(key, dateLabel){
 
   // ── Cobros ──
   if(cobrosDay.length){
+    // Agrupar cobros por cliente para permitir reclamo múltiple
+    const porCliente = {};
+    cobrosDay.forEach(e => {
+      if(!e.rowData) return;
+      const cust = (e.customer||'').trim();
+      if(!porCliente[cust]) porCliente[cust] = [];
+      porCliente[cust].push(allRows.indexOf(e.rowData));
+    });
+    // Botón de reclamo múltiple por cliente si hay más de una cobranza del mismo cliente
+    let reclamoMultipleHtml = '';
+    Object.entries(porCliente).forEach(([cust, idxs]) => {
+      if(idxs.length > 1){
+        reclamoMultipleHtml += `<button onclick="closeDayDetail();reclamarCobranzaBulk([${idxs.join(',')}])" style="font-size:11px;font-weight:600;padding:7px 14px;border-radius:8px;background:#0071e3;border:none;color:#fff;cursor:pointer;font-family:var(--font);margin-right:6px;margin-bottom:6px;">✉ Reclamar ${idxs.length} de ${cust}</button>`;
+      }
+    });
+
     html+=`<div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.8px;color:var(--ok);margin-bottom:8px;display:flex;align-items:center;gap:6px;"><span>▲</span> Cobros · ${cobrosDay.length} entrada${cobrosDay.length>1?'s':''}</div>`;
+    if(reclamoMultipleHtml) html += `<div style="margin-bottom:12px;">${reclamoMultipleHtml}</div>`;
     cobrosDay.forEach(e=>{
       const row=e.rowData; if(!row) return;
       const idx=allRows.indexOf(row);
