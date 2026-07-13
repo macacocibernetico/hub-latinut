@@ -700,7 +700,7 @@ button{font-family:var(--font);cursor:pointer;border:none;background:none;}
 <script>
 // ─── CONFIG ──────────────────────────────────────────────────────────────────
 const CFG_KEY = 'hub_latinut_config';
-let cfg = {...{sheetId:'',sheetName:'Cargas',apiKey:'',clientId:'',alerta_dias:10,hubSheetId:'11r3m9KuXWFRrSjdHf1an2xQDjNwnXhadWk5WbShuLms',appsScriptUrl:'https://script.google.com/macros/s/AKfycbyUy0QaexIIqToupRj1_5zgnFpm5Wyycnt7SLClZMk_zLfhm6CfzLpNr8EgT98aSOY4/exec',claudeApiKey:'',buzaramSheetId:'1vQaNeo595C3aK1KAF75UsOkbA5LNUMm16WoEpP9Z69w',buzaramAppsScriptUrl:'https://script.google.com/a/macros/latinutsa.com/s/AKfycbyR88OXmMw4zC-INvs8kTI7vwtX4JdFDsMNA9IS0wpHJwpl4ypQk385y2lhgqiTVERR/exec'},...JSON.parse(localStorage.getItem(CFG_KEY)||'{}')};
+let cfg = {...{sheetId:'',sheetName:'Cargas',apiKey:'',clientId:'',alerta_dias:10,hubSheetId:'11r3m9KuXWFRrSjdHf1an2xQDjNwnXhadWk5WbShuLms',appsScriptUrl:'',claudeApiKey:'',buzaramSheetId:'1vQaNeo595C3aK1KAF75UsOkbA5LNUMm16WoEpP9Z69w',buzaramAppsScriptUrl:''},...JSON.parse(localStorage.getItem(CFG_KEY)||'{}')};
 
 // ─── OAUTH ───────────────────────────────────────────────────────────────────
 const SCOPES = 'https://www.googleapis.com/auth/spreadsheets https://www.googleapis.com/auth/gmail.compose https://www.googleapis.com/auth/gmail.readonly https://www.googleapis.com/auth/drive.file https://www.googleapis.com/auth/tasks';
@@ -714,7 +714,7 @@ function getBuzaramCfg(){
   return {
     sheetId: cfg.buzaramSheetId || '1vQaNeo595C3aK1KAF75UsOkbA5LNUMm16WoEpP9Z69w',
     sheetName: 'CARGAS',
-    appsScriptUrl: (cfg.buzaramAppsScriptUrl && cfg.buzaramAppsScriptUrl.trim()) ? cfg.buzaramAppsScriptUrl.trim() : 'https://script.google.com/a/macros/latinutsa.com/s/AKfycbyR88OXmMw4zC-INvs8kTI7vwtX4JdFDsMNA9IS0wpHJwpl4ypQk385y2lhgqiTVERR/exec',
+    appsScriptUrl: (cfg.buzaramAppsScriptUrl && cfg.buzaramAppsScriptUrl.trim()) ? cfg.buzaramAppsScriptUrl.trim() : '',
     label: 'Buzaram',
     COL_FECHA_EST_COBRO: 52,  // BA
     COL_FECHA_COBRO: 57,      // BF
@@ -736,26 +736,27 @@ function getBuzaramCfg(){
 
 function getNegocioConfig(){
   if(negocioActivo==='buzaram') return getBuzaramCfg();
+  const M = window._COLMAP || {};
+  const pick = (k, def) => (M[k] !== undefined && M[k] >= 0) ? M[k] : def;
   return {
     sheetId: cfg.sheetId,
     sheetName: cfg.sheetName,
     appsScriptUrl: cfg.appsScriptUrl,
     label: 'AXT Solutions',
-    COL_FECHA_EST_COBRO: COL.FECHA_EST_COBRO,
-    COL_FECHA_COBRO: COL.FECHA_COBRO,
+    COL_FECHA_EST_COBRO: pick('FECHA_EST_COBRO', COL.FECHA_EST_COBRO),
+    COL_FECHA_COBRO: pick('FECHA_COBRO', COL.FECHA_COBRO),
     COL_TOTAL_CFR: COL.TOTAL_CFR,
     ccFijo: 'pberro@axtsolutions.com',
     sinPagares: false,
-    // Pagos forwarder AXT: AM=38, AN=39, AO=40, AP=41, AQ=42, AR=43
-    // AS=44 fecha estimada pago, AT=45 fecha real pago
-    PAGO_FC_FLETE:      COL.FC_FLETE,        // 38
-    PAGO_FC_COURIER:    COL.FC_COURIER,      // 39
-    PAGO_PROVEEDOR:     COL.PROVEEDOR_FLETE, // 40
-    PAGO_MONTO:         COL.MONTO_FLETE,     // 41
-    PAGO_MONTO_COURIER: COL.MONTO_COURIER,   // 42
-    PAGO_TOTAL:         COL.TOTAL_PAGO,      // 43
-    PAGO_FECHA:         COL.FECHA_PAGO_FWD,  // 44 — estimada
-    PAGO_FECHA_REAL:    COL.FECHA_PAGO_FWD_REAL, // 45 — real
+    // Pagos forwarder AXT — detectados por nombre (se corrieron 3 columnas)
+    PAGO_FC_FLETE:      pick('FC_FLETE', COL.FC_FLETE),
+    PAGO_FC_COURIER:    pick('FC_COURIER', COL.FC_COURIER),
+    PAGO_PROVEEDOR:     pick('PROVEEDOR_FLETE', COL.PROVEEDOR_FLETE),
+    PAGO_MONTO:         pick('MONTO_FLETE', COL.MONTO_FLETE),
+    PAGO_MONTO_COURIER: pick('MONTO_COURIER', COL.MONTO_COURIER),
+    PAGO_TOTAL:         pick('TOTAL_PAGO', COL.TOTAL_PAGO),
+    PAGO_FECHA:         pick('FECHA_PAGO_FWD', COL.FECHA_PAGO_FWD),
+    PAGO_FECHA_REAL:    pick('FECHA_PAGO_FWD_REAL', COL.FECHA_PAGO_FWD_REAL),
   };
 }
 
@@ -966,15 +967,22 @@ const COL = {
   DOCUMENTOS:14, LOMBARD:15, CLIENTE_ENV:16, TELEX:17, EXPORTER:18,
   CUSTOMER:23, INVOICE_CLIENTE:24, TOTAL_CFR:32, INCOTERM:29,
   INVOICE_FC_SERV:30,
-  // Pagos forwarder AXT: AM=38, AN=39, AO=40, AP=41, AQ=42, AR=43
+  // Pagos forwarder AXT (índices por defecto; el COLMAP los corrige por nombre)
   FC_FLETE:38, FC_COURIER:39, PROVEEDOR_FLETE:40,
   MONTO_FLETE:41, MONTO_COURIER:42, TOTAL_PAGO:43,
-  // AS=44 fecha pago estimada flete, AT=45 fecha pago real flete
   FECHA_PAGO_FWD:44, FECHA_PAGO_FWD_REAL:45,
-  // AU=46, AV=47, AW=48, AX=49
-  PAGARE_ENVIADO:46, PAGARE_FIRMADO:47,
+  _PAGARE_ENVIADO_DEF:46, _PAGARE_FIRMADO_DEF:47,
   FECHA_EST_COBRO:48, FECHA_COBRO:49
 };
+// PAGARE_ENVIADO y PAGARE_FIRMADO son getters: leen del COLMAP detectado por
+// nombre si existe (para AXT), o del valor por defecto. Así todos los usos de
+// COL.PAGARE_ENVIADO se corrigen solos aunque se muevan columnas en la planilla.
+Object.defineProperty(COL, 'PAGARE_ENVIADO', {
+  get(){ const m=window._COLMAP; return (m && m.PAGARE_ENVIADO>=0 && negocioActivo!=='buzaram') ? m.PAGARE_ENVIADO : COL._PAGARE_ENVIADO_DEF; }
+});
+Object.defineProperty(COL, 'PAGARE_FIRMADO', {
+  get(){ const m=window._COLMAP; return (m && m.PAGARE_FIRMADO>=0 && negocioActivo!=='buzaram') ? m.PAGARE_FIRMADO : COL._PAGARE_FIRMADO_DEF; }
+});
 
 // ─── UTILS ───────────────────────────────────────────────────────────────────
 function parseSheetNum(val){
@@ -1008,11 +1016,18 @@ function parseDate(v){
 }
 function daysFrom(v){const d=parseDate(v);if(!d)return null;const t=new Date();const tm=new Date(t.getFullYear(),t.getMonth(),t.getDate());const dm=new Date(d.getFullYear(),d.getMonth(),d.getDate());return Math.round((dm-tm)/86400000);}
 
-// Get FECHA_EST_COBRO for current negocio
-function getCobroCol(){ return getNegocioConfig().COL_FECHA_EST_COBRO; }
+// Get FECHA_EST_COBRO for current negocio (usa mapeo por nombre si existe)
+function getCobroCol(){
+  if(window._COLMAP && window._COLMAP.FECHA_EST_COBRO >= 0) return window._COLMAP.FECHA_EST_COBRO;
+  return getNegocioConfig().COL_FECHA_EST_COBRO;
+}
+function getCobroRealCol(){
+  if(window._COLMAP && window._COLMAP.FECHA_COBRO >= 0) return window._COLMAP.FECHA_COBRO;
+  return getNegocioConfig().COL_FECHA_COBRO;
+}
 function getCobroFecha(row){ return row[getCobroCol()]||''; }
 function fmtDate(v){const d=parseDate(v);if(!d)return v||'—';return d.toLocaleDateString('es-AR',{day:'2-digit',month:'2-digit',year:'2-digit'});}
-function isClosed(row){const nc=getNegocioConfig();const aw=(row[nc.COL_FECHA_COBRO]||'').trim();return aw!==''&&aw.toUpperCase()!=='SI';}
+function isClosed(row){const aw=(row[getCobroRealCol()]||'').trim();return aw!==''&&aw.toUpperCase()!=='SI';}
 function daysClass(n){if(n===null)return '';if(n<=7)return 'red';if(n<=14)return 'warn';return 'ok';}
 function nowStr(){const n=new Date();return{fecha:n.toLocaleDateString('es-AR'),hora:n.toLocaleTimeString('es-AR',{hour:'2-digit',minute:'2-digit'})};}
 
@@ -1246,7 +1261,8 @@ async function loadData(){
   setSheetStatus('loading','Sincronizando '+nc.label+'...');
   showProgress();
   try{
-    const range=encodeURIComponent(nc.sheetName+'!A4:BH');
+    // Leer desde fila 2 (encabezados) para poder mapear columnas por nombre
+    const range=encodeURIComponent(nc.sheetName+'!A2:BM');
     let url, fetchOpts={};
     if(accessToken){
       url='https://sheets.googleapis.com/v4/spreadsheets/'+nc.sheetId+'/values/'+range;
@@ -1257,7 +1273,12 @@ async function loadData(){
     const r=await fetch(url, fetchOpts);
     if(!r.ok) throw new Error(`HTTP ${r.status}`);
     const data=await r.json();
-    const rawRows=(data.values||[]);
+    const allData=(data.values||[]);
+    // Fila 0 del rango = fila 2 de la planilla = ENCABEZADOS
+    const headerRow = allData[0] || [];
+    mapearColumnasPorNombre(headerRow);
+    // Los datos empiezan en la fila 4 de la planilla = índice 2 del rango (fila2=headers, fila3=vacía/subhead, fila4=datos)
+    const rawRows = allData.slice(2);
     const validRows = rawRows.map((row,i)=>{row._sheetRow=i+4;return row;}).filter(row=>{
       const neg=(row[COL.NEGOCIO]||'').toString().trim().toUpperCase();
       if(neg==='TOTAL'||neg==='TOTALES') return false;
@@ -1274,6 +1295,65 @@ async function loadData(){
   }catch(e){setSheetStatus('err','Error de conexión');console.error(e);}
 }
 
+// ─── MAPEO DE COLUMNAS POR NOMBRE DE ENCABEZADO ──────────────────────────────
+// Busca cada columna clave por palabras en su encabezado. Si movés/insertás
+// columnas en la planilla, el hub se reacomoda solo. Guarda en window._COLMAP.
+function normalizarHdr(s){
+  return (s||'').toString().toLowerCase()
+    .normalize('NFD').replace(/[\u0300-\u036f]/g,'') // sacar acentos
+    .replace(/\s+/g,' ').trim();
+}
+
+function mapearColumnasPorNombre(headerRow){
+  const H = headerRow.map(normalizarHdr);
+  // Busca el índice de la primera columna cuyo encabezado incluye TODAS las palabras dadas
+  const find = (...palabras) => {
+    for(let i=0;i<H.length;i++){
+      if(palabras.every(p => H[i].includes(p))) return i;
+    }
+    return -1;
+  };
+  // Igual que find pero arranca a buscar desde una columna mínima (para nombres repetidos)
+  const findFrom = (min, ...palabras) => {
+    for(let i=min;i<H.length;i++){
+      if(palabras.every(p => H[i].includes(p))) return i;
+    }
+    return -1;
+  };
+  const map = {};
+
+  // ── Pagos al forwarder (se corrieron 3 columnas) ──
+  map.FC_FLETE        = find('fc','flete');           // "FC Flete"
+  map.FC_COURIER      = find('fc','courier');         // "FC Courier"
+  // "proveedor" exacto, NO "Invoice Proveedor" — excluir el que tenga "invoice"
+  map.PROVEEDOR_FLETE = (()=>{ for(let i=0;i<H.length;i++){ if(H[i].includes('proveedor') && !H[i].includes('invoice')) return i; } return -1; })();
+  map.MONTO_FLETE     = find('importe');              // "importe usd/fcl"
+  // segundo "courier" que NO sea "fc courier" (ese es el monto del courier)
+  map.MONTO_COURIER   = (()=>{ for(let i=0;i<H.length;i++){ if(H[i].includes('courier') && !H[i].includes('fc')) return i; } return -1; })();
+  map.TOTAL_PAGO      = findFrom(map.MONTO_FLETE<0?0:map.MONTO_FLETE+1,'total'); // "total" de pagos, después de importe
+  map.FECHA_PAGO_FWD      = find('fecha','pago','estimado'); // "fecha pago ESTIMADO"
+  map.FECHA_PAGO_FWD_REAL = find('fecha','de','pago','real'); // "Fecha de pago real"
+
+  // ── Pagaré ──
+  map.PAGARE_ENVIADO = find('enviado');   // "Enviado"
+  map.PAGARE_FIRMADO = find('firmado');   // "Firmado"
+
+  // ── Cobranza — lo crítico ──
+  map.FECHA_EST_COBRO = find('fecha','estimada');    // "Fecha estimada"
+  map.FECHA_COBRO     = find('fecha','de','cobro');  // "Fecha de cobro"
+
+  // Fallbacks a los índices fijos originales si no se encuentra el encabezado
+  const fb = {
+    FC_FLETE:38, FC_COURIER:39, PROVEEDOR_FLETE:40, MONTO_FLETE:41, MONTO_COURIER:42,
+    TOTAL_PAGO:43, FECHA_PAGO_FWD:44, FECHA_PAGO_FWD_REAL:45,
+    PAGARE_ENVIADO:46, PAGARE_FIRMADO:47, FECHA_EST_COBRO:48, FECHA_COBRO:49
+  };
+  Object.keys(fb).forEach(k => { if(map[k] === undefined || map[k] < 0) map[k] = fb[k]; });
+
+  window._COLMAP = map;
+  console.log('COLMAP detectado:', JSON.stringify(map));
+}
+
 function setSheetStatus(state,text){
   const dot=document.getElementById('sheet-dot');
   dot.className='sheet-dot'+(state==='err'?' err':state==='loading'?' loading':'');
@@ -1288,7 +1368,7 @@ async function writeCell(row, col, value){
   // La API devuelve datos desde A4, entonces allRows[0] = fila 4, allRows[1] = fila 5, etc.
   // Use stored _sheetRow if available (accounts for filtered rows)
   const sheetRow = allRows[row]&&allRows[row]._sheetRow ? allRows[row]._sheetRow : row + 4;
-  const colLetter = String.fromCharCode(65 + col);
+  const colLetter = colIndexToLetter(col);
   const range = encodeURIComponent(`${cfg.sheetName}!${colLetter}${sheetRow}`);
   const url = `https://sheets.googleapis.com/v4/spreadsheets/${(getNegocioConfig().sheetId||cfg.sheetId)}/values/${range}?valueInputOption=USER_ENTERED`;
   const r = await fetch(url, {
@@ -3960,10 +4040,10 @@ function renderCashFlow(){
     const invServ  = (row[30]||'').trim();   // AE — FC servicios
 
     if(cfMode === 'cobros'){
-      const fechaCobroReal = (row[nc.COL_FECHA_COBRO]||'').trim();
+      const fechaCobroReal = (row[getCobroRealCol()]||'').trim();
       const cobrado = fechaCobroReal !== '' && fechaCobroReal.toUpperCase() !== 'SI';
-      // Si ya cobrado usar fecha real (AX), si no usar fecha estimada (AW)
-      let fechaBase = cobrado ? fechaCobroReal : row[nc.COL_FECHA_EST_COBRO];
+      // Si ya cobrado usar fecha real, si no usar fecha estimada
+      let fechaBase = cobrado ? fechaCobroReal : row[getCobroCol()];
       let d = parseDate(fechaBase);
       if(!d) { /* sin fecha, ignorar */ }
       else {
@@ -5779,7 +5859,8 @@ function exportCashFlowPDF(){
 }
 
 // ─── GOOGLE DRIVE ────────────────────────────────────────────────────────────
-const APPSCRIPT_URL = 'https://script.google.com/macros/s/AKfycbxlNgF9aYMYHFwewsJsUXTR4pC7kPZR3GM1fLdFKPuq5ck1b1qV7PRmDOsRrwWaXQI/exec';
+// La URL se toma de la config (localStorage), no se hardcodea
+function getAppScriptURL(){ return cfg.appsScriptUrl || ''; }
 
 // driveGetOrCreateFolder sigue disponible para Buzaram (API directa)
 async function driveGetOrCreateFolder(name, parentId){
@@ -5817,7 +5898,7 @@ async function driveGetFolderForRow(row){
   if(!lote) throw new Error('Sin lote');
 
   if(negocioActivo !== 'buzaram'){
-    const url = APPSCRIPT_URL + '?accion=getLoteUrl&lote=' + encodeURIComponent(lote) + '&producto=' + encodeURIComponent(producto) + '&anio=' + anio;
+    const url = getAppScriptURL() + '?accion=getLoteUrl&lote=' + encodeURIComponent(lote) + '&producto=' + encodeURIComponent(producto) + '&anio=' + anio;
     const r = await fetch(url);
     const data = await r.json();
     if(!data.ok) throw new Error(data.error || 'Error en AppScript Drive');
