@@ -4089,7 +4089,9 @@ function renderCashFlow(){
         const amount = parseSheetNum(row[nc.COL_TOTAL_CFR]);
         const fcFlete = (row[nc.PAGO_FC_FLETE]||'').trim();
         const groupKey = invoice || bl;
-        const existing = cobrosMap[k].find(e => e.groupKey === groupKey);
+        // Agrupar solo si comparten groupKey Y el mismo estado (cobrado/no cobrado).
+        // Así una factura ya cobrada nunca se junta con una pendiente el mismo día.
+        const existing = cobrosMap[k].find(e => e.groupKey === groupKey && e.cobrado === cobrado);
         if(existing){
           if(!isNaN(amount)) existing.amount += amount;
           if(invServ && !existing.invServList.includes(invServ)) existing.invServList.push(invServ);
