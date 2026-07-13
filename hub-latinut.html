@@ -700,7 +700,7 @@ button{font-family:var(--font);cursor:pointer;border:none;background:none;}
 <script>
 // ─── CONFIG ──────────────────────────────────────────────────────────────────
 const CFG_KEY = 'hub_latinut_config';
-let cfg = {...{sheetId:'',sheetName:'Cargas',apiKey:'',clientId:'',alerta_dias:10,hubSheetId:'11r3m9KuXWFRrSjdHf1an2xQDjNwnXhadWk5WbShuLms',appsScriptUrl:'https://script.google.com/macros/s/AKfycbyUy0QaexIIqToupRj1_5zgnFpm5Wyycnt7SLClZMk_zLfhm6CfzLpNr8EgT98aSOY4/exec',claudeApiKey:'',buzaramSheetId:'1vQaNeo595C3aK1KAF75UsOkbA5LNUMm16WoEpP9Z69w',buzaramAppsScriptUrl:'https://script.google.com/a/macros/latinutsa.com/s/AKfycbyR88OXmMw4zC-INvs8kTI7vwtX4JdFDsMNA9IS0wpHJwpl4ypQk385y2lhgqiTVERR/exec'},...JSON.parse(localStorage.getItem(CFG_KEY)||'{}')};
+let cfg = {...{sheetId:'',sheetName:'Cargas',apiKey:'',clientId:'',alerta_dias:10,hubSheetId:'11r3m9KuXWFRrSjdHf1an2xQDjNwnXhadWk5WbShuLms',appsScriptUrl:'https://script.google.com/macros/s/AKfycbyUy0QaexIIqToupRj1_5zgnFpm5Wyycnt7SLClZMk_zLfhm6CfzLpNr8EgT98aSOY4/exec',claudeApiKey:'',buzaramSheetId:'1vQaNeo595C3aK1KAF75UsOkbA5LNUMm16WoEpP9Z69w',buzaramAppsScriptUrl:''},...JSON.parse(localStorage.getItem(CFG_KEY)||'{}')};
 
 // ─── OAUTH ───────────────────────────────────────────────────────────────────
 const SCOPES = 'https://www.googleapis.com/auth/spreadsheets https://www.googleapis.com/auth/gmail.compose https://www.googleapis.com/auth/gmail.readonly https://www.googleapis.com/auth/drive.file https://www.googleapis.com/auth/tasks';
@@ -714,7 +714,7 @@ function getBuzaramCfg(){
   return {
     sheetId: cfg.buzaramSheetId || '1vQaNeo595C3aK1KAF75UsOkbA5LNUMm16WoEpP9Z69w',
     sheetName: 'CARGAS',
-    appsScriptUrl: (cfg.buzaramAppsScriptUrl && cfg.buzaramAppsScriptUrl.trim()) ? cfg.buzaramAppsScriptUrl.trim() : 'https://script.google.com/a/macros/latinutsa.com/s/AKfycbyR88OXmMw4zC-INvs8kTI7vwtX4JdFDsMNA9IS0wpHJwpl4ypQk385y2lhgqiTVERR/exec',
+    appsScriptUrl: (cfg.buzaramAppsScriptUrl && cfg.buzaramAppsScriptUrl.trim()) ? cfg.buzaramAppsScriptUrl.trim() : '',
     label: 'Buzaram',
     COL_FECHA_EST_COBRO: 52,  // BA
     COL_FECHA_COBRO: 57,      // BF
