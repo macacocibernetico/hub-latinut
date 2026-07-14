@@ -5271,11 +5271,12 @@ function openDayDetail(key, dateLabel){
     const porCliente = {};
     cobrosDay.forEach(e => {
       if(!e.rowData) return;
+      if(e.cobrado) return; // no reclamar cobranzas ya cobradas
       const cust = (e.customer||'').trim();
       if(!porCliente[cust]) porCliente[cust] = [];
       porCliente[cust].push(allRows.indexOf(e.rowData));
     });
-    // Botón de reclamo múltiple por cliente si hay más de una cobranza del mismo cliente
+    // Botón de reclamo múltiple por cliente si hay más de una cobranza PENDIENTE del mismo cliente
     let reclamoMultipleHtml = '';
     Object.entries(porCliente).forEach(([cust, idxs]) => {
       if(idxs.length > 1){
@@ -5289,6 +5290,7 @@ function openDayDetail(key, dateLabel){
       const row=e.rowData; if(!row) return;
       const idx=allRows.indexOf(row);
       const isVencido=diff<0;
+      const cobrado = e.cobrado || false;
       const booking=(row[COL.BOOKING]||'—').trim();
       const vessel=(row[COL.VESSEL]||'—').trim();
       const port=(row[COL.PORT]||'—').trim();
@@ -5297,12 +5299,18 @@ function openDayDetail(key, dateLabel){
       const fcFleteStr = (e.fcFleteList||[]).filter(Boolean).join(', ');
       const blsStr = (e.bls||[e.bl||(row[COL.BL]||'')]).join(' · ');
       const amtStr=!isNaN(e.amount)?`USD ${e.amount.toLocaleString('es-AR',{maximumFractionDigits:0})}`:'';
-      html+=`<div class="cf-event-card cobro-card${isVencido?' vencido':''}">
+      // Estado: cobrado (✓ verde) o pendiente (✗ rojo/naranja)
+      const estadoBadge = cobrado
+        ? `<span style="font-size:11px;font-weight:700;padding:2px 10px;border-radius:20px;background:#e8f5e9;color:#2e7d32;letter-spacing:.3px;">✓ COBRADO</span>`
+        : `<span style="font-size:11px;font-weight:700;padding:2px 10px;border-radius:20px;background:${isVencido?'#ffebee':'#fff3e0'};color:${isVencido?'#c62828':'#e65100'};letter-spacing:.3px;">✗ ${isVencido?'VENCIDO':'PENDIENTE'}</span>`;
+      const amtColor = cobrado ? '#9e9e9e' : 'var(--ok)';
+      const amtStyle = cobrado ? 'text-decoration:line-through;' : '';
+      html+=`<div class="cf-event-card cobro-card${isVencido&&!cobrado?' vencido':''}" style="${cobrado?'opacity:.85;':''}">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;">
-          <span style="font-size:10px;color:var(--text3);font-weight:600;text-transform:uppercase;">${isVencido?'🔴 Cobro vencido':'💰 Cobro estimado'}</span>
-          ${amtStr?`<span style="font-size:14px;font-weight:700;font-family:var(--mono);color:var(--ok);">${amtStr}</span>`:''}
+          ${estadoBadge}
+          ${amtStr?`<span style="font-size:14px;font-weight:700;font-family:var(--mono);color:${amtColor};${amtStyle}">${amtStr}</span>`:''}
         </div>
-        <div class="cf-event-title">${e.customer}</div>
+        <div class="cf-event-title" style="${cobrado?'color:var(--text3);':''}">${e.customer}</div>
         <div class="cf-event-meta">${inv1?`FC Cliente: ${inv1}`:''}${invServStr?` · FC Serv: ${invServStr}`:''} · ${e.negocio}</div>
         <div style="font-size:11px;font-family:var(--mono);color:var(--text3);margin-bottom:4px;">BL: ${blsStr}</div>
         ${fcFleteStr?`<div style="font-size:11px;font-family:var(--mono);color:var(--text3);margin-bottom:8px;">FC Flete: ${fcFleteStr}</div>`:'<div style="margin-bottom:8px;"></div>'}
@@ -5311,9 +5319,9 @@ function openDayDetail(key, dateLabel){
           <span>Puerto: <b style="color:var(--text2)">${port}</b></span>
           <span>Booking: <b style="color:var(--text2)">${booking}</b></span>
         </div>
-        <div class="cf-event-actions">
+        ${cobrado ? '' : `<div class="cf-event-actions">
           <button class="action-btn mail" onclick="closeDayDetail();openMailModal(${idx},'reclamo_cobro')">✉ Reclamo de cobro</button>
-        </div>
+        </div>`}
       </div>`;
     });
   }
