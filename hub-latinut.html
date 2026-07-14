@@ -961,28 +961,34 @@ function getReclamoInfoFromLog(bl, mailType){
 // AE=30 Invoice FC Servicios, AF=31 Price FC Servicios
 // AT=45 Pagaré Enviado, AU=46 Pagaré Firmado
 // AV=47 Fecha estimada cobro, AW=48 Fecha de cobro real
-const COL = {
+const COL_DEFAULTS = {
   NEGOCIO:0, TNS:1, PRODUCT:2, PACKING:3, LOTS:4,
   CONTAINERS:5, BOOKING:6, BL:7, SHIPPING:8, VESSEL:9,
   CONSOLIDACION:10, ETD:11, ETA:12, PORT:13,
   DOCUMENTOS:14, LOMBARD:15, CLIENTE_ENV:16, TELEX:17, EXPORTER:18,
-  CUSTOMER:23, INVOICE_CLIENTE:24, TOTAL_CFR:32, INCOTERM:29,
-  INVOICE_FC_SERV:30,
-  // Pagos forwarder AXT (índices por defecto; el COLMAP los corrige por nombre)
-  FC_FLETE:38, FC_COURIER:39, PROVEEDOR_FLETE:40,
-  MONTO_FLETE:41, MONTO_COURIER:42, TOTAL_PAGO:43,
-  FECHA_PAGO_FWD:44, FECHA_PAGO_FWD_REAL:45,
-  _PAGARE_ENVIADO_DEF:46, _PAGARE_FIRMADO_DEF:47,
-  FECHA_EST_COBRO:48, FECHA_COBRO:49
+  INVOICE_PROVEEDOR:19, CONTRACT_PROVEEDOR:20, PRICE_FCA:21, TOTAL_FCA:22,
+  CUSTOMER:23, INVOICE_CLIENTE:24, CONTRACT_CLIENTE:25, PRICE_CLIENTE:26,
+  FLETE:27, TOTAL_CFR_ORIG:28, INCOTERM:29, INVOICE_FC_SERV:30, PRICE_SERV:31,
+  TOTAL_CFR:32, PRECIO_FINAL_TN:33, COMISION_BROKER:34,
+  FC_FLETE:35, FC_COURIER:36, PROVEEDOR_FLETE:37,
+  MONTO_FLETE:38, MONTO_COURIER:39, TOTAL_PAGO:40,
+  FECHA_PAGO_FWD:41, FECHA_PAGO_FWD_REAL:42,
+  PAGARE_ENVIADO:43, PAGARE_FIRMADO:44,
+  FECHA_EST_COBRO:45, FECHA_COBRO:46
 };
-// PAGARE_ENVIADO y PAGARE_FIRMADO son getters: leen del COLMAP detectado por
-// nombre si existe (para AXT), o del valor por defecto. Así todos los usos de
-// COL.PAGARE_ENVIADO se corrigen solos aunque se muevan columnas en la planilla.
-Object.defineProperty(COL, 'PAGARE_ENVIADO', {
-  get(){ const m=window._COLMAP; return (m && m.PAGARE_ENVIADO>=0 && negocioActivo!=='buzaram') ? m.PAGARE_ENVIADO : COL._PAGARE_ENVIADO_DEF; }
-});
-Object.defineProperty(COL, 'PAGARE_FIRMADO', {
-  get(){ const m=window._COLMAP; return (m && m.PAGARE_FIRMADO>=0 && negocioActivo!=='buzaram') ? m.PAGARE_FIRMADO : COL._PAGARE_FIRMADO_DEF; }
+// COL: cada propiedad es un getter que devuelve el índice detectado por nombre
+// (window._COLMAP) si existe, o el valor por defecto. Así TODOS los usos de
+// COL.XXX en el código se reacomodan solos cuando se mueven columnas en la planilla.
+// Todas las columnas (incluida TOTAL_CFR) se mapean por nombre en ambos negocios.
+const COL = {};
+Object.keys(COL_DEFAULTS).forEach(k => {
+  Object.defineProperty(COL, k, {
+    get(){
+      const m = window._COLMAP;
+      if(m && m[k] !== undefined && m[k] >= 0) return m[k];
+      return COL_DEFAULTS[k];
+    }
+  });
 });
 
 // ─── UTILS ───────────────────────────────────────────────────────────────────
@@ -1307,75 +1313,97 @@ function normalizarHdr(s){
 
 function mapearColumnasPorNombre(headerRow){
   const H = headerRow.map(normalizarHdr);
-  // Busca el índice de la primera columna cuyo encabezado incluye TODAS las palabras dadas
-  const find = (...palabras) => {
-    for(let i=0;i<H.length;i++){
-      if(palabras.every(p => H[i].includes(p))) return i;
-    }
-    return -1;
-  };
-  // Igual que find pero arranca a buscar desde una columna mínima (para nombres repetidos)
-  const findFrom = (min, ...palabras) => {
-    for(let i=min;i<H.length;i++){
-      if(palabras.every(p => H[i].includes(p))) return i;
-    }
+  // Coincidencia EXACTA sobre el encabezado normalizado (ignora mayúsculas/acentos/espacios).
+  // Cada campo busca su nombre exacto. Robusto y sin ambigüedades.
+  const col = (nombreExacto) => {
+    const t = normalizarHdr(nombreExacto);
+    for(let i=0;i<H.length;i++){ if(H[i] === t) return i; }
     return -1;
   };
   const map = {};
 
+  // ── COLUMNAS COMUNES (mismo nombre en AXT y Buzaram) ──
+  map.NEGOCIO      = col('Negocio');
+  map.TNS          = col('Tns');
+  map.PRODUCT      = col('Product');
+  map.PACKING      = col('Packing');
+  map.LOTS         = col('Lots');
+  map.CONTAINERS   = col('Containers');
+  map.BOOKING      = col('Booking');
+  map.BL           = col('BL');
+  map.SHIPPING     = col('Shipping Line');
+  map.VESSEL       = col('Vessel');
+  map.CONSOLIDACION = col('Consolidación');
+  map.ETD          = col('ETD');
+  map.ETA          = col('ETA');
+  map.PORT         = col('Port');
+  map.DOCUMENTOS   = col('DOCUMENTOS');
+  map.CLIENTE_ENV  = col('ENVIO AL CLIENTE');
+  map.TELEX        = col('TELEX');
+  map.EXPORTER     = col('Exporter');
+  map.INVOICE_PROVEEDOR  = col('Invoice Proveedor');
+  map.CONTRACT_PROVEEDOR = col('Contract Proveedor');
+  map.PRICE_FCA    = col('Price FCA');
+  map.TOTAL_FCA    = col('Total FCA');
+  map.CUSTOMER     = col('Customer');
+  map.INVOICE_CLIENTE = col('Invoice Cliente');
+  map.INCOTERM     = col('INCOTERM');
+  map.INVOICE_FC_SERV = col('Invoice Serv');
+
   if(negocioActivo === 'buzaram'){
-    // ── BUZARAM — estructura propia ──
-    map.FC_FLETE        = (()=>{ for(let i=0;i<H.length;i++){ if(H[i]==='fc') return i; } return find('fc'); })(); // "FC" exacto
-    map.PROVEEDOR_FLETE = (()=>{ for(let i=0;i<H.length;i++){ if(H[i].includes('proveedor') && !H[i].includes('invoice')) return i; } return -1; })();
-    map.MONTO_FLETE     = find('importe');                       // "importe usd/fcl"
-    map.FECHA_PAGO_FWD      = find('fecha','pago','estimada');   // "fecha pago estimada"
-    map.FECHA_PAGO_FWD_REAL = find('fecha','pago','real');       // "fecha pago real"
-    // Cobranza Buzaram — CUIDADO: "fecha pago estimada" NO es la fecha de cobro
-    // "Fecha estimada" exacta (tiene "estimada" pero NO "pago") — es la fecha estimada de cobro
-    map.FECHA_EST_COBRO = (()=>{ for(let i=0;i<H.length;i++){ if(H[i].includes('fecha') && H[i].includes('estimada') && !H[i].includes('pago')) return i; } return -1; })();
-    // "Fecha pago" exacta (tiene "pago" pero NO "estimada" ni "real") — fecha real de cobro
-    map.FECHA_COBRO = (()=>{ for(let i=0;i<H.length;i++){ if(H[i]==='fecha pago') return i; } return -1; })();
-    // Total que se cobra
-    map.TOTAL_CFR       = find('valor','total');                 // "VALOR TOTAL" (col AG)
-    // Buzaram no usa pagarés ni courier
+    // ── BUZARAM ──
+    map.LOMBARD    = col('ENVIO A BUZARAM');
+    map.TOTAL_CFR  = col('VALOR TOTAL');
+    map.FC_FLETE   = col('FC');
+    map.PROVEEDOR_FLETE = col('proveedor');
+    map.MONTO_FLETE = col('importe usd/fcl');
+    map.FECHA_PAGO_FWD      = col('fecha pago estimada');
+    map.FECHA_PAGO_FWD_REAL = col('fecha pago real');
+    map.FECHA_EST_COBRO = col('Fecha estimada');
+    map.FECHA_COBRO     = col('Fecha pago');
+    // Buzaram no usa estos
     map.FC_COURIER = -1; map.MONTO_COURIER = -1; map.TOTAL_PAGO = -1;
     map.PAGARE_ENVIADO = -1; map.PAGARE_FIRMADO = -1;
-
-    // Fallbacks Buzaram (índices por defecto de getBuzaramCfg)
+    // Fallbacks Buzaram
     const fbB = {
-      FC_FLETE:43, PROVEEDOR_FLETE:44, MONTO_FLETE:45,
-      FECHA_PAGO_FWD:46, FECHA_PAGO_FWD_REAL:47,
-      FECHA_EST_COBRO:48, FECHA_COBRO:57, TOTAL_CFR:32
+      LOMBARD:15, TOTAL_CFR:32, FC_FLETE:43, PROVEEDOR_FLETE:44, MONTO_FLETE:45,
+      FECHA_PAGO_FWD:46, FECHA_PAGO_FWD_REAL:47, FECHA_EST_COBRO:48, FECHA_COBRO:57
     };
     Object.keys(fbB).forEach(k => { if(map[k] === undefined || map[k] < 0) map[k] = fbB[k]; });
   } else {
     // ── AXT ──
-    map.FC_FLETE        = find('fc','flete');           // "FC Flete"
-    map.FC_COURIER      = find('fc','courier');         // "FC Courier"
-    // "proveedor" exacto, NO "Invoice Proveedor" — excluir el que tenga "invoice"
-    map.PROVEEDOR_FLETE = (()=>{ for(let i=0;i<H.length;i++){ if(H[i].includes('proveedor') && !H[i].includes('invoice')) return i; } return -1; })();
-    map.MONTO_FLETE     = find('importe');              // "importe usd/fcl"
-    // segundo "courier" que NO sea "fc courier" (ese es el monto del courier)
-    map.MONTO_COURIER   = (()=>{ for(let i=0;i<H.length;i++){ if(H[i].includes('courier') && !H[i].includes('fc')) return i; } return -1; })();
-    map.TOTAL_PAGO      = findFrom(map.MONTO_FLETE<0?0:map.MONTO_FLETE+1,'total'); // "total" de pagos
-    map.FECHA_PAGO_FWD      = find('fecha','pago','estimado'); // "fecha pago ESTIMADO"
-    map.FECHA_PAGO_FWD_REAL = find('fecha','de','pago','real'); // "Fecha de pago real"
-    // Pagaré
-    map.PAGARE_ENVIADO = find('enviado');   // "Enviado"
-    map.PAGARE_FIRMADO = find('firmado');   // "Firmado"
-    // Cobranza
-    map.FECHA_EST_COBRO = find('fecha','estimada');    // "Fecha estimada"
-    map.FECHA_COBRO     = find('fecha','de','cobro');  // "Fecha de cobro"
-    map.TOTAL_CFR       = COL.TOTAL_CFR; // AXT: se mantiene en AG (32)
-
-    // Fallbacks AXT (índices por defecto)
+    map.LOMBARD    = col('ENVIO A LOMBARD');
+    map.TOTAL_CFR  = col('TOTAL FINAL');
+    map.FC_FLETE   = col('FC Flete');
+    map.FC_COURIER = col('FC Courier');
+    map.PROVEEDOR_FLETE = col('proveedor');
+    map.MONTO_FLETE = col('importe usd/fcl');
+    map.MONTO_COURIER = col('courier');
+    map.TOTAL_PAGO = col('total flete');
+    map.FECHA_PAGO_FWD      = col('fecha pago ESTIMADO');
+    map.FECHA_PAGO_FWD_REAL = col('Fecha de pago real');
+    map.PAGARE_ENVIADO = col('Enviado');
+    map.PAGARE_FIRMADO = col('Firmado');
+    map.FECHA_EST_COBRO = col('Fecha estimada');
+    map.FECHA_COBRO     = col('Fecha de cobro');
+    // Fallbacks AXT
     const fb = {
-      FC_FLETE:38, FC_COURIER:39, PROVEEDOR_FLETE:40, MONTO_FLETE:41, MONTO_COURIER:42,
-      TOTAL_PAGO:43, FECHA_PAGO_FWD:44, FECHA_PAGO_FWD_REAL:45,
-      PAGARE_ENVIADO:46, PAGARE_FIRMADO:47, FECHA_EST_COBRO:48, FECHA_COBRO:49
+      LOMBARD:15, TOTAL_CFR:32, FC_FLETE:35, FC_COURIER:36, PROVEEDOR_FLETE:37,
+      MONTO_FLETE:38, MONTO_COURIER:39, TOTAL_PAGO:40, FECHA_PAGO_FWD:41,
+      FECHA_PAGO_FWD_REAL:42, PAGARE_ENVIADO:43, PAGARE_FIRMADO:44,
+      FECHA_EST_COBRO:45, FECHA_COBRO:46
     };
     Object.keys(fb).forEach(k => { if(map[k] === undefined || map[k] < 0) map[k] = fb[k]; });
   }
+
+  // Fallbacks comunes (para las columnas base si no se encontró el nombre exacto)
+  const fbBase = {
+    NEGOCIO:0,TNS:1,PRODUCT:2,PACKING:3,LOTS:4,CONTAINERS:5,BOOKING:6,BL:7,
+    SHIPPING:8,VESSEL:9,CONSOLIDACION:10,ETD:11,ETA:12,PORT:13,DOCUMENTOS:14,
+    CLIENTE_ENV:16,TELEX:17,EXPORTER:18,INVOICE_PROVEEDOR:19,CONTRACT_PROVEEDOR:20,
+    PRICE_FCA:21,TOTAL_FCA:22,CUSTOMER:23,INVOICE_CLIENTE:24,INCOTERM:29,INVOICE_FC_SERV:30
+  };
+  Object.keys(fbBase).forEach(k => { if(map[k] === undefined || map[k] < 0) map[k] = fbBase[k]; });
 
   window._COLMAP = map;
   console.log('COLMAP ('+negocioActivo+') detectado:', JSON.stringify(map));
