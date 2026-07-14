@@ -4385,25 +4385,53 @@ function renderCashFlow(){
 
     let chipsHtml = '';
     if(cfMode==='cobros'){
-      // Cobros chips — verde pendiente, verde oscuro tachado si cobrado
-      cobrosDay.slice(0,2).forEach(e=>{
+      // Ordenar: pendientes (no cobradas) primero, cobradas al final
+      const cobrosOrd = [...cobrosDay].sort((a,b)=>(a.cobrado?1:0)-(b.cobrado?1:0));
+      const cobrosPend = cobrosDay.filter(e=>!e.cobrado);
+      const pagosPend  = pagosDay.filter(e=>!e.pagado);
+      // Cobros chips — pendientes primero
+      cobrosOrd.slice(0,2).forEach(e=>{
         const cobrado = e.cobrado || false;
         const cls = cobrado ? 'cobro-ok' : (e.esEscenario ? 'cobro-escenario' : 'cobro');
         const amt = !isNaN(e.amount)?` · ${Math.round(e.amount/1000)}k`:'';
+        const marca = cobrado ? '' : '✗ ';
         const fechaOrigStr = e.esEscenario && e.fechaOriginal
           ? `<span style="text-decoration:line-through;opacity:.5;font-size:9px;margin-left:3px;">${e.fechaOriginal.getDate()}/${e.fechaOriginal.getMonth()+1}</span>`
           : '';
-        chipsHtml+=`<div class="cf-chip ${cls}">${e.customer.substring(0,9)}${amt}${fechaOrigStr}</div>`;
+        chipsHtml+=`<div class="cf-chip ${cls}">${marca}${e.customer.substring(0,9)}${amt}${fechaOrigStr}</div>`;
       });
-      if(cobrosDay.length>2) chipsHtml+=`<div class="cf-more">+${cobrosDay.length-2} cobros</div>`;
-      // Pagos chips — rojo pendiente, bordó tachado si pagado
+      if(cobrosDay.length>2){
+        // Cuántos de los ocultos están pendientes
+        const ocultosPend = cobrosOrd.slice(2).filter(e=>!e.cobrado).length;
+        const txt = ocultosPend>0 ? `+${cobrosDay.length-2} cobros (${ocultosPend} ✗ pend.)` : `+${cobrosDay.length-2} cobros`;
+        const color = ocultosPend>0 ? 'color:#e65100;font-weight:700;' : '';
+        chipsHtml+=`<div class="cf-more" style="${color}">${txt}</div>`;
+      }
+      // Aviso si hay cobros pendientes que no se ven en los 2 chips visibles
+      const pendVisibles = cobrosOrd.slice(0,2).filter(e=>!e.cobrado).length;
+      if(cobrosPend.length>0 && pendVisibles===0){
+        chipsHtml+=`<div style="font-size:9px;font-weight:700;color:#e65100;margin-top:2px;">⚠ ${cobrosPend.length} sin cobrar</div>`;
+      }
+      // Pagos chips — pendientes primero
+      const pagosOrd = [...pagosDay].sort((a,b)=>(a.pagado?1:0)-(b.pagado?1:0));
       if(pagosDay.length>0 && cobrosDay.length>0) chipsHtml+=`<div style="height:3px;margin:2px 0;border-top:1px dashed var(--border2);"></div>`;
-      pagosDay.slice(0,2).forEach(e=>{
+      pagosOrd.slice(0,2).forEach(e=>{
         const amt = !isNaN(e.amount)?` · ${Math.round(e.amount/1000)}k`:'';
         const chipCls = e.pagado ? 'pago-ok' : 'pago';
-        chipsHtml+=`<div class="cf-chip ${chipCls}">${(e.proveedor||e.customer).substring(0,9)}${amt}</div>`;
+        const marca = e.pagado ? '' : '✗ ';
+        chipsHtml+=`<div class="cf-chip ${chipCls}">${marca}${(e.proveedor||e.customer).substring(0,9)}${amt}</div>`;
       });
-      if(pagosDay.length>2) chipsHtml+=`<div class="cf-more">+${pagosDay.length-2} pagos</div>`;
+      if(pagosDay.length>2){
+        const ocultosPendP = pagosOrd.slice(2).filter(e=>!e.pagado).length;
+        const txt = ocultosPendP>0 ? `+${pagosDay.length-2} pagos (${ocultosPendP} ✗ pend.)` : `+${pagosDay.length-2} pagos`;
+        const color = ocultosPendP>0 ? 'color:#c62828;font-weight:700;' : '';
+        chipsHtml+=`<div class="cf-more" style="${color}">${txt}</div>`;
+      }
+      // Aviso si hay pagos pendientes que no se ven
+      const pagosPendVisibles = pagosOrd.slice(0,2).filter(e=>!e.pagado).length;
+      if(pagosPend.length>0 && pagosPendVisibles===0){
+        chipsHtml+=`<div style="font-size:9px;font-weight:700;color:#c62828;margin-top:2px;">⚠ ${pagosPend.length} sin pagar</div>`;
+      }
     } else {
       cobrosDay.slice(0,3).forEach(e=>{
         chipsHtml+=`<div class="cf-chip eta">${e.customer.substring(0,12)}</div>`;
