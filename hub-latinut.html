@@ -689,6 +689,7 @@ button{font-family:var(--font);cursor:pointer;border:none;background:none;}
       <div class="mail-field"><div class="mail-label">CC</div><div class="mail-value" id="modal-cc">—</div></div>
       <div class="mail-field"><div class="mail-label">Asunto</div><div class="mail-value" id="modal-subject">—</div></div>
       <div class="mail-field"><div class="mail-label">Cuerpo</div><textarea class="mail-textarea" id="modal-body" rows="8"></textarea></div>
+      <div style="font-size:11px;color:var(--muted2);margin-top:6px;">✒️ Tu firma de Gmail se agrega automáticamente al crear el borrador.</div>
     </div>
     <div class="modal-footer">
       <button class="btn" onclick="closeModal()">Cancelar</button>
@@ -703,7 +704,7 @@ const CFG_KEY = 'hub_latinut_config';
 let cfg = {...{sheetId:'',sheetName:'Cargas',apiKey:'',clientId:'',alerta_dias:10,hubSheetId:'11r3m9KuXWFRrSjdHf1an2xQDjNwnXhadWk5WbShuLms',appsScriptUrl:'',claudeApiKey:'',buzaramSheetId:'1vQaNeo595C3aK1KAF75UsOkbA5LNUMm16WoEpP9Z69w',buzaramAppsScriptUrl:''},...JSON.parse(localStorage.getItem(CFG_KEY)||'{}')};
 
 // ─── OAUTH ───────────────────────────────────────────────────────────────────
-const SCOPES = 'https://www.googleapis.com/auth/spreadsheets https://www.googleapis.com/auth/gmail.compose https://www.googleapis.com/auth/gmail.readonly https://www.googleapis.com/auth/drive.file https://www.googleapis.com/auth/tasks';
+const SCOPES = 'https://www.googleapis.com/auth/spreadsheets https://www.googleapis.com/auth/gmail.compose https://www.googleapis.com/auth/gmail.readonly https://www.googleapis.com/auth/gmail.settings.basic https://www.googleapis.com/auth/drive.file https://www.googleapis.com/auth/tasks';
 let tokenClient = null;
 let accessToken = null;
 // ─── NEGOCIO ACTIVO ──────────────────────────────────────────────────────────
@@ -1483,6 +1484,42 @@ async function appendLog(data){
 }
 
 // ─── GMAIL DRAFT ─────────────────────────────────────────────────────────────
+// Lee la firma configurada en Gmail (la dirección principal / sendAs default).
+// Se cachea por sesión para no pedirla en cada mail. Devuelve HTML o ''.
+let _firmaGmail = null;
+async function getFirmaGmail(){
+  if(_firmaGmail !== null) return _firmaGmail;
+  if(!accessToken){ _firmaGmail = ''; return ''; }
+  try{
+    const r = await fetch('https://gmail.googleapis.com/gmail/v1/users/me/settings/sendAs', {
+      headers:{Authorization:'Bearer '+accessToken}
+    });
+    if(!r.ok){ _firmaGmail = ''; return ''; }
+    const data = await r.json();
+    const list = data.sendAs || [];
+    // Buscar la dirección principal (isDefault) o la primaria
+    let sa = list.find(s => s.isDefault) || list.find(s => s.isPrimary) || list[0];
+    _firmaGmail = (sa && sa.signature) ? sa.signature : '';
+    return _firmaGmail;
+  }catch(e){ _firmaGmail = ''; return ''; }
+}
+
+// Convierte la firma HTML de Gmail a texto plano (para mails en text/plain)
+function firmaHtmlAText(html){
+  if(!html) return '';
+  let t = html
+    .replace(/<br\s*\/?>/gi, '\n')
+    .replace(/<\/(div|p|tr)>/gi, '\n')
+    .replace(/<[^>]+>/g, '')       // sacar tags
+    .replace(/&nbsp;/gi, ' ')
+    .replace(/&amp;/gi, '&')
+    .replace(/&lt;/gi, '<')
+    .replace(/&gt;/gi, '>')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+  return t;
+}
+
 async function createGmailDraft(to, cc, subject, body){
   if(!accessToken){
     // Fallback: copiar al portapapeles
@@ -1490,7 +1527,14 @@ async function createGmailDraft(to, cc, subject, body){
     alert('✓ Contenido copiado al portapapeles.\n\nConectate con Google para crear drafts reales en Gmail.');
     return false;
   }
-  const email = [`To: ${to}`, `Cc: ${cc}`, `Subject: ${subject}`, `Content-Type: text/plain; charset=utf-8`, ``, body].join('\r\n');
+  // Agregar la firma real de Gmail al final del cuerpo
+  const firmaHtml = await getFirmaGmail();
+  let cuerpoFinal = body;
+  if(firmaHtml){
+    const firmaTxt = firmaHtmlAText(firmaHtml);
+    if(firmaTxt) cuerpoFinal = body + '\n\n' + firmaTxt;
+  }
+  const email = [`To: ${to}`, `Cc: ${cc}`, `Subject: ${subject}`, `Content-Type: text/plain; charset=utf-8`, ``, cuerpoFinal].join('\r\n');
   const encoded = btoa(unescape(encodeURIComponent(email))).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');
   const r = await fetch('https://gmail.googleapis.com/gmail/v1/users/me/drafts', {
     method: 'POST',
@@ -2151,11 +2195,13 @@ function renderCargas(showAll, sort){
 
 async function writeRow(rowData, sheetRow){
   if(!accessToken){ alert('Conectate con Google primero.'); return false; }
+  const nc = getNegocioConfig();
+  const sheetName = nc.sheetName || cfg.sheetName;
   const requests = Object.entries(rowData).map(([col, value]) => {
     const colLetter = colIndexToLetter(parseInt(col));
-    return {range: `${cfg.sheetName}!${colLetter}${sheetRow}`, values: [[value]]};
+    return {range: `${sheetName}!${colLetter}${sheetRow}`, values: [[value]]};
   });
-  const url = `https://sheets.googleapis.com/v4/spreadsheets/${(getNegocioConfig().sheetId||cfg.sheetId)}/values:batchUpdate`;
+  const url = `https://sheets.googleapis.com/v4/spreadsheets/${(nc.sheetId||cfg.sheetId)}/values:batchUpdate`;
   const r = await fetch(url, {
     method: 'POST',
     headers: {'Authorization': `Bearer ${accessToken}`, 'Content-Type': 'application/json'},
@@ -2176,23 +2222,29 @@ async function getSheetId(){
 
 async function appendRow(rowData){
   if(!accessToken){ alert('Conectate con Google primero.'); return false; }
-  const range = encodeURIComponent(`${cfg.sheetName}!N:N`);
-  const url = `https://sheets.googleapis.com/v4/spreadsheets/${(getNegocioConfig().sheetId||cfg.sheetId)}/values/${range}?key=${cfg.apiKey}`;
-  const r = await fetch(url);
+  const nc = getNegocioConfig();
+  const sheetName = nc.sheetName || cfg.sheetName;
+  const sheetId2 = nc.sheetId || cfg.sheetId;
+  // Detectar última fila con datos mirando la columna Port — siempre se carga
+  const colDet = colIndexToLetter(COL.PORT);
+  const range = encodeURIComponent(`${sheetName}!${colDet}:${colDet}`);
+  const url = `https://sheets.googleapis.com/v4/spreadsheets/${sheetId2}/values/${range}`;
+  const r = await fetch(url, {headers:{Authorization:'Bearer '+accessToken}});
+  if(!r.ok){ alert('Error al leer la planilla para ubicar la última fila.'); return null; }
   const data = await r.json();
   const vals = data.values||[];
-  let lastPortRow = 3;
+  let lastRow = 3; // datos empiezan en fila 4 (índice 3)
   for(let i = 3; i < vals.length; i++){
-    if(vals[i] && vals[i][0] && vals[i][0].toString().trim() !== '') lastPortRow = i + 1;
+    if(vals[i] && vals[i][0] && vals[i][0].toString().trim() !== '') lastRow = i + 1;
   }
-  const newRow = lastPortRow + 1;
+  const newRow = lastRow + 1;
   const sheetId = await getSheetId();
   if(sheetId === null){ alert('No se pudo obtener el ID de la hoja.'); return null; }
-  const insertUrl = `https://sheets.googleapis.com/v4/spreadsheets/${(getNegocioConfig().sheetId||cfg.sheetId)}:batchUpdate`;
+  const insertUrl = `https://sheets.googleapis.com/v4/spreadsheets/${sheetId2}:batchUpdate`;
   const insertR = await fetch(insertUrl, {
     method: 'POST',
     headers: {'Authorization': `Bearer ${accessToken}`, 'Content-Type': 'application/json'},
-    body: JSON.stringify({requests:[{insertDimension:{range:{sheetId,dimension:'ROWS',startIndex:lastPortRow,endIndex:lastPortRow+1},inheritFromBefore:true}}]})
+    body: JSON.stringify({requests:[{insertDimension:{range:{sheetId,dimension:'ROWS',startIndex:lastRow,endIndex:lastRow+1},inheritFromBefore:true}}]})
   });
   if(!insertR.ok){ alert('Error al insertar fila.'); return null; }
   const ok = await writeRow(rowData, newRow);
@@ -2232,42 +2284,42 @@ function getFormValues(prefix){
 
 function formToRowData(d){
   const data = {};
-  const set = (col, val) => { if(val !== undefined && val !== '') data[col] = val; };
-  // Basic
-  set(0, d.negocio);
-  set(1, d.tns);
-  set(2, d.product);
-  set(3, d.packing);
-  if(d.pricefob) set(21, d.pricefob); // col V = Price FOB
-  set(4, d.lots);
-  set(5, d.containers);
-  set(6, d.booking);
-  set(7, d.bl);
-  set(8, d.shipping);
-  set(9, d.vessel);
-  set(10, d.consol);
-  set(11, d.etd);
-  set(12, d.eta);
-  set(13, d.port);
-  set(18, d.exporter);
-  set(23, d.customer);
+  const set = (col, val) => { if(val !== undefined && val !== '' && col >= 0) data[col] = val; };
+  // Usa COL.XXX (mapeo por nombre) para que siempre escriba en la columna correcta
+  set(COL.NEGOCIO, d.negocio);
+  set(COL.TNS, d.tns);
+  set(COL.PRODUCT, d.product);
+  set(COL.PACKING, d.packing);
+  if(d.pricefob) set(COL.PRICE_FCA, d.pricefob); // Price FCA (antes Price FOB)
+  set(COL.LOTS, d.lots);
+  set(COL.CONTAINERS, d.containers);
+  set(COL.BOOKING, d.booking);
+  set(COL.BL, d.bl);
+  set(COL.SHIPPING, d.shipping);
+  set(COL.VESSEL, d.vessel);
+  set(COL.CONSOLIDACION, d.consol);
+  set(COL.ETD, d.etd);
+  set(COL.ETA, d.eta);
+  set(COL.PORT, d.port);
+  set(COL.EXPORTER, d.exporter);
+  set(COL.CUSTOMER, d.customer);
   // Extra (edit only)
-  set(14, d.documentos);
-  set(15, d.lombard);
-  set(16, d.clienteEnv);
-  set(17, d.telex);
-  set(24, d.invoiceCliente);
-  set(25, d.contractCliente);
-  set(26, d.priceCFR);
-  set(27, d.flete);
-  set(28, d.totalCFR);
-  set(29, d.incoterm);
-  set(30, d.invoiceFCServ);
-  set(31, d.priceFCServ);
-  set(45, d.pagareEnviado);
-  set(46, d.pagareFirmado);
-  set(47, d.fechaEstCobro);
-  set(48, d.fechaCobro);
+  set(COL.DOCUMENTOS, d.documentos);
+  set(COL.LOMBARD, d.lombard);
+  set(COL.CLIENTE_ENV, d.clienteEnv);
+  set(COL.TELEX, d.telex);
+  set(COL.INVOICE_CLIENTE, d.invoiceCliente);
+  set(COL.CONTRACT_CLIENTE, d.contractCliente);
+  set(COL.PRICE_CLIENTE, d.priceCFR);
+  set(COL.FLETE, d.flete);
+  set(COL.TOTAL_CFR_ORIG, d.totalCFR);
+  set(COL.INCOTERM, d.incoterm);
+  set(COL.INVOICE_FC_SERV, d.invoiceFCServ);
+  set(COL.PRICE_SERV, d.priceFCServ);
+  set(COL.PAGARE_ENVIADO, d.pagareEnviado);
+  set(COL.PAGARE_FIRMADO, d.pagareFirmado);
+  set(COL.FECHA_EST_COBRO, d.fechaEstCobro);
+  set(COL.FECHA_COBRO, d.fechaCobro);
   return data;
 }
 
@@ -2371,7 +2423,7 @@ function buildCargaForm(prefix, d={}, fullEdit=false){
     ${field('negocio','Negocio',d.negocio||'','text','ej: ARG2-2')}
     ${smartField(prefix,'customer','Customer *',d.customer||'','ej: IDI', COL.CUSTOMER)}
     ${smartField(prefix,'product','Product *',d.product||'','ej: Blanched peanuts 38/42', COL.PRODUCT)}
-    ${field('tns','Tns',d.tns||'','number','ej: 22')}
+    ${field('tns','Tns',d.tns||'','text','ej: 22,32')}
     ${smartField(prefix,'packing','Packing',d.packing||'','ej: big bags', 3)}
     ${field('lots','Lots',d.lots||'','text','ej: BL38-250022-AP')}
     ${field('pricefob','Precio FOB',d.pricefob||'','text','ej: 1180')}
@@ -2808,7 +2860,7 @@ async function reclamarCobranzaBulk(rowIndices){
   const dates=[...new Set(rows.map(r=>fmtDate(r[getCobroCol()])).filter(Boolean))];
   const datesStr=dates.length===1?dates[0]:dates.join(', ');
   const subject=`Consulta de pago - ${customer} - AXT Trading - Vencimiento ${datesStr}`;
-  const body=`Estimado/a,\n\nNos comunicamos para consultar respecto a ${intro}:\n\n${lines}\n\nAgradecemos confirmar estado del pago.\n\nSaludos,\nLATINUT S.A.`;
+  const body=`Estimado/a,\n\nNos comunicamos para consultar respecto a ${intro}:\n\n${lines}\n\nAgradecemos confirmar estado del pago.`;
 
   modalData={rowIndices, isBulk:true, mailType:'reclamo_cobro', customer, rows};
   document.getElementById('lang-en').classList.remove('active');
@@ -3127,7 +3179,7 @@ function showConfigPrompt(){
 
 // ─── MAIL TEMPLATES ──────────────────────────────────────────────────────────
 function getGreeting(lang,customer){return lang==='es'?`Estimado/a ${customer}`:`Dear ${customer}`;}
-function getSalutation(lang){return lang==='es'?'Saludos,\nLATINUT S.A.':'Best regards,\nLATINUT S.A.';}
+function getSalutation(lang){return '';} // La firma real de Gmail se agrega automáticamente al crear el borrador
 
 function buildMailBody(mailType,d,lang){
   const hi=getGreeting(lang,d.customer);
@@ -3155,15 +3207,17 @@ function buildMailBody(mailType,d,lang){
       es:{subject:`Pagaré - ${d.negocio} / BL: ${d.bl}`,body:`${hi},\n\nLe solicitamos la firma y devolución del pagaré correspondiente al siguiente embarque:\n\nNegocio: ${d.negocio}\nCliente: ${d.customer}\nBL: ${d.bl}\nBooking: ${d.booking}\nContainer(s): ${d.containers}\nBuque: ${d.vessel}\nETA: ${d.etaFmt}${invLine}\n\n${bye}`}
     },
     reclamo_cobro:{
-      en:{subject:`Consulta de pago - ${d.customer} - AXT Trading - Vencimiento ${d.paymentDueFmt}`,body:`Estimado/a,\n\nNos comunicamos para consultar respecto al siguiente pago:\n\nCliente: ${d.customer}\nInvoice: ${d.inv1||d.bl}${d.inv2?'\nFC Servicios: '+d.inv2:''}\nFecha de vencimiento: ${d.paymentDueFmt}\n\nAgradecemos confirmar estado del pago.\n\nSaludos,\nLATINUT S.A.`},
-      es:{subject:`Consulta de pago - ${d.customer} - AXT Trading - Vencimiento ${d.paymentDueFmt}`,body:`Estimado/a,\n\nNos comunicamos para consultar respecto al siguiente pago:\n\nCliente: ${d.customer}\nInvoice: ${d.inv1||d.bl}${d.inv2?'\nFC Servicios: '+d.inv2:''}\nFecha de vencimiento: ${d.paymentDueFmt}\n\nAgradecemos confirmar estado del pago.\n\nSaludos,\nLATINUT S.A.`}
+      en:{subject:`Consulta de pago - ${d.customer} - AXT Trading - Vencimiento ${d.paymentDueFmt}`,body:`Estimado/a,\n\nNos comunicamos para consultar respecto al siguiente pago:\n\nCliente: ${d.customer}\nInvoice: ${d.inv1||d.bl}${d.inv2?'\nFC Servicios: '+d.inv2:''}\nFecha de vencimiento: ${d.paymentDueFmt}\n\nAgradecemos confirmar estado del pago.`},
+      es:{subject:`Consulta de pago - ${d.customer} - AXT Trading - Vencimiento ${d.paymentDueFmt}`,body:`Estimado/a,\n\nNos comunicamos para consultar respecto al siguiente pago:\n\nCliente: ${d.customer}\nInvoice: ${d.inv1||d.bl}${d.inv2?'\nFC Servicios: '+d.inv2:''}\nFecha de vencimiento: ${d.paymentDueFmt}\n\nAgradecemos confirmar estado del pago.`}
     },
     solicitar_liberacion:{
-      en:{subject:`Release request - ${d.exporter||d.customer} - AXT - ETA ${d.etaFmt}`,body:`Dear,\n\nWe kindly request the release of the following shipment:\n\nExporter: ${d.exporter||d.customer}\nCustomer: ${d.customer}\nBL: ${d.bl}\nBooking: ${d.booking}\nContainer(s): ${d.containers}\nVessel: ${d.vessel}\nPort: ${d.port}\nETA: ${d.etaFmt}\n\n@Pedro Berro Madero Please confirm to proceed with the release.\n\nBest regards,\nLATINUT S.A.`},
-      es:{subject:`Solicitud de liberacion - ${d.exporter||d.customer} - AXT - ETA ${d.etaFmt}`,body:`Estimado/a,\n\nSolicitamos la liberacion del siguiente embarque:\n\nExporter: ${d.exporter||d.customer}\nCliente: ${d.customer}\nBL: ${d.bl}\nBooking: ${d.booking}\nContainer(s): ${d.containers}\nBuque: ${d.vessel}\nPuerto: ${d.port}\nETA: ${d.etaFmt}\n\n@Pedro Berro Madero Por favor, dar el ok para proceder con la liberacion.\n\nQuedamos a la espera de confirmacion.\n\nSaludos,\nLATINUT S.A.`}
+      en:{subject:`Release request - ${d.exporter||d.customer} - AXT - ETA ${d.etaFmt}`,body:`Dear,\n\nWe kindly request the release of the following shipment:\n\nExporter: ${d.exporter||d.customer}\nCustomer: ${d.customer}\nBL: ${d.bl}\nBooking: ${d.booking}\nContainer(s): ${d.containers}\nVessel: ${d.vessel}\nPort: ${d.port}\nETA: ${d.etaFmt}\n\n@Pedro Berro Madero Please confirm to proceed with the release.`},
+      es:{subject:`Solicitud de liberacion - ${d.exporter||d.customer} - AXT - ETA ${d.etaFmt}`,body:`Estimado/a,\n\nSolicitamos la liberacion del siguiente embarque:\n\nExporter: ${d.exporter||d.customer}\nCliente: ${d.customer}\nBL: ${d.bl}\nBooking: ${d.booking}\nContainer(s): ${d.containers}\nBuque: ${d.vessel}\nPuerto: ${d.port}\nETA: ${d.etaFmt}\n\n@Pedro Berro Madero Por favor, dar el ok para proceder con la liberacion.\n\nQuedamos a la espera de confirmacion.`}
     }
   };
-  return tpls[mailType]?.[lang]||tpls[mailType]?.en||{subject:'',body:''};
+  const tpl = tpls[mailType]?.[lang]||tpls[mailType]?.en||{subject:'',body:''};
+  if(tpl.body) tpl.body = tpl.body.replace(/\s+$/,''); // sacar saltos/espacios finales sobrantes
+  return tpl;
 }
 
 function openBulkMailModal(rowIndices, mailType){
@@ -3189,7 +3243,7 @@ function openBulkMailModal(rowIndices, mailType){
   }).join('\n\n');
 
   const subject=`Solicitud de liberaciones - ${exporter} - AXT - ETA ${etaStr}`;
-  const body=`Estimado/a,\n\nSolicitamos la liberacion de los siguientes embarques:\n\n${lines}\n\n@Pedro Berro Madero Por favor, dar el ok para proceder con la liberacion.\n\nQuedamos a la espera de confirmacion.\n\nSaludos,\nLATINUT S.A.`;
+  const body=`Estimado/a,\n\nSolicitamos la liberacion de los siguientes embarques:\n\n${lines}\n\n@Pedro Berro Madero Por favor, dar el ok para proceder con la liberacion.\n\nQuedamos a la espera de confirmacion.`;
 
   const transcargo=getContactsForEmpresa('Transcargo');
   const ccSiempreAll=contacts.filter(c=>c.ccSiempre).map(c=>c.email);
@@ -3609,12 +3663,17 @@ function addChatMsg(role, text, isThinking=false){
 function detectPacking(text){
   const t = (text||'').toLowerCase();
   if(t.includes('big bag') || t.includes('big-bag')) return 'big bags';
+  if(t.includes('balde')) return 'baldes';
   if(t.includes('pote')) return 'potes';
   if(t.includes('caja') || t.includes('box')) return 'boxes';
   if(t.includes('tambor')) return 'drums';
   if(t.includes('bolsa') || t.includes('bag')) return 'bags';
   if(t.includes('saco')) return 'sacks';
-  return '';
+  if(t.includes('lata') || t.includes('can')) return 'latas';
+  if(t.includes('bidon') || t.includes('bidón')) return 'bidones';
+  // Si no reconoce un tipo conocido pero hay texto, devolverlo tal cual (no dejar vacío)
+  const orig = (text||'').trim();
+  return orig || '';
 }
 
 function detectProduct(lote, desc){
