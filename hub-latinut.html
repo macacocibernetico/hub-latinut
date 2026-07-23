@@ -2197,9 +2197,17 @@ async function writeRow(rowData, sheetRow){
   if(!accessToken){ alert('Conectate con Google primero.'); return false; }
   const nc = getNegocioConfig();
   const sheetName = nc.sheetName || cfg.sheetName;
+  const tnsCol = COL.TNS; // columna de toneladas
   const requests = Object.entries(rowData).map(([col, value]) => {
-    const colLetter = colIndexToLetter(parseInt(col));
-    return {range: `${sheetName}!${colLetter}${sheetRow}`, values: [[value]]};
+    const colNum = parseInt(col);
+    const colLetter = colIndexToLetter(colNum);
+    let val = value;
+    // Tns: convertir "18,7" o "18.7" a número real para que Sheets NO lo lea como fecha
+    if(colNum === tnsCol && val !== '' && val !== undefined && val !== null){
+      const num = parseFloat(String(val).replace(',', '.'));
+      if(!isNaN(num)) val = num; // número real → Sheets lo guarda como número, no como fecha
+    }
+    return {range: `${sheetName}!${colLetter}${sheetRow}`, values: [[val]]};
   });
   const url = `https://sheets.googleapis.com/v4/spreadsheets/${(nc.sheetId||cfg.sheetId)}/values:batchUpdate`;
   const r = await fetch(url, {
