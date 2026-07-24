@@ -1038,7 +1038,13 @@ function getCobroRealCol(){
 }
 function getCobroFecha(row){ return row[getCobroCol()]||''; }
 function fmtDate(v){const d=parseDate(v);if(!d)return v||'—';return d.toLocaleDateString('es-AR',{day:'2-digit',month:'2-digit',year:'2-digit'});}
-function isClosed(row){const aw=(row[getCobroRealCol()]||'').trim();return aw!==''&&aw.toUpperCase()!=='SI';}
+// Una carga está COBRADA (cerrada) si hay una fecha en la columna de cobro real:
+// AXT = "Fecha de cobro", Buzaram = "Cobranza CLIENTE". Misma lógica, distinto encabezado.
+// Si esa columna está vacía, la carga sigue activa (pendiente de cobro).
+function isClosed(row){
+  const cobroReal = (row[getCobroRealCol()]||'').trim();
+  return cobroReal !== '';
+}
 function daysClass(n){if(n===null)return '';if(n<=7)return 'red';if(n<=14)return 'warn';return 'ok';}
 function nowStr(){const n=new Date();return{fecha:n.toLocaleDateString('es-AR'),hora:n.toLocaleTimeString('es-AR',{hour:'2-digit',minute:'2-digit'})};}
 
@@ -4205,12 +4211,12 @@ function renderCashFlow(){
     const customer = (row[COL.CUSTOMER]||'—').trim();
     const bl       = (row[COL.BL]||'').trim();
     const negocio  = (row[COL.NEGOCIO]||'').trim();
-    const invoice  = (row[24]||'').trim();   // Y — FC cliente
-    const invServ  = (row[30]||'').trim();   // AE — FC servicios
+    const invoice  = (row[COL.INVOICE_CLIENTE]||'').trim();   // FC cliente
+    const invServ  = (row[COL.INVOICE_FC_SERV]||'').trim();   // FC servicios
 
     if(cfMode === 'cobros'){
       const fechaCobroReal = (row[getCobroRealCol()]||'').trim();
-      const cobrado = fechaCobroReal !== '' && fechaCobroReal.toUpperCase() !== 'SI';
+      const cobrado = fechaCobroReal !== ''; // cobrada si hay fecha en cobro real
       // Si ya cobrado usar fecha real, si no usar fecha estimada
       let fechaBase = cobrado ? fechaCobroReal : row[getCobroCol()];
       let d = parseDate(fechaBase);
