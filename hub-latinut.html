@@ -360,7 +360,13 @@ button{font-family:var(--font);cursor:pointer;border:none;background:none;}
   .alert-logistics{grid-template-columns:1fr;}
   .alert-item{padding:12px 14px;gap:10px;}
   .alert-title{font-size:14px;}
-  .action-btn{padding:9px 14px;font-size:12px;}
+  .action-btn{padding:9px 16px;font-size:13px;}
+  .row-action{padding:7px 12px;font-size:12px;}
+  .nav-item{padding:10px 12px;}
+  .search-bar{width:36px;}
+  .search-bar:focus-within{width:180px;}
+  .table-wrap thead th{font-size:9px;padding:7px 8px;}
+  .table-wrap td{padding:8px;font-size:11px;}
   .modal{width:95vw;}
   .modal-body{padding:14px 16px;}
   .modal-footer{padding:12px 16px;}
@@ -388,99 +394,6 @@ button{font-family:var(--font);cursor:pointer;border:none;background:none;}
   }
   /* Checkbox bigger on mobile */
   .lib-checkbox,input[type=checkbox]{width:22px!important;height:22px!important;}
-  body{font-size:14px;}
-}
-
-/* NEGOCIO TOPBAR ACCENT */
-.topbar-accent{height:3px;position:fixed;top:0;left:0;right:0;z-index:9998;transition:background .3s;}
-
-/* PROGRESS BAR */
-.progress-bar{position:fixed;top:0;left:0;right:0;height:3px;background:linear-gradient(90deg,var(--accent),#34c759);z-index:9999;transform-origin:left;transition:transform .3s ease;transform:scaleX(0);border-radius:0 2px 2px 0;}
-.progress-bar.active{animation:progress 1.5s ease-in-out infinite;}
-@keyframes progress{0%{transform:scaleX(0);opacity:1;}60%{transform:scaleX(.7);opacity:1;}100%{transform:scaleX(1);opacity:0;}}
-
-/* STICKY TABLE HEADER */
-.sticky-table thead th{position:sticky;top:0;z-index:2;background:var(--bg3);box-shadow:0 1px 0 var(--border);}
-
-/* PAGINATION */
-.pagination{display:flex;align-items:center;justify-content:space-between;padding:12px 16px;border-top:1px solid var(--border);background:var(--bg2);}
-.page-info{font-size:11px;color:var(--text3);font-family:var(--mono);}
-.page-btns{display:flex;gap:6px;}
-.page-btn{padding:5px 12px;border-radius:7px;border:1px solid var(--border);background:var(--bg2);color:var(--text2);font-size:11px;font-weight:500;cursor:pointer;transition:all .15s;}
-.page-btn:hover:not(:disabled){background:var(--bg3);}
-.page-btn.active{background:var(--accent);color:#fff;border-color:var(--accent);}
-.page-btn:disabled{opacity:.35;cursor:not-allowed;}
-
-/* CONFIRM DIALOG */
-.confirm-overlay{position:fixed;inset:0;background:rgba(0,0,0,.35);z-index:200;display:flex;align-items:center;justify-content:center;backdrop-filter:blur(4px);}
-.confirm-overlay.hidden{display:none;}
-.confirm-box{background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius-xl);padding:28px 32px;width:340px;max-width:90vw;box-shadow:0 20px 60px rgba(0,0,0,.15);text-align:center;}
-.confirm-icon{font-size:36px;margin-bottom:12px;}
-.confirm-title{font-size:15px;font-weight:600;color:var(--text);margin-bottom:6px;}
-.confirm-msg{font-size:12px;color:var(--text3);margin-bottom:24px;line-height:1.5;}
-.confirm-btns{display:flex;gap:8px;justify-content:center;}
-
-/* SEARCH */
-.search-bar{display:flex;align-items:center;gap:8px;background:var(--bg3);border:1px solid var(--border);border-radius:10px;padding:6px 12px;transition:all .15s;width:220px;}
-.search-bar:focus-within{border-color:var(--accent);background:var(--bg2);width:280px;}
-.search-bar input{background:none;border:none;outline:none;font-family:var(--font);font-size:12px;color:var(--text);width:100%;}
-.search-bar input::placeholder{color:var(--text3);}
-.search-results{position:absolute;top:52px;right:24px;width:360px;background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius-lg);box-shadow:var(--shadow-lg);z-index:50;overflow:hidden;max-height:400px;overflow-y:auto;}
-.search-results.hidden{display:none;}
-.search-result-item{padding:10px 14px;border-bottom:1px solid var(--border);cursor:pointer;transition:background .1s;}
-.search-result-item:last-child{border-bottom:none;}
-.search-result-item:hover{background:var(--bg3);}
-.search-result-title{font-size:12px;font-weight:500;color:var(--text);}
-.search-result-sub{font-size:10px;color:var(--text3);font-family:var(--mono);margin-top:2px;}
-.search-result-badge{font-size:9px;padding:1px 6px;border-radius:10px;font-family:var(--mono);font-weight:600;float:right;}
-.search-result-badge.critical{background:var(--danger-light);color:var(--danger);}
-.search-result-badge.carga{background:var(--accent-light);color:var(--accent);}
-.search-result-badge.cobro{background:var(--warn-light);color:var(--warn);}
-/* CHAT PANEL */
-.chat-toggle{position:fixed;bottom:24px;right:24px;width:48px;height:48px;border-radius:50%;background:var(--accent);color:#fff;border:none;font-size:20px;cursor:pointer;box-shadow:var(--shadow-lg);z-index:50;display:flex;align-items:center;justify-content:center;transition:all .2s;}
-.chat-toggle:hover{background:var(--accent-dim);transform:scale(1.05);}
-.chat-panel{position:fixed;bottom:84px;right:24px;width:380px;max-width:calc(100vw - 48px);height:520px;max-height:calc(100vh - 120px);background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius-xl);box-shadow:var(--shadow-lg);display:flex;flex-direction:column;z-index:50;overflow:hidden;transition:all .2s;}
-.chat-panel.hidden{display:none;}
-.chat-header{padding:12px 16px;border-bottom:1px solid var(--border);background:var(--bg3);display:flex;align-items:center;justify-content:space-between;flex-shrink:0;}
-.chat-header-title{font-size:13px;font-weight:600;color:var(--text);display:flex;align-items:center;gap:6px;}
-.chat-messages{flex:1;overflow-y:auto;padding:12px;display:flex;flex-direction:column;gap:8px;}
-.chat-msg{max-width:85%;padding:8px 12px;border-radius:12px;font-size:12px;line-height:1.5;}
-.chat-msg.user{background:var(--accent);color:#fff;align-self:flex-end;border-bottom-right-radius:4px;}
-.chat-msg.assistant{background:var(--bg3);color:var(--text);align-self:flex-start;border-bottom-left-radius:4px;border:1px solid var(--border);}
-.chat-msg.thinking{color:var(--text3);font-style:italic;}
-.chat-input-row{padding:10px 12px;border-top:1px solid var(--border);display:flex;gap:6px;flex-shrink:0;}
-.chat-input{flex:1;background:var(--bg3);border:1px solid var(--border);border-radius:8px;color:var(--text);font-family:var(--font);font-size:12px;padding:7px 10px;resize:none;outline:none;transition:border-color .15s;}
-.chat-input:focus{border-color:var(--accent);}
-.chat-send{background:var(--accent);color:#fff;border:none;border-radius:8px;padding:7px 12px;cursor:pointer;font-size:13px;font-weight:600;transition:all .15s;}
-.chat-send:hover{background:var(--accent-dim);}
-.chat-send:disabled{opacity:.5;cursor:not-allowed;}
-/* MOBILE */
-.mobile-toggle{display:none;align-items:center;justify-content:center;width:34px;height:34px;border-radius:8px;background:var(--bg3);border:1px solid var(--border);cursor:pointer;font-size:15px;color:var(--text2);}
-.overlay-close{display:none;position:fixed;inset:0;z-index:9;background:rgba(0,0,0,.3);}
-
-@media(max-width:768px){
-  .mobile-toggle{display:flex;}
-  .sidebar-footer{position:sticky;bottom:0;background:var(--bg2);z-index:5;border-top:2px solid var(--border);}
-  #auth-btn{font-size:13px;padding:10px;font-weight:600;}
-  .sidebar{transform:translateX(-240px);transition:transform .2s ease;}
-  .sidebar.open{transform:translateX(0);}
-  .main{margin-left:0;padding-bottom:70px;}
-  .stats-row{grid-template-columns:1fr 1fr;gap:8px;}
-  .content{padding:12px 14px;}
-  .topbar{padding:10px 14px;}
-  .topbar-title{font-size:15px;}
-  .alert-logistics{grid-template-columns:1fr;}
-  .modal{width:95vw;}
-  .modal-body{padding:14px 16px;}
-  .modal-footer{padding:12px 16px;}
-  .bottom-nav{display:block;}
-  .action-btn{padding:9px 16px;font-size:13px;}
-  .row-action{padding:7px 12px;font-size:12px;}
-  .nav-item{padding:10px 12px;}
-  .search-bar{width:36px;}
-  .search-bar:focus-within{width:180px;}
-  .table-wrap thead th{font-size:9px;padding:7px 8px;}
-  .table-wrap td{padding:8px;font-size:11px;}
   body{font-size:14px;}
 }
 
@@ -712,60 +625,66 @@ let negocioActivo = localStorage.getItem('hub_negocio') || 'axt';
 
 // BUZARAM_CFG is built dynamically from cfg to allow user configuration
 function getBuzaramCfg(){
-  const M = window._COLMAP || {};
-  const pick = (k, def) => (M[k] !== undefined && M[k] >= 0) ? M[k] : def;
+  // Todos los indices salen de COL.* , que a su vez sale del mapeo por nombre de
+  // encabezado (window._COLMAP). Aca no hay ni un numero de columna hardcodeado.
+  const c  = (k) => (COL[k] !== undefined && COL[k] >= 0) ? COL[k] : null;
   return {
     sheetId: cfg.buzaramSheetId || '1vQaNeo595C3aK1KAF75UsOkbA5LNUMm16WoEpP9Z69w',
     sheetName: 'CARGAS',
     appsScriptUrl: (cfg.buzaramAppsScriptUrl && cfg.buzaramAppsScriptUrl.trim()) ? cfg.buzaramAppsScriptUrl.trim() : '',
     label: 'Buzaram',
-    COL_FECHA_EST_COBRO: pick('FECHA_EST_COBRO', 48),  // "Fecha estimada" (AW)
-    COL_FECHA_COBRO:     pick('FECHA_COBRO', 57),      // "Fecha pago" (BF) — cobro real
-    COL_TOTAL_CFR:       pick('TOTAL_CFR', 32),        // "VALOR TOTAL" (AG)
+    logFuente: 'BUZARAM',
+    COL_FECHA_EST_COBRO: c('FECHA_EST_COBRO'),  // "Fecha estimada"
+    COL_FECHA_COBRO:     c('FECHA_COBRO'),      // "Cobranza CLIENTE" - cobro real
+    COL_TOTAL_CFR:       c('TOTAL_CFR'),        // "VALOR TOTAL" = FC1 + FC2 ya sumadas
+    COL_TOTAL_FC1:       c('TOTAL_CFR_ORIG'),   // "Total CFR"
+    COL_TOTAL_FC2:       c('PRICE_SERV'),       // "Price Serv"
     ccFijo: 'yaelvaleria.arrua@newsan.com.ar',
     sinPagares: true,
-    // Pagos forwarder Buzaram — detectados por nombre
-    PAGO_FC_FLETE:      pick('FC_FLETE', 43),          // "FC" (AR)
-    PAGO_PROVEEDOR:     pick('PROVEEDOR_FLETE', 44),   // "proveedor" (AS)
-    PAGO_MONTO:         pick('MONTO_FLETE', 45),       // "importe usd/fcl" (AT)
-    PAGO_FECHA:         pick('FECHA_PAGO_FWD', 46),    // "fecha pago estimada" (AU)
-    PAGO_FECHA_REAL:    pick('FECHA_PAGO_FWD_REAL', 47), // "fecha pago real" (AV)
-    PAGO_FC_COURIER:    null,
+    // Pagos forwarder Buzaram
+    PAGO_FC_FLETE:      c('FC_FLETE'),          // "FC flete"
+    PAGO_PROVEEDOR:     c('PROVEEDOR_FLETE'),   // "proveedor"
+    PAGO_MONTO:         c('MONTO_FLETE'),       // "importe usd/fcl"
+    PAGO_FECHA:         c('FECHA_PAGO_FWD'),    // "fecha pago estimada"
+    PAGO_FECHA_REAL:    c('FECHA_PAGO_FWD_REAL'), // "fecha pago real"
+    PAGO_FC_COURIER:    null,                   // Buzaram no tiene courier
     PAGO_MONTO_COURIER: null,
-    PAGO_TOTAL:         pick('MONTO_FLETE', 45),       // total a pagar = importe
+    PAGO_TOTAL:         c('MONTO_FLETE'),       // no hay "total flete": total = importe
   };
 }
-
 function getNegocioConfig(){
   if(negocioActivo==='buzaram') return getBuzaramCfg();
-  const M = window._COLMAP || {};
-  const pick = (k, def) => (M[k] !== undefined && M[k] >= 0) ? M[k] : def;
+  // Igual que Buzaram: todo por nombre de encabezado, cero numeros hardcodeados.
+  const c = (k) => (COL[k] !== undefined && COL[k] >= 0) ? COL[k] : null;
   return {
     sheetId: cfg.sheetId,
     sheetName: cfg.sheetName,
     appsScriptUrl: cfg.appsScriptUrl,
     label: 'AXT Solutions',
-    COL_FECHA_EST_COBRO: pick('FECHA_EST_COBRO', COL.FECHA_EST_COBRO),
-    COL_FECHA_COBRO: pick('FECHA_COBRO', COL.FECHA_COBRO),
-    COL_TOTAL_CFR: COL.TOTAL_CFR,
+    logFuente: 'AXT',
+    COL_FECHA_EST_COBRO: c('FECHA_EST_COBRO'),  // "Fecha estimada"
+    COL_FECHA_COBRO:     c('FECHA_COBRO'),      // "Fecha de cobro" - cobro real
+    COL_TOTAL_CFR:       c('TOTAL_CFR'),        // "TOTAL FINAL"
+    COL_TOTAL_FC1:       c('TOTAL_CFR_ORIG'),   // "Total CFR"
+    COL_TOTAL_FC2:       c('PRICE_SERV'),       // "Price serv"
     ccFijo: 'pberro@axtsolutions.com',
     sinPagares: false,
-    // Pagos forwarder AXT — detectados por nombre (se corrieron 3 columnas)
-    PAGO_FC_FLETE:      pick('FC_FLETE', COL.FC_FLETE),
-    PAGO_FC_COURIER:    pick('FC_COURIER', COL.FC_COURIER),
-    PAGO_PROVEEDOR:     pick('PROVEEDOR_FLETE', COL.PROVEEDOR_FLETE),
-    PAGO_MONTO:         pick('MONTO_FLETE', COL.MONTO_FLETE),
-    PAGO_MONTO_COURIER: pick('MONTO_COURIER', COL.MONTO_COURIER),
-    PAGO_TOTAL:         pick('TOTAL_PAGO', COL.TOTAL_PAGO),
-    PAGO_FECHA:         pick('FECHA_PAGO_FWD', COL.FECHA_PAGO_FWD),
-    PAGO_FECHA_REAL:    pick('FECHA_PAGO_FWD_REAL', COL.FECHA_PAGO_FWD_REAL),
+    // Pagos forwarder AXT
+    PAGO_FC_FLETE:      c('FC_FLETE'),
+    PAGO_FC_COURIER:    c('FC_COURIER'),
+    PAGO_PROVEEDOR:     c('PROVEEDOR_FLETE'),
+    PAGO_MONTO:         c('MONTO_FLETE'),
+    PAGO_MONTO_COURIER: c('MONTO_COURIER'),
+    PAGO_TOTAL:         c('TOTAL_PAGO'),
+    PAGO_FECHA:         c('FECHA_PAGO_FWD'),
+    PAGO_FECHA_REAL:    c('FECHA_PAGO_FWD_REAL'),
   };
 }
-
 function setNegocio(n){
   negocioActivo = n;
   localStorage.setItem('hub_negocio', n);
   cargasPage = 0;
+  logVerTodos = false;
   cfFiltros = [];
   cfFiltroEntidades = new Set();
   cfFiltroClientes   = new Set();
@@ -952,16 +871,13 @@ function getReclamoInfoFromLog(bl, mailType){
 }
 
 // ─── COLUMNAS ────────────────────────────────────────────────────────────────
-// A=0 Negocio, B=1 Tns, C=2 Product, D=3 Packing, E=4 Lots
-// F=5 Containers, G=6 Booking, H=7 BL, I=8 Shipping Line, J=9 Vessel
-// K=10 Consolidación, L=11 ETD, M=12 ETA, N=13 Port
-// O=14 DOCUMENTOS, P=15 ENVIO A LOMBARD, Q=16 ENVIO AL CLIENTE, R=17 TELEX
-// S=18 Exporter, T=19 Invoice FC Planta, U=20 Contract, V=21 Price FCA, W=22 Total
-// X=23 Customer, Y=24 Invoice FC Lombard, Z=25 Contract, AA=26 Price
-// AB=27 Flete, AC=28 Total CFR, AD=29 INCOTERM
-// AE=30 Invoice FC Servicios, AF=31 Price FC Servicios
-// AT=45 Pagaré Enviado, AU=46 Pagaré Firmado
-// AV=47 Fecha estimada cobro, AW=48 Fecha de cobro real
+// Estos son solo VALORES POR DEFECTO, usados unicamente antes del primer
+// loadData(). Una vez que corre mapearColumnasPorNombre(), todas las columnas se
+// resuelven por el nombre del encabezado (fila 2 de la planilla) y estos numeros
+// dejan de usarse. Si moves una columna en la planilla, no hay que tocar nada aca.
+// Posiciones actuales de referencia (AXT, 0-based): Total CFR=28, Price serv=31,
+// TOTAL FINAL=32, FC Flete=35, proveedor=37, Enviado=43, Firmado=44,
+// Fecha estimada=45, Fecha de cobro=46.
 const COL_DEFAULTS = {
   NEGOCIO:0, TNS:1, PRODUCT:2, PACKING:3, LOTS:4,
   CONTAINERS:5, BOOKING:6, BL:7, SHIPPING:8, VESSEL:9,
@@ -978,7 +894,11 @@ const COL_DEFAULTS = {
   FECHA_EST_COBRO:45, FECHA_COBRO:46,
   FECHA_LT:47, NUM_FC_LT:48, MONTO_LT:49, FECHA_PAGO_LT:50, DIAS_PAGAR_LT:51,
   C_NUTRIN:52, OV:62,
-  FEC_FACT_PLANTA:64, FEC_FACT_CLIENTE:65, FEC_PAGO_EFECTIVO:66
+  FEC_FACT_PLANTA:64, FEC_FACT_CLIENTE:65, FEC_PAGO_EFECTIVO:66,
+  // Columnas mapeadas por nombre pero que el hub todavia no usa. Arrancan en -1
+  // ("no existe") y se llenan solas si el encabezado aparece en la planilla.
+  STENN:-1, PAGO_90:-1, PAGO_SALDO:-1, COSTO_STENN:-1,
+  CONSOL_ETD:-1, COM_EUROPA:-1, MES_CONSOL:-1, FEC_EST_O_REAL_COBRO:-1, ANIO_ETD:-1
 };
 // COL: cada propiedad es un getter que devuelve el índice detectado por nombre
 // (window._COLMAP) si existe, o el valor por defecto. Así TODOS los usos de
@@ -989,8 +909,11 @@ Object.keys(COL_DEFAULTS).forEach(k => {
   Object.defineProperty(COL, k, {
     get(){
       const m = window._COLMAP;
-      if(m && m[k] !== undefined && m[k] >= 0) return m[k];
-      return COL_DEFAULTS[k];
+      // Si el mapeo por nombre ya corrio, se le cree SIEMPRE - incluso cuando dice
+      // -1, que significa "esta columna no existe en este negocio" (ej: pagares en
+      // Buzaram). Los defaults solo aplican antes del primer loadData().
+      if(m && m[k] !== undefined) return m[k];
+      return COL_DEFAULTS[k] !== undefined ? COL_DEFAULTS[k] : -1;
     }
   });
 });
@@ -1028,14 +951,8 @@ function parseDate(v){
 function daysFrom(v){const d=parseDate(v);if(!d)return null;const t=new Date();const tm=new Date(t.getFullYear(),t.getMonth(),t.getDate());const dm=new Date(d.getFullYear(),d.getMonth(),d.getDate());return Math.round((dm-tm)/86400000);}
 
 // Get FECHA_EST_COBRO for current negocio (usa mapeo por nombre si existe)
-function getCobroCol(){
-  if(window._COLMAP && window._COLMAP.FECHA_EST_COBRO >= 0) return window._COLMAP.FECHA_EST_COBRO;
-  return getNegocioConfig().COL_FECHA_EST_COBRO;
-}
-function getCobroRealCol(){
-  if(window._COLMAP && window._COLMAP.FECHA_COBRO >= 0) return window._COLMAP.FECHA_COBRO;
-  return getNegocioConfig().COL_FECHA_COBRO;
-}
+function getCobroCol(){ return COL.FECHA_EST_COBRO; }
+function getCobroRealCol(){ return COL.FECHA_COBRO; }
 function getCobroFecha(row){ return row[getCobroCol()]||''; }
 function fmtDate(v){const d=parseDate(v);if(!d)return v||'—';return d.toLocaleDateString('es-AR',{day:'2-digit',month:'2-digit',year:'2-digit'});}
 // Una carga está COBRADA (cerrada) si hay una fecha en la columna de cobro real:
@@ -1047,6 +964,19 @@ function isClosed(row){
 }
 function daysClass(n){if(n===null)return '';if(n<=7)return 'red';if(n<=14)return 'warn';return 'ok';}
 function nowStr(){const n=new Date();return{fecha:n.toLocaleDateString('es-AR'),hora:n.toLocaleTimeString('es-AR',{hour:'2-digit',minute:'2-digit'})};}
+
+// Total de una carga. Se lee de la columna de total de la planilla
+// ("TOTAL FINAL" en AXT, "VALOR TOTAL" en Buzaram), que ya trae FC1 + FC2 sumadas.
+// Si esa celda esta vacia, recien ahi se suma FC1 ("Total CFR") + FC2 ("Price serv").
+function totalCargaDe(row, fc1Raw, fc2Raw){
+  const nc = getNegocioConfig();
+  const total = parseSheetNum(row[nc.COL_TOTAL_CFR]);
+  if(!isNaN(total)) return total;
+  const a = (fc1Raw !== undefined) ? fc1Raw : parseSheetNum(row[nc.COL_TOTAL_FC1]);
+  const b = (fc2Raw !== undefined) ? fc2Raw : parseSheetNum(row[nc.COL_TOTAL_FC2]);
+  if(isNaN(a) && isNaN(b)) return NaN;
+  return (isNaN(a)?0:a) + (isNaN(b)?0:b);
+}
 
 function getInvoiceInfo(row){
   const inv1=(row[COL.INVOICE_CLIENTE]||'').trim();
@@ -1083,7 +1013,7 @@ async function solicitarFCBulk(rowIndices){
   if(ok){
     for(const row of rows){
       await appendLog({
-        fuente:'AXT', fc:(row[COL.INVOICE_CLIENTE]||'').trim(), fcServ:'',
+        fc:(row[COL.INVOICE_CLIENTE]||'').trim(), fcServ:'',
         bl:(row[COL.BL]||'').trim(), customer,
         accion:'solicitud FC (bulk)', detalle:'Via AppScript - filas '+minRow+'-'+maxRow
       });
@@ -1111,7 +1041,7 @@ async function solicitarFC(rowIdx){
   if(ok){
     const inv1=(row[COL.INVOICE_CLIENTE]||'').trim();
     await appendLog({
-      fuente:'AXT', fc:inv1||'', fcServ:'', bl:(row[COL.BL]||'').trim(),
+      fc:inv1||'', fcServ:'', bl:(row[COL.BL]||'').trim(),
       customer, accion:'solicitud FC', detalle:'Via AppScript - fila '+sheetRow
     });
     await loadLog();
@@ -1308,6 +1238,7 @@ async function loadData(){
     setSheetStatus('ok',`${allRows.length} cargas activas`);
     hideProgress();
     document.getElementById('last-sync').textContent='Sync '+new Date().toLocaleTimeString('es-AR',{hour:'2-digit',minute:'2-digit'});
+    _avisoColsCerrado = false;
     updateBadges();renderView(currentView);
   }catch(e){setSheetStatus('err','Error de conexión');console.error(e);}
 }
@@ -1325,12 +1256,27 @@ function mapearColumnasPorNombre(headerRow){
   const H = headerRow.map(normalizarHdr);
   // Coincidencia EXACTA sobre el encabezado normalizado (ignora mayúsculas/acentos/espacios).
   // Cada campo busca su nombre exacto. Robusto y sin ambigüedades.
+  // Guard: un nombre vacío NUNCA debe matchear. Buzaram tiene 13 columnas sin
+  // encabezado (índices 34-46) que normalizan a '' — sin este guard cualquier
+  // búsqueda con string vacío devolvería el índice 34 y leeríamos basura.
   const col = (nombreExacto) => {
     const t = normalizarHdr(nombreExacto);
-    for(let i=0;i<H.length;i++){ if(H[i] === t) return i; }
+    if(t === '') return -1;
+    for(let i=0;i<H.length;i++){ if(H[i] !== '' && H[i] === t) return i; }
     return -1;
   };
   const map = {};
+  // Columnas que NO se pudieron resolver por nombre y cayeron en un indice fijo.
+  // Se listan en un cartel arriba para enterarse si alguien renombro un encabezado.
+  const sinNombre = [];
+  const aplicarFallbacks = (tabla) => {
+    Object.keys(tabla).forEach(k => {
+      if(map[k] === undefined || map[k] < 0){
+        map[k] = tabla[k];
+        if(!sinNombre.includes(k)) sinNombre.push(k);
+      }
+    });
+  };
 
   // ── COLUMNAS COMUNES (mismo nombre en AXT y Buzaram) ──
   map.NEGOCIO      = col('Negocio');
@@ -1384,6 +1330,10 @@ function mapearColumnasPorNombre(headerRow){
     map.FECHA_PAGO_LT = col('Fecha pago LT');
     map.OV            = col('OV BZ');
     map.C_NUTRIN      = col('C- NUTRIN');
+    map.STENN         = col('Stenn');
+    map.PAGO_90       = col('Pago 90%');
+    map.PAGO_SALDO    = col('Pago Saldo');
+    map.COSTO_STENN   = col('Costo Stenn');
     map.FEC_FACT_PLANTA  = col('Fecha factura Planta - Buzaram');
     map.FEC_FACT_CLIENTE = col('Fecha factura Buzaram - Cliente');
     map.FEC_PAGO_EFECTIVO = col('Fecha efectiva del pago Cliente - Buzaram');
@@ -1398,7 +1348,7 @@ function mapearColumnasPorNombre(headerRow){
       FECHA_LT:58, NUM_FC_LT:59, MONTO_LT:60, FECHA_PAGO_LT:61, OV:62, C_NUTRIN:63,
       FEC_FACT_PLANTA:64, FEC_FACT_CLIENTE:65, FEC_PAGO_EFECTIVO:66
     };
-    Object.keys(fbB).forEach(k => { if(map[k] === undefined || map[k] < 0) map[k] = fbB[k]; });
+    aplicarFallbacks(fbB);
   } else {
     // ── AXT ──
     map.TOTAL_FCA     = col('Total FCA');
@@ -1424,7 +1374,13 @@ function mapearColumnasPorNombre(headerRow){
     map.MONTO_LT      = col('Monto LT');
     map.FECHA_PAGO_LT = col('Fecha pago LT');
     map.DIAS_PAGAR_LT = col('Dias p/ pagar LT');
-    map.C_NUTRIN      = col('C - NUTRIN');
+    // La planilla AXT dice "C -NUTRIN" (sin espacio despues del guion)
+    map.C_NUTRIN      = (col('C -NUTRIN') >= 0) ? col('C -NUTRIN') : col('C - NUTRIN');
+    map.CONSOL_ETD    = col('CONSOL-ETD');
+    map.COM_EUROPA    = col('COM. EUROPA');
+    map.MES_CONSOL    = col('Mes de Consolidación');
+    map.FEC_EST_O_REAL_COBRO = col('FECHA EST. O REAL DE COBRO');
+    map.ANIO_ETD      = col('año DE ETD');
     // Fallbacks AXT
     const fb = {
       TOTAL_FCA:22, PRICE_CLIENTE:26, PRECIO_FINAL_TN:33, COMISION_BROKER:34,
@@ -1434,7 +1390,7 @@ function mapearColumnasPorNombre(headerRow){
       FECHA_EST_COBRO:45, FECHA_COBRO:46,
       FECHA_LT:47, NUM_FC_LT:48, MONTO_LT:49, FECHA_PAGO_LT:50, DIAS_PAGAR_LT:51, C_NUTRIN:52
     };
-    Object.keys(fb).forEach(k => { if(map[k] === undefined || map[k] < 0) map[k] = fb[k]; });
+    aplicarFallbacks(fb);
   }
 
   // Fallbacks comunes (para las columnas base si no se encontró el nombre exacto)
@@ -1444,9 +1400,14 @@ function mapearColumnasPorNombre(headerRow){
     CLIENTE_ENV:16,TELEX:17,EXPORTER:18,INVOICE_PROVEEDOR:19,CONTRACT_PROVEEDOR:20,
     PRICE_FCA:21,TOTAL_FCA:22,CUSTOMER:23,INVOICE_CLIENTE:24,INCOTERM:29,INVOICE_FC_SERV:30
   };
-  Object.keys(fbBase).forEach(k => { if(map[k] === undefined || map[k] < 0) map[k] = fbBase[k]; });
+  aplicarFallbacks(fbBase);
 
   window._COLMAP = map;
+  window._COLMAP_SIN_NOMBRE = sinNombre;
+  window._COLMAP_HEADERS = headerRow.slice();
+  if(sinNombre.length){
+    console.warn('COLMAP ('+negocioActivo+'): estas columnas NO se encontraron por nombre y usan indice fijo ->', sinNombre.join(', '));
+  }
   console.log('COLMAP ('+negocioActivo+') detectado:', JSON.stringify(map));
 }
 
@@ -1464,9 +1425,18 @@ async function writeCell(row, col, value){
   // La API devuelve datos desde A4, entonces allRows[0] = fila 4, allRows[1] = fila 5, etc.
   // Use stored _sheetRow if available (accounts for filtered rows)
   const sheetRow = allRows[row]&&allRows[row]._sheetRow ? allRows[row]._sheetRow : row + 4;
+  if(col === undefined || col === null || col < 0){
+    console.error('writeCell: columna invalida', col);
+    alert('No se pudo determinar la columna a escribir. Revisa los encabezados de la planilla.');
+    return false;
+  }
+  const nc = getNegocioConfig();
+  // La hoja tiene que ser la del negocio activo: en Buzaram se llama "CARGAS",
+  // no "Cargas". Antes tomaba el sheetId de Buzaram con el nombre de hoja de AXT.
+  const sheetName = nc.sheetName || cfg.sheetName;
   const colLetter = colIndexToLetter(col);
-  const range = encodeURIComponent(`${cfg.sheetName}!${colLetter}${sheetRow}`);
-  const url = `https://sheets.googleapis.com/v4/spreadsheets/${(getNegocioConfig().sheetId||cfg.sheetId)}/values/${range}?valueInputOption=USER_ENTERED`;
+  const range = encodeURIComponent(`${sheetName}!${colLetter}${sheetRow}`);
+  const url = `https://sheets.googleapis.com/v4/spreadsheets/${(nc.sheetId||cfg.sheetId)}/values/${range}?valueInputOption=USER_ENTERED`;
   const r = await fetch(url, {
     method: 'PUT',
     headers: {'Authorization':`Bearer ${accessToken}`,'Content-Type':'application/json'},
@@ -1475,11 +1445,27 @@ async function writeCell(row, col, value){
   return r.ok;
 }
 
+// Codigo canonico del negocio para la columna Fuente del LOG.
+function getLogFuente(){ return getNegocioConfig().logFuente || 'AXT'; }
+
+// Normaliza las variantes que quedaron en el historico ('AXT Solutions', 'Buzaram')
+// al codigo canonico, para que agrupen con las filas nuevas al filtrar y mostrar.
+function normalizarFuente(v){
+  const t = (v||'').toString().trim().toUpperCase();
+  if(t.startsWith('BUZ') || t === 'BZ') return 'BUZARAM';
+  if(t.startsWith('AXT')) return 'AXT';
+  return t || 'AXT';
+}
+
 async function appendLog(data){
   if(!accessToken) return;
   const {fecha,hora}=nowStr();
   const hubId=cfg.hubSheetId||cfg.sheetId;
-  const values=[[fecha, hora, data.fuente||'AXT', data.fc||'', data.fcServ||'', data.bl||'', data.customer||'', data.accion||'', data.detalle||'']];
+  // La fuente NO la pasa quien llama: sale siempre del negocio activo. Antes 8 de
+  // las 12 llamadas la tenian fija en 'AXT' y las acciones de Buzaram quedaban
+  // registradas como si fueran de AXT.
+  const fuente=getLogFuente();
+  const values=[[fecha, hora, fuente, data.fc||'', data.fcServ||'', data.bl||'', data.customer||'', data.accion||'', data.detalle||'']];
   const range=encodeURIComponent(`LOG!A:I`);
   const url=`https://sheets.googleapis.com/v4/spreadsheets/${hubId}/values/${range}:append?valueInputOption=USER_ENTERED&insertDataOption=INSERT_ROWS`;
   await fetch(url,{
@@ -1554,11 +1540,24 @@ async function createGmailDraft(to, cc, subject, body){
   return false;
 }
 
-function showToast(msg){
+// type: 'ok' | 'err' | 'info'. Se venia pasando en varias llamadas pero se ignoraba.
+function showToast(msg, type){
   let t=document.getElementById('toast');
-  if(!t){t=document.createElement('div');t.id='toast';t.style.cssText='position:fixed;bottom:24px;right:24px;background:var(--ok);color:#0d0d0d;padding:10px 18px;border-radius:8px;font-weight:700;font-size:12px;z-index:999;transition:opacity .3s;';document.body.appendChild(t);}
+  if(!t){
+    t=document.createElement('div');
+    t.id='toast';
+    document.body.appendChild(t);
+  }
+  const colores = {
+    ok:   {bg:'var(--ok)',     fg:'#0d2b14'},
+    err:  {bg:'var(--danger)', fg:'#fff'},
+    info: {bg:'var(--text)',   fg:'#fff'}
+  };
+  const c = colores[type] || colores.ok;
+  t.style.cssText = 'position:fixed;bottom:24px;right:24px;background:'+c.bg+';color:'+c.fg+';padding:10px 18px;border-radius:10px;font-weight:600;font-size:12px;z-index:999;transition:opacity .3s;max-width:min(420px,90vw);box-shadow:var(--shadow-lg);pointer-events:none;';
   t.textContent=msg;t.style.opacity='1';
-  setTimeout(()=>t.style.opacity='0',3000);
+  if(t._timer) clearTimeout(t._timer);
+  t._timer = setTimeout(()=>t.style.opacity='0', type==='err'?5000:3000);
 }
 
 // ─── ALERTS ──────────────────────────────────────────────────────────────────
@@ -1750,7 +1749,79 @@ function showView(view){
   renderView(view);
   if(window.innerWidth<=768)closeSidebar();
 }
-function renderView(v){({alertas:renderAlertas,cargas:renderCargas,nueva_carga:renderNuevaCarga,cobranza:renderCobranza,cashflow:renderCashFlow,liberaciones:renderLiberaciones,pagares:renderPagares,log:renderLog,config:renderConfig}[v]||renderAlertas)();}
+function renderView(v){
+  ({alertas:renderAlertas,cargas:renderCargas,nueva_carga:renderNuevaCarga,cobranza:renderCobranza,cashflow:renderCashFlow,liberaciones:renderLiberaciones,pagares:renderPagares,log:renderLog,config:renderConfig}[v]||renderAlertas)();
+  mostrarAvisoColumnas();
+}
+
+// Nombres legibles de cada columna, para el cartel de aviso
+const COL_LABELS = {
+  NEGOCIO:'Negocio', TNS:'Tns', PRODUCT:'Product', PACKING:'Packing', LOTS:'Lots',
+  CONTAINERS:'Containers', BOOKING:'Booking', BL:'BL', SHIPPING:'Shipping Line',
+  VESSEL:'Vessel', CONSOLIDACION:'Consolidacion', ETD:'ETD', ETA:'ETA', PORT:'Port',
+  DOCUMENTOS:'DOCUMENTOS', LOMBARD:'ENVIO A LOMBARD / ENVIO A BUZARAM',
+  CLIENTE_ENV:'ENVIO AL CLIENTE', TELEX:'TELEX', EXPORTER:'Exporter',
+  INVOICE_PROVEEDOR:'Invoice Proveedor', CONTRACT_PROVEEDOR:'Contract Proveedor',
+  PRICE_FCA:'Price FCA', TOTAL_FCA:'Total FCA / Total Proveedor', CUSTOMER:'Customer',
+  INVOICE_CLIENTE:'Invoice Cliente', CONTRACT_CLIENTE:'Contract Cliente',
+  PRICE_CLIENTE:'Price Cliente / Price CFR', FLETE:'Flete',
+  TOTAL_CFR_ORIG:'Total CFR (total FC1)', INCOTERM:'INCOTERM',
+  INVOICE_FC_SERV:'Invoice Serv', PRICE_SERV:'Price serv (total FC2)',
+  TOTAL_CFR:'TOTAL FINAL / VALOR TOTAL', PRECIO_FINAL_TN:'Precio final x tn',
+  COMISION_BROKER:'Comision Broker', FC_FLETE:'FC Flete', FC_COURIER:'FC Courier',
+  PROVEEDOR_FLETE:'proveedor', MONTO_FLETE:'importe usd/fcl', MONTO_COURIER:'courier',
+  TOTAL_PAGO:'total flete', FECHA_PAGO_FWD:'fecha pago ESTIMADO',
+  FECHA_PAGO_FWD_REAL:'Fecha de pago real', PAGARE_ENVIADO:'Enviado',
+  PAGARE_FIRMADO:'Firmado', FECHA_EST_COBRO:'Fecha estimada',
+  FECHA_COBRO:'Fecha de cobro / Cobranza CLIENTE', FECHA_LT:'Fecha LT',
+  NUM_FC_LT:'N. de Fc LT', MONTO_LT:'Monto LT', FECHA_PAGO_LT:'Fecha pago LT',
+  DIAS_PAGAR_LT:'Dias p/ pagar LT', C_NUTRIN:'C -NUTRIN', OV:'OV BZ',
+  FEC_FACT_PLANTA:'Fecha factura Planta - Buzaram',
+  FEC_FACT_CLIENTE:'Fecha factura Buzaram - Cliente',
+  FEC_PAGO_EFECTIVO:'Fecha efectiva del pago Cliente - Buzaram'
+};
+
+let _avisoColsCerrado = false;
+function cerrarAvisoColumnas(){
+  _avisoColsCerrado = true;
+  const el = document.getElementById('aviso-columnas');
+  if(el) el.remove();
+}
+
+// Cartel de aviso: lista las columnas que NO se encontraron por nombre de encabezado
+// y quedaron leyendo una posicion fija. Si aparece, es que alguien renombro o movio
+// un encabezado en la fila 2 de la planilla.
+function mostrarAvisoColumnas(){
+  if(_avisoColsCerrado) return;
+  const faltan = window._COLMAP_SIN_NOMBRE || [];
+  if(!faltan.length) return;
+  const cont = document.getElementById('content');
+  if(!cont || document.getElementById('aviso-columnas')) return;
+  const nc = getNegocioConfig();
+  const items = faltan.map(k => {
+    const nombre = COL_LABELS[k] || k;
+    const idx = (window._COLMAP && window._COLMAP[k] !== undefined) ? window._COLMAP[k] : '?';
+    return '<li style="margin-bottom:2px;"><b>' + nombre + '</b> <span style="color:var(--text3);font-family:var(--mono);font-size:10px;">(' + k + ' &rarr; col ' + colIndexToLetter(idx) + ')</span></li>';
+  }).join('');
+  const div = document.createElement('div');
+  div.id = 'aviso-columnas';
+  div.style.cssText = 'background:var(--warn-light);border:1px solid rgba(255,149,0,.35);border-left:3px solid var(--warn);border-radius:var(--radius-lg);padding:12px 16px;margin-bottom:16px;';
+  div.innerHTML =
+    '<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;">' +
+      '<div style="flex:1;min-width:0;">' +
+        '<div style="font-size:12px;font-weight:600;color:#b06a00;margin-bottom:4px;">' +
+          'Hay ' + faltan.length + ' columna' + (faltan.length>1?'s':'') + ' que no se encontr' + (faltan.length>1?'aron':'o') + ' por nombre en ' + nc.label +
+        '</div>' +
+        '<div style="font-size:11px;color:var(--text2);margin-bottom:6px;">' +
+          'El hub las esta leyendo por posicion fija, asi que los datos pueden estar corridos. ' +
+          'Revisa el encabezado en la fila 2 de la planilla.' +
+        '</div>' +
+        '<ul style="font-size:11px;color:var(--text2);margin:0;padding-left:18px;">' + items + '</ul>' +
+      '</div>' +
+      '<button onclick="cerrarAvisoColumnas()" style="flex-shrink:0;background:transparent;border:none;color:var(--text3);font-size:16px;cursor:pointer;line-height:1;padding:0 2px;" title="Ocultar hasta el proximo refresh">&times;</button>' +
+    '</div>';
+  cont.insertBefore(div, cont.firstChild);
+}
 
 function renderAlertas(){
   const alerts=getAlerts();
@@ -2109,7 +2180,7 @@ function renderCargas(showAll, sort){
 
     </div>
   <button id="fc-bulk-bar" onclick="requestBulkFC()" style="display:none;position:sticky;bottom:20px;left:50%;transform:translateX(-50%);background:var(--accent);color:#fff;padding:10px 24px;border-radius:30px;font-weight:600;font-size:13px;cursor:pointer;z-index:20;box-shadow:var(--shadow-lg);border:none;font-family:var(--font);"></button>
-    <div style="overflow-x:auto;">
+    <div style="overflow-x:auto;${isMobile()?'display:none;':''}">
     <table class="sticky-table">
       <thead><tr>
         <th style="width:30px"></th>
@@ -2126,12 +2197,16 @@ function renderCargas(showAll, sort){
 
   // Mobile: show cards instead of table
   if(isMobile()){
-    const mobileHtml = html + '<div style="overflow-x:visible;">' + renderCargasMobileCards(rows, pagedRows) + '</div>' +
+    // Cerrar bien tbody/table/wrapper antes de las cards: si no, quedaba una tabla
+    // abierta y el navegador acomodaba las cards adentro del <tbody>.
+    const mobileHtml = html + '</tbody></table></div>' +
+      '<div style="overflow-x:visible;padding:12px 0;">' + renderCargasMobileCards(rows, pagedRows) + '</div>' +
       buildPagination(totalRows, cargasPage, 'setCargasPage') + '</div>';
     document.getElementById('content').innerHTML = mobileHtml;
     return;
   }
 
+  const ncC = getNegocioConfig();
   pagedRows.forEach((row, localIdx) => {
     const idx = allRows.indexOf(row);
     const pagEnv = (row[COL.PAGARE_ENVIADO]||'').trim().toUpperCase();
@@ -2148,17 +2223,20 @@ function renderCargas(showAll, sort){
     const telex = (row[COL.TELEX]||'').trim();
     const telexOk = telex.toUpperCase() === 'SI';
 
-    // FC columns
+    // FC columns - cada total sale de SU columna, resueltas por nombre de encabezado:
+    //   FC1   = "Total CFR"
+    //   FC2   = "Price serv"  (solo si hay Invoice Serv cargada)
+    //   Total = "TOTAL FINAL" (AXT) / "VALOR TOTAL" (Buzaram), que ya viene sumado.
+    // Antes las tres leian la misma celda y el Total salia al doble.
     const inv1 = (row[COL.INVOICE_CLIENTE]||'').trim();
-    const total1Raw = parseSheetNum(row[32]); // AG=32 Valor Total
-    const total1 = isNaN(total1Raw) ? '' : total1Raw.toLocaleString('es-AR',{maximumFractionDigits:0});
     const inv2raw2 = (row[COL.INVOICE_FC_SERV]||'').trim();
     const inv2 = (inv2raw2==='-'||inv2raw2==='--')?'':inv2raw2;
-    const total2Raw = inv2?parseSheetNum(row[32]):NaN; // AG=32 FC2 total, skip if no inv2
+    const total1Raw = parseSheetNum(row[ncC.COL_TOTAL_FC1]);
+    const total1 = isNaN(total1Raw) ? '' : total1Raw.toLocaleString('es-AR',{maximumFractionDigits:0});
+    const total2Raw = inv2 ? parseSheetNum(row[ncC.COL_TOTAL_FC2]) : NaN;
     const total2 = isNaN(total2Raw) ? '' : total2Raw.toLocaleString('es-AR',{maximumFractionDigits:0});
-    const totalCarga = (!isNaN(total1Raw) || !isNaN(total2Raw))
-      ? ((isNaN(total1Raw)?0:total1Raw) + (isNaN(total2Raw)?0:total2Raw)).toLocaleString('es-AR',{maximumFractionDigits:0})
-      : '—';
+    const totalCargaRaw = totalCargaDe(row, total1Raw, total2Raw);
+    const totalCarga = isNaN(totalCargaRaw) ? '—' : totalCargaRaw.toLocaleString('es-AR',{maximumFractionDigits:0});
 
     html += `<tr id="fc-tr-${localIdx}" style="cursor:pointer" onclick="toggleFCSelection(${localIdx})">
       <td onclick="event.stopPropagation()"><input type="checkbox" id="fc-cb-${localIdx}" onclick="toggleFCSelection(${localIdx})" style="accent-color:var(--accent);cursor:pointer;"></td>
@@ -2438,7 +2516,7 @@ function buildCargaForm(prefix, d={}, fullEdit=false){
     ${smartField(prefix,'customer','Customer *',d.customer||'','ej: IDI', COL.CUSTOMER)}
     ${smartField(prefix,'product','Product *',d.product||'','ej: Blanched peanuts 38/42', COL.PRODUCT)}
     ${field('tns','Tns',d.tns||'','text','ej: 22,32')}
-    ${smartField(prefix,'packing','Packing',d.packing||'','ej: big bags', 3)}
+    ${smartField(prefix,'packing','Packing',d.packing||'','ej: big bags', COL.PACKING)}
     ${field('lots','Lots',d.lots||'','text','ej: BL38-250022-AP')}
     ${field('pricefob','Precio FOB',d.pricefob||'','text','ej: 1180')}
     ${field('containers','Containers',d.containers||'','text','ej: FFAU3862300')}
@@ -2461,21 +2539,21 @@ function buildCargaForm(prefix, d={}, fullEdit=false){
     ${field('clienteEnv','Envío al Cliente',d.clienteEnv||'','text','ej: SI')}
     ${field('telex','TELEX',d.telex||'','text','ej: solicitado, falta ok')}
     ${section('FC Lombard')}
-    ${field('invoiceCliente','Invoice Cliente (Y)',d.invoiceCliente||'','text','ej: 13117')}
-    ${field('contractCliente','Contract Cliente (Z)',d.contractCliente||'','text','')}
-    ${field('priceCFR','Price CFR (AA)',d.priceCFR||'','text','ej: 1130')}
-    ${field('flete','Flete (AB)',d.flete||'','text','ej: 270')}
-    ${field('totalCFR','Total CFR (AC)',d.totalCFR||'','text','ej: 30800')}
-    ${field('incoterm','INCOTERM (AD)',d.incoterm||'','text','ej: CFR Norfolk')}
+    ${field('invoiceCliente','Invoice Cliente',d.invoiceCliente||'','text','ej: 13117')}
+    ${field('contractCliente','Contract Cliente',d.contractCliente||'','text','')}
+    ${field('priceCFR','Price CFR',d.priceCFR||'','text','ej: 1130')}
+    ${field('flete','Flete',d.flete||'','text','ej: 270')}
+    ${field('totalCFR','Total CFR',d.totalCFR||'','text','ej: 30800')}
+    ${field('incoterm','INCOTERM',d.incoterm||'','text','ej: CFR Norfolk')}
     ${section('FC Servicios')}
-    ${field('invoiceFCServ','Invoice FC Servicios (AE)',d.invoiceFCServ||'','text','ej: 13118')}
-    ${field('priceFCServ','Price FC Servicios (AF)',d.priceFCServ||'','text','ej: 13200')}
+    ${field('invoiceFCServ','Invoice Serv',d.invoiceFCServ||'','text','ej: 13118')}
+    ${field('priceFCServ','Price Serv',d.priceFCServ||'','text','ej: 13200')}
     ${section('Pagaré')}
-    ${field('pagareEnviado','Enviado (AT)',d.pagareEnviado||'','text','ej: SI')}
-    ${field('pagareFirmado','Firmado (AU)',d.pagareFirmado||'','text','ej: SI')}
+    ${field('pagareEnviado','Pagare enviado',d.pagareEnviado||'','text','ej: SI')}
+    ${field('pagareFirmado','Pagare firmado',d.pagareFirmado||'','text','ej: SI')}
     ${section('Cobranza')}
-    ${dateField(prefix,'fechaEstCobro','Fecha Est. Cobro (AV)',d.fechaEstCobro||'')}
-    ${dateField(prefix,'fechaCobro','Fecha de Cobro (AW)',d.fechaCobro||'')}`;
+    ${dateField(prefix,'fechaEstCobro','Fecha estimada de cobro',d.fechaEstCobro||'')}
+    ${dateField(prefix,'fechaCobro','Fecha de cobro real',d.fechaCobro||'')}`;
 
   return `<div style="display:grid;grid-template-columns:1fr 1fr;gap:0 16px;">${basicFields}${extraFields}</div>`;
 }
@@ -2504,39 +2582,43 @@ function renderEditCarga(rowIdx){
   if(!accessToken){ alert('Conectate con Google primero.'); return; }
   const row = allRows[rowIdx];
   if(!row) return;
+  // Todo por COL.* : si se mueve una columna en la planilla, el form la sigue.
+  // Antes estaba con indices fijos y leia pagares y fechas de cobro de la columna
+  // equivocada desde que la planilla AXT se corrio 3 posiciones.
+  const g = (k) => { const i = COL[k]; return (i !== undefined && i >= 0) ? (row[i]||'') : ''; };
   const d = {
-    negocio:    row[0]||'',
-    tns:        row[1]||'',
-    product:    row[2]||'',
-    packing:    row[3]||'',
-    lots:       row[4]||'',
-    containers: row[5]||'',
-    booking:    row[6]||'',
-    bl:         row[7]||'',
-    shipping:   row[8]||'',
-    vessel:     row[9]||'',
-    consol:     row[10]||'',
-    etd:        row[11]||'',
-    eta:        row[12]||'',
-    port:       row[13]||'',
-    documentos: row[14]||'',
-    lombard:    row[15]||'',
-    clienteEnv: row[16]||'',
-    telex:      row[17]||'',
-    exporter:   row[18]||'',
-    invoiceCliente:   row[24]||'',
-    contractCliente:  row[25]||'',
-    priceCFR:         row[26]||'',
-    flete:            row[27]||'',
-    totalCFR:         row[28]||'',
-    incoterm:         row[29]||'',
-    invoiceFCServ:    row[30]||'',
-    priceFCServ:      row[31]||'',
-    customer:         row[23]||'',
-    pagareEnviado:    row[45]||'',
-    pagareFirmado:    row[46]||'',
-    fechaEstCobro:    row[47]||'',
-    fechaCobro:       row[48]||'',
+    negocio:    g('NEGOCIO'),
+    tns:        g('TNS'),
+    product:    g('PRODUCT'),
+    packing:    g('PACKING'),
+    lots:       g('LOTS'),
+    containers: g('CONTAINERS'),
+    booking:    g('BOOKING'),
+    bl:         g('BL'),
+    shipping:   g('SHIPPING'),
+    vessel:     g('VESSEL'),
+    consol:     g('CONSOLIDACION'),
+    etd:        g('ETD'),
+    eta:        g('ETA'),
+    port:       g('PORT'),
+    documentos: g('DOCUMENTOS'),
+    lombard:    g('LOMBARD'),
+    clienteEnv: g('CLIENTE_ENV'),
+    telex:      g('TELEX'),
+    exporter:   g('EXPORTER'),
+    invoiceCliente:   g('INVOICE_CLIENTE'),
+    contractCliente:  g('CONTRACT_CLIENTE'),
+    priceCFR:         g('PRICE_CLIENTE'),
+    flete:            g('FLETE'),
+    totalCFR:         g('TOTAL_CFR_ORIG'),
+    incoterm:         g('INCOTERM'),
+    invoiceFCServ:    g('INVOICE_FC_SERV'),
+    priceFCServ:      g('PRICE_SERV'),
+    customer:         g('CUSTOMER'),
+    pagareEnviado:    g('PAGARE_ENVIADO'),
+    pagareFirmado:    g('PAGARE_FIRMADO'),
+    fechaEstCobro:    g('FECHA_EST_COBRO'),
+    fechaCobro:       g('FECHA_COBRO'),
   };
   document.getElementById('content').innerHTML=`
   <div class="config-section" style="max-width:100%;">
@@ -2564,7 +2646,7 @@ async function solicitarLiberacionViaAppScript(rowIdx){
   if(ok){
     const inv1=(row[COL.INVOICE_CLIENTE]||'').trim();
     const inv2=(row[COL.INVOICE_FC_SERV]||'').trim();
-    await appendLog({fuente:'AXT',fc:inv1||'',fcServ:inv2||'',bl,customer,accion:'solicitar liberacion',detalle:'Via AppScript - fila '+sheetRow});
+    await appendLog({fc:inv1||'',fcServ:inv2||'',bl,customer,accion:'solicitar liberacion',detalle:'Via AppScript - fila '+sheetRow});
     await loadLog();
     await loadData();
   }
@@ -2587,7 +2669,7 @@ async function solicitarLiberacionBulkViaAppScript(rowIndices){
       const bl=(row[COL.BL]||'').trim();
       const inv1=(row[COL.INVOICE_CLIENTE]||'').trim();
       const inv2=(row[COL.INVOICE_FC_SERV]||'').trim();
-      await appendLog({fuente:'AXT',fc:inv1||'',fcServ:inv2||'',bl,customer:(row[COL.CUSTOMER]||'').trim(),accion:'solicitar liberacion (bulk)',detalle:'Via AppScript - filas '+minRow+'-'+maxRow});
+      await appendLog({fc:inv1||'',fcServ:inv2||'',bl,customer:(row[COL.CUSTOMER]||'').trim(),accion:'solicitar liberacion (bulk)',detalle:'Via AppScript - filas '+minRow+'-'+maxRow});
     }
     await loadLog();
     await loadData();
@@ -2606,7 +2688,7 @@ async function marcarPedroOkBulk(rowIndices){
   for(const rowIdx of rowIndices){
     const row=allRows[rowIdx];if(!row)continue;
     await writeCell(rowIdx,COL.TELEX,'recibir');
-    await appendLog({fuente:label,fc:(row[COL.INVOICE_CLIENTE]||'').trim(),fcServ:'',bl:(row[COL.BL]||'').trim(),customer:(row[COL.CUSTOMER]||'').trim(),accion:'ok liberacion - a recibir',detalle:''});
+    await appendLog({fc:(row[COL.INVOICE_CLIENTE]||'').trim(),fcServ:'',bl:(row[COL.BL]||'').trim(),customer:(row[COL.CUSTOMER]||'').trim(),accion:'ok liberacion - a recibir',detalle:''});
   }
   showToast('✓ '+n+' carga'+(n>1?'s':'')+' actualizadas');
   await loadLog();await loadData();
@@ -2622,7 +2704,7 @@ async function marcarLiberadoBulk(rowIndices){
   for(const rowIdx of rowIndices){
     const row=allRows[rowIdx];if(!row)continue;
     await writeCell(rowIdx,COL.TELEX,'SI');
-    await appendLog({fuente:label,fc:(row[COL.INVOICE_CLIENTE]||'').trim(),fcServ:'',bl:(row[COL.BL]||'').trim(),customer:(row[COL.CUSTOMER]||'').trim(),accion:'liberacion recibida',detalle:''});
+    await appendLog({fc:(row[COL.INVOICE_CLIENTE]||'').trim(),fcServ:'',bl:(row[COL.BL]||'').trim(),customer:(row[COL.CUSTOMER]||'').trim(),accion:'liberacion recibida',detalle:''});
   }
   showToast('✓ '+n+' carga'+(n>1?'s':'')+' liberadas');
   await loadLog();await loadData();
@@ -2774,7 +2856,7 @@ function openArchiveModal(rowIdx){
     archivedBLs.push(bl);
     saveArchivedBLs();
     await appendLog({
-      fuente:'AXT', fc:inv1||'', fcServ:'', bl, customer,
+      fc:inv1||'', fcServ:'', bl, customer,
       accion:'cobro archivado',
       detalle: comentario
     });
@@ -2812,7 +2894,7 @@ function renderCobranzaMobile(rows){
     const inv1 = (row[COL.INVOICE_CLIENTE]||'').trim();
     const inv2r = (row[COL.INVOICE_FC_SERV]||'').trim();
     const inv2 = (inv2r==='-'||inv2r==='--')?'':inv2r;
-    const total = parseSheetNum(row[32]);
+    const total = totalCargaDe(row);
     const due = fmtDate(getCobroFecha(row));
     const dLabel = d===null?'—':d<=0?`Venc. ${Math.abs(d)}d`:`${d}d`;
     const recInfo = getReclamoInfoFromLog(row[COL.BL]||'','reclamo cobro');
@@ -2918,7 +3000,7 @@ function renderCobranza(filterKey, filterVal){
   });
 
   let totalUSD = 0;
-  rows.forEach(r => { const m=parseSheetNum(r[32]); if(!isNaN(m)) totalUSD+=m; });
+  rows.forEach(r => { const m=totalCargaDe(r); if(!isNaN(m)) totalUSD+=m; });
 
   const uniqueClientes = [...new Set(allCobRows.map(r=>(r[COL.CUSTOMER]||'').trim()).filter(Boolean))].sort();
 
@@ -2953,7 +3035,7 @@ function renderCobranza(filterKey, filterVal){
       </div>
     </div>
     <button id="cob-bulk-bar" onclick="requestBulkReclamo()" style="display:none;position:sticky;bottom:20px;left:50%;transform:translateX(-50%);background:var(--accent);color:#fff;padding:10px 24px;border-radius:30px;font-weight:600;font-size:13px;cursor:pointer;z-index:20;box-shadow:var(--shadow-lg);border:none;font-family:var(--font);"></button>
-    <div style="overflow-x:auto;"><table>
+    <div style="overflow-x:auto;${isMobile()?'display:none;':''}"><table>
     <thead><tr><th style="width:30px"></th><th>Customer</th><th>BL</th><th>Invoice</th><th>Total</th><th onclick="renderCobranza('sort',cobranzaFilters.sort==='due_asc'?'due_desc':'due_asc')" style="cursor:pointer;user-select:none;">Vencimiento ${cobranzaFilters.sort==='due_asc'?'↑':cobranzaFilters.sort==='due_desc'?'↓':'↕'}</th><th>Días</th><th>Reclamos</th><th>Contacto</th><th></th><th></th></tr></thead>
     <tbody>`;
 
@@ -2988,8 +3070,8 @@ function renderCobranza(filterKey, filterVal){
     const customer=(row[COL.CUSTOMER]||'--').trim();
     const contactInfo=getContactsForEmpresa(customer);
     const contactDisplay=contactInfo.to?contactInfo.to.split('<')[0].trim():'--';
-    const total=parseSheetNum(row[32]);
-    const totalDisplay=isNaN(total)?row[COL.TOTAL_CFR]||'--':'USD '+total.toLocaleString('es-AR',{maximumFractionDigits:0});
+    const total=totalCargaDe(row);
+    const totalDisplay=isNaN(total)?'--':'USD '+total.toLocaleString('es-AR',{maximumFractionDigits:0});
     const dLabel=d===null?'--':d<=0?`Vencido ${Math.abs(d)}d`:`${d}d`;
 
     html+=`<tr id="cob-tr-${localIdx}" style="cursor:pointer" onclick="toggleCobSelection(${localIdx})">
@@ -3010,7 +3092,7 @@ function renderCobranza(filterKey, filterVal){
   if(!rows.length) html += `<tr><td colspan="11"><div class="empty" style="padding:30px;">Sin cobros en este rango.</div></td></tr>`;
   if(isMobile()){
     const mobileCards = renderCobranzaMobile(rows);
-    html += `<div style="padding:12px 0;">${mobileCards}</div></div>`;
+    html += `</tbody></table></div><div style="padding:12px 0;">${mobileCards}</div></div>`;
   } else {
     html += `</tbody></table></div></div>`;
   }
@@ -3087,6 +3169,8 @@ function renderPagares(){
   document.getElementById('content').innerHTML=html;
 }
 
+let logVerTodos = false;
+
 async function renderLog(){
   if(!accessToken){
     document.getElementById('content').innerHTML=`<div class="empty"><div class="empty-icon">📋</div><div style="margin-bottom:16px;">Conectate con Google para ver el log de acciones.</div><button class="btn primary" onclick="handleAuth()">Conectar con Google</button></div>`;
@@ -3103,30 +3187,57 @@ async function renderLog(){
     } else {
       url=`https://sheets.googleapis.com/v4/spreadsheets/${hubId}/values/${range}?key=${cfg.apiKey}`;
     }
-    const r=await fetch(url);
+    const r=await fetch(url, fetchOpts);
     const data=await r.json();
-    const rows=(data.values||[]).slice(1).reverse(); // Más recientes primero
-    if(!rows.length){document.getElementById('content').innerHTML=`<div class="empty"><div class="empty-icon">📋</div>Sin acciones registradas todavía.</div>`;return;}
-    let html=`<div class="table-wrap"><div class="table-top"><span style="font-size:13px;font-weight:700;">${rows.length} acciones registradas</span></div><div style="overflow-x:auto;"><table>
+    const todas=(data.values||[]).slice(1).reverse(); // Más recientes primero
+
+    // El LOG es una sola hoja compartida por los dos negocios. Por defecto mostramos
+    // solo el negocio activo; el chip "Ver todos" muestra el historial completo.
+    const fuenteActiva=getLogFuente();
+    const propias=todas.filter(row=>normalizarFuente(row[2])===fuenteActiva);
+    const rows=logVerTodos?todas:propias;
+    const nc=getNegocioConfig();
+
+    const chip=(label,activo,onclick)=>`<span onclick="${onclick}" style="font-size:11px;font-family:var(--mono);padding:5px 12px;border-radius:20px;border:1px solid ${activo?'var(--accent)':'var(--border2)'};cursor:pointer;background:${activo?'var(--accent)':'var(--bg2)'};color:${activo?'#fff':'var(--text3)'};transition:all .15s;white-space:nowrap;">${label}</span>`;
+    const filtros=`<div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;">
+      ${chip('Solo '+nc.label+' ('+propias.length+')', !logVerTodos, "logVerTodos=false;renderLog();")}
+      ${chip('Ver todos ('+todas.length+')', logVerTodos, "logVerTodos=true;renderLog();")}
+    </div>`;
+
+    if(!rows.length){
+      document.getElementById('content').innerHTML=`<div class="table-wrap"><div class="table-top">${filtros}</div><div class="empty"><div class="empty-icon">📋</div>Sin acciones registradas para ${nc.label} todavía.</div></div>`;
+      mostrarAvisoColumnas();
+      return;
+    }
+
+    let html=`<div class="table-wrap"><div class="table-top" style="flex-direction:column;align-items:flex-start;gap:10px;padding:14px 16px;">
+      <div style="display:flex;align-items:center;justify-content:space-between;width:100%;flex-wrap:wrap;gap:8px;">
+        <span style="font-size:13px;font-weight:600;color:var(--text);">${rows.length} ${rows.length===1?'acción':'acciones'} ${logVerTodos?'(los dos negocios)':'de '+nc.label}</span>
+        ${filtros}
+      </div>
+    </div><div style="overflow-x:auto;"><table>
       <thead><tr><th>Fecha</th><th>Hora</th><th>Fuente</th><th>FC</th><th>FC Servicios</th><th>BL</th><th>Customer</th><th>Acción</th><th>Detalle</th></tr></thead><tbody>`;
     rows.forEach(row=>{
       const accion=(row[7]||'').trim();
-      const color=accion.includes('reclamo')||accion.includes('cobro')?'var(--warn)':accion.includes('liberac')?'var(--info)':'var(--muted2)';
+      const color=accion.includes('reclamo')||accion.includes('cobro')?'var(--warn)':accion.includes('liberac')?'var(--info)':'var(--text3)';
+      const fuente=normalizarFuente(row[2]);
+      const esBuz=fuente==='BUZARAM';
       html+=`<tr>
         <td class="mono">${row[0]||'—'}</td>
         <td class="mono">${row[1]||'—'}</td>
-        <td><span style="color:var(--accent);font-size:10px;font-family:var(--mono)">${row[2]||'AXT'}</span></td>
+        <td><span style="font-size:10px;font-family:var(--mono);font-weight:600;padding:1px 7px;border-radius:20px;background:${esBuz?'rgba(249,115,22,.12)':'var(--accent-light)'};color:${esBuz?'#c2410c':'var(--accent)'};">${fuente}</span></td>
         <td class="mono">${row[3]||'—'}</td>
         <td class="mono">${row[4]||'—'}</td>
         <td class="mono">${(row[5]||'—').substring(0,20)}</td>
         <td>${row[6]||'—'}</td>
         <td><span style="color:${color};font-size:11px;font-weight:600">${accion||'—'}</span></td>
-        <td style="color:var(--muted2);font-size:11px">${row[8]||'—'}</td>
+        <td style="color:var(--text3);font-size:11px">${row[8]||'—'}</td>
       </tr>`;
     });
     html+=`</tbody></table></div></div>`;
     document.getElementById('content').innerHTML=html;
-  }catch(e){document.getElementById('content').innerHTML=`<div class="empty"><div class="empty-icon">⚠</div>Error al cargar el log.</div>`;}
+    mostrarAvisoColumnas();
+  }catch(e){document.getElementById('content').innerHTML=`<div class="empty"><div class="empty-icon">⚠</div>Error al cargar el log.</div>`;console.error(e);}
 }
 
 function renderConfig(){
@@ -3383,7 +3494,6 @@ async function sendDraft(){
       const writeOk=await writeCell(ri, COL.TELEX, 'solicitado, falta ok');
       console.log('writeCell row',ri,'col',COL.TELEX,'result:',writeOk);
       await appendLog({
-        fuente:'AXT',
         fc: inv1||'',
         fcServ: inv2||'',
         bl,
@@ -3401,7 +3511,6 @@ async function sendDraft(){
       if(ok) showToast('✓ TELEX actualizado en planilla');
     }
     await appendLog({
-      fuente:'AXT',
       fc: d.inv1||d.negocio,
       fcServ: d.inv2||'',
       bl: d.bl,
@@ -3582,7 +3691,7 @@ function buildContext(){
     docs: r[COL.DOCUMENTOS]||'',
     inv1: r[COL.INVOICE_CLIENTE]||'',
     inv2: r[COL.INVOICE_FC_SERV]||'',
-    total: r[32]||''
+    total: totalCargaDe(r)||''
   }));
 
   return `Sos el asistente operativo de LATINUT S.A., una empresa de trading de commodities agrícolas.
@@ -3854,11 +3963,13 @@ function triggerImportPlanilla(){
               } else if(inp2){ inp2.value = extraidos.customer; }
             }
             const completados = Object.entries(extraidos).filter(([k,v])=>v!==null).map(([k])=>k).join(', ');
-            showToast('✓ IA completó: ' + (completados||'sin datos nuevos'), 'ok');
-            showToast('✓ Planilla importada — mail encontrado pero sin datos adicionales');
+            if(completados) showToast('✓ IA completó: ' + completados, 'ok');
+            else showToast('✓ Planilla importada — mail encontrado pero sin datos adicionales', 'info');
+          } else {
+            showToast('✓ Planilla importada — no se pudieron extraer datos del mail', 'info');
           }
         } else {
-          showToast('✓ Planilla importada — no se encontró mail con ese adjunto');
+          showToast('✓ Planilla importada — no se encontró mail con ese adjunto', 'info');
         }
       }
     } catch(err){
@@ -3938,7 +4049,7 @@ async function quickAction(rowIdx, field, value, label, btnId){
     const bl = (row[COL.BL]||'').trim();
     const customer = (row[COL.CUSTOMER]||'').trim();
     await appendLog({
-      fuente:'AXT', fc:(row[COL.INVOICE_CLIENTE]||'').trim(), fcServ:'',
+      fc:(row[COL.INVOICE_CLIENTE]||'').trim(), fcServ:'',
       bl, customer, accion:`accion rapida: ${label}`,
       detalle:`${field} = ${value}`
     });
@@ -4054,7 +4165,7 @@ function renderCargasMobileCards(rows, pagedRows){
     const pagFirm = (row[COL.PAGARE_FIRMADO]||'').trim().toUpperCase();
     const pagNA = pagEnv==='-'||pagFirm==='-'||getNegocioConfig().sinPagares;
     const docs = (row[COL.DOCUMENTOS]||'').trim();
-    const total = parseSheetNum(row[32]);
+    const total = totalCargaDe(row);
     const dColor = dc==='red'?'var(--danger)':dc==='warn'?'var(--warn)':'var(--ok)';
 
     // Status badges
@@ -4276,7 +4387,7 @@ function renderCashFlow(){
       const customer = (row[COL.CUSTOMER]||'—').trim();
       const bl       = (row[COL.BL]||'').trim();
       const negocio  = (row[COL.NEGOCIO]||'').trim();
-      const invoice  = (row[24]||'').trim();
+      const invoice  = (row[COL.INVOICE_CLIENTE]||'').trim();
       const fechaPagoEst  = (row[nc.PAGO_FECHA]||'').trim();
       const fechaPagoReal = (row[nc.PAGO_FECHA_REAL]||'').trim();
       const totalPago = parseSheetNum(row[nc.PAGO_TOTAL]);
@@ -6154,9 +6265,7 @@ async function driveOpenFolder(rowIdx){
   try {
     const folder = await driveGetFolderForRow(row);
     window.open(folder.url, '_blank');
-    const nc3 = getNegocioConfig();
     await appendLog({
-      fuente: nc3.label,
       fc: (row[COL.INVOICE_CLIENTE]||'').trim(),
       fcServ: '',
       bl: (row[COL.BL]||'').trim(),
@@ -6183,7 +6292,7 @@ async function driveUploadForRow(rowIdx, files){
       if(result.id) ok++;
     }
     showToast(`✓ ${ok} archivo${ok>1?'s':''} subido${ok>1?'s':''} al Drive`, 'ok');
-    const nc2 = getNegocioConfig(); await appendLog({fuente:nc2.label, fc:(row[COL.INVOICE_CLIENTE]||'').trim(), fcServ:(row[COL.INVOICE_FC_SERV]||'').trim(), bl:(row[COL.BL]||'').trim(), customer:(row[COL.CUSTOMER]||'').trim(), accion:'subida drive', detalle:ok+' archivo(s): '+Array.from(files).map(f=>f.name).join(', ')});
+    await appendLog({fc:(row[COL.INVOICE_CLIENTE]||'').trim(), fcServ:(row[COL.INVOICE_FC_SERV]||'').trim(), bl:(row[COL.BL]||'').trim(), customer:(row[COL.CUSTOMER]||'').trim(), accion:'subida drive', detalle:ok+' archivo(s): '+Array.from(files).map(f=>f.name).join(', ')});
   } catch(e) {
     showToast('Error al subir: ' + e.message, 'err');
   }
