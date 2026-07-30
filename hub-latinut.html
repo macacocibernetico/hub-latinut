@@ -449,7 +449,7 @@ button{font-family:var(--font);cursor:pointer;border:none;background:none;}
 .cf-chip.cobro-vencido{background:#e8f5e9;color:#2e7d32;border:1px solid #c8e6c9;}
 .cf-chip.cobro-warn{background:#e8f5e9;color:#2e7d32;border:1px solid #c8e6c9;}
 .cf-chip.pago{background:#ffebee;color:#c62828;border:1px solid #ffcdd2;}
-.cf-chip.pago-ok{background:#4a0010;color:#f8bbd0;border:1px solid #880e4f;text-decoration:line-through;opacity:.85;}
+.cf-chip.pago-ok{background:#eceff1;color:#546e7a;border:1px solid #cfd8dc;text-decoration:line-through;opacity:.9;}
 .cf-more{font-size:11px;color:var(--accent);font-family:var(--mono);margin-top:3px;font-weight:600;padding-left:2px;}
 /* DAY DETAIL PANEL */
 .cf-detail-overlay{position:fixed;inset:0;background:rgba(0,0,0,.35);z-index:150;display:flex;align-items:center;justify-content:center;backdrop-filter:blur(6px);}
@@ -4242,7 +4242,22 @@ let cfYear = new Date().getFullYear();
 let cfMonth = new Date().getMonth(); // 0-based
 let cfVista = 'mes'; // 'mes' | 'semana' | 'periodo'
 let cfSemanaBase = null; // Date del lunes de la semana actual
-let cfIncluirVencidos = false; // escenario: traer vencidos al mes actual
+let cfIncluirVencidos = false; // escenario: cobrar los vencidos en el mes que se ve
+
+// A que fecha se mueven los cobros vencidos cuando el escenario esta activo.
+// - Viendo el mes en curso: HOY. Asi entran en el total parcial del mes y las
+//   bandas los cuentan como "Hoy" en vez de seguir figurando como "Vencido"
+//   (antes se movian al dia 1, que casi siempre ya paso, y no se notaba nada).
+// - Viendo un mes futuro: el dia 1 de ese mes.
+// - Viendo un mes que ya paso: null, el escenario no aplica.
+function cfDestinoVencidos(){
+  const hoy  = new Date();
+  const hoy0 = new Date(hoy.getFullYear(), hoy.getMonth(), hoy.getDate());
+  const inicio = new Date(cfYear, cfMonth, 1);
+  const fin    = new Date(cfYear, cfMonth+1, 0);
+  if(fin < hoy0) return null;
+  return hoy0 > inicio ? hoy0 : inicio;
+}
 let cfPesimista = false;       // escenario: +7 días a fechas estimadas
 let cfFiltroProductos = new Set(); // filtro de productos para consolidaciones
 let cfPeriodoStart = null; // Date inicio período seleccionado
@@ -4312,6 +4327,9 @@ function renderCashFlow(){
   const pagoMatchEstado  = e => true;
 
 
+  // Cuanto arrastro el escenario "cobrar vencidos aca", para poder decirlo en pantalla
+  const movidos = {n:0, usd:0, destino:cfDestinoVencidos()};
+
   // ── Cobros map — usar allRowsAll para incluir cargas ya cobradas ──
   const cobrosMap = {};
   // ── Pagos map ──
@@ -4330,17 +4348,27 @@ function renderCashFlow(){
       const cobrado = fechaCobroReal !== ''; // cobrada si hay fecha en cobro real
       // Si ya cobrado usar fecha real, si no usar fecha estimada
       let fechaBase = cobrado ? fechaCobroReal : row[getCobroCol()];
-      let d = parseDate(fechaBase);
+      const dOriginal = parseDate(fechaBase);
+      let d = dOriginal;
+      let movidoPesimista = false, movidoVencido = false;
       if(!d) { /* sin fecha, ignorar */ }
       else {
-        // Escenario pesimista: +7 días a pendientes
-        if(cfPesimista && !cobrado){
-          d = new Date(d.getTime() + 7*86400000);
-        }
-        // Escenario incluir vencidos: traer al 1ro del mes actual si ya venció
-        const mesActualStart = new Date(cfYear, cfMonth, 1);
-        if(cfIncluirVencidos && !cobrado && d < mesActualStart){
-          d = mesActualStart;
+        if(!cobrado){
+          // Escenario pesimista: +7 dias a lo que todavia no se cobro
+          if(cfPesimista){
+            d = new Date(d.getTime() + 7*86400000);
+            movidoPesimista = true;
+          }
+          // Escenario "cobrar vencidos aca": lo que vencio antes del mes que se
+          // esta viendo se recalcula como si se cobrara en este mes.
+          const destino = cfDestinoVencidos();
+          if(cfIncluirVencidos && destino && d < destino){
+            d = destino;
+            movidoVencido = true;
+            const montoMov = parseSheetNum(row[nc.COL_TOTAL_CFR]);
+            movidos.n++;
+            if(!isNaN(montoMov)) movidos.usd += montoMov;
+          }
         }
 
         const k = dateKey(d);
@@ -4365,8 +4393,9 @@ function renderCashFlow(){
             bls: [bl], rows: [row],
             amount: isNaN(amount)?0:amount,
             date:d, rowData:row, type:'cobro',
-            fechaOriginal: parseDate(fechaBase),
-            esEscenario: (cfPesimista && !cobrado) || (cfIncluirVencidos && !cobrado && parseDate(fechaBase) < new Date(cfYear, cfMonth, 1))
+            fechaOriginal: dOriginal,
+            esEscenario: movidoPesimista || movidoVencido,
+            movidoVencido, movidoPesimista
           });
         }
       }
@@ -4448,20 +4477,36 @@ function renderCashFlow(){
     : new Date(cfYear,cfMonth,1).toLocaleDateString('es-AR',{month:'long',year:'numeric'});
   const mesLabelFull = new Date(cfYear,cfMonth,1).toLocaleDateString('es-AR',{month:'long',year:'numeric'});
 
-  let mesEntradas=0, mesSalidas=0;
-  let mesEntradasFull=0, mesSalidasFull=0;
-  Object.entries(cobrosMap).forEach(([k,evts]) => evts.filter(cobroMatchEstado).forEach(e => {
-    if(!isNaN(e.amount) && e.type==='cobro'){
-      if(e.date.getTime()>=firstOfMonth && e.date.getTime()<=lastOfMonthPartial) mesEntradas+=e.amount;
-      if(e.date.getTime()>=firstOfMonth && e.date.getTime()<=lastOfMonthFull) mesEntradasFull+=e.amount;
-    }
-  }));
-  Object.entries(pagosMap).forEach(([k,evts]) => evts.filter(pagoMatchEstado).forEach(e => {
-    if(!isNaN(e.amount)){
-      if(e.date.getTime()>=firstOfMonth && e.date.getTime()<=lastOfMonthPartial) mesSalidas+=e.amount;
-      if(e.date.getTime()>=firstOfMonth && e.date.getTime()<=lastOfMonthFull) mesSalidasFull+=e.amount;
-    }
-  }));
+  // Suma de un rango separando lo que YA se cobro/pago de lo que sigue pendiente.
+  // cobrado  = hay fecha en la columna de cobro real
+  // pendiente = todavia no entro; es proyeccion
+  const sumarRango = (desdeMs, hastaMs) => {
+    const t = {cobrado:0, aCobrar:0, pagado:0, aPagar:0, nCobrado:0, nACobrar:0, nPagado:0, nAPagar:0};
+    Object.values(cobrosMap).forEach(evts => evts.filter(cobroMatchEstado).forEach(e => {
+      if(isNaN(e.amount) || e.type!=='cobro') return;
+      const ms = e.date.getTime();
+      if(ms < desdeMs || ms > hastaMs) return;
+      if(e.cobrado){ t.cobrado += e.amount; t.nCobrado++; }
+      else { t.aCobrar += e.amount; t.nACobrar++; }
+    }));
+    Object.values(pagosMap).forEach(evts => evts.filter(pagoMatchEstado).forEach(e => {
+      if(isNaN(e.amount)) return;
+      const ms = e.date.getTime();
+      if(ms < desdeMs || ms > hastaMs) return;
+      if(e.pagado){ t.pagado += e.amount; t.nPagado++; }
+      else { t.aPagar += e.amount; t.nAPagar++; }
+    }));
+    t.entradas = t.cobrado + t.aCobrar;
+    t.salidas  = t.pagado + t.aPagar;
+    t.neto     = t.entradas - t.salidas;
+    t.netoReal = t.cobrado - t.pagado;
+    return t;
+  };
+
+  const tMes     = sumarRango(firstOfMonth, lastOfMonthPartial);
+  const tMesFull = sumarRango(firstOfMonth, lastOfMonthFull);
+  const mesEntradas = tMes.entradas, mesSalidas = tMes.salidas;
+  const mesEntradasFull = tMesFull.entradas, mesSalidasFull = tMesFull.salidas;
   window._cfMesFrom     = firstOfMonth;
   window._cfMesTo       = lastOfMonthPartial;
   window._cfMesFromFull = firstOfMonth;
@@ -4473,13 +4518,8 @@ function renderCashFlow(){
   const dayOfWeek = today.getDay(); // 0=Dom
   const semDomingo = new Date(today); semDomingo.setDate(today.getDate()-dayOfWeek); semDomingo.setHours(0,0,0,0);
   const semSabado = new Date(semDomingo); semSabado.setDate(semDomingo.getDate()+6); semSabado.setHours(23,59,59);
-  let semEntradas=0, semSalidas=0;
-  Object.entries(cobrosMap).forEach(([k,evts]) => evts.filter(cobroMatchEstado).forEach(e => {
-    if(e.date>=semDomingo && e.date<=semSabado && !isNaN(e.amount) && e.type==='cobro') semEntradas+=e.amount;
-  }));
-  Object.entries(pagosMap).forEach(([k,evts]) => evts.filter(pagoMatchEstado).forEach(e => {
-    if(e.date>=semDomingo && e.date<=semSabado && !isNaN(e.amount)) semSalidas+=e.amount;
-  }));
+  const tSem = sumarRango(semDomingo.getTime(), semSabado.getTime());
+  const semEntradas = tSem.entradas, semSalidas = tSem.salidas;
   const semBalance = semEntradas - semSalidas;
 
   const fmtUSD = n => n===0?'—':`USD ${Math.abs(n).toLocaleString('es-AR',{maximumFractionDigits:0})}`;
@@ -4538,72 +4578,58 @@ function renderCashFlow(){
   const hayVencidos = vencCobros > 0 || vencPagos > 0;
 
   // Balance cards
+  // Tarjeta de balance: separa lo efectivamente cobrado/pagado de lo que sigue
+  // pendiente, y abajo el neto total (cobrado + a cobrar - pagado - a pagar).
+  const cardBalance = (titulo, t, onclick, dashed) => {
+    const linea = (label, monto, n, color, tachado) => {
+      if(monto === 0 && !n) return '';
+      return '<div style="display:flex;justify-content:space-between;align-items:baseline;gap:8px;margin-bottom:3px;">'
+        + '<span style="font-size:10px;color:var(--text3);white-space:nowrap;">' + label
+        + (n ? ' <span style="font-family:var(--mono);opacity:.7;">(' + n + ')</span>' : '') + '</span>'
+        + '<span style="font-size:11px;font-family:var(--mono);color:' + color + ';font-weight:600;'
+        + (tachado ? 'text-decoration:line-through;opacity:.75;' : '') + '">' + fmtUSD(monto) + '</span>'
+        + '</div>';
+    };
+    const cuerpo =
+        linea('✓ Cobrado',  t.cobrado, t.nCobrado, '#2e7d32')
+      + linea('✗ A cobrar', t.aCobrar, t.nACobrar, '#e65100')
+      + linea('✓ Pagado',   t.pagado,  t.nPagado,  '#9e9e9e', true)
+      + linea('✗ A pagar',  t.aPagar,  t.nAPagar,  '#c62828');
+    const vacio = (t.cobrado+t.aCobrar+t.pagado+t.aPagar) === 0;
+    return '<div style="background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius-lg);padding:14px 16px;box-shadow:var(--shadow);cursor:pointer;' + (dashed?'border-style:dashed;':'') + '" onclick="' + onclick + '" title="Ver detalle">'
+      + '<div style="font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.5px;color:var(--text3);margin-bottom:8px;display:flex;justify-content:space-between;align-items:center;gap:6px;">'
+        + '<span style="text-transform:capitalize;">' + titulo + '</span><span style="color:var(--accent);font-size:10px;">Ver →</span>'
+      + '</div>'
+      + (vacio ? '<div style="font-size:11px;color:var(--text3);padding:6px 0 10px;">Sin movimientos</div>' : cuerpo)
+      + '<div style="border-top:1px solid var(--border);padding-top:7px;margin-top:4px;display:flex;justify-content:space-between;align-items:baseline;gap:8px;">'
+        + '<span style="font-size:11px;font-weight:600;color:var(--text);">Neto</span>'
+        + '<span style="font-size:15px;font-weight:700;font-family:var(--mono);color:' + balColor(t.neto) + ';">' + balSign(t.neto) + fmtUSD(t.neto) + '</span>'
+      + '</div>'
+      + (t.aCobrar > 0
+          ? '<div style="font-size:9px;color:var(--text3);margin-top:4px;">Real hoy: <b style="color:' + balColor(t.netoReal) + ';font-family:var(--mono);">' + balSign(t.netoReal) + fmtUSD(t.netoReal) + '</b></div>'
+          : '')
+      + '</div>';
+  };
+
   const balanceHtml = cfMode==='cobros' ? `
   <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:20px;">
-    <div style="background:var(--bg2);border:1px solid ${hayVencidos?'rgba(255,59,48,.4)':'var(--border)'};border-radius:var(--radius-lg);padding:14px 16px;box-shadow:var(--shadow);cursor:pointer;${hayVencidos?'background:rgba(255,59,48,.04);':''}" onclick="openRangeDetail('vencido',null,'Vencidos')" title="Ver vencidos">
+    <div style="background:var(--bg2);border:1px solid ${hayVencidos?'rgba(255,59,48,.4)':'var(--border)'};border-radius:var(--radius-lg);padding:14px 16px;box-shadow:var(--shadow);cursor:pointer;${hayVencidos?'background:rgba(255,59,48,.04);':''}" onclick="openRangeDetail('vencido',null,'Vencidos sin cobrar / sin pagar')" title="Ver vencidos">
       <div style="font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.5px;color:${hayVencidos?'var(--danger)':'var(--text3)'};margin-bottom:10px;display:flex;justify-content:space-between;align-items:center;">
         <span>⚠ Vencido</span><span style="color:var(--accent);font-size:10px;">${hayVencidos?'Ver →':''}</span>
       </div>
       <div style="margin-bottom:10px;">
-        <div style="font-size:10px;color:var(--text3);margin-bottom:3px;">▲ Cobros vencidos</div>
+        <div style="font-size:10px;color:var(--text3);margin-bottom:3px;">✗ Sin cobrar${vencCobros?' ('+vencCobros+')':''}</div>
         <div style="font-size:18px;font-weight:700;font-family:var(--mono);color:${vencCobros?'var(--danger)':'var(--text3)'};">${vencCobros?fmtUSD(vencUSDCobros):'—'}</div>
       </div>
       <div>
-        <div style="font-size:10px;color:var(--text3);margin-bottom:3px;">▼ Pagos vencidos</div>
+        <div style="font-size:10px;color:var(--text3);margin-bottom:3px;">✗ Sin pagar${vencPagos?' ('+vencPagos+')':''}</div>
         <div style="font-size:18px;font-weight:700;font-family:var(--mono);color:${vencPagos?'var(--danger)':'var(--text3)'};">${vencPagos?fmtUSD(vencUSDPagos):'—'}</div>
       </div>
+      ${cfIncluirVencidos?`<div style="font-size:9px;color:var(--accent);margin-top:8px;padding-top:6px;border-top:1px dashed var(--border2);">Escenario activo: estos vencidos ya estan sumados al mes</div>`:''}
     </div>
-    <div style="background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius-lg);padding:14px 16px;box-shadow:var(--shadow);cursor:pointer;" onclick="openRangeDetail('semana',null,'Esta semana')" title="Ver detalle">
-      <div style="font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.5px;color:var(--text3);margin-bottom:8px;display:flex;justify-content:space-between;align-items:center;">
-        <span>Esta semana</span><span style="color:var(--accent);font-size:10px;">Ver →</span>
-      </div>
-      <div style="display:flex;justify-content:space-between;margin-bottom:4px;">
-        <span style="font-size:11px;color:var(--text3);">▲ Cobros</span>
-        <span style="font-size:11px;font-family:var(--mono);color:var(--ok);font-weight:600;">${fmtUSD(semEntradas)}</span>
-      </div>
-      <div style="display:flex;justify-content:space-between;margin-bottom:8px;">
-        <span style="font-size:11px;color:var(--text3);">▼ Pagos</span>
-        <span style="font-size:11px;font-family:var(--mono);color:var(--danger);font-weight:600;">${fmtUSD(semSalidas)}</span>
-      </div>
-      <div style="border-top:1px solid var(--border);padding-top:7px;display:flex;justify-content:space-between;align-items:center;">
-        <span style="font-size:11px;font-weight:600;color:var(--text);">Neto</span>
-        <span style="font-size:15px;font-weight:700;font-family:var(--mono);color:${balColor(semBalance)};">${balSign(semBalance)}${fmtUSD(semBalance)}</span>
-      </div>
-    </div>
-    <div style="background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius-lg);padding:14px 16px;box-shadow:var(--shadow);cursor:pointer;" onclick="openRangeDetail('mes',null,'${mesLabel2}')" title="Ver detalle">
-      <div style="font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.5px;color:var(--text3);margin-bottom:8px;display:flex;justify-content:space-between;align-items:center;">
-        <span style="text-transform:capitalize;">${mesLabel2}</span><span style="color:var(--accent);font-size:10px;">Ver →</span>
-      </div>
-      <div style="display:flex;justify-content:space-between;margin-bottom:4px;">
-        <span style="font-size:11px;color:var(--text3);">▲ Cobros</span>
-        <span style="font-size:11px;font-family:var(--mono);color:var(--ok);font-weight:600;">${fmtUSD(mesEntradas)}</span>
-      </div>
-      <div style="display:flex;justify-content:space-between;margin-bottom:8px;">
-        <span style="font-size:11px;color:var(--text3);">▼ Pagos</span>
-        <span style="font-size:11px;font-family:var(--mono);color:var(--danger);font-weight:600;">${fmtUSD(mesSalidas)}</span>
-      </div>
-      <div style="border-top:1px solid var(--border);padding-top:7px;display:flex;justify-content:space-between;align-items:center;">
-        <span style="font-size:11px;font-weight:600;color:var(--text);">Neto</span>
-        <span style="font-size:15px;font-weight:700;font-family:var(--mono);color:${balColor(mesBalance)};">${balSign(mesBalance)}${fmtUSD(mesBalance)}</span>
-      </div>
-    </div>
-    <div style="background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius-lg);padding:14px 16px;box-shadow:var(--shadow);cursor:pointer;${isCurrentMonth?'border-style:dashed;':''}" onclick="openRangeDetail('mesfull',null,'${mesLabelFull} (proyección)')" title="Ver proyección del mes completo">
-      <div style="font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.5px;color:var(--text3);margin-bottom:8px;display:flex;justify-content:space-between;align-items:center;">
-        <span style="text-transform:capitalize;">${isCurrentMonth?'Proyección '+mesLabelFull:mesLabelFull}</span><span style="color:var(--accent);font-size:10px;">Ver →</span>
-      </div>
-      <div style="display:flex;justify-content:space-between;margin-bottom:4px;">
-        <span style="font-size:11px;color:var(--text3);">▲ Cobros</span>
-        <span style="font-size:11px;font-family:var(--mono);color:var(--ok);font-weight:600;">${fmtUSD(mesEntradasFull)}</span>
-      </div>
-      <div style="display:flex;justify-content:space-between;margin-bottom:8px;">
-        <span style="font-size:11px;color:var(--text3);">▼ Pagos</span>
-        <span style="font-size:11px;font-family:var(--mono);color:var(--danger);font-weight:600;">${fmtUSD(mesSalidasFull)}</span>
-      </div>
-      <div style="border-top:1px solid var(--border);padding-top:7px;display:flex;justify-content:space-between;align-items:center;">
-        <span style="font-size:11px;font-weight:600;color:var(--text);">Neto</span>
-        <span style="font-size:15px;font-weight:700;font-family:var(--mono);color:${balColor(mesBalanceFull)};">${balSign(mesBalanceFull)}${fmtUSD(mesBalanceFull)}</span>
-      </div>
-    </div>
+    ${cardBalance('Esta semana', tSem, "openRangeDetail('semana',null,'Esta semana')", false)}
+    ${cardBalance(mesLabel2, tMes, "openRangeDetail('mes',null,'"+mesLabel2+"')", false)}
+    ${cardBalance((isCurrentMonth?'Proyección '+mesLabelFull:mesLabelFull), tMesFull, "openRangeDetail('mesfull',null,'"+mesLabelFull+" (proyección)')", isCurrentMonth)}
   </div>` : '';
 
   // ── Calendar ──
@@ -4640,7 +4666,8 @@ function renderCashFlow(){
         const cobrado = e.cobrado || false;
         const cls = cobrado ? 'cobro-ok' : (e.esEscenario ? 'cobro-escenario' : 'cobro');
         const amt = !isNaN(e.amount)?` · ${Math.round(e.amount/1000)}k`:'';
-        const marca = cobrado ? '' : '✗ ';
+        // ✓ cobrado · ◌ movido por el escenario · ✗ pendiente (igual que la leyenda)
+        const marca = cobrado ? '✓ ' : (e.esEscenario ? '◌ ' : '✗ ');
         // Chips de cobros pendientes con borde naranja (rojo si vencido)
         const bordePend = cobrado ? '' : (diff<0 ? 'border:1.5px solid #e53935;box-shadow:0 0 0 1px rgba(229,57,53,.2);' : 'border:1.5px solid #fb8c00;box-shadow:0 0 0 1px rgba(251,140,0,.2);');
         const fechaOrigStr = e.esEscenario && e.fechaOriginal
@@ -4666,7 +4693,7 @@ function renderCashFlow(){
       pagosOrd.slice(0,2).forEach(e=>{
         const amt = !isNaN(e.amount)?` · ${Math.round(e.amount/1000)}k`:'';
         const chipCls = e.pagado ? 'pago-ok' : 'pago';
-        const marca = e.pagado ? '' : '✗ ';
+        const marca = e.pagado ? '✓ ' : '✗ ';
         // Chips de pagos pendientes con borde marcado para resaltar
         const bordePend = e.pagado ? '' : 'border:1.5px solid #e53935;box-shadow:0 0 0 1px rgba(229,57,53,.2);';
         chipsHtml+=`<div class="cf-chip ${chipCls}" style="${bordePend}">${marca}${(e.proveedor||e.customer).substring(0,9)}${amt}</div>`;
@@ -4767,8 +4794,8 @@ function renderCashFlow(){
         <button onclick="setCFVista('periodo')" style="font-size:11px;font-weight:600;padding:6px 12px;border:none;background:${cfVista==='periodo'?'var(--accent)':'transparent'};color:${cfVista==='periodo'?'#0d0d0d':'var(--text3)'};cursor:pointer;font-family:var(--font);">🗓 Período</button>
       </div>
       <div style="display:flex;gap:6px;">
-        <button onclick="cfIncluirVencidos=!cfIncluirVencidos;renderCashFlow();" title="Traer todos los cobros vencidos al mes actual" style="font-size:11px;font-weight:600;padding:6px 12px;border-radius:8px;border:1px solid ${cfIncluirVencidos?'var(--accent)':'var(--border)'};background:${cfIncluirVencidos?'rgba(200,240,80,.15)':'var(--bg2)'};color:${cfIncluirVencidos?'var(--accent)':'var(--text3)'};cursor:pointer;font-family:var(--font);">📥 Vencidos</button>
-        <button onclick="cfPesimista=!cfPesimista;renderCashFlow();" title="Correr fechas estimadas +7 días" style="font-size:11px;font-weight:600;padding:6px 12px;border-radius:8px;border:1px solid ${cfPesimista?'#ff9800':'var(--border)'};background:${cfPesimista?'rgba(255,152,0,.12)':'var(--bg2)'};color:${cfPesimista?'#ff9800':'var(--text3)'};cursor:pointer;font-family:var(--font);">⏱ +7d</button>
+        <button onclick="cfIncluirVencidos=!cfIncluirVencidos;renderCashFlow();" ${movidos.destino?'':'disabled'} title="${movidos.destino?'Calcular como si todo lo vencido de meses anteriores se cobrara en el mes que estás viendo':'No aplica: el mes que estás viendo ya terminó'}" style="font-size:11px;font-weight:600;padding:6px 12px;border-radius:8px;border:1px solid ${cfIncluirVencidos?'var(--accent)':'var(--border)'};background:${cfIncluirVencidos?'rgba(0,113,227,.12)':'var(--bg2)'};color:${cfIncluirVencidos?'var(--accent)':'var(--text3)'};cursor:${movidos.destino?'pointer':'not-allowed'};opacity:${movidos.destino?'1':'.45'};font-family:var(--font);">📥 Cobrar vencidos acá</button>
+        <button onclick="cfPesimista=!cfPesimista;renderCashFlow();" title="Correr las fechas estimadas de cobro 7 días para adelante" style="font-size:11px;font-weight:600;padding:6px 12px;border-radius:8px;border:1px solid ${cfPesimista?'#ff9800':'var(--border)'};background:${cfPesimista?'rgba(255,152,0,.12)':'var(--bg2)'};color:${cfPesimista?'#ff9800':'var(--text3)'};cursor:pointer;font-family:var(--font);">⏱ +7 días</button>
       </div>
       <button class="cf-toggle-btn${cfMode==='cobros'?' active':''}" onclick="setCFMode('cobros')">💰 Cash Flow</button>
       <button class="cf-toggle-btn${cfMode==='eta'?' active':''}" onclick="setCFMode('eta')">🚢 ETA</button>
@@ -4776,13 +4803,25 @@ function renderCashFlow(){
     </div>
   </div>
   ${(cfIncluirVencidos || cfPesimista) ? `
-  <div style="display:flex;align-items:center;gap:10px;padding:9px 14px;border-radius:8px;background:rgba(200,240,80,.07);border:1px solid rgba(200,240,80,.25);margin-bottom:12px;flex-wrap:wrap;">
-    <span style="font-size:13px;">📊</span>
-    <span style="font-size:12px;color:var(--accent);font-weight:600;">Vista proyectada</span>
-    <span style="font-size:11px;color:var(--text3);">—</span>
-    ${cfIncluirVencidos ? '<span style="font-size:11px;color:var(--text2);background:rgba(200,240,80,.1);padding:2px 8px;border-radius:4px;">vencidos incluidos en este mes</span>' : ''}
-    ${cfPesimista ? '<span style="font-size:11px;color:#ff9800;background:rgba(255,152,0,.1);padding:2px 8px;border-radius:4px;">fechas corridas +7 días</span>' : ''}
-    <span style="font-size:10px;color:var(--text3);margin-left:auto;">Las fechas no son las reales · solo para planificación</span>
+  <div style="padding:10px 14px;border-radius:8px;background:var(--accent-light);border:1px solid rgba(0,113,227,.25);margin-bottom:12px;">
+    <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:${cfIncluirVencidos?'6px':'0'};">
+      <span style="font-size:13px;">📊</span>
+      <span style="font-size:12px;color:var(--accent);font-weight:600;">Vista proyectada — estos números no son los reales</span>
+      ${cfIncluirVencidos ? '<span style="font-size:11px;color:var(--accent);background:rgba(0,113,227,.08);padding:2px 8px;border-radius:4px;">vencidos cobrados acá</span>' : ''}
+      ${cfPesimista ? '<span style="font-size:11px;color:#ff9800;background:rgba(255,152,0,.1);padding:2px 8px;border-radius:4px;">fechas +7 días</span>' : ''}
+    </div>
+    ${cfIncluirVencidos ? (movidos.n
+      ? `<div style="font-size:11px;color:var(--text2);">Se sumaron <b>${movidos.n} cobro${movidos.n>1?'s':''} vencido${movidos.n>1?'s':''}</b> de meses anteriores por <b style="font-family:var(--mono);">${fmtUSD(movidos.usd)}</b>, calculados al ${movidos.destino?movidos.destino.toLocaleDateString('es-AR',{day:'2-digit',month:'2-digit',year:'2-digit'}):'—'}.</div>`
+      : `<div style="font-size:11px;color:var(--text3);">No hay cobros vencidos de meses anteriores para sumar.</div>`) : ''}
+  </div>` : ''}
+  ${cfMode==='cobros' ? `
+  <div style="display:flex;align-items:center;gap:14px;flex-wrap:wrap;margin-bottom:12px;padding:8px 12px;background:var(--bg2);border:1px solid var(--border);border-radius:8px;">
+    <span style="font-size:9px;font-weight:700;letter-spacing:1.2px;text-transform:uppercase;color:var(--text3);">Cómo leerlo</span>
+    <span style="font-size:11px;color:var(--text2);display:inline-flex;align-items:center;gap:5px;"><span class="cf-chip cobro-ok" style="padding:1px 6px;">✓ cliente</span> ya cobrado</span>
+    <span style="font-size:11px;color:var(--text2);display:inline-flex;align-items:center;gap:5px;"><span class="cf-chip cobro" style="padding:1px 6px;border:1.5px solid #fb8c00;">✗ cliente</span> a cobrar</span>
+    <span style="font-size:11px;color:var(--text2);display:inline-flex;align-items:center;gap:5px;"><span class="cf-chip cobro" style="padding:1px 6px;border:1.5px solid #e53935;">✗ cliente</span> vencido</span>
+    <span style="font-size:11px;color:var(--text2);display:inline-flex;align-items:center;gap:5px;"><span class="cf-chip pago" style="padding:1px 6px;border:1.5px solid #e53935;">✗ forwarder</span> a pagar</span>
+    ${(cfIncluirVencidos||cfPesimista)?'<span style="font-size:11px;color:var(--text2);display:inline-flex;align-items:center;gap:5px;"><span class="cf-chip cobro-escenario" style="padding:1px 6px;">◌ cliente</span> movido por el escenario</span>':''}
   </div>` : ''}
   ${filtrosHtml}
   ${balanceHtml}
@@ -4836,18 +4875,24 @@ function renderCFSemanaHTML(cobrosMap, pagosMap, cobrosFiltered, pagosFiltered){
     const cobrosHtml = cobros.map(e => {
       const amt = !isNaN(e.amount) ? `USD ${Math.round(e.amount/1000)}k` : '';
       const cobrado = e.cobrado||false;
-      return `<div onclick="openDayDetail('${key}','${String(dia.getDate()).padStart(2,'0')}/${String(dia.getMonth()+1).padStart(2,'0')}')" style="cursor:pointer;padding:5px 8px;border-radius:6px;margin-bottom:3px;background:${cobrado?'rgba(46,125,50,.15)':'rgba(46,125,50,.08)'};border:1px solid ${cobrado?'rgba(46,125,50,.4)':'rgba(46,125,50,.2)'};display:flex;justify-content:space-between;gap:4px;">
-        <span style="font-size:10px;font-weight:600;color:#2e7d32;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${cobrado?'✓ ':''}${e.customer}</span>
-        <span style="font-size:10px;font-family:var(--mono);color:#2e7d32;font-weight:700;white-space:nowrap;">${amt}</span>
+      // Verde = ya cobrado · Naranja = todavia a cobrar (igual que la leyenda)
+      const bg  = cobrado ? 'rgba(46,125,50,.15)' : 'rgba(255,149,0,.10)';
+      const bd  = cobrado ? 'rgba(46,125,50,.45)' : 'rgba(255,149,0,.45)';
+      const fg  = cobrado ? '#2e7d32' : '#e65100';
+      const mk  = cobrado ? '✓ ' : (e.esEscenario ? '◌ ' : '✗ ');
+      return `<div onclick="openDayDetail('${key}','${String(dia.getDate()).padStart(2,'0')}/${String(dia.getMonth()+1).padStart(2,'0')}')" style="cursor:pointer;padding:5px 8px;border-radius:6px;margin-bottom:3px;background:${bg};border:1px solid ${bd};display:flex;justify-content:space-between;gap:4px;">
+        <span style="font-size:10px;font-weight:600;color:${fg};overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${mk}${e.customer}</span>
+        <span style="font-size:10px;font-family:var(--mono);color:${fg};font-weight:700;white-space:nowrap;">${amt}</span>
       </div>`;
     }).join('');
 
     const pagosHtml = pagos.map(e => {
       const amt = !isNaN(e.amount) ? `USD ${Math.round(e.amount/1000)}k` : '';
       const pagado = e.pagado||false;
-      return `<div onclick="openDayDetail('${key}','${String(dia.getDate()).padStart(2,'0')}/${String(dia.getMonth()+1).padStart(2,'0')}')" style="cursor:pointer;padding:5px 8px;border-radius:6px;margin-bottom:3px;background:${pagado?'rgba(183,28,28,.1)':'rgba(183,28,28,.06)'};border:1px solid ${pagado?'rgba(183,28,28,.3)':'rgba(183,28,28,.15)'};display:flex;justify-content:space-between;gap:4px;">
-        <span style="font-size:10px;font-weight:600;color:#c62828;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${pagado?'✓ ':''}${e.proveedor||e.customer}</span>
-        <span style="font-size:10px;font-family:var(--mono);color:#c62828;font-weight:700;white-space:nowrap;">${amt}</span>
+      const pfg = pagado ? '#78909c' : '#c62828';
+      return `<div onclick="openDayDetail('${key}','${String(dia.getDate()).padStart(2,'0')}/${String(dia.getMonth()+1).padStart(2,'0')}')" style="cursor:pointer;padding:5px 8px;border-radius:6px;margin-bottom:3px;background:${pagado?'rgba(120,144,156,.10)':'rgba(198,40,40,.08)'};border:1px solid ${pagado?'rgba(120,144,156,.35)':'rgba(198,40,40,.35)'};display:flex;justify-content:space-between;gap:4px;">
+        <span style="font-size:10px;font-weight:600;color:${pfg};overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${pagado?'✓ ':'✗ '}${e.proveedor||e.customer}</span>
+        <span style="font-size:10px;font-family:var(--mono);color:${pfg};font-weight:700;white-space:nowrap;">${amt}</span>
       </div>`;
     }).join('');
 
@@ -4924,13 +4969,17 @@ function renderCFPeriodoHTML(cobrosMap, pagosMap, cobrosFiltered, pagosFiltered)
     cobros.slice(0,2).forEach(e=>{
       const cobrado=e.cobrado||false;
       const amt=!isNaN(e.amount)?` · ${Math.round(e.amount/1000)}k`:'';
-      chipsHtml+=`<div class="cf-chip ${cobrado?'cobro-ok':'cobro'}">${e.customer.substring(0,9)}${amt}</div>`;
+      const cls=cobrado?'cobro-ok':(e.esEscenario?'cobro-escenario':'cobro');
+      const mk=cobrado?'✓ ':(e.esEscenario?'◌ ':'✗ ');
+      const bd=cobrado?'':'border:1.5px solid #fb8c00;';
+      chipsHtml+=`<div class="cf-chip ${cls}" style="${bd}">${mk}${e.customer.substring(0,9)}${amt}</div>`;
     });
     if(cobros.length>2) chipsHtml+=`<div class="cf-more">+${cobros.length-2}</div>`;
     pagos.slice(0,2).forEach(e=>{
       const pagado=e.pagado||false;
       const amt=!isNaN(e.amount)?` · ${Math.round(e.amount/1000)}k`:'';
-      chipsHtml+=`<div class="cf-chip ${pagado?'pago-ok':'pago'}">${(e.proveedor||e.customer).substring(0,9)}${amt}</div>`;
+      const bd=pagado?'':'border:1.5px solid #e53935;';
+      chipsHtml+=`<div class="cf-chip ${pagado?'pago-ok':'pago'}" style="${bd}">${pagado?'✓ ':'✗ '}${(e.proveedor||e.customer).substring(0,9)}${amt}</div>`;
     });
     if(pagos.length>2) chipsHtml+=`<div class="cf-more">+${pagos.length-2}</div>`;
 
@@ -5040,26 +5089,44 @@ function openRangeDetail(type, bandKey, title){
   pagosIn.sort((a,b)=>a.date-b.date);
 
   const fmtUSD = n => `USD ${Math.abs(n).toLocaleString('es-AR',{maximumFractionDigits:0})}`;
-  const totalCobros = cobrosIn.reduce((s,e)=>s+(!isNaN(e.amount)?e.amount:0),0);
-  const totalPagos  = pagosIn.reduce((s,e)=>s+(!isNaN(e.amount)?e.amount:0),0);
+  const sum = (arr,f) => arr.reduce((a,e)=>a+((f(e)&&!isNaN(e.amount))?e.amount:0),0);
+  const cobrado  = sum(cobrosIn, e=>e.cobrado);
+  const aCobrar  = sum(cobrosIn, e=>!e.cobrado);
+  const pagado   = sum(pagosIn,  e=>e.pagado);
+  const aPagar   = sum(pagosIn,  e=>!e.pagado);
+  const nCobrado = cobrosIn.filter(e=>e.cobrado).length;
+  const nACobrar = cobrosIn.filter(e=>!e.cobrado).length;
+  const totalCobros = cobrado + aCobrar;
+  const totalPagos  = pagado + aPagar;
   const neto = totalCobros - totalPagos;
+  const netoReal = cobrado - pagado;
   const netoColor = neto>0?'var(--ok)':neto<0?'var(--danger)':'var(--text3)';
 
   let html = '';
 
-  // Summary bar
-  html += `<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:16px;">
-    <div style="background:#f0faf4;border:1px solid #c8e6c9;border-radius:8px;padding:10px 12px;text-align:center;">
-      <div style="font-size:10px;color:#2e7d32;font-weight:600;text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px;">▲ Cobros</div>
-      <div style="font-size:14px;font-weight:700;font-family:var(--mono);color:#2e7d32;">${totalCobros>0?fmtUSD(totalCobros):'—'}</div>
+  // Resumen: lo efectivamente cobrado/pagado separado de lo que sigue pendiente
+  const box = (titulo, monto, n, bg, borde, color, sub) =>
+    `<div style="background:${bg};border:1px solid ${borde};border-radius:8px;padding:9px 10px;text-align:center;">
+      <div style="font-size:9px;color:${color};font-weight:700;text-transform:uppercase;letter-spacing:.4px;margin-bottom:3px;">${titulo}${n?' ('+n+')':''}</div>
+      <div style="font-size:13px;font-weight:700;font-family:var(--mono);color:${color};">${monto>0?fmtUSD(monto):'—'}</div>
+      ${sub?`<div style="font-size:9px;color:var(--text3);margin-top:2px;">${sub}</div>`:''}
+    </div>`;
+  html += `<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin-bottom:10px;">
+    ${box('✓ Cobrado', cobrado, nCobrado, '#f0faf4', '#c8e6c9', '#2e7d32')}
+    ${box('✗ A cobrar', aCobrar, nACobrar, '#fff8ee', 'rgba(255,149,0,.35)', '#e65100')}
+    ${box('✓ Pagado', pagado, 0, '#fafafa', '#e0e0e0', '#757575')}
+    ${box('✗ A pagar', aPagar, 0, '#fff5f5', '#ffcdd2', '#c62828')}
+  </div>
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:16px;">
+    <div style="background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:9px 10px;text-align:center;">
+      <div style="font-size:9px;color:var(--text3);font-weight:700;text-transform:uppercase;letter-spacing:.4px;margin-bottom:3px;">Neto proyectado</div>
+      <div style="font-size:15px;font-weight:700;font-family:var(--mono);color:${netoColor};">${neto!==0?(neto>0?'+':'')+fmtUSD(neto):'—'}</div>
+      <div style="font-size:9px;color:var(--text3);margin-top:2px;">incluye lo pendiente</div>
     </div>
-    <div style="background:#fff5f5;border:1px solid #ffcdd2;border-radius:8px;padding:10px 12px;text-align:center;">
-      <div style="font-size:10px;color:#c62828;font-weight:600;text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px;">▼ Pagos</div>
-      <div style="font-size:14px;font-weight:700;font-family:var(--mono);color:#c62828;">${totalPagos>0?fmtUSD(totalPagos):'—'}</div>
-    </div>
-    <div style="background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:10px 12px;text-align:center;">
-      <div style="font-size:10px;color:var(--text3);font-weight:600;text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px;">Neto</div>
-      <div style="font-size:14px;font-weight:700;font-family:var(--mono);color:${netoColor};">${neto!==0?(neto>0?'+':'')+fmtUSD(neto):'—'}</div>
+    <div style="background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:9px 10px;text-align:center;">
+      <div style="font-size:9px;color:var(--text3);font-weight:700;text-transform:uppercase;letter-spacing:.4px;margin-bottom:3px;">Neto real</div>
+      <div style="font-size:15px;font-weight:700;font-family:var(--mono);color:${netoReal>0?'var(--ok)':netoReal<0?'var(--danger)':'var(--text3)'};">${netoReal!==0?(netoReal>0?'+':'')+fmtUSD(netoReal):'—'}</div>
+      <div style="font-size:9px;color:var(--text3);margin-top:2px;">solo plata que se movió</div>
     </div>
   </div>`;
 
@@ -5077,15 +5144,24 @@ function openRangeDetail(type, bandKey, title){
       const isVencido = diff < 0;
       const diffStr = diff===0?'Hoy':diff<0?`Hace ${Math.abs(diff)}d`:`En ${diff}d`;
       const bl = (row[COL.BL]||'—').trim();
-      html += `<div class="cf-event-card cobro-card${isVencido?' vencido':''}">
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:3px;">
-          <div class="cf-event-title" style="margin:0;">${e.customer}</div>
-          ${!isNaN(e.amount)?`<span style="font-size:13px;font-weight:700;font-family:var(--mono);color:var(--ok);">USD ${e.amount.toLocaleString('es-AR',{maximumFractionDigits:0})}</span>`:''}
+      const yaCobrado = !!e.cobrado;
+      const badge = yaCobrado
+        ? '<span style="font-size:10px;font-weight:700;padding:2px 9px;border-radius:20px;background:#e8f5e9;color:#2e7d32;letter-spacing:.3px;">✓ COBRADO</span>'
+        : '<span style="font-size:10px;font-weight:700;padding:2px 9px;border-radius:20px;background:'+(isVencido?'#ffebee':'#fff3e0')+';color:'+(isVencido?'#c62828':'#e65100')+';letter-spacing:.3px;">✗ '+(isVencido?'VENCIDO':'A COBRAR')+'</span>';
+      const notaEsc = e.esEscenario && e.fechaOriginal
+        ? '<div style="font-size:10px;color:var(--accent);margin-bottom:6px;">◌ Movido por el escenario · fecha original <b style="text-decoration:line-through;">'+e.fechaOriginal.toLocaleDateString('es-AR',{day:'2-digit',month:'2-digit',year:'2-digit'})+'</b></div>'
+        : '';
+      html += `<div class="cf-event-card cobro-card${isVencido&&!yaCobrado?' vencido':''}" style="${yaCobrado?'opacity:.9;':''}">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;gap:8px;">
+          ${badge}
+          ${!isNaN(e.amount)?`<span style="font-size:13px;font-weight:700;font-family:var(--mono);color:${yaCobrado?'#2e7d32':'#e65100'};${yaCobrado?'':''}">USD ${e.amount.toLocaleString('es-AR',{maximumFractionDigits:0})}</span>`:''}
         </div>
-        <div class="cf-event-meta">BL: ${bl} · Negocio: ${e.negocio} · <span style="color:${isVencido?'var(--danger)':'var(--text2)'};">${diffStr} — ${e.date.toLocaleDateString('es-AR',{day:'2-digit',month:'2-digit'})}</span></div>
-        <div class="cf-event-actions">
+        <div class="cf-event-title" style="margin:0 0 3px;">${e.customer}</div>
+        <div class="cf-event-meta">BL: ${bl} · Negocio: ${e.negocio} · <span style="color:${isVencido&&!yaCobrado?'var(--danger)':'var(--text2)'};">${diffStr} — ${e.date.toLocaleDateString('es-AR',{day:'2-digit',month:'2-digit'})}</span></div>
+        ${notaEsc}
+        ${yaCobrado ? '' : `<div class="cf-event-actions">
           <button class="action-btn mail" onclick="closeDayDetail();openMailModal(${idx},'reclamo_cobro')">✉ Reclamo de cobro</button>
-        </div>
+        </div>`}
       </div>`;
     });
   }
@@ -5581,14 +5657,18 @@ function openDayDetail(key, dateLabel){
       const estadoBadge = cobrado
         ? `<span style="font-size:11px;font-weight:700;padding:2px 10px;border-radius:20px;background:#e8f5e9;color:#2e7d32;letter-spacing:.3px;">✓ COBRADO</span>`
         : `<span style="font-size:11px;font-weight:700;padding:2px 10px;border-radius:20px;background:${isVencido?'#ffebee':'#fff3e0'};color:${isVencido?'#c62828':'#e65100'};letter-spacing:.3px;">✗ ${isVencido?'VENCIDO':'PENDIENTE'}</span>`;
-      const amtColor = cobrado ? '#9e9e9e' : 'var(--ok)';
-      const amtStyle = cobrado ? 'text-decoration:line-through;' : '';
+      const amtColor = cobrado ? '#2e7d32' : (isVencido ? '#c62828' : '#e65100');
+      const amtStyle = '';
+      const notaEsc = e.esEscenario && e.fechaOriginal
+        ? '<div style="font-size:10px;color:var(--accent);margin-bottom:6px;">◌ Movido por el escenario · fecha original <b style="text-decoration:line-through;">'+e.fechaOriginal.toLocaleDateString('es-AR',{day:'2-digit',month:'2-digit',year:'2-digit'})+'</b></div>'
+        : '';
       html+=`<div class="cf-event-card cobro-card${isVencido&&!cobrado?' vencido':''}" style="${cobrado?'opacity:.85;':''}">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;">
           ${estadoBadge}
           ${amtStr?`<span style="font-size:14px;font-weight:700;font-family:var(--mono);color:${amtColor};${amtStyle}">${amtStr}</span>`:''}
         </div>
         <div class="cf-event-title" style="${cobrado?'color:var(--text3);':''}">${e.customer}</div>
+        ${notaEsc}
         <div class="cf-event-meta">${inv1?`FC Cliente: ${inv1}`:''}${invServStr?` · FC Serv: ${invServStr}`:''} · ${e.negocio}</div>
         <div style="font-size:11px;font-family:var(--mono);color:var(--text3);margin-bottom:4px;">BL: ${blsStr}</div>
         ${fcFleteStr?`<div style="font-size:11px;font-family:var(--mono);color:var(--text3);margin-bottom:8px;">FC Flete: ${fcFleteStr}</div>`:'<div style="margin-bottom:8px;"></div>'}
@@ -6013,16 +6093,23 @@ function exportCashFlowPDF(){
   const today = new Date();
   const diasDelMes = new Date(cfYear, cfMonth + 1, 0).getDate();
 
-  let totalCobros = 0, totalPagos = 0;
-  const cobrosXCliente = {}, pagosXProveedor = {};
+  // Totales separados por estado: lo que YA entro/salio vs lo que sigue pendiente
+  let cobrado=0, aCobrar=0, pagado=0, aPagar=0;
+  let nCobrado=0, nACobrar=0, nPagado=0, nAPagar=0;
+  let movN=0, movUSD=0;
+  // Por cliente / proveedor, tambien separado
+  const porCliente = {};   // {cobrado, aCobrar}
+  const porProveedor = {}; // {pagado, aPagar}
   const diasHtml = [];
 
-  // Escenario activo
   const hayEscenario = cfIncluirVencidos || cfPesimista;
   const escenarioDesc = [
-    cfIncluirVencidos ? 'cobros vencidos incluidos en este mes' : '',
-    cfPesimista       ? 'fechas estimadas corridas +7 días' : ''
+    cfIncluirVencidos ? 'los vencidos de meses anteriores se cuentan como cobrados en este mes' : '',
+    cfPesimista       ? 'las fechas estimadas se corrieron +7 dias' : ''
   ].filter(Boolean).join(' · ');
+
+  const usd = n => 'USD ' + Math.round(n).toLocaleString('es-AR',{maximumFractionDigits:0});
+  const tag = (txt,bg,fg) => '<span style="font-size:8px;font-weight:700;padding:1px 5px;border-radius:3px;background:'+bg+';color:'+fg+';letter-spacing:.2px;">'+txt+'</span>';
 
   for(let d = 1; d <= diasDelMes; d++){
     const fecha = new Date(cfYear, cfMonth, d);
@@ -6031,156 +6118,193 @@ function exportCashFlowPDF(){
     const pagos  = pagosMap[key]  || [];
     if(!cobros.length && !pagos.length) continue;
 
-    const diaCobros = cobros.reduce((s,e)=>s+(!isNaN(e.amount)?e.amount:0),0);
-    const diaPagos  = pagos.reduce((s,e)=>s+(!isNaN(e.amount)?e.amount:0),0);
-    const diaNeto   = diaCobros - diaPagos;
+    const diaCobrado = cobros.reduce((s,e)=>s+((e.cobrado&&!isNaN(e.amount))?e.amount:0),0);
+    const diaACobrar = cobros.reduce((s,e)=>s+((!e.cobrado&&!isNaN(e.amount))?e.amount:0),0);
+    const diaPagado  = pagos.reduce((s,e)=>s+((e.pagado&&!isNaN(e.amount))?e.amount:0),0);
+    const diaAPagar  = pagos.reduce((s,e)=>s+((!e.pagado&&!isNaN(e.amount))?e.amount:0),0);
+    const diaNeto    = (diaCobrado+diaACobrar) - (diaPagado+diaAPagar);
 
-    let diaHtml = `<div style="margin-bottom:8px;border:1px solid #e8e8e8;border-radius:8px;overflow:hidden;break-inside:avoid;">
-      <div style="display:flex;justify-content:space-between;align-items:center;padding:6px 10px;background:#f8f8f8;border-bottom:1px solid #eee;">
-        <div style="font-weight:700;font-size:11px;color:#333;">${fecha.toLocaleDateString('es-AR',{weekday:'short',day:'numeric',month:'short'})}</div>
-        <div style="font-size:10px;font-weight:700;color:${diaNeto>=0?'#2e7d32':'#c62828'};">${diaNeto>=0?'+':''}USD ${Math.round(Math.abs(diaNeto)/1000)}k</div>
-      </div>
-      <div style="padding:5px 8px;">`;
+    let diaHtml = '<div style="margin-bottom:8px;border:1px solid #e8e8e8;border-radius:8px;overflow:hidden;break-inside:avoid;">'
+      + '<div style="display:flex;justify-content:space-between;align-items:center;padding:6px 10px;background:#f8f8f8;border-bottom:1px solid #eee;">'
+        + '<div style="font-weight:700;font-size:11px;color:#333;">' + fecha.toLocaleDateString('es-AR',{weekday:'short',day:'numeric',month:'short'}) + '</div>'
+        + '<div style="font-size:10px;font-weight:700;color:' + (diaNeto>=0?'#2e7d32':'#c62828') + ';">' + (diaNeto>=0?'+':'-') + 'USD ' + Math.round(Math.abs(diaNeto)/1000) + 'k</div>'
+      + '</div>'
+      + '<div style="padding:5px 8px;">';
 
     cobros.forEach(e => {
       if(!e.amount || isNaN(e.amount)) return;
-      totalCobros += e.amount;
-      cobrosXCliente[e.customer] = (cobrosXCliente[e.customer]||0) + e.amount;
-      const cobrado = e.cobrado || false;
-      const esEsc   = e.esEscenario || false;
-      const bg      = cobrado ? '#c8e6c9' : esEsc ? '#f1f8e9' : '#e8f5e9';
-      const border  = esEsc && !cobrado ? '1px dashed #aed581' : '1px solid transparent';
-      const fechaOrigStr = esEsc && e.fechaOriginal
-        ? ` <span style="text-decoration:line-through;color:#999;font-size:9px;">${e.fechaOriginal.getDate()}/${e.fechaOriginal.getMonth()+1}</span>`
+      const esCobrado = !!e.cobrado;
+      const esEsc = !!e.esEscenario;
+      if(esCobrado){ cobrado += e.amount; nCobrado++; }
+      else { aCobrar += e.amount; nACobrar++; }
+      if(e.movidoVencido){ movN++; movUSD += e.amount; }
+      if(!porCliente[e.customer]) porCliente[e.customer] = {cobrado:0, aCobrar:0};
+      porCliente[e.customer][esCobrado?'cobrado':'aCobrar'] += e.amount;
+
+      const bg     = esCobrado ? '#e8f5e9' : (esEsc ? '#e3f2fd' : '#fff8e1');
+      const border = esCobrado ? '1px solid #a5d6a7' : (esEsc ? '1px dashed #64b5f6' : '1px solid #ffe082');
+      const fg     = esCobrado ? '#1b5e20' : (esEsc ? '#0d47a1' : '#e65100');
+      const estado = esCobrado ? tag('COBRADO','#c8e6c9','#1b5e20')
+                   : (esEsc   ? tag('MOVIDO','#bbdefb','#0d47a1')
+                              : tag('A COBRAR','#ffe082','#e65100'));
+      const fechaOrig = esEsc && e.fechaOriginal
+        ? ' <span style="text-decoration:line-through;color:#999;font-size:8px;">' + e.fechaOriginal.getDate() + '/' + (e.fechaOriginal.getMonth()+1) + '</span>'
         : '';
-      const estadoStr = cobrado ? ' ✓' : esEsc ? ' ◌' : '';
-      diaHtml += `<div style="display:flex;justify-content:space-between;align-items:center;padding:3px 6px;background:${bg};border:${border};border-radius:4px;margin-bottom:2px;">
-        <span style="color:#2e7d32;font-size:10px;">▲ ${e.customer}${estadoStr}${fechaOrigStr}</span>
-        <span style="color:#2e7d32;font-weight:700;font-size:10px;">USD ${e.amount.toLocaleString('es-AR',{maximumFractionDigits:0})}</span>
-      </div>`;
+      diaHtml += '<div style="display:flex;justify-content:space-between;align-items:center;gap:4px;padding:3px 6px;background:'+bg+';border:'+border+';border-radius:4px;margin-bottom:2px;">'
+        + '<span style="color:'+fg+';font-size:10px;display:flex;align-items:center;gap:4px;min-width:0;"><span style="flex-shrink:0;">&#9650;</span>'+estado+'<span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">'+e.customer+'</span>'+fechaOrig+'</span>'
+        + '<span style="color:'+fg+';font-weight:700;font-size:10px;white-space:nowrap;">'+usd(e.amount)+'</span>'
+        + '</div>';
     });
 
     if(cobros.length && pagos.length){
-      diaHtml += `<div style="height:1px;background:#eee;margin:3px 0;"></div>`;
+      diaHtml += '<div style="height:1px;background:#eee;margin:3px 0;"></div>';
     }
 
     pagos.forEach(e => {
       if(!e.amount || isNaN(e.amount)) return;
-      totalPagos += e.amount;
-      const prov = e.proveedor||e.customer||'—';
-      pagosXProveedor[prov] = (pagosXProveedor[prov]||0) + e.amount;
-      const pagado = e.pagado || false;
-      const bg = pagado ? '#ffcdd2' : '#ffebee';
-      diaHtml += `<div style="display:flex;justify-content:space-between;align-items:center;padding:3px 6px;background:${bg};border-radius:4px;margin-bottom:2px;">
-        <span style="color:#c62828;font-size:10px;">▼ ${prov}${pagado?' ✓':''}</span>
-        <span style="color:#c62828;font-weight:700;font-size:10px;">USD ${e.amount.toLocaleString('es-AR',{maximumFractionDigits:0})}</span>
-      </div>`;
+      const prov = e.proveedor||e.customer||'-';
+      const esPagado = !!e.pagado;
+      if(esPagado){ pagado += e.amount; nPagado++; }
+      else { aPagar += e.amount; nAPagar++; }
+      if(!porProveedor[prov]) porProveedor[prov] = {pagado:0, aPagar:0};
+      porProveedor[prov][esPagado?'pagado':'aPagar'] += e.amount;
+
+      const bg = esPagado ? '#eceff1' : '#ffebee';
+      const fg = esPagado ? '#546e7a' : '#c62828';
+      const estado = esPagado ? tag('PAGADO','#cfd8dc','#37474f') : tag('A PAGAR','#ffcdd2','#b71c1c');
+      diaHtml += '<div style="display:flex;justify-content:space-between;align-items:center;gap:4px;padding:3px 6px;background:'+bg+';border-radius:4px;margin-bottom:2px;">'
+        + '<span style="color:'+fg+';font-size:10px;display:flex;align-items:center;gap:4px;min-width:0;"><span style="flex-shrink:0;">&#9660;</span>'+estado+'<span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">'+prov+'</span></span>'
+        + '<span style="color:'+fg+';font-weight:700;font-size:10px;white-space:nowrap;">'+usd(e.amount)+'</span>'
+        + '</div>';
     });
 
-    diaHtml += `</div></div>`;
+    diaHtml += '</div></div>';
     diasHtml.push(diaHtml);
   }
 
-  const cobrosDetalle = Object.entries(cobrosXCliente).sort((a,b)=>b[1]-a[1])
-    .map(([k,v])=>`<tr><td style="padding:4px 10px;color:#444;">${k}</td><td style="padding:4px 10px;text-align:right;font-weight:700;color:#2e7d32;">USD ${v.toLocaleString('es-AR',{maximumFractionDigits:0})}</td></tr>`).join('');
-  const pagosDetalle = Object.entries(pagosXProveedor).sort((a,b)=>b[1]-a[1])
-    .map(([k,v])=>`<tr><td style="padding:4px 10px;color:#444;">${k}</td><td style="padding:4px 10px;text-align:right;font-weight:700;color:#c62828;">USD ${v.toLocaleString('es-AR',{maximumFractionDigits:0})}</td></tr>`).join('');
+  const totalCobros = cobrado + aCobrar;
+  const totalPagos  = pagado + aPagar;
   const neto = totalCobros - totalPagos;
+  const netoReal = cobrado - pagado;
   const netoColor = neto >= 0 ? '#2e7d32' : '#c62828';
-  const netoSign = neto >= 0 ? '+' : '';
+  const netoSign = neto >= 0 ? '+' : '-';
 
-  const escenarioBanner = hayEscenario ? `
-    <div style="margin-bottom:14px;padding:8px 14px;background:#fffde7;border:1px solid #f9a825;border-radius:6px;display:flex;align-items:center;gap:10px;">
-      <span style="font-size:14px;">📊</span>
-      <div>
-        <div style="font-size:11px;font-weight:700;color:#e65100;">Vista proyectada — no refleja fechas reales</div>
-        <div style="font-size:10px;color:#795548;margin-top:2px;">${escenarioDesc}</div>
-        ${cfPesimista ? '<div style="font-size:9px;color:#999;margin-top:2px;">◌ = fecha corrida · fecha original tachada</div>' : ''}
-        ${cfIncluirVencidos ? '<div style="font-size:9px;color:#999;margin-top:2px;">◌ = cobro vencido incluido en este mes</div>' : ''}
-      </div>
-    </div>` : '';
+  const filaCli = Object.entries(porCliente)
+    .sort((a,b)=>(b[1].cobrado+b[1].aCobrar)-(a[1].cobrado+a[1].aCobrar))
+    .map(([k,v])=>'<tr><td style="padding:3px 8px;color:#444;">'+k+'</td>'
+      + '<td style="padding:3px 8px;text-align:right;font-weight:700;color:'+(v.cobrado?'#2e7d32':'#ccc')+';">'+(v.cobrado?usd(v.cobrado):'-')+'</td>'
+      + '<td style="padding:3px 8px;text-align:right;font-weight:700;color:'+(v.aCobrar?'#e65100':'#ccc')+';">'+(v.aCobrar?usd(v.aCobrar):'-')+'</td></tr>').join('');
+  const filaProv = Object.entries(porProveedor)
+    .sort((a,b)=>(b[1].pagado+b[1].aPagar)-(a[1].pagado+a[1].aPagar))
+    .map(([k,v])=>'<tr><td style="padding:3px 8px;color:#444;">'+k+'</td>'
+      + '<td style="padding:3px 8px;text-align:right;font-weight:700;color:'+(v.pagado?'#546e7a':'#ccc')+';">'+(v.pagado?usd(v.pagado):'-')+'</td>'
+      + '<td style="padding:3px 8px;text-align:right;font-weight:700;color:'+(v.aPagar?'#c62828':'#ccc')+';">'+(v.aPagar?usd(v.aPagar):'-')+'</td></tr>').join('');
 
-  const html = `<!DOCTYPE html><html><head><meta charset="UTF-8"><style>
-    *{box-sizing:border-box;margin:0;padding:0;}
-    body{font-family:'Helvetica Neue',Arial,sans-serif;font-size:11px;color:#222;padding:20px;background:#fff;}
-    @media print{@page{size:A4 landscape;margin:10mm;}body{padding:0;}}
-    .header{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:16px;padding-bottom:12px;border-bottom:3px solid #1a1a1a;}
-    .stats{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:14px;}
-    .stat{border:1px solid #e8e8e8;border-radius:8px;padding:10px 12px;text-align:center;}
-    .stat-label{font-size:8px;text-transform:uppercase;letter-spacing:1.2px;color:#888;margin-bottom:4px;}
-    .stat-value{font-size:20px;font-weight:800;line-height:1;}
-    .grid{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:16px;}
-    .summary{display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;padding-top:14px;border-top:2px solid #1a1a1a;}
-    .sbox{border:1px solid #e0e0e0;border-radius:8px;overflow:hidden;}
-    .sbox-h{padding:8px 12px;font-weight:700;font-size:11px;letter-spacing:.3px;}
-    .sbox table{width:100%;border-collapse:collapse;}
-    .sbox tr:nth-child(even){background:#fafafa;}
-    .sbox-total{padding:8px 10px;display:flex;justify-content:space-between;border-top:2px solid #e0e0e0;font-weight:800;font-size:14px;}
-    .footer{margin-top:14px;font-size:8px;color:#bbb;text-align:right;border-top:1px solid #eee;padding-top:8px;}
-  </style></head><body>
+  const leyenda = '<div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin-bottom:12px;padding:7px 10px;border:1px solid #eee;border-radius:6px;background:#fcfcfc;">'
+    + '<span style="font-size:8px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:#999;">Como leerlo</span>'
+    + '<span style="font-size:9px;color:#555;display:inline-flex;align-items:center;gap:4px;">'+tag('COBRADO','#c8e6c9','#1b5e20')+' plata que ya entro</span>'
+    + '<span style="font-size:9px;color:#555;display:inline-flex;align-items:center;gap:4px;">'+tag('A COBRAR','#ffe082','#e65100')+' estimado, todavia no entro</span>'
+    + (hayEscenario ? '<span style="font-size:9px;color:#555;display:inline-flex;align-items:center;gap:4px;">'+tag('MOVIDO','#bbdefb','#0d47a1')+' fecha cambiada por el escenario</span>' : '')
+    + '<span style="font-size:9px;color:#555;display:inline-flex;align-items:center;gap:4px;">'+tag('PAGADO','#cfd8dc','#37474f')+' ya salio</span>'
+    + '<span style="font-size:9px;color:#555;display:inline-flex;align-items:center;gap:4px;">'+tag('A PAGAR','#ffcdd2','#b71c1c')+' pendiente de pago</span>'
+    + '</div>';
 
-  <div class="header">
-    <div>
-      <div style="font-size:22px;font-weight:800;color:#1a1a1a;letter-spacing:-.5px;">Cash Flow — ${mesLabel}</div>
-      <div style="font-size:11px;color:#666;margin-top:3px;">${nc.label} · Generado el ${today.toLocaleDateString('es-AR',{day:'2-digit',month:'long',year:'numeric'})}</div>
-      ${hayEscenario ? `<div style="margin-top:4px;font-size:10px;font-weight:700;color:#e65100;background:#fff3e0;padding:2px 8px;border-radius:4px;display:inline-block;">📊 Vista proyectada</div>` : ''}
-    </div>
-    <div style="text-align:right;">
-      <div style="font-size:22px;font-weight:900;letter-spacing:-1px;color:#1a1a1a;">LATINUT</div>
-      <div style="font-size:9px;color:#999;letter-spacing:2px;text-transform:uppercase;">Hub de Control</div>
-    </div>
-  </div>
+  const escenarioBanner = hayEscenario
+    ? '<div style="margin-bottom:12px;padding:8px 14px;background:#e3f2fd;border:1px solid #1976d2;border-radius:6px;">'
+      + '<div style="font-size:11px;font-weight:700;color:#0d47a1;">Vista proyectada - estos numeros no son los reales</div>'
+      + '<div style="font-size:10px;color:#37474f;margin-top:2px;">' + escenarioDesc + '</div>'
+      + (cfIncluirVencidos
+          ? '<div style="font-size:10px;color:#0d47a1;margin-top:3px;">' + (movN
+              ? 'Se sumaron <b>' + movN + ' cobro' + (movN>1?'s':'') + ' vencido' + (movN>1?'s':'') + '</b> de meses anteriores por <b>' + usd(movUSD) + '</b>.'
+              : 'No habia cobros vencidos de meses anteriores para sumar.') + '</div>'
+          : '')
+      + '</div>'
+    : '';
 
-  ${escenarioBanner}
+  const stat = (label, valor, color, sub) =>
+    '<div class="stat">'
+      + '<div class="stat-label">'+label+'</div>'
+      + '<div class="stat-value" style="color:'+color+';">'+valor+'</div>'
+      + (sub?'<div style="font-size:8px;color:#aaa;margin-top:3px;">'+sub+'</div>':'')
+    + '</div>';
 
-  <div class="stats">
-    <div class="stat">
-      <div class="stat-label">▲ Cobros del mes</div>
-      <div class="stat-value" style="color:#2e7d32;">USD ${totalCobros.toLocaleString('es-AR',{maximumFractionDigits:0})}</div>
-    </div>
-    <div class="stat">
-      <div class="stat-label">▼ Pagos del mes</div>
-      <div class="stat-value" style="color:#c62828;">USD ${totalPagos.toLocaleString('es-AR',{maximumFractionDigits:0})}</div>
-    </div>
-    <div class="stat" style="border-color:${netoColor};background:${neto>=0?'#f1f8e9':'#fff0f0'};">
-      <div class="stat-label">Neto</div>
-      <div class="stat-value" style="color:${netoColor};">${netoSign}USD ${Math.abs(neto).toLocaleString('es-AR',{maximumFractionDigits:0})}</div>
-    </div>
-    <div class="stat">
-      <div class="stat-label">Clientes · Proveedores</div>
-      <div class="stat-value" style="color:#333;">${Object.keys(cobrosXCliente).length} · ${Object.keys(pagosXProveedor).length}</div>
-    </div>
-  </div>
-
-  <div class="grid">${diasHtml.join('')}</div>
-
-  <div class="summary">
-    <div class="sbox">
-      <div class="sbox-h" style="background:#e8f5e9;color:#1b5e20;">▲ Cobros por cliente</div>
-      <table>${cobrosDetalle || '<tr><td style="padding:8px 10px;color:#999;">Sin cobros</td></tr>'}</table>
-      <div class="sbox-total" style="color:#2e7d32;">Total cobros <span>USD ${totalCobros.toLocaleString('es-AR',{maximumFractionDigits:0})}</span></div>
-    </div>
-    <div class="sbox">
-      <div class="sbox-h" style="background:#ffebee;color:#b71c1c;">▼ Pagos por proveedor</div>
-      <table>${pagosDetalle || '<tr><td style="padding:8px 10px;color:#999;">Sin pagos</td></tr>'}</table>
-      <div class="sbox-total" style="color:#c62828;">Total pagos <span>USD ${totalPagos.toLocaleString('es-AR',{maximumFractionDigits:0})}</span></div>
-    </div>
-    <div class="sbox" style="border-color:${netoColor};">
-      <div class="sbox-h" style="background:${neto>=0?'#f1f8e9':'#fff0f0'};color:${netoColor};">Balance neto del mes</div>
-      <div style="padding:24px 16px;text-align:center;">
-        <div style="font-size:32px;font-weight:900;color:${netoColor};letter-spacing:-1px;">${netoSign}USD ${Math.abs(neto).toLocaleString('es-AR',{maximumFractionDigits:0})}</div>
-        <div style="font-size:10px;color:#888;margin-top:8px;font-weight:600;text-transform:uppercase;letter-spacing:.5px;">${neto>=0?'Posición favorable ✓':'Posición negativa ✗'}</div>
-        ${hayEscenario ? `<div style="font-size:9px;color:#e65100;margin-top:8px;background:#fff3e0;padding:4px 8px;border-radius:4px;">Proyectado — no real</div>` : ''}
-      </div>
-    </div>
-  </div>
-
-  <div class="footer">
-    HUB LATINUT · ${new Date().toLocaleString('es-AR')} · ${hayEscenario ? `Vista proyectada (${escenarioDesc})` : 'Datos reales de la planilla'}
-  </div>
-  </body></html>`;
+  const html = '<!DOCTYPE html><html><head><meta charset="UTF-8"><style>'
+    + '*{box-sizing:border-box;margin:0;padding:0;}'
+    + "body{font-family:'Helvetica Neue',Arial,sans-serif;font-size:11px;color:#222;padding:20px;background:#fff;}"
+    + '@media print{@page{size:A4 landscape;margin:10mm;}body{padding:0;}}'
+    + '.header{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:14px;padding-bottom:12px;border-bottom:3px solid #1a1a1a;}'
+    + '.stats{display:grid;grid-template-columns:repeat(5,1fr);gap:8px;margin-bottom:12px;}'
+    + '.stat{border:1px solid #e8e8e8;border-radius:8px;padding:9px 10px;text-align:center;}'
+    + '.stat-label{font-size:8px;text-transform:uppercase;letter-spacing:1px;color:#888;margin-bottom:4px;}'
+    + '.stat-value{font-size:17px;font-weight:800;line-height:1;}'
+    + '.grid{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:16px;}'
+    + '.summary{display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;padding-top:14px;border-top:2px solid #1a1a1a;}'
+    + '.sbox{border:1px solid #e0e0e0;border-radius:8px;overflow:hidden;}'
+    + '.sbox-h{padding:7px 10px;font-weight:700;font-size:10px;letter-spacing:.3px;}'
+    + '.sbox table{width:100%;border-collapse:collapse;}'
+    + '.sbox th{font-size:8px;text-transform:uppercase;letter-spacing:.5px;color:#999;padding:3px 8px;text-align:right;border-bottom:1px solid #eee;}'
+    + '.sbox th:first-child{text-align:left;}'
+    + '.sbox tr:nth-child(even){background:#fafafa;}'
+    + '.sbox-total{padding:7px 8px;display:flex;justify-content:space-between;border-top:2px solid #e0e0e0;font-weight:800;font-size:12px;}'
+    + '.footer{margin-top:14px;font-size:8px;color:#bbb;text-align:right;border-top:1px solid #eee;padding-top:8px;}'
+    + '</style></head><body>'
+    + '<div class="header">'
+      + '<div>'
+        + '<div style="font-size:22px;font-weight:800;color:#1a1a1a;letter-spacing:-.5px;">Cash Flow - ' + mesLabel + '</div>'
+        + '<div style="font-size:11px;color:#666;margin-top:3px;">' + nc.label + ' &middot; Generado el ' + today.toLocaleDateString('es-AR',{day:'2-digit',month:'long',year:'numeric'}) + '</div>'
+      + '</div>'
+      + '<div style="text-align:right;">'
+        + '<div style="font-size:22px;font-weight:900;letter-spacing:-1px;color:#1a1a1a;">LATINUT</div>'
+        + '<div style="font-size:9px;color:#999;letter-spacing:2px;text-transform:uppercase;">Hub de Control</div>'
+      + '</div>'
+    + '</div>'
+    + escenarioBanner
+    + leyenda
+    + '<div class="stats">'
+      + stat('&#9650; Cobrado',  usd(cobrado),  '#2e7d32', nCobrado + ' factura' + (nCobrado===1?'':'s'))
+      + stat('&#9650; A cobrar', usd(aCobrar),  '#e65100', nACobrar + ' factura' + (nACobrar===1?'':'s'))
+      + stat('&#9660; Pagado',   usd(pagado),   '#546e7a', nPagado + ' pago' + (nPagado===1?'':'s'))
+      + stat('&#9660; A pagar',  usd(aPagar),   '#c62828', nAPagar + ' pago' + (nAPagar===1?'':'s'))
+      + '<div class="stat" style="border-color:'+netoColor+';background:'+(neto>=0?'#f1f8e9':'#fff0f0')+';">'
+        + '<div class="stat-label">Neto proyectado</div>'
+        + '<div class="stat-value" style="color:'+netoColor+';">' + netoSign + usd(Math.abs(neto)) + '</div>'
+        + '<div style="font-size:8px;color:#888;margin-top:3px;">real hoy: ' + (netoReal>=0?'+':'-') + usd(Math.abs(netoReal)) + '</div>'
+      + '</div>'
+    + '</div>'
+    + '<div class="grid">' + (diasHtml.length?diasHtml.join(''):'<div style="font-size:10px;color:#999;">Sin movimientos en el mes.</div>') + '</div>'
+    + '<div class="summary">'
+      + '<div class="sbox">'
+        + '<div class="sbox-h" style="background:#e8f5e9;color:#1b5e20;">&#9650; Cobros por cliente</div>'
+        + '<table><thead><tr><th>Cliente</th><th>Cobrado</th><th>A cobrar</th></tr></thead><tbody>'
+        + (filaCli || '<tr><td style="padding:8px 10px;color:#999;">Sin cobros</td><td></td><td></td></tr>')
+        + '</tbody></table>'
+        + '<div class="sbox-total" style="color:#2e7d32;"><span>Total</span><span>' + usd(cobrado) + ' + ' + usd(aCobrar) + '</span></div>'
+      + '</div>'
+      + '<div class="sbox">'
+        + '<div class="sbox-h" style="background:#ffebee;color:#b71c1c;">&#9660; Pagos por proveedor</div>'
+        + '<table><thead><tr><th>Proveedor</th><th>Pagado</th><th>A pagar</th></tr></thead><tbody>'
+        + (filaProv || '<tr><td style="padding:8px 10px;color:#999;">Sin pagos</td><td></td><td></td></tr>')
+        + '</tbody></table>'
+        + '<div class="sbox-total" style="color:#c62828;"><span>Total</span><span>' + usd(pagado) + ' + ' + usd(aPagar) + '</span></div>'
+      + '</div>'
+      + '<div class="sbox" style="border-color:'+netoColor+';">'
+        + '<div class="sbox-h" style="background:'+(neto>=0?'#f1f8e9':'#fff0f0')+';color:'+netoColor+';">Balance del mes</div>'
+        + '<div style="padding:14px 16px;text-align:center;">'
+          + '<div style="font-size:8px;text-transform:uppercase;letter-spacing:1px;color:#999;">Neto proyectado</div>'
+          + '<div style="font-size:26px;font-weight:900;color:'+netoColor+';letter-spacing:-1px;">' + netoSign + usd(Math.abs(neto)) + '</div>'
+          + '<div style="font-size:8px;color:#aaa;margin-bottom:10px;">cobrado + a cobrar - pagos</div>'
+          + '<div style="font-size:8px;text-transform:uppercase;letter-spacing:1px;color:#999;padding-top:8px;border-top:1px solid #eee;">Neto real a hoy</div>'
+          + '<div style="font-size:18px;font-weight:800;color:'+(netoReal>=0?'#2e7d32':'#c62828')+';">' + (netoReal>=0?'+':'-') + usd(Math.abs(netoReal)) + '</div>'
+          + '<div style="font-size:8px;color:#aaa;">solo lo efectivamente cobrado y pagado</div>'
+          + (hayEscenario ? '<div style="font-size:9px;color:#0d47a1;margin-top:10px;background:#e3f2fd;padding:4px 8px;border-radius:4px;">Proyectado - no real</div>' : '')
+        + '</div>'
+      + '</div>'
+    + '</div>'
+    + '<div class="footer">HUB LATINUT &middot; ' + new Date().toLocaleString('es-AR') + ' &middot; ' + (hayEscenario ? 'Vista proyectada (' + escenarioDesc + ')' : 'Datos reales de la planilla') + '</div>'
+    + '</body></html>';
 
   const win = window.open('', '_blank');
+  if(!win){ showToast('El navegador bloqueó la ventana del PDF. Habilitá los popups para este sitio.', 'err'); return; }
   win.document.write(html);
   win.document.close();
   setTimeout(() => win.print(), 600);
