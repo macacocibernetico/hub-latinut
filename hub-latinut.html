@@ -795,19 +795,46 @@ function getReciprocaCC(){
   return 'agustin@latinutsa.com,valentina@latinutsa.com';
 }
 
-// Filtro de seguridad: Yael NUNCA en AXT, Pedro NUNCA en Buzaram
+// Devuelve solo la parte email de "Nombre <mail@x.com>" o del mail suelto.
+function soloEmail(v){
+  const m = (v||'').match(/<([^>]+)>/);
+  return (m ? m[1] : (v||'')).trim().toLowerCase();
+}
+
+// Mail del usuario logueado, para no ponerlo nunca en copia de su propio mail.
+function getMiEmail(){
+  return (window._userEmail || document.getElementById('auth-btn')?.dataset?.email || '').trim().toLowerCase();
+}
+
+// Filtro de seguridad del CC. Tres reglas:
+//   1. Yael NUNCA en AXT, Pedro NUNCA en Buzaram (son negocios distintos).
+//   2. El remitente nunca va en copia de su propio mail — antes llegaba repetido.
+//   3. Sin direcciones duplicadas, comparando solo el mail (ignora el nombre).
 function sanitizarCC(ccStr){
   if(!ccStr) return ccStr;
   const YAEL = 'yaelvaleria.arrua@newsan.com.ar';
   const PEDRO = 'pberro@axtsolutions.com';
+  const yo = getMiEmail();
   let emails = ccStr.split(',').map(e=>e.trim()).filter(Boolean);
+
   if(negocioActivo === 'axt'){
-    // AXT: sacar a Yael bajo cualquier concepto
     emails = emails.filter(e => !e.toLowerCase().includes('yaelvaleria') && !e.toLowerCase().includes(YAEL.toLowerCase()));
   } else if(negocioActivo === 'buzaram'){
-    // Buzaram: sacar a Pedro bajo cualquier concepto
     emails = emails.filter(e => !e.toLowerCase().includes(PEDRO.toLowerCase()) && !e.toLowerCase().includes('pberro'));
   }
+
+  // Sacar al remitente
+  if(yo) emails = emails.filter(e => soloEmail(e) !== yo);
+
+  // Deduplicar por mail, quedandose con la primera forma que aparecio
+  const vistos = new Set();
+  emails = emails.filter(e => {
+    const k = soloEmail(e);
+    if(!k || vistos.has(k)) return false;
+    vistos.add(k);
+    return true;
+  });
+
   return emails.join(', ');
 }
 
@@ -1478,22 +1505,59 @@ async function appendLog(data){
 // ─── GMAIL DRAFT ─────────────────────────────────────────────────────────────
 // Lee la firma configurada en Gmail (la dirección principal / sendAs default).
 // Se cachea por sesión para no pedirla en cada mail. Devuelve HTML o ''.
+// Cache de la firma. OJO: solo se cachea el EXITO. Antes, si la primera lectura
+// fallaba (por ejemplo porque el token viejo no tenia el scope gmail.settings.basic),
+// se guardaba '' para siempre y la firma no volvia a intentarse en toda la sesion.
 let _firmaGmail = null;
+let _firmaError = null;
 async function getFirmaGmail(){
-  if(_firmaGmail !== null) return _firmaGmail;
-  if(!accessToken){ _firmaGmail = ''; return ''; }
+  if(_firmaGmail) return _firmaGmail;
+  if(!accessToken) return '';
   try{
     const r = await fetch('https://gmail.googleapis.com/gmail/v1/users/me/settings/sendAs', {
       headers:{Authorization:'Bearer '+accessToken}
     });
-    if(!r.ok){ _firmaGmail = ''; return ''; }
+    if(!r.ok){
+      _firmaError = 'HTTP ' + r.status + (r.status===403 ? ' — falta el permiso de Gmail. Desconectá y volvé a conectar con Google para aceptar el scope nuevo.' : '');
+      console.warn('No se pudo leer la firma de Gmail:', _firmaError);
+      return '';
+    }
     const data = await r.json();
     const list = data.sendAs || [];
-    // Buscar la dirección principal (isDefault) o la primaria
-    let sa = list.find(s => s.isDefault) || list.find(s => s.isPrimary) || list[0];
-    _firmaGmail = (sa && sa.signature) ? sa.signature : '';
-    return _firmaGmail;
-  }catch(e){ _firmaGmail = ''; return ''; }
+    const yo = getMiEmail();
+    // Prioridad: la direccion del usuario logueado > la default > la primaria >
+    // cualquiera que TENGA firma. Antes se quedaba con la default aunque estuviera
+    // vacia, e ignoraba una firma cargada en otro alias.
+    const conFirma = s2 => s2 && s2.signature && s2.signature.trim() !== '';
+    let sa = list.find(s2 => (s2.sendAsEmail||'').toLowerCase() === yo && conFirma(s2))
+          || list.find(s2 => s2.isDefault && conFirma(s2))
+          || list.find(s2 => s2.isPrimary && conFirma(s2))
+          || list.find(conFirma)
+          || list.find(s2 => (s2.sendAsEmail||'').toLowerCase() === yo)
+          || list.find(s2 => s2.isDefault)
+          || list[0];
+    const firma = (sa && sa.signature) ? sa.signature : '';
+    if(firma){ _firmaGmail = firma; _firmaError = null; }
+    else { _firmaError = 'La cuenta no tiene firma configurada en Gmail.'; }
+    return firma;
+  }catch(e){
+    _firmaError = e.message;
+    console.warn('Error leyendo la firma de Gmail:', e);
+    return '';
+  }
+}
+
+// Escapa el texto del cuerpo para poder mandarlo como HTML sin romper nada.
+function escaparHtml(t){
+  return (t||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+// Codifica un header con acentos segun RFC 2047. Sin esto, un asunto con "Pagaré"
+// llega con caracteres raros en algunos clientes.
+function encodeHeader(v){
+  const t = (v||'').toString();
+  if(/^[\x00-\x7F]*$/.test(t)) return t;
+  return '=?UTF-8?B?' + btoa(unescape(encodeURIComponent(t))) + '?=';
 }
 
 // Convierte la firma HTML de Gmail a texto plano (para mails en text/plain)
@@ -1519,24 +1583,57 @@ async function createGmailDraft(to, cc, subject, body){
     alert('✓ Contenido copiado al portapapeles.\n\nConectate con Google para crear drafts reales en Gmail.');
     return false;
   }
-  // Agregar la firma real de Gmail al final del cuerpo
+  // Firma real de Gmail. Se manda el mail como multipart/alternative con una parte
+  // HTML, asi la firma conserva formato, links e imagenes. Antes iba solo text/plain
+  // y una firma con imagenes o formato se perdia entera.
   const firmaHtml = await getFirmaGmail();
-  let cuerpoFinal = body;
-  if(firmaHtml){
-    const firmaTxt = firmaHtmlAText(firmaHtml);
-    if(firmaTxt) cuerpoFinal = body + '\n\n' + firmaTxt;
-  }
-  const email = [`To: ${to}`, `Cc: ${cc}`, `Subject: ${subject}`, `Content-Type: text/plain; charset=utf-8`, ``, cuerpoFinal].join('\r\n');
-  const encoded = btoa(unescape(encodeURIComponent(email))).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');
+  const firmaTxt  = firmaHtml ? firmaHtmlAText(firmaHtml) : '';
+
+  const textFinal = firmaTxt ? body + '\n\n' + firmaTxt : body;
+  const htmlFinal = '<div style="font-family:Arial,Helvetica,sans-serif;font-size:13px;color:#222;white-space:pre-wrap;">'
+    + escaparHtml(body) + '</div>'
+    + (firmaHtml ? '<br>' + firmaHtml : '');
+
+  const b64 = t => btoa(unescape(encodeURIComponent(t)));
+  const boundary = 'latinut_' + Date.now().toString(36);
+  const email = [
+    'To: ' + to,
+    'Cc: ' + cc,
+    'Subject: ' + encodeHeader(subject),
+    'MIME-Version: 1.0',
+    'Content-Type: multipart/alternative; boundary="' + boundary + '"',
+    '',
+    '--' + boundary,
+    'Content-Type: text/plain; charset="UTF-8"',
+    'Content-Transfer-Encoding: base64',
+    '',
+    b64(textFinal),
+    '',
+    '--' + boundary,
+    'Content-Type: text/html; charset="UTF-8"',
+    'Content-Transfer-Encoding: base64',
+    '',
+    b64(htmlFinal),
+    '',
+    '--' + boundary + '--',
+    ''
+  ].join('\r\n');
+
+  const encoded = b64(email).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');
   const r = await fetch('https://gmail.googleapis.com/gmail/v1/users/me/drafts', {
     method: 'POST',
     headers: {'Authorization':`Bearer ${accessToken}`,'Content-Type':'application/json'},
     body: JSON.stringify({message:{raw:encoded}})
   });
   if(r.ok){
-    showToast('✓ Borrador creado en Gmail');
+    // Si no se pudo leer la firma, avisar en vez de crear el draft sin firma en silencio
+    if(!firmaHtml) showToast('✓ Borrador creado, pero SIN firma: ' + (_firmaError || 'no se pudo leer de Gmail'), 'err');
+    else showToast('✓ Borrador creado en Gmail (con tu firma)', 'ok');
     return true;
   }
+  let detalle = '';
+  try{ const err = await r.json(); detalle = err.error?.message || ''; }catch(e){}
+  showToast('No se pudo crear el borrador' + (detalle?': '+detalle:''), 'err');
   return false;
 }
 
@@ -2956,7 +3053,7 @@ async function reclamarCobranzaBulk(rowIndices){
   const dates=[...new Set(rows.map(r=>fmtDate(r[getCobroCol()])).filter(Boolean))];
   const datesStr=dates.length===1?dates[0]:dates.join(', ');
   const subject=`Consulta de pago - ${customer} - AXT Trading - Vencimiento ${datesStr}`;
-  const body=`Estimado/a,\n\nNos comunicamos para consultar respecto a ${intro}:\n\n${lines}\n\nAgradecemos confirmar estado del pago.`;
+  const body=`${getSaludoReclamo(customer,'es')},\n\nNos comunicamos para consultar respecto a ${intro}:\n\n${lines}\n\nAgradecemos confirmar estado del pago.`;
 
   modalData={rowIndices, isBulk:true, mailType:'reclamo_cobro', customer, rows};
   document.getElementById('lang-en').classList.remove('active');
@@ -3303,11 +3400,39 @@ function showConfigPrompt(){
 }
 
 // ─── MAIL TEMPLATES ──────────────────────────────────────────────────────────
-function getGreeting(lang,customer){return lang==='es'?`Estimado/a ${customer}`:`Dear ${customer}`;}
+// Clientes con los que hay trato de confianza: se saluda por nombre de pila en vez
+// de "Estimado/a". Para agregar otro, sumar una linea aca y listo.
+const SALUDO_PERSONAL = {
+  'IDI':   'Alex',
+  'PIDCO': 'Alex'
+};
+
+// Busca el nombre de pila mirando los tokens del nombre del cliente, asi "IDI / PIDCO"
+// o "PIDCO SRL" matchean igual, pero un cliente que apenas contenga las letras no.
+function getNombrePila(customer){
+  const tokens = (customer||'').toUpperCase().split(/[^A-Z0-9]+/).filter(Boolean);
+  for(const t of tokens){ if(SALUDO_PERSONAL[t]) return SALUDO_PERSONAL[t]; }
+  return null;
+}
+
+// Saludo para los mails de reclamo de pago: "Hola Alex," si es cliente de confianza,
+// "Estimado/a," si no.
+function getSaludoReclamo(customer, lang){
+  const pila = getNombrePila(customer);
+  if(pila) return 'Hola ' + pila;
+  return lang==='es' ? 'Estimado/a' : 'Dear';
+}
+
+function getGreeting(lang,customer){
+  const pila = getNombrePila(customer);
+  if(pila) return 'Hola ' + pila;
+  return lang==='es'?`Estimado/a ${customer}`:`Dear ${customer}`;
+}
 function getSalutation(lang){return '';} // La firma real de Gmail se agrega automáticamente al crear el borrador
 
 function buildMailBody(mailType,d,lang){
   const hi=getGreeting(lang,d.customer);
+  const saludoReclamo=getSaludoReclamo(d.customer, lang);
   const bye=getSalutation(lang);
   const invLine=d.invoiceInfo?`\n${d.invoiceInfo}`:'';
   const tpls={
@@ -3332,8 +3457,8 @@ function buildMailBody(mailType,d,lang){
       es:{subject:`Pagaré - ${d.negocio} / BL: ${d.bl}`,body:`${hi},\n\nLe solicitamos la firma y devolución del pagaré correspondiente al siguiente embarque:\n\nNegocio: ${d.negocio}\nCliente: ${d.customer}\nBL: ${d.bl}\nBooking: ${d.booking}\nContainer(s): ${d.containers}\nBuque: ${d.vessel}\nETA: ${d.etaFmt}${invLine}\n\n${bye}`}
     },
     reclamo_cobro:{
-      en:{subject:`Consulta de pago - ${d.customer} - AXT Trading - Vencimiento ${d.paymentDueFmt}`,body:`Estimado/a,\n\nNos comunicamos para consultar respecto al siguiente pago:\n\nCliente: ${d.customer}\nInvoice: ${d.inv1||d.bl}${d.inv2?'\nFC Servicios: '+d.inv2:''}\nFecha de vencimiento: ${d.paymentDueFmt}\n\nAgradecemos confirmar estado del pago.`},
-      es:{subject:`Consulta de pago - ${d.customer} - AXT Trading - Vencimiento ${d.paymentDueFmt}`,body:`Estimado/a,\n\nNos comunicamos para consultar respecto al siguiente pago:\n\nCliente: ${d.customer}\nInvoice: ${d.inv1||d.bl}${d.inv2?'\nFC Servicios: '+d.inv2:''}\nFecha de vencimiento: ${d.paymentDueFmt}\n\nAgradecemos confirmar estado del pago.`}
+      en:{subject:`Consulta de pago - ${d.customer} - AXT Trading - Vencimiento ${d.paymentDueFmt}`,body:`${saludoReclamo},\n\nNos comunicamos para consultar respecto al siguiente pago:\n\nCliente: ${d.customer}\nInvoice: ${d.inv1||d.bl}${d.inv2?'\nFC Servicios: '+d.inv2:''}\nFecha de vencimiento: ${d.paymentDueFmt}\n\nAgradecemos confirmar estado del pago.`},
+      es:{subject:`Consulta de pago - ${d.customer} - AXT Trading - Vencimiento ${d.paymentDueFmt}`,body:`${saludoReclamo},\n\nNos comunicamos para consultar respecto al siguiente pago:\n\nCliente: ${d.customer}\nInvoice: ${d.inv1||d.bl}${d.inv2?'\nFC Servicios: '+d.inv2:''}\nFecha de vencimiento: ${d.paymentDueFmt}\n\nAgradecemos confirmar estado del pago.`}
     },
     solicitar_liberacion:{
       en:{subject:`Release request - ${d.exporter||d.customer} - AXT - ETA ${d.etaFmt}`,body:`Dear,\n\nWe kindly request the release of the following shipment:\n\nExporter: ${d.exporter||d.customer}\nCustomer: ${d.customer}\nBL: ${d.bl}\nBooking: ${d.booking}\nContainer(s): ${d.containers}\nVessel: ${d.vessel}\nPort: ${d.port}\nETA: ${d.etaFmt}\n\n@Pedro Berro Madero Please confirm to proceed with the release.`},
@@ -3372,14 +3497,15 @@ function openBulkMailModal(rowIndices, mailType){
 
   const transcargo=getContactsForEmpresa('Transcargo');
   const ccSiempreAll=contacts.filter(c=>c.ccSiempre).map(c=>c.email);
-  const libCC=ccSiempreAll.length?ccSiempreAll.join(', '):'pberro@axtsolutions.com';
+  const reciprocaLib=getReciprocaCC().split(',').map(e=>e.trim()).filter(Boolean);
+  const libCC=sanitizarCC([...ccSiempreAll, ...reciprocaLib].join(', ')) || 'pberro@axtsolutions.com';
 
   modalData={rowIndices, mailType, isBulk:true, exporter, rows};
   document.getElementById('lang-en').classList.remove('active');
   document.getElementById('lang-es').classList.add('active');
   document.getElementById('modal-title').textContent=`Liberación masiva — ${rows.length} cargas`;
   document.getElementById('modal-to').textContent=transcargo.to||'Thomas Laurenti <tlaurenti@transcargoarg.com>';
-  document.getElementById('modal-cc').textContent=libCC;
+  document.getElementById('modal-cc').textContent=libCC;  // ya viene sanitizado
   document.getElementById('modal-subject').textContent=subject;
   document.getElementById('modal-body').value=body;
   const btn=document.getElementById('send-draft-btn');
