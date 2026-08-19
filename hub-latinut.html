@@ -614,7 +614,7 @@ button{font-family:var(--font);cursor:pointer;border:none;background:none;}
 <script>
 // ─── CONFIG ──────────────────────────────────────────────────────────────────
 const CFG_KEY = 'hub_latinut_config';
-let cfg = {...{sheetId:'',sheetName:'Cargas',apiKey:'',clientId:'',alerta_dias:10,hubSheetId:'11r3m9KuXWFRrSjdHf1an2xQDjNwnXhadWk5WbShuLms',appsScriptUrl:'',claudeApiKey:'',buzaramSheetId:'1vQaNeo595C3aK1KAF75UsOkbA5LNUMm16WoEpP9Z69w',buzaramAppsScriptUrl:''},...JSON.parse(localStorage.getItem(CFG_KEY)||'{}')};
+let cfg = {...{sheetId:'',sheetName:'Cargas',apiKey:'',clientId:'',alerta_dias:10,hubSheetId:'11r3m9KuXWFRrSjdHf1an2xQDjNwnXhadWk5WbShuLms',appsScriptUrl:'',claudeApiKey:'',buzaramSheetId:'1vQaNeo595C3aK1KAF75UsOkbA5LNUMm16WoEpP9Z69w',buzaramAppsScriptUrl:'',resumenScriptUrl:''},...JSON.parse(localStorage.getItem(CFG_KEY)||'{}')};
 
 // ─── OAUTH ───────────────────────────────────────────────────────────────────
 const SCOPES = 'https://www.googleapis.com/auth/spreadsheets https://www.googleapis.com/auth/gmail.compose https://www.googleapis.com/auth/gmail.readonly https://www.googleapis.com/auth/gmail.settings.basic https://www.googleapis.com/auth/drive.file https://www.googleapis.com/auth/tasks';
@@ -1931,6 +1931,14 @@ function renderAlertas(){
     <div class="stat-card warn-card"><div class="stat-label">Advertencias</div><div class="stat-value" style="color:var(--warn)">${warnCount}</div><div class="stat-sub">A monitorear</div></div>
     <div class="stat-card"><div class="stat-label">ETA próximos 7d</div><div class="stat-value" style="color:var(--info)">${proxETA}</div><div class="stat-sub">Sin liberación solicitada</div></div>
   </div>`;
+  // Botones del resumen operativo de los dos negocios
+  html+=`<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:14px;padding:10px 12px;background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius-lg);box-shadow:var(--shadow);">
+    <span style="font-size:11px;font-weight:600;color:var(--text2);">Resumen operativo AXT + Buzaram</span>
+    <span style="font-size:10px;color:var(--text3);flex:1;min-width:120px;">Llega por mail todos los días a las 7 AM${cfg.resumenScriptUrl?'':' (falta configurar la URL del Apps Script)'}</span>
+    <button class="btn" onclick="resumenOperativo(false)">📋 Ver ahora</button>
+    <button class="btn" onclick="resumenOperativo(true)">✉ Enviármelo</button>
+  </div>`;
+
   const alertFilter = window._alertFilter || 'all';
   const alertSubFilter = window._alertSubFilter || 'all';
   window.setAlertFilter = function(f){ window._alertFilter=f; window._alertSubFilter='all'; renderAlertas(); };
@@ -3351,6 +3359,11 @@ function renderConfig(){
     <div class="config-field"><div class="config-label">Google OAuth Client ID (escritura)</div><input class="config-input" id="cfg-clientId" value="${cfg.clientId}" placeholder="309220748877-...apps.googleusercontent.com"></div>
     <div class="config-field"><div class="config-label">ID Planilla HUB LATINUT (LOG + Contactos)</div><input class="config-input" id="cfg-hubSheetId" value="${cfg.hubSheetId||'11r3m9KuXWFRrSjdHf1an2xQDjNwnXhadWk5WbShuLms'}" placeholder="11r3m9K..."></div>
     <div class="config-field"><div class="config-label">URL AppScript (automatizaciones)</div><input class="config-input" id="cfg-appsScriptUrl" value="${cfg.appsScriptUrl||''}" placeholder="https://script.google.com/macros/s/..."></div>
+    <div class="config-field">
+      <div class="config-label">URL AppScript Resumen diario</div>
+      <input class="config-input" id="cfg-resumenScriptUrl" value="${cfg.resumenScriptUrl||''}" placeholder="https://script.google.com/macros/s/.../exec">
+      <div style="font-size:10px;color:var(--text3);margin-top:4px;">Es la URL <b>/exec</b> del proyecto <b>ResumenDiario.gs</b> publicado como aplicación web. Habilita los botones de resumen en Alertas.</div>
+    </div>
     <div style="grid-column:1/-1;margin-top:8px;padding:12px;background:var(--bg3);border-radius:8px;border:1px solid var(--border);">
       <div style="font-size:11px;font-weight:700;color:var(--text);margin-bottom:10px;text-transform:uppercase;letter-spacing:.5px;">🟠 Buzaram</div>
       <div class="config-field"><div class="config-label">ID Planilla Buzaram</div><input class="config-input" id="cfg-buzaramSheetId" value="${cfg.buzaramSheetId||'1vQaNeo595C3aK1KAF75UsOkbA5LNUMm16WoEpP9Z69w'}" placeholder="1vQaNeo595..."></div>
@@ -3384,6 +3397,7 @@ function saveConfig(){
   cfg.clientId=document.getElementById('cfg-clientId')?.value?.trim()||cfg.clientId;
   cfg.hubSheetId=document.getElementById('cfg-hubSheetId')?.value?.trim()||cfg.hubSheetId;
   cfg.appsScriptUrl=document.getElementById('cfg-appsScriptUrl')?.value?.trim()||cfg.appsScriptUrl;
+  const rsu=document.getElementById('cfg-resumenScriptUrl')?.value?.trim(); if(rsu!==undefined) cfg.resumenScriptUrl=rsu;
   const ck=document.getElementById('cfg-claudeApiKey')?.value?.trim();if(ck) cfg.claudeApiKey=ck;
   const ak=document.getElementById('cfg-anthropicKey')?.value?.trim();if(ak) cfg.anthropicKey=ak;
   const gk=document.getElementById('cfg-geminiKey')?.value?.trim();if(gk) cfg.geminiKey=gk;
@@ -3709,6 +3723,41 @@ function hideSearch(){
   if(box) box.classList.add('hidden');
   const inp = document.getElementById('global-search');
   if(inp) inp.value = '';
+}
+
+// ─── RESUMEN OPERATIVO DIARIO (Apps Script) ──────────────────────────────────
+// El mail diario lo manda solo el Apps Script con su trigger de las 7 AM. Estos dos
+// botones son para verlo a demanda sin esperar, y usan EL MISMO codigo del lado del
+// script, asi no hay dos versiones del resumen que se puedan desincronizar.
+async function resumenOperativo(enviar){
+  const url = (cfg.resumenScriptUrl||'').trim();
+  if(!url){
+    showToast('Falta la URL del Apps Script del resumen. Cargala en Configuración.', 'err');
+    showView('config');
+    return;
+  }
+  showToast(enviar ? 'Enviando el resumen por mail...' : 'Generando el resumen de los dos negocios...', 'info');
+  try{
+    const r = await fetch(url + '?accion=' + (enviar ? 'enviar' : 'ver'), {method:'GET', redirect:'follow'});
+    const data = await r.json();
+    if(!data.ok) throw new Error(data.error || 'el script devolvió un error');
+    if(enviar){
+      showToast('✓ Resumen enviado a ' + (data.para || 'los destinatarios'), 'ok');
+      return;
+    }
+    const avisos = (data.avisos && data.avisos.length)
+      ? '<div style="background:var(--warn-light);border:1px solid rgba(255,149,0,.35);border-radius:8px;padding:10px 12px;margin-bottom:12px;font-size:11px;color:#b06a00;"><b>Ojo:</b> hay columnas que el script no encontró por nombre.<ul style="margin:4px 0 0;padding-left:16px;">'
+        + data.avisos.map(a=>'<li>'+a+'</li>').join('') + '</ul></div>'
+      : '';
+    const enviarBtn = '<div style="display:flex;justify-content:flex-end;margin-bottom:12px;">'
+      + '<button class="btn primary" onclick="closeDayDetail();resumenOperativo(true)">✉ Enviarlo por mail ahora</button></div>';
+    document.getElementById('cf-detail-title').textContent = 'Resumen operativo — ' + (data.fecha || '');
+    document.getElementById('cf-detail-body').innerHTML = enviarBtn + avisos + (data.html || '<div style="padding:20px;text-align:center;color:var(--text3);">Sin datos.</div>');
+    document.getElementById('cf-detail-overlay').classList.remove('hidden');
+  }catch(e){
+    console.error('resumenOperativo:', e);
+    showToast('No pude generar el resumen: ' + e.message + '. Revisá que el Apps Script esté publicado como aplicación web con acceso "cualquier usuario".', 'err');
+  }
 }
 
 // ─── RESUMEN IA ───────────────────────────────────────────────────────────────
