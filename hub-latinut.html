@@ -4468,6 +4468,12 @@ const CF = {
   aPagar:    {fg:'#c62828', bg:'#ffebee', bd:'#ef9a9a', label:'A pagar'}        // rojo: por salir
 };
 
+// A partir de cuantos movimientos en el mes el PDF pasa a modo compacto (un renglon
+// por dia en vez de uno por factura). Con miles de movimientos el detalle completo
+// genera un documento de varios MB y el previsualizador de impresion se traba.
+const PDF_MAX_EVENTOS_DETALLE = 350;
+const PDF_MAX_POR_DIA = 20;
+
 let cfMode = 'cobros'; // 'cobros' | 'eta'
 let cfYear = new Date().getFullYear();
 let cfMonth = new Date().getMonth(); // 0-based
@@ -6373,7 +6379,17 @@ function exportCashFlowPDF(){
   ].filter(Boolean).join(' · ');
 
   const usd = n => 'USD ' + Math.round(n).toLocaleString('es-AR',{maximumFractionDigits:0});
-  const tag = (txt,bg,fg) => '<span style="font-size:8px;font-weight:700;padding:1px 5px;border-radius:3px;background:'+bg+';color:'+fg+';letter-spacing:.2px;">'+txt+'</span>';
+
+  // Contar los movimientos del mes ANTES de armar nada. Si son muchos, el PDF pasa a
+  // modo compacto: un renglon por dia con los cuatro totales, en vez de uno por
+  // factura. Los totales y las tablas por cliente/proveedor salen completos igual.
+  let eventosMes = 0;
+  for(let d = 1; d <= diasDelMes; d++){
+    const k = cfYear+'-'+String(cfMonth+1).padStart(2,'0')+'-'+String(d).padStart(2,'0');
+    eventosMes += ((cobrosMap[k]||[]).length) + ((pagosMap[k]||[]).length);
+  }
+  const detalleCompleto = eventosMes <= PDF_MAX_EVENTOS_DETALLE;
+  var tag = (txt, cls) => '<span class="tg ' + cls + '">' + txt + '</span>';
 
   for(let d = 1; d <= diasDelMes; d++){
     const fecha = new Date(cfYear, cfMonth, d);
@@ -6388,12 +6404,11 @@ function exportCashFlowPDF(){
     const diaAPagar  = pagos.reduce((s,e)=>s+((!e.pagado&&!isNaN(e.amount))?e.amount:0),0);
     const diaNeto    = (diaCobrado+diaACobrar) - (diaPagado+diaAPagar);
 
-    let diaHtml = '<div style="margin-bottom:8px;border:1px solid #e8e8e8;border-radius:8px;overflow:hidden;break-inside:avoid;">'
-      + '<div style="display:flex;justify-content:space-between;align-items:center;padding:6px 10px;background:#f8f8f8;border-bottom:1px solid #eee;">'
-        + '<div style="font-weight:700;font-size:11px;color:#333;">' + fecha.toLocaleDateString('es-AR',{weekday:'short',day:'numeric',month:'short'}) + '</div>'
-        + '<div style="font-size:10px;font-weight:700;color:' + (diaNeto>=0?'#2e7d32':'#c62828') + ';">' + (diaNeto>=0?'+':'-') + 'USD ' + Math.round(Math.abs(diaNeto)/1000) + 'k</div>'
-      + '</div>'
-      + '<div style="padding:5px 8px;">';
+    let mostradosDia = 0, ocultosDia = 0;
+    let diaHtml = '<div class="d"><div class="dh">'
+        + '<span>' + fecha.toLocaleDateString('es-AR',{weekday:'short',day:'numeric',month:'short'}) + '</span>'
+        + '<span style="color:' + (diaNeto>=0?'#2e7d32':'#c62828') + ';">' + (diaNeto>=0?'+':'-') + 'USD ' + Math.round(Math.abs(diaNeto)/1000) + 'k</span>'
+      + '</div><div class="db">';
 
     cobros.forEach(e => {
       if(!e.amount || isNaN(e.amount)) return;
@@ -6406,20 +6421,23 @@ function exportCashFlowPDF(){
       if(!porCliente[e.customer]) porCliente[e.customer] = {cobrado:0, aCobrarMes:0, aCobrarVenc:0};
       porCliente[e.customer][esCobrado?'cobrado':(arrastrado?'aCobrarVenc':'aCobrarMes')] += e.amount;
 
+      if(!detalleCompleto || mostradosDia >= PDF_MAX_POR_DIA){ ocultosDia++; return; }
+      mostradosDia++;
       // verde = cobrado · azul = a cobrar del mes · violeta = arrastrado de antes
-      const est = esCobrado ? {bg:'#e8f5e9', bd:'1px solid #a5d6a7', fg:'#1b5e20', t:tag('COBRADO','#c8e6c9','#1b5e20')}
-                : arrastrado ? {bg:'#f5f0ff', bd:'1px dashed #b39ddb', fg:'#4527a0', t:tag('VENCIDO DE ANTES','#ded3f0','#4527a0')}
-                             : {bg:'#e8f2fd', bd:'1px solid #90caf9', fg:'#0d47a1', t:tag('A COBRAR','#bbdefb','#0d47a1')};
+      const cls = esCobrado ? 'e-cob' : (arrastrado ? 'e-ant' : 'e-mes');
+      const etq = esCobrado ? tag('COBRADO','t-cob')
+                : arrastrado ? tag('VENCIDO DE ANTES','t-ant')
+                             : tag('A COBRAR','t-mes');
       const fechaOrig = esEsc && e.fechaOriginal
-        ? ' <span style="text-decoration:line-through;color:#999;font-size:8px;">' + e.fechaOriginal.getDate() + '/' + (e.fechaOriginal.getMonth()+1) + '</span>'
+        ? ' <span class="tach">' + e.fechaOriginal.getDate() + '/' + (e.fechaOriginal.getMonth()+1) + '</span>'
         : '';
-      diaHtml += '<div style="display:flex;justify-content:space-between;align-items:center;gap:4px;padding:3px 6px;background:'+est.bg+';border:'+est.bd+';border-radius:4px;margin-bottom:2px;">'
-        + '<span style="color:'+est.fg+';font-size:10px;display:flex;align-items:center;gap:4px;min-width:0;"><span style="flex-shrink:0;">'+(arrastrado?'&#8617;':'&#9650;')+'</span>'+est.t+'<span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">'+e.customer+'</span>'+fechaOrig+'</span>'
-        + '<span style="color:'+est.fg+';font-weight:700;font-size:10px;white-space:nowrap;">'+usd(e.amount)+'</span>'
+      diaHtml += '<div class="ev ' + cls + '">'
+        + '<span class="evl">' + (arrastrado?'&#8617;':'&#9650;') + etq + '<span class="evn">' + e.customer + '</span>' + fechaOrig + '</span>'
+        + '<span class="evm">' + usd(e.amount) + '</span>'
         + '</div>';
     });
 
-    if(cobros.length && pagos.length){
+    if(detalleCompleto && mostradosDia && pagos.length){
       diaHtml += '<div style="height:1px;background:#eee;margin:3px 0;"></div>';
     }
 
@@ -6432,15 +6450,27 @@ function exportCashFlowPDF(){
       if(!porProveedor[prov]) porProveedor[prov] = {pagado:0, aPagar:0};
       porProveedor[prov][esPagado?'pagado':'aPagar'] += e.amount;
 
-      const bg = esPagado ? '#eceff1' : '#ffebee';
-      const fg = esPagado ? '#546e7a' : '#c62828';
-      const estado = esPagado ? tag('PAGADO','#cfd8dc','#37474f') : tag('A PAGAR','#ffcdd2','#b71c1c');
-      diaHtml += '<div style="display:flex;justify-content:space-between;align-items:center;gap:4px;padding:3px 6px;background:'+bg+';border-radius:4px;margin-bottom:2px;">'
-        + '<span style="color:'+fg+';font-size:10px;display:flex;align-items:center;gap:4px;min-width:0;"><span style="flex-shrink:0;">&#9660;</span>'+estado+'<span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">'+prov+'</span></span>'
-        + '<span style="color:'+fg+';font-weight:700;font-size:10px;white-space:nowrap;">'+usd(e.amount)+'</span>'
+      if(!detalleCompleto || mostradosDia >= PDF_MAX_POR_DIA){ ocultosDia++; return; }
+      mostradosDia++;
+      diaHtml += '<div class="ev ' + (esPagado?'e-pag':'e-apa') + '">'
+        + '<span class="evl">&#9660;' + (esPagado?tag('PAGADO','t-pag'):tag('A PAGAR','t-apa')) + '<span class="evn">' + prov + '</span></span>'
+        + '<span class="evm">' + usd(e.amount) + '</span>'
         + '</div>';
     });
 
+    if(!detalleCompleto){
+      // Modo compacto: los cuatro totales del dia, sin listar factura por factura
+      const cel = (etq, monto, cls) => monto > 0
+        ? '<div class="ev ' + cls + '"><span class="evl">' + etq + '</span><span class="evm">' + usd(monto) + '</span></div>'
+        : '';
+      diaHtml += cel('&#10003; Cobrado', diaCobrado, 'e-cob')
+               + cel('&#10007; A cobrar', diaACobrar, 'e-mes')
+               + cel('&#10003; Pagado',   diaPagado,  'e-pag')
+               + cel('&#10007; A pagar',  diaAPagar,  'e-apa')
+               + '<div class="mas">' + (cobros.length + pagos.length) + ' movimiento' + ((cobros.length+pagos.length)===1?'':'s') + ' — detalle en las tablas de abajo</div>';
+    } else if(ocultosDia){
+      diaHtml += '<div class="mas">y ' + ocultosDia + ' movimiento' + (ocultosDia===1?'':'s') + ' más en el día</div>';
+    }
     diaHtml += '</div></div>';
     diasHtml.push(diaHtml);
   }
@@ -6517,6 +6547,26 @@ function exportCashFlowPDF(){
     + '.sbox tr:nth-child(even){background:#fafafa;}'
     + '.sbox-total{padding:7px 8px;display:flex;justify-content:space-between;border-top:2px solid #e0e0e0;font-weight:800;font-size:12px;}'
     + '.footer{margin-top:14px;font-size:8px;color:#bbb;text-align:right;border-top:1px solid #eee;padding-top:8px;}'
+    // Clases para las filas que se repiten. Antes cada fila llevaba ~250 caracteres
+    // de estilo inline; con miles de movimientos el HTML pesaba varios MB.
+    + '.d{margin-bottom:8px;border:1px solid #e8e8e8;border-radius:8px;overflow:hidden;break-inside:avoid;}'
+    + '.dh{display:flex;justify-content:space-between;align-items:center;padding:6px 10px;background:#f8f8f8;border-bottom:1px solid #eee;font-weight:700;font-size:11px;color:#333;}'
+    + '.db{padding:5px 8px;}'
+    + '.ev{display:flex;justify-content:space-between;align-items:center;gap:4px;padding:3px 6px;border-radius:4px;margin-bottom:2px;}'
+    + '.evl{font-size:10px;display:flex;align-items:center;gap:4px;min-width:0;}'
+    + '.evn{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}'
+    + '.evm{font-weight:700;font-size:10px;white-space:nowrap;}'
+    + '.tg{font-size:8px;font-weight:700;padding:1px 5px;border-radius:3px;letter-spacing:.2px;}'
+    + '.e-cob{background:#e8f5e9;border:1px solid #a5d6a7;color:#1b5e20;}'
+    + '.e-mes{background:#e8f2fd;border:1px solid #90caf9;color:#0d47a1;}'
+    + '.e-ant{background:#f5f0ff;border:1px dashed #b39ddb;color:#4527a0;}'
+    + '.e-pag{background:#eceff1;color:#546e7a;}'
+    + '.e-apa{background:#ffebee;color:#c62828;}'
+    + '.t-cob{background:#c8e6c9;color:#1b5e20;}.t-mes{background:#bbdefb;color:#0d47a1;}'
+    + '.t-ant{background:#ded3f0;color:#4527a0;}.t-pag{background:#cfd8dc;color:#37474f;}'
+    + '.t-apa{background:#ffcdd2;color:#b71c1c;}'
+    + '.tach{text-decoration:line-through;color:#999;font-size:8px;}'
+    + '.mas{font-size:9px;color:#888;padding:2px 6px;font-style:italic;}'
     + '</style></head><body>'
     + '<div class="header">'
       + '<div>'
@@ -6529,6 +6579,11 @@ function exportCashFlowPDF(){
       + '</div>'
     + '</div>'
     + escenarioBanner
+    + (detalleCompleto ? '' :
+        '<div style="margin-bottom:12px;padding:8px 14px;background:#f5f5f5;border:1px solid #ddd;border-radius:6px;font-size:10px;color:#555;">'
+        + '<b>Vista resumida.</b> El mes tiene ' + eventosMes + ' movimientos, demasiados para listarlos uno por uno sin que el PDF quede impracticable. '
+        + 'Cada día muestra sus totales y el desglose completo por cliente y por proveedor está en las tablas del final. '
+        + 'Los importes de arriba son exactos, no hay nada afuera del cálculo.</div>')
     + leyenda
     // Fila 1: de donde sale la plata del mes. Fila 2: pagos y neto.
     + '<div class="stats-cap">Cobros del mes</div>'
@@ -6593,7 +6648,15 @@ function exportCashFlowPDF(){
   if(!win){ showToast('El navegador bloqueó la ventana del PDF. Habilitá los popups para este sitio.', 'err'); return; }
   win.document.write(html);
   win.document.close();
-  setTimeout(() => win.print(), 600);
+  // Nombre lindo para el archivo cuando se guarda como PDF
+  try{ win.document.title = 'Cash Flow ' + mesLabel + ' - ' + nc.label; }catch(e){}
+  showToast(detalleCompleto
+    ? '✓ PDF generado — se abre el diálogo de impresión'
+    : '✓ PDF generado en vista resumida (' + eventosMes + ' movimientos en el mes)', 'ok');
+  setTimeout(function(){
+    try{ win.focus(); win.print(); }
+    catch(e){ console.warn('No se pudo abrir el diálogo de impresión:', e); }
+  }, 400);
 }
 
 // ─── GOOGLE DRIVE ────────────────────────────────────────────────────────────
