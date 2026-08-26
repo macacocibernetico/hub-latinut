@@ -682,6 +682,7 @@ function getNegocioConfig(){
 }
 function setNegocio(n){
   negocioActivo = n;
+  _alertsCache = null;
   localStorage.setItem('hub_negocio', n);
   cargasPage = 0;
   logVerTodos = false;
@@ -879,15 +880,40 @@ async function loadLog(){
     if(!r.ok) return;
     const data=await r.json();
     logRows=(data.values||[]).slice(1);
+    construirIndiceLog();
+    _dataVersion++;
     console.log(`Loaded ${logRows.length} log entries`);
   }catch(e){console.error('Error loading log',e);}
+}
+
+// Indice BL -> filas del LOG. Se arma una sola vez cada vez que se carga el LOG.
+// col 5=BL, col 7=Accion (0-indexed: Fecha,Hora,Fuente,FC,FCServ,BL,Customer,Accion,Detalle)
+let _logPorBL = new Map();
+let _logIndexLen = -1;
+function construirIndiceLog(){
+  _logPorBL = new Map();
+  _logIndexLen = logRows.length;
+  for(let i=0;i<logRows.length;i++){
+    const bl=(logRows[i][5]||'').trim();
+    if(!bl) continue;
+    let arr=_logPorBL.get(bl);
+    if(!arr){ arr=[]; _logPorBL.set(bl,arr); }
+    arr.push(logRows[i]);
+  }
+}
+function getLogDeBL(bl){
+  // Red de seguridad: si logRows cambio sin pasar por construirIndiceLog, reindexar.
+  if(_logIndexLen !== logRows.length) construirIndiceLog();
+  return _logPorBL.get((bl||'').trim()) || [];
 }
 
 function getReclamoInfoFromLog(bl, mailType){
   if(!logRows.length) return null;
   const accion=mailType.replace(/_/g,' ');
-  // col 5=BL, col 7=Accion (0-indexed: Fecha,Hora,Fuente,FC,FCServ,BL,Customer,Accion,Detalle)
-  const matches=logRows.filter(r=>(r[5]||'').trim()===bl&&(r[7]||'').toLowerCase().includes(accion.toLowerCase().split(' ')[0]));
+  const delBL=getLogDeBL(bl);
+  if(!delBL.length) return null;
+  const clave=accion.toLowerCase().split(' ')[0];
+  const matches=delBL.filter(r=>(r[7]||'').toLowerCase().includes(clave));
   if(!matches.length) return null;
   // Get last entry date
   const last=matches[matches.length-1];
@@ -995,8 +1021,8 @@ function nowStr(){const n=new Date();return{fecha:n.toLocaleDateString('es-AR'),
 // Total de una carga. Se lee de la columna de total de la planilla
 // ("TOTAL FINAL" en AXT, "VALOR TOTAL" en Buzaram), que ya trae FC1 + FC2 sumadas.
 // Si esa celda esta vacia, recien ahi se suma FC1 ("Total CFR") + FC2 ("Price serv").
-function totalCargaDe(row, fc1Raw, fc2Raw){
-  const nc = getNegocioConfig();
+function totalCargaDe(row, fc1Raw, fc2Raw, ncPre){
+  const nc = ncPre || getNegocioConfig();
   const total = parseSheetNum(row[nc.COL_TOTAL_CFR]);
   if(!isNaN(total)) return total;
   const a = (fc1Raw !== undefined) ? fc1Raw : parseSheetNum(row[nc.COL_TOTAL_FC1]);
@@ -1260,6 +1286,7 @@ async function loadData(){
     });
     allRowsAll = validRows; // todas, incluyendo cerradas — para pagos
     allRows = validRows.filter(row=>!isClosed(row)); // solo activas
+    _dataVersion++;   // invalida el cache de alertas
     await loadContacts();
     await loadLog();
     setSheetStatus('ok',`${allRows.length} cargas activas`);
@@ -1658,9 +1685,19 @@ function showToast(msg, type){
 }
 
 // ─── ALERTS ──────────────────────────────────────────────────────────────────
+// Version de los datos. Sube en cada loadData/loadLog y invalida los caches.
+let _dataVersion = 0;
+let _alertsCache = null, _alertsKey = '';
+
 function getAlerts(){
+  // updateBadges, renderAlertas y las badges del bottom nav pedian esto por separado
+  // y se recalculaba tres veces por render. Ahora se calcula una sola vez por carga.
+  const cacheKey = negocioActivo + '|' + allRows.length + '|' + _dataVersion;
+  if(_alertsCache && _alertsKey === cacheKey) return _alertsCache;
+
   const alerts = [];
   const today = new Date();
+  const ncA = getNegocioConfig();   // izado: antes se llamaba hasta 3 veces por fila
 
   allRows.forEach((row, idx) => {
     const eta = parseDate(row[COL.ETA]);
@@ -1679,7 +1716,7 @@ function getAlerts(){
     const telexVacio = telex === '';
     const pagEnv = (row[COL.PAGARE_ENVIADO]||'').trim();
     const pagFirm = (row[COL.PAGARE_FIRMADO]||'').trim();
-    const pagNA = pagEnv === '-' || pagFirm === '-' || getNegocioConfig().sinPagares;
+    const pagNA = pagEnv === '-' || pagFirm === '-' || ncA.sinPagares;
     const docs = (row[COL.DOCUMENTOS]||'').trim();
     const inv1 = (row[COL.INVOICE_CLIENTE]||'').trim();
     const inv2raw = (row[COL.INVOICE_FC_SERV]||'').trim();
@@ -1756,7 +1793,7 @@ function getAlerts(){
     }
 
     // W3: Pagaré sin firmar + ETA ≤ 21d
-    if(!pagNA && !getNegocioConfig().sinPagares && pagEnv.toUpperCase()==='SI' && pagFirm.toUpperCase()!=='SI' && dETA !== null && dETA <= 21 && dETA >= 0){
+    if(!pagNA && !ncA.sinPagares && pagEnv.toUpperCase()==='SI' && pagFirm.toUpperCase()!=='SI' && dETA !== null && dETA <= 21 && dETA >= 0){
       alerts.push({
         level:'warning', subtype:'pagare_firma', rowIdx:idx, dETA,
         title:`Pagaré sin firmar — ${customer}`,
@@ -1782,7 +1819,7 @@ function getAlerts(){
 
     // ── INFO ─────────────────────────────────────────────────
     // I1: Pagaré sin enviar + ETA ≤ 30d
-    if(!pagNA && !getNegocioConfig().sinPagares && pagEnv.toUpperCase()!=='SI' && dETA !== null && dETA <= 30 && dETA >= 0){
+    if(!pagNA && !ncA.sinPagares && pagEnv.toUpperCase()!=='SI' && dETA !== null && dETA <= 30 && dETA >= 0){
       alerts.push({
         level:'info', subtype:'pagare_envio', rowIdx:idx, dETA,
         title:`Pagaré sin enviar — ${customer}`,
@@ -1808,22 +1845,29 @@ function getAlerts(){
 
   // Sort: critical first, then by urgency
   const order = {critical:0, warning:1, info:2};
-  return alerts.sort((a,b) => {
+  alerts.sort((a,b) => {
     const lvl = (order[a.level]||2) - (order[b.level]||2);
     if(lvl !== 0) return lvl;
     const da = a.dETA !== null && a.dETA !== undefined ? a.dETA : 999;
     const db = b.dETA !== null && b.dETA !== undefined ? b.dETA : 999;
     return da - db;
   });
+  _alertsCache = alerts; _alertsKey = cacheKey;
+  return alerts;
 }
 
 
 function updateBadges(){
-  const critCount = getAlerts().filter(a=>a.level==='critical').length;
-  document.title = critCount > 0 ? `(${critCount}) LATINUT Hub` : 'LATINUT Hub';
-  updateBottomNavBadges();
+  // Antes llamaba getAlerts() dos veces (y updateBottomNavBadges una tercera).
   const alerts=getAlerts();
-  const crit=alerts.filter(a=>a.level==='critical'||a.level==='warning').length;
+  let critCount=0, crit=0;
+  for(let i=0;i<alerts.length;i++){
+    const lv=alerts[i].level;
+    if(lv==='critical'){ critCount++; crit++; }
+    else if(lv==='warning'){ crit++; }
+  }
+  document.title = critCount > 0 ? `(${critCount}) LATINUT Hub` : 'LATINUT Hub';
+  updateBottomNavBadges(alerts);
   const bA=document.getElementById('badge-alertas');
   bA.textContent=crit||'';bA.style.display=crit?'':'none';
   const cobros=allRows.filter(r=>{const d=daysFrom(r[getCobroCol()]);return d!==null&&d<=14;}).length;
@@ -3105,7 +3149,8 @@ function renderCobranza(filterKey, filterVal){
   });
 
   let totalUSD = 0;
-  rows.forEach(r => { const m=totalCargaDe(r); if(!isNaN(m)) totalUSD+=m; });
+  const ncCob = getNegocioConfig();
+  rows.forEach(r => { const m=totalCargaDe(r,undefined,undefined,ncCob); if(!isNaN(m)) totalUSD+=m; });
 
   const uniqueClientes = [...new Set(allCobRows.map(r=>(r[COL.CUSTOMER]||'').trim()).filter(Boolean))].sort();
 
@@ -3227,7 +3272,7 @@ function renderCobranzaArchivados(){
     const inv2r = (row[COL.INVOICE_FC_SERV]||'').trim();
     const inv2 = (inv2r==='-'||inv2r==='--')?'':inv2r;
     // Find comment in logRows
-    const logEntry = logRows.filter(r=>(r[5]||'').trim()===bl&&(r[7]||'').includes('archivado')).pop();
+    const logEntry = getLogDeBL(bl).filter(r=>(r[7]||'').includes('archivado')).pop();
     const comentario = logEntry ? (logEntry[8]||'Sin comentario') : 'Sin comentario';
 
     html+=`<tr>
@@ -4269,8 +4314,8 @@ function updateBottomNav(view){
 }
 
 // Update bottom nav badges
-function updateBottomNavBadges(){
-  const alerts = getAlerts();
+function updateBottomNavBadges(alertsPrecalc){
+  const alerts = alertsPrecalc || getAlerts();
   const critWarn = alerts.filter(a=>a.level==='critical'||a.level==='warning').length;
   const bnavAlerta = document.getElementById('bnav-badge-alertas');
   if(bnavAlerta){ bnavAlerta.style.display = critWarn>0?'block':'none'; bnavAlerta.textContent = critWarn||''; }
