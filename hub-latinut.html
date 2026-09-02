@@ -787,13 +787,22 @@ async function loadContacts(){
   }catch(e){console.error('Error loading contacts',e);}
 }
 
+// Direccion interna del equipo. Va en copia en TODOS los mails que sale del hub, en
+// lugar de la vieja logica de copiar al compañero (Agustin <-> Valentina): con una
+// sola direccion de equipo las respuestas del cliente le llegan a todos, y no hay
+// que acordarse de sumar a nadie cuando entra gente nueva.
+// Para cambiarla, esta linea es la unica que hay que tocar.
+const CC_EQUIPO = 'operaciones@latinutsa.com';
+
+// Direcciones internas que SI pueden ir en copia. Cualquier otra @latinutsa.com que
+// aparezca (por ejemplo cargada como "CC siempre" en la hoja CONTACTOS) se descarta:
+// la copia interna es una sola, la del equipo. Si algun dia hace falta sumar otra
+// direccion interna fija, se agrega a esta lista y listo.
+const DOMINIO_INTERNO = '@latinutsa.com';
+const CC_INTERNOS_OK = [CC_EQUIPO];
+
 function getReciprocaCC(){
-  // Returns ONLY the teammate - not the sender
-  const email = (window._userEmail || document.getElementById('auth-btn')?.dataset?.email || '').toLowerCase();
-  if(email.includes('agustin')) return 'valentina@latinutsa.com';
-  if(email.includes('valentina')) return 'agustin@latinutsa.com';
-  // If unknown, return both as fallback
-  return 'agustin@latinutsa.com,valentina@latinutsa.com';
+  return CC_EQUIPO;
 }
 
 // Devuelve solo la parte email de "Nombre <mail@x.com>" o del mail suelto.
@@ -824,8 +833,18 @@ function sanitizarCC(ccStr){
     emails = emails.filter(e => !e.toLowerCase().includes(PEDRO.toLowerCase()) && !e.toLowerCase().includes('pberro'));
   }
 
-  // Sacar al remitente
-  if(yo) emails = emails.filter(e => soloEmail(e) !== yo);
+  // Una sola copia interna. Se descarta cualquier direccion del dominio propio que no
+  // sea la del equipo — asi no se cuelan Agustin ni Valentina por venir marcados como
+  // "CC siempre" en la hoja CONTACTOS.
+  const permitidos = CC_INTERNOS_OK.map(x => x.toLowerCase());
+  emails = emails.filter(e => {
+    const m = soloEmail(e);
+    if(m.indexOf(DOMINIO_INTERNO) < 0) return true;
+    return permitidos.indexOf(m) >= 0;
+  });
+
+  // Y por si el remitente fuera de otro dominio, tampoco se copia a si mismo.
+  if(yo && yo.indexOf(DOMINIO_INTERNO) < 0) emails = emails.filter(e => soloEmail(e) !== yo);
 
   // Deduplicar por mail, quedandose con la primera forma que aparecio
   const vistos = new Set();
@@ -852,7 +871,8 @@ function getContactsForEmpresa(empresa){
     return false;
   });
   const principal=match.filter(c=>c.rol.toLowerCase().includes('principal'));
-  // Exclude @latinutsa.com from ccSiempre - those are handled by getReciprocaCC
+  // Las direcciones @latinutsa.com de la hoja CONTACTOS se excluyen aca: la copia
+  // interna la pone CC_EQUIPO, asi no se duplica ni depende de como este cargada la hoja.
   const cc=contacts.filter(c=>c.ccSiempre&&!c.email.toLowerCase().includes('latinutsa.com')).map(c=>c.email);
   const toContact=principal[0]||match[0];
   const toStr=toContact?`${toContact.contacto} <${toContact.email}>`:'';
@@ -1978,9 +1998,9 @@ function renderAlertas(){
   // Botones del resumen operativo de los dos negocios
   html+=`<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:14px;padding:10px 12px;background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius-lg);box-shadow:var(--shadow);">
     <span style="font-size:11px;font-weight:600;color:var(--text2);">Resumen operativo AXT + Buzaram</span>
-    <span style="font-size:10px;color:var(--text3);flex:1;min-width:120px;">Llega por mail todos los días a las 7 AM${cfg.resumenScriptUrl?'':' (falta configurar la URL del Apps Script)'}</span>
+    <span style="font-size:10px;color:var(--text3);flex:1;min-width:120px;">Llega por mail a ${CC_EQUIPO} todos los días a las 7 AM${cfg.resumenScriptUrl?'':' — falta configurar la URL del Apps Script'}</span>
     <button class="btn" onclick="resumenOperativo(false)">📋 Ver ahora</button>
-    <button class="btn" onclick="resumenOperativo(true)">✉ Enviármelo</button>
+    <button class="btn" onclick="resumenOperativo(true)">✉ Enviar al equipo</button>
   </div>`;
 
   const alertFilter = window._alertFilter || 'all';
@@ -3608,12 +3628,13 @@ function openMailModal(rowIdx, mailType){
   if(mailType==='solicitar_liberacion'){
     const transcargo=getContactsForEmpresa('Transcargo');
     toStr=transcargo.to||'Thomas Laurenti <tlaurenti@transcargoarg.com>';
+    // La liberacion individual no copiaba a nadie del equipo; ahora va operaciones@
     const ccSiempre=contacts.filter(c=>c.ccSiempre).map(c=>c.email);
-    ccStr=ccSiempre.length?ccSiempre.join(', '):'pberro@axtsolutions.com';
+    ccStr=[...ccSiempre, CC_EQUIPO].join(', ') || 'pberro@axtsolutions.com';
   } else if(mailType==='reclamo_cobro'){
     const contactInfo=getContactsForEmpresa(d.customer);
     toStr=contactInfo.to||`${d.customer} <sin contacto cargado>`;
-    // CC: other contacts from same customer + reciprocal teammate
+    // CC: otros contactos del mismo cliente + la casilla del equipo
     const otherCC=contacts.filter(c=>!c.ccSiempre&&c.empresa.toUpperCase()!==d.customer.toUpperCase()&&(c.empresa.toUpperCase().includes(d.customer.toUpperCase())||d.customer.toUpperCase().includes(c.empresa.toUpperCase()))).map(c=>c.email);
     const reciproca=getReciprocaCC().split(',').map(e=>e.trim()).filter(Boolean);
     ccStr=[...new Set([...otherCC,...reciproca])].join(', ');
@@ -3781,13 +3802,13 @@ async function resumenOperativo(enviar){
     showView('config');
     return;
   }
-  showToast(enviar ? 'Enviando el resumen por mail...' : 'Generando el resumen de los dos negocios...', 'info');
+  showToast(enviar ? 'Enviando el resumen al equipo...' : 'Generando el resumen de los dos negocios...', 'info');
   try{
     const r = await fetch(url + '?accion=' + (enviar ? 'enviar' : 'ver'), {method:'GET', redirect:'follow'});
     const data = await r.json();
     if(!data.ok) throw new Error(data.error || 'el script devolvió un error');
     if(enviar){
-      showToast('✓ Resumen enviado a ' + (data.para || 'los destinatarios'), 'ok');
+      showToast('✓ Resumen enviado a ' + (data.para || CC_EQUIPO) + (data.cc ? ' (CC: ' + data.cc + ')' : ''), 'ok');
       return;
     }
     const avisos = (data.avisos && data.avisos.length)
@@ -3795,7 +3816,7 @@ async function resumenOperativo(enviar){
         + data.avisos.map(a=>'<li>'+a+'</li>').join('') + '</ul></div>'
       : '';
     const enviarBtn = '<div style="display:flex;justify-content:flex-end;margin-bottom:12px;">'
-      + '<button class="btn primary" onclick="closeDayDetail();resumenOperativo(true)">✉ Enviarlo por mail ahora</button></div>';
+      + '<button class="btn primary" onclick="closeDayDetail();resumenOperativo(true)">✉ Enviar al equipo ahora</button></div>';
     document.getElementById('cf-detail-title').textContent = 'Resumen operativo — ' + (data.fecha || '');
     document.getElementById('cf-detail-body').innerHTML = enviarBtn + avisos + (data.html || '<div style="padding:20px;text-align:center;color:var(--text3);">Sin datos.</div>');
     document.getElementById('cf-detail-overlay').classList.remove('hidden');
