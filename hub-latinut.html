@@ -640,6 +640,9 @@ function getBuzaramCfg(){
     COL_TOTAL_FC1:       c('TOTAL_CFR_ORIG'),   // "Total CFR"
     COL_TOTAL_FC2:       c('PRICE_SERV'),       // "Price Serv"
     ccFijo: 'yaelvaleria.arrua@newsan.com.ar',
+    // Quien da el OK de liberacion en este negocio. Misma convencion que el AppScript
+    // de Buzaram: Yael va en el campo Para junto al despachante, no en copia.
+    contraparte: { nombre: 'Yael', email: 'yaelvaleria.arrua@newsan.com.ar', enPara: true },
     sinPagares: true,
     // Pagos forwarder Buzaram
     PAGO_FC_FLETE:      c('FC_FLETE'),          // "FC flete"
@@ -668,6 +671,8 @@ function getNegocioConfig(){
     COL_TOTAL_FC1:       c('TOTAL_CFR_ORIG'),   // "Total CFR"
     COL_TOTAL_FC2:       c('PRICE_SERV'),       // "Price serv"
     ccFijo: 'pberro@axtsolutions.com',
+    // En AXT el OK lo da Pedro, y va en copia (no en Para).
+    contraparte: { nombre: 'Pedro Berro Madero', email: 'pberro@axtsolutions.com', enPara: false },
     sinPagares: false,
     // Pagos forwarder AXT
     PAGO_FC_FLETE:      c('FC_FLETE'),
@@ -3540,13 +3545,39 @@ function buildMailBody(mailType,d,lang){
       es:{subject:`Consulta de pago - ${d.customer} - AXT Trading - Vencimiento ${d.paymentDueFmt}`,body:`${saludoReclamo},\n\nNos comunicamos para consultar respecto al siguiente pago:\n\nCliente: ${d.customer}\nInvoice: ${d.inv1||d.bl}${d.inv2?'\nFC Servicios: '+d.inv2:''}\nFecha de vencimiento: ${d.paymentDueFmt}\n\nAgradecemos confirmar estado del pago.`}
     },
     solicitar_liberacion:{
-      en:{subject:`Release request - ${d.exporter||d.customer} - AXT - ETA ${d.etaFmt}`,body:`Dear,\n\nWe kindly request the release of the following shipment:\n\nExporter: ${d.exporter||d.customer}\nCustomer: ${d.customer}\nBL: ${d.bl}\nBooking: ${d.booking}\nContainer(s): ${d.containers}\nVessel: ${d.vessel}\nPort: ${d.port}\nETA: ${d.etaFmt}\n\n@Pedro Berro Madero Please confirm to proceed with the release.`},
-      es:{subject:`Solicitud de liberacion - ${d.exporter||d.customer} - AXT - ETA ${d.etaFmt}`,body:`Estimado/a,\n\nSolicitamos la liberacion del siguiente embarque:\n\nExporter: ${d.exporter||d.customer}\nCliente: ${d.customer}\nBL: ${d.bl}\nBooking: ${d.booking}\nContainer(s): ${d.containers}\nBuque: ${d.vessel}\nPuerto: ${d.port}\nETA: ${d.etaFmt}\n\n@Pedro Berro Madero Por favor, dar el ok para proceder con la liberacion.\n\nQuedamos a la espera de confirmacion.`}
+      en:{subject:`Release request - ${d.exporter||d.customer} - ${d.negocioLabel||'AXT'} - ETA ${d.etaFmt}`,body:`Dear,\n\nWe kindly request the release of the following shipment:\n\nExporter: ${d.exporter||d.customer}\nCustomer: ${d.customer}\nBL: ${d.bl}\nBooking: ${d.booking}\nContainer(s): ${d.containers}\nVessel: ${d.vessel}\nPort: ${d.port}\nETA: ${d.etaFmt}\n\n@${d.contraparte||'Pedro Berro Madero'} Please confirm to proceed with the release.`},
+      es:{subject:`Solicitud de liberacion - ${d.exporter||d.customer} - ${d.negocioLabel||'AXT'} - ETA ${d.etaFmt}`,body:`Estimado/a,\n\nSolicitamos la liberacion del siguiente embarque:\n\nExporter: ${d.exporter||d.customer}\nCliente: ${d.customer}\nBL: ${d.bl}\nBooking: ${d.booking}\nContainer(s): ${d.containers}\nBuque: ${d.vessel}\nPuerto: ${d.port}\nETA: ${d.etaFmt}\n\n@${d.contraparte||'Pedro Berro Madero'} Por favor, dar el ok para proceder con la liberacion.\n\nQuedamos a la espera de confirmacion.`}
     }
   };
   const tpl = tpls[mailType]?.[lang]||tpls[mailType]?.en||{subject:'',body:''};
   if(tpl.body) tpl.body = tpl.body.replace(/\s+$/,''); // sacar saltos/espacios finales sobrantes
   return tpl;
+}
+
+// Para y CC de una solicitud de liberacion, segun el negocio activo.
+// En Buzaram, Yael va en Para junto al despachante (igual que hace el AppScript de
+// Buzaram); en AXT, Pedro va en copia. La casilla del equipo siempre en CC.
+function destinatariosLiberacion(){
+  const nc=getNegocioConfig();
+  const cp=nc.contraparte||{};
+  const transcargo=getContactsForEmpresa('Transcargo');
+  const desp=transcargo.to||'Thomas Laurenti <tlaurenti@transcargoarg.com>';
+
+  const to = (cp.enPara && cp.email) ? [cp.email, desp].join(', ') : desp;
+
+  // Contactos externos marcados "CC siempre" en la hoja CONTACTOS
+  const ccSiempre=contacts.filter(c=>c.ccSiempre).map(c=>c.email);
+  const cc=[];
+  if(cp.email && !cp.enPara) cc.push(cp.email);
+  cc.push(...ccSiempre, CC_EQUIPO);
+
+  // Nadie repetido en CC si ya esta en Para
+  const enTo=to.toLowerCase();
+  const ccFinal=sanitizarCC(cc.join(', '))
+    .split(',').map(e=>e.trim()).filter(Boolean)
+    .filter(e=>enTo.indexOf(soloEmail(e))<0);
+
+  return { to: to, cc: ccFinal.join(', '), contraparte: cp.nombre||'' };
 }
 
 function openBulkMailModal(rowIndices, mailType){
@@ -3571,20 +3602,17 @@ function openBulkMailModal(rowIndices, mailType){
     return `Exporter: ${exp}\nBL: ${bl}\nBooking: ${booking}\nContainer(s): ${containers}\nBuque: ${vessel}\nPuerto: ${port}\nETA: ${eta}`;
   }).join('\n\n');
 
-  const subject=`Solicitud de liberaciones - ${exporter} - AXT - ETA ${etaStr}`;
-  const body=`Estimado/a,\n\nSolicitamos la liberacion de los siguientes embarques:\n\n${lines}\n\n@Pedro Berro Madero Por favor, dar el ok para proceder con la liberacion.\n\nQuedamos a la espera de confirmacion.`;
+  const rLib=destinatariosLiberacion();
 
-  const transcargo=getContactsForEmpresa('Transcargo');
-  const ccSiempreAll=contacts.filter(c=>c.ccSiempre).map(c=>c.email);
-  const reciprocaLib=getReciprocaCC().split(',').map(e=>e.trim()).filter(Boolean);
-  const libCC=sanitizarCC([...ccSiempreAll, ...reciprocaLib].join(', ')) || 'pberro@axtsolutions.com';
+  const subject=`Solicitud de liberaciones - ${exporter} - ${negocioActivo==='buzaram'?'Buzaram':'AXT'} - ETA ${etaStr}`;
+  const body=`Estimado/a,\n\nSolicitamos la liberacion de los siguientes embarques:\n\n${lines}\n\n@${rLib.contraparte||'Pedro Berro Madero'} Por favor, dar el ok para proceder con la liberacion.\n\nQuedamos a la espera de confirmacion.`;
 
   modalData={rowIndices, mailType, isBulk:true, exporter, rows};
   document.getElementById('lang-en').classList.remove('active');
   document.getElementById('lang-es').classList.add('active');
   document.getElementById('modal-title').textContent=`Liberación masiva — ${rows.length} cargas`;
-  document.getElementById('modal-to').textContent=transcargo.to||'Thomas Laurenti <tlaurenti@transcargoarg.com>';
-  document.getElementById('modal-cc').textContent=libCC;  // ya viene sanitizado
+  document.getElementById('modal-to').textContent=rLib.to;
+  document.getElementById('modal-cc').textContent=rLib.cc;  // ya viene sanitizado
   document.getElementById('modal-subject').textContent=subject;
   document.getElementById('modal-body').value=body;
   const btn=document.getElementById('send-draft-btn');
@@ -3611,7 +3639,9 @@ function openMailModal(rowIdx, mailType){
     invoiceInfo:getInvoiceInfo(row),
     docsNote:(row[COL.DOCUMENTOS]||'').trim(),
     inv1:(row[COL.INVOICE_CLIENTE]||'').trim(),
-    inv2:(row[COL.INVOICE_FC_SERV]||'').trim()
+    inv2:(row[COL.INVOICE_FC_SERV]||'').trim(),
+    contraparte:((getNegocioConfig().contraparte||{}).nombre)||'',
+    negocioLabel:(negocioActivo==='buzaram'?'Buzaram':'AXT')
   };
   // Default ES for: liberacion (Transcargo) + Italian group customers
   const GRUPO_ITALIA_KEYS=['pata','forlivese','nutitaly','dimipro','arsal'];
@@ -3626,11 +3656,8 @@ function openMailModal(rowIdx, mailType){
   document.getElementById('modal-title').textContent='Borrador — '+mailType.replace(/_/g,' ');
   let toStr, ccStr;
   if(mailType==='solicitar_liberacion'){
-    const transcargo=getContactsForEmpresa('Transcargo');
-    toStr=transcargo.to||'Thomas Laurenti <tlaurenti@transcargoarg.com>';
-    // La liberacion individual no copiaba a nadie del equipo; ahora va operaciones@
-    const ccSiempre=contacts.filter(c=>c.ccSiempre).map(c=>c.email);
-    ccStr=[...ccSiempre, CC_EQUIPO].join(', ') || 'pberro@axtsolutions.com';
+    const r=destinatariosLiberacion();
+    toStr=r.to; ccStr=r.cc;
   } else if(mailType==='reclamo_cobro'){
     const contactInfo=getContactsForEmpresa(d.customer);
     toStr=contactInfo.to||`${d.customer} <sin contacto cargado>`;
