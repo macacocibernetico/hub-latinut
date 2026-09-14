@@ -643,6 +643,8 @@ function getBuzaramCfg(){
     // Quien da el OK de liberacion en este negocio. Misma convencion que el AppScript
     // de Buzaram: Yael va en el campo Para junto al despachante, no en copia.
     contraparte: { nombre: 'Yael', email: 'yaelvaleria.arrua@newsan.com.ar', enPara: true },
+    // Copia extra solo en las liberaciones de Buzaram
+    ccLiberacion: ['marcelanatalia.perez@newsan.com.ar'],   // Marcela - Newsan
     sinPagares: true,
     // Pagos forwarder Buzaram
     PAGO_FC_FLETE:      c('FC_FLETE'),          // "FC flete"
@@ -673,6 +675,7 @@ function getNegocioConfig(){
     ccFijo: 'pberro@axtsolutions.com',
     // En AXT el OK lo da Pedro, y va en copia (no en Para).
     contraparte: { nombre: 'Pedro Berro Madero', email: 'pberro@axtsolutions.com', enPara: false },
+    ccLiberacion: [],   // AXT no suma nadie mas; Araceli va por CC_DESPACHANTE
     sinPagares: false,
     // Pagos forwarder AXT
     PAGO_FC_FLETE:      c('FC_FLETE'),
@@ -799,6 +802,11 @@ async function loadContacts(){
 // Para cambiarla, esta linea es la unica que hay que tocar.
 const CC_EQUIPO = 'operaciones@latinutsa.com';
 
+// Gente del despachante que va SIEMPRE en copia en las solicitudes de liberacion,
+// en los dos negocios. Es un respaldo por si no estan cargados en la hoja CONTACTOS:
+// si estan, el hub los toma de ahi igual y no se duplican.
+const CC_DESPACHANTE = ['asena@transcargoarg.com'];   // Araceli - Transcargo
+
 // Direcciones internas que SI pueden ir en copia. Cualquier otra @latinutsa.com que
 // aparezca (por ejemplo cargada como "CC siempre" en la hoja CONTACTOS) se descarta:
 // la copia interna es una sola, la del equipo. Si algun dia hace falta sumar otra
@@ -822,21 +830,21 @@ function getMiEmail(){
 }
 
 // Filtro de seguridad del CC. Tres reglas:
-//   1. Yael NUNCA en AXT, Pedro NUNCA en Buzaram (son negocios distintos).
+//   1. La contraparte de un negocio NUNCA aparece en el otro. Se filtra por DOMINIO,
+//      no por nombre: en AXT no entra nadie de @newsan.com.ar (Yael, Marcela, Leandro)
+//      y en Buzaram no entra nadie de @axtsolutions.com. Antes se comparaba contra dos
+//      direcciones sueltas, asi que un contacto nuevo del mismo cliente se colaba.
 //   2. El remitente nunca va en copia de su propio mail — antes llegaba repetido.
 //   3. Sin direcciones duplicadas, comparando solo el mail (ignora el nombre).
+const DOMINIO_AJENO = { axt: '@newsan.com.ar', buzaram: '@axtsolutions.com' };
+
 function sanitizarCC(ccStr){
   if(!ccStr) return ccStr;
-  const YAEL = 'yaelvaleria.arrua@newsan.com.ar';
-  const PEDRO = 'pberro@axtsolutions.com';
   const yo = getMiEmail();
   let emails = ccStr.split(',').map(e=>e.trim()).filter(Boolean);
 
-  if(negocioActivo === 'axt'){
-    emails = emails.filter(e => !e.toLowerCase().includes('yaelvaleria') && !e.toLowerCase().includes(YAEL.toLowerCase()));
-  } else if(negocioActivo === 'buzaram'){
-    emails = emails.filter(e => !e.toLowerCase().includes(PEDRO.toLowerCase()) && !e.toLowerCase().includes('pberro'));
-  }
+  const ajeno = DOMINIO_AJENO[negocioActivo];
+  if(ajeno) emails = emails.filter(e => soloEmail(e).indexOf(ajeno) < 0);
 
   // Una sola copia interna. Se descarta cualquier direccion del dominio propio que no
   // sea la del equipo — asi no se cuelan Agustin ni Valentina por venir marcados como
@@ -3560,8 +3568,16 @@ function buildMailBody(mailType,d,lang){
 function destinatariosLiberacion(){
   const nc=getNegocioConfig();
   const cp=nc.contraparte||{};
-  const transcargo=getContactsForEmpresa('Transcargo');
-  const desp=transcargo.to||'Thomas Laurenti <tlaurenti@transcargoarg.com>';
+
+  // Todos los contactos del despachante. El principal va en Para y EL RESTO EN COPIA.
+  // Antes solo se usaba el principal y los demas se descartaban en silencio, asi que
+  // Araceli no aparecia aunque estuviera cargada en la hoja CONTACTOS.
+  const despContactos = contacts.filter(c => (c.empresa||'').toUpperCase().indexOf('TRANSCARGO') >= 0);
+  const principalDesp = despContactos.filter(c => (c.rol||'').toLowerCase().indexOf('principal') >= 0)[0] || despContactos[0];
+  const desp = principalDesp
+    ? (principalDesp.contacto ? principalDesp.contacto + ' <' + principalDesp.email + '>' : principalDesp.email)
+    : 'Thomas Laurenti <tlaurenti@transcargoarg.com>';
+  const otrosDesp = despContactos.filter(c => c !== principalDesp).map(c => c.email);
 
   const to = (cp.enPara && cp.email) ? [cp.email, desp].join(', ') : desp;
 
@@ -3569,6 +3585,8 @@ function destinatariosLiberacion(){
   const ccSiempre=contacts.filter(c=>c.ccSiempre).map(c=>c.email);
   const cc=[];
   if(cp.email && !cp.enPara) cc.push(cp.email);
+  // Resto del despachante (Araceli) + los fijos del despachante + los propios del negocio
+  cc.push(...otrosDesp, ...CC_DESPACHANTE, ...(nc.ccLiberacion||[]));
   cc.push(...ccSiempre, CC_EQUIPO);
 
   // Nadie repetido en CC si ya esta en Para
