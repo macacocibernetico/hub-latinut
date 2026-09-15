@@ -251,6 +251,9 @@ button{font-family:var(--font);cursor:pointer;border:none;background:none;}
 .confirm-title{font-size:15px;font-weight:600;color:var(--text);margin-bottom:6px;}
 .confirm-msg{font-size:12px;color:var(--text3);margin-bottom:24px;line-height:1.5;}
 .confirm-btns{display:flex;gap:8px;justify-content:center;}
+.confirm-detalle{background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:10px 12px;margin-bottom:18px;text-align:left;font-size:11px;font-family:var(--mono);color:var(--text2);line-height:1.6;max-height:180px;overflow-y:auto;}
+.confirm-skip{display:flex;align-items:center;gap:7px;justify-content:center;margin-bottom:16px;font-size:11px;color:var(--text3);cursor:pointer;user-select:none;}
+.confirm-skip input{width:15px;height:15px;accent-color:var(--accent);cursor:pointer;}
 
 /* SEARCH */
 .search-bar{display:flex;align-items:center;gap:8px;background:var(--bg3);border:1px solid var(--border);border-radius:10px;padding:6px 12px;transition:all .15s;width:220px;}
@@ -1091,7 +1094,13 @@ async function solicitarFCBulk(rowIndices){
   const minRow = sheetRows[0];
   const maxRow = sheetRows[sheetRows.length-1];
 
-  if(!confirm(`¿Generar Solicitud FC para ${rowIndices.length} cargas?\n${customer} - ${product}\nFilas: ${minRow}-${maxRow}\n\nSe creará el borrador en Gmail y se marcará col P.`)) return;
+  const okFC = await showConfirm('Solicitud FC para ' + rowIndices.length + ' cargas',
+    'Se crea el borrador en Gmail y se marca la columna de envío en la planilla.',
+    { icono:'📄', okLabel:'Generar solicitud',
+      detalle:'<div><span style="color:var(--text3);">Cliente:</span> <b>'+customer+'</b></div>'
+            + '<div><span style="color:var(--text3);">Producto:</span> <b>'+product+'</b></div>'
+            + '<div><span style="color:var(--text3);">Filas:</span> <b>'+minRow+' a '+maxRow+'</b></div>' });
+  if(!okFC) return;
 
   showToast('Generando borrador...');
   const ok = await callAppScript('solicitudFC', minRow, maxRow);
@@ -1119,7 +1128,10 @@ async function solicitarFC(rowIdx){
   const customer = (row[COL.CUSTOMER]||'').trim();
   const eta = fmtDate(row[COL.ETA]);
 
-  if(!confirm(`¿Generar aviso de embarque (Solicitud FC) para:\n${customer} - ${product}\nETA: ${eta}?\n\nSe creará el borrador en Gmail y se marcará col P en la planilla.`)) return;
+  const okFC = await confirmarAccion('Solicitud FC',
+    'Se crea el borrador en Gmail y se marca la columna de envío en la planilla.',
+    row, { icono:'📄', okLabel:'Generar solicitud', skipKey:'fc_individual' });
+  if(!okFC) return;
 
   showToast('Generando borrador...');
   const ok = await callAppScript('solicitudFC', sheetRow, sheetRow);
@@ -1147,20 +1159,80 @@ function hideProgress(){
 
 // ─── CONFIRM DIALOG ───────────────────────────────────────────────────────────
 let _confirmResolve = null;
-function showConfirm(title, msg, icon='⚠️', okLabel='Confirmar', okDanger=false){
+// Acciones para las que el usuario marco "no volver a preguntar". Vive en memoria:
+// al recargar el hub vuelven a pedir confirmacion. A proposito — es una comodidad
+// para una tanda de trabajo, no una preferencia permanente.
+const _confirmSkip = new Set();
+let _confirmSkipKey = null;
+
+// showConfirm(titulo, mensaje, {icono, okLabel, peligro, detalle, skipKey})
+// - detalle:  texto monoespaciado con lo que se va a tocar (BL, cliente, columna...)
+// - skipKey:  si se pasa, muestra el tilde "no volver a preguntar" para ESA accion
+function showConfirm(title, msg, opts){
+  // Compatibilidad con la firma vieja: showConfirm(t, m, icono, okLabel, peligro)
+  if(typeof opts !== 'object' || opts === null){
+    opts = { icono: arguments[2], okLabel: arguments[3], peligro: arguments[4] };
+  }
+  const icono   = opts.icono   || '⚠️';
+  const okLabel = opts.okLabel || 'Confirmar';
+  const peligro = !!opts.peligro;
+  const skipKey = opts.skipKey || null;
+
+  // Si ya dijo "no preguntar mas" para esta accion, sigue de largo
+  if(skipKey && _confirmSkip.has(skipKey)) return Promise.resolve(true);
+
   return new Promise(resolve => {
     _confirmResolve = resolve;
+    _confirmSkipKey = skipKey;
     document.getElementById('confirm-title').textContent = title;
     document.getElementById('confirm-msg').textContent = msg;
-    document.getElementById('confirm-icon').textContent = icon;
+    document.getElementById('confirm-icon').textContent = icono;
+
+    const det = document.getElementById('confirm-detalle');
+    if(opts.detalle){ det.innerHTML = opts.detalle; det.classList.remove('hidden'); }
+    else { det.innerHTML = ''; det.classList.add('hidden'); }
+
+    const skipWrap = document.getElementById('confirm-skip-wrap');
+    const skipBox  = document.getElementById('confirm-skip');
+    skipBox.checked = false;
+    if(skipKey) skipWrap.classList.remove('hidden');
+    else skipWrap.classList.add('hidden');
+
     const okBtn = document.getElementById('confirm-ok');
     okBtn.textContent = okLabel;
-    okBtn.style.background = okDanger ? 'var(--danger)' : 'var(--accent)';
-    okBtn.style.borderColor = okDanger ? 'var(--danger)' : 'var(--accent)';
+    okBtn.style.background = peligro ? 'var(--danger)' : 'var(--accent)';
+    okBtn.style.borderColor = peligro ? 'var(--danger)' : 'var(--accent)';
     document.getElementById('confirm-overlay').classList.remove('hidden');
   });
 }
+
+// Atajo para las confirmaciones de escritura: arma el detalle con los datos de la carga
+function confirmarAccion(titulo, msg, carga, opts){
+  opts = opts || {};
+  let detalle = opts.detalle || '';
+  if(carga && !detalle){
+    const linea = (k,v) => v ? '<div><span style="color:var(--text3);">'+k+':</span> <b>'+v+'</b></div>' : '';
+    detalle = linea('Cliente', (carga[COL.CUSTOMER]||'').trim())
+            + linea('BL',      (carga[COL.BL]||'').trim())
+            + linea('Booking', (carga[COL.BOOKING]||'').trim())
+            + linea('Lote',    (carga[COL.LOTS]||'').trim())
+            + linea('ETA',     fmtDate(carga[COL.ETA]));
+  }
+  return showConfirm(titulo, msg, {
+    icono: opts.icono, okLabel: opts.okLabel, peligro: opts.peligro,
+    detalle: detalle, skipKey: opts.skipKey
+  });
+}
 function resolveConfirm(result){
+  // El tilde solo cuenta si confirmo; si cancela, no se recuerda nada
+  if(result && _confirmSkipKey){
+    const box = document.getElementById('confirm-skip');
+    if(box && box.checked){
+      _confirmSkip.add(_confirmSkipKey);
+      showToast('No vuelvo a preguntar por esta acción hasta que recargues el hub', 'info');
+    }
+  }
+  _confirmSkipKey = null;
   document.getElementById('confirm-overlay').classList.add('hidden');
   if(_confirmResolve){ _confirmResolve(result); _confirmResolve = null; }
 }
@@ -1250,8 +1322,12 @@ function initGoogleAuth(){
   });
 }
 
-function handleAuth(){
+async function handleAuth(){
   if(accessToken){
+    const ok0 = await showConfirm('Desconectar de Google',
+      'El hub deja de poder escribir en la planilla y crear borradores hasta que vuelvas a conectarte.',
+      { icono:'🔌', okLabel:'Desconectar', peligro:true });
+    if(!ok0) return;
     google.accounts.oauth2.revoke(accessToken, ()=>{
       accessToken=null;
       updateAuthUI(false);
@@ -2600,6 +2676,16 @@ function formToRowData(d){
 async function submitNuevaCarga(){
   const d = getFormValues('nc');
   if(!d.product || !d.eta || !d.customer){ alert('Product, ETA y Customer son obligatorios.'); return; }
+  const ok0 = await showConfirm(
+    'Agregar la carga a la planilla',
+    'Se inserta una fila nueva al final de la planilla de ' + getNegocioConfig().label + '.',
+    { icono:'➕', okLabel:'Agregar carga',
+      detalle:'<div><span style="color:var(--text3);">Cliente:</span> <b>'+d.customer+'</b></div>'
+            + '<div><span style="color:var(--text3);">Producto:</span> <b>'+d.product+'</b></div>'
+            + (d.lots?'<div><span style="color:var(--text3);">Lote:</span> <b>'+d.lots+'</b></div>':'')
+            + '<div><span style="color:var(--text3);">ETA:</span> <b>'+d.eta+'</b></div>' }
+  );
+  if(!ok0) return;
   const btn = document.getElementById('nc-submit');
   btn.textContent = 'Guardando...'; btn.disabled = true;
   const newRow = await appendRow(formToRowData(d));
@@ -2613,6 +2699,12 @@ async function submitEditCarga(rowIdx){
   const row = allRows[rowIdx];
   const sheetRow = row._sheetRow;
   if(!sheetRow){ alert('Error: no se pudo determinar la fila.'); return; }
+  const ok0 = await confirmarAccion(
+    'Guardar los cambios',
+    'Se sobrescriben los datos de esta carga en la fila ' + sheetRow + ' de la planilla.',
+    row, { icono:'💾', okLabel:'Guardar cambios' }
+  );
+  if(!ok0) return;
   const btn = document.getElementById('ec-submit');
   btn.textContent = 'Guardando...'; btn.disabled = true;
   const ok = await writeRow(formToRowData(d), sheetRow);
@@ -2822,7 +2914,10 @@ async function solicitarLiberacionViaAppScript(rowIdx){
   if(!sheetRow){alert('No se pudo determinar la fila en la planilla.');return;}
   const bl=(row[COL.BL]||'').trim();
   const customer=(row[COL.CUSTOMER]||'').trim();
-  if(!confirm(`¿Solicitar liberación para:\n${customer} - BL: ${bl}?\n\nSe creará el borrador en Gmail y se marcará la planilla.`)) return;
+  const okLib = await confirmarAccion('Solicitar la liberación',
+    'Se crea el borrador en Gmail y se marca TELEX = "Solicitado, falta ok" en la planilla.',
+    row, { icono:'🚢', okLabel:'Solicitar liberación' });
+  if(!okLib) return;
   showToast('Procesando...');
   const ok=await callAppScript('liberacion',sheetRow,sheetRow);
   if(ok){
@@ -2840,7 +2935,12 @@ async function solicitarLiberacionBulkViaAppScript(rowIndices){
   const sheetRows=rows.map(r=>r._sheetRow).filter(Boolean);
   if(sheetRows.length!==rowIndices.length){alert('No se pudieron determinar todas las filas.');return;}
   const customer=(rows[0][COL.CUSTOMER]||'').trim();
-  if(!confirm(`¿Solicitar liberación para ${rowIndices.length} cargas de ${customer}?`)) return;
+  const okLibB = await showConfirm('Solicitar liberación de ' + rowIndices.length + ' cargas',
+    'Se crea un borrador en Gmail y se marca TELEX en todas estas cargas.',
+    { icono:'🚢', okLabel:'Solicitar liberación',
+      detalle:'<div><span style="color:var(--text3);">Cliente:</span> <b>'+customer+'</b></div>'
+            + rows.map(function(r){ return '<div>• BL '+((r[COL.BL]||'').trim()||'—')+' · ETA '+fmtDate(r[COL.ETA])+'</div>'; }).join('') });
+  if(!okLibB) return;
   showToast('Procesando...');
   const minRow=Math.min(...sheetRows);
   const maxRow=Math.max(...sheetRows);
@@ -2864,7 +2964,11 @@ async function marcarPedroOkBulk(rowIndices){
   if(!accessToken){alert('Conectate con Google primero.');return;}
   const label=getNegocioConfig().label;
   const n=rowIndices.length;
-  const confirmed=await showConfirm(label+' dio el OK','¿Confirmar autorización de '+n+' carga'+(n>1?'s':'')+' ? Se actualizará la planilla.','👍','Confirmar');
+  const rowsSel=rowIndices.map(function(i){ return allRows[i]; }).filter(Boolean);
+  const confirmed=await showConfirm(label+' dio el OK',
+    'Se marca TELEX = "recibir" en '+n+' carga'+(n>1?'s':'')+' de la planilla.',
+    { icono:'👍', okLabel:'Confirmar',
+      detalle: rowsSel.map(function(r){ return '<div>• '+((r[COL.CUSTOMER]||'').trim()||'—')+' · BL '+((r[COL.BL]||'').trim()||'—')+'</div>'; }).join('') });
   if(!confirmed) return;
   showToast('Actualizando...');
   for(const rowIdx of rowIndices){
@@ -2879,7 +2983,11 @@ async function marcarPedroOkBulk(rowIndices){
 async function marcarLiberadoBulk(rowIndices){
   if(!accessToken){alert('Conectate con Google primero.');return;}
   const n=rowIndices.length;
-  const confirmed=await showConfirm('Confirmar liberación recibida','¿Confirmar que se recibió la liberación de '+n+' carga'+(n>1?'s':'')+' ? Se marcará TELEX = SI.','✅','Confirmar');
+  const rowsSel=rowIndices.map(function(i){ return allRows[i]; }).filter(Boolean);
+  const confirmed=await showConfirm('Confirmar liberación recibida',
+    'Se marca TELEX = SI en '+n+' carga'+(n>1?'s':'')+' de la planilla.',
+    { icono:'✅', okLabel:'Confirmar',
+      detalle: rowsSel.map(function(r){ return '<div>• '+((r[COL.CUSTOMER]||'').trim()||'—')+' · BL '+((r[COL.BL]||'').trim()||'—')+'</div>'; }).join('') });
   if(!confirmed) return;
   showToast('Actualizando...');
   const label=getNegocioConfig().label;
@@ -3035,6 +3143,13 @@ function openArchiveModal(rowIdx){
   document.getElementById('send-draft-btn').textContent = '✓ Archivar cobro';
   document.getElementById('send-draft-btn').onclick = async () => {
     const comentario = document.getElementById('modal-body').value.trim() || 'Sin comentario';
+    const okArch = await showConfirm('Archivar el cobro',
+      'Deja de aparecer en cobranza y en las alertas. Se puede desarchivar después.',
+      { icono:'📁', okLabel:'Archivar',
+        detalle:'<div><span style="color:var(--text3);">Cliente:</span> <b>'+customer+'</b></div>'
+              + '<div><span style="color:var(--text3);">BL:</span> <b>'+bl+'</b></div>'
+              + '<div style="margin-top:4px;"><span style="color:var(--text3);">Motivo:</span> '+comentario+'</div>' });
+    if(!okArch) return;
     archivedBLs.push(bl);
     saveArchivedBLs();
     await appendLog({
@@ -3049,11 +3164,18 @@ function openArchiveModal(rowIdx){
   document.getElementById('mail-modal').classList.remove('hidden');
 }
 
-function unarchiveBL(bl){
+async function unarchiveBL(bl){
+  const ok0 = await showConfirm(
+    'Desarchivar el cobro',
+    'Vuelve a aparecer en la lista de cobranza activa y en las alertas.',
+    { icono:'↩️', okLabel:'Desarchivar',
+      detalle:'<div><span style="color:var(--text3);">BL:</span> <b>'+bl+'</b></div>' }
+  );
+  if(!ok0) return;
   archivedBLs = archivedBLs.filter(b => b !== bl);
   saveArchivedBLs();
   renderCobranza();
-  showToast('✓ Cobro desarchivado');
+  showToast('✓ Cobro desarchivado', 'ok');
 }
 
 function daysColor(d){
@@ -3730,6 +3852,20 @@ async function sendDraft(){
   const cc=document.getElementById('modal-cc').textContent;
   const {mailType,d,rowIdx,isBulk,rowIndices,rows:bulkRows}=modalData;
 
+  // Mostrar a quien le va antes de crear el borrador
+  const esLib = mailType==='solicitar_liberacion';
+  const okDraft = await showConfirm(
+    'Crear el borrador en Gmail',
+    esLib ? 'Además se va a marcar TELEX = "solicitado, falta ok" en la planilla.'
+          : 'Se crea el borrador en Gmail. No se envía solo: lo revisás y lo mandás vos.',
+    { icono:'✉️', okLabel:'Crear borrador', skipKey:'draft_'+mailType,
+      detalle:'<div><span style="color:var(--text3);">Para:</span> <b>'+to+'</b></div>'
+            + '<div><span style="color:var(--text3);">CC:</span> <b>'+(cc||'—')+'</b></div>'
+            + '<div style="margin-top:4px;"><span style="color:var(--text3);">Asunto:</span> '+subject+'</div>'
+            + (isBulk&&rowIndices?'<div style="margin-top:4px;color:var(--accent);"><b>'+rowIndices.length+' cargas</b> en este mail</div>':'') }
+  );
+  if(!okDraft) return;
+
   // Crear draft en Gmail
   await createGmailDraft(to, cc, subject, body);
 
@@ -3846,6 +3982,15 @@ async function resumenOperativo(enviar){
     showToast('Falta la URL del Apps Script del resumen. Cargala en Configuración.', 'err');
     showView('config');
     return;
+  }
+  if(enviar){
+    const ok0 = await showConfirm(
+      'Enviar el resumen al equipo',
+      'Se manda el resumen operativo de AXT y Buzaram ahora mismo. Esto sí envía el mail, no crea un borrador.',
+      { icono:'📤', okLabel:'Enviar ahora',
+        detalle:'<div><span style="color:var(--text3);">Para:</span> <b>'+CC_EQUIPO+'</b></div>' }
+    );
+    if(!ok0) return;
   }
   showToast(enviar ? 'Enviando el resumen al equipo...' : 'Generando el resumen de los dos negocios...', 'info');
   try{
@@ -4317,6 +4462,18 @@ function fillImportData(data){
 
 async function quickAction(rowIdx, field, value, label, btnId){
   if(!accessToken){ alert('Conectate con Google primero.'); return; }
+  const fila = allRows[rowIdx];
+  const COLUMNAS = {
+    'pagare_enviado':'Pagaré enviado', 'pagare_firmado':'Pagaré firmado',
+    'documentos':'Documentos', 'telex':'TELEX'
+  };
+  const ok0 = await confirmarAccion(
+    label,
+    'Se va a escribir "' + value + '" en la columna ' + (COLUMNAS[field]||field) + ' de esta carga.',
+    fila,
+    { icono:'✏️', okLabel:'Sí, marcar', skipKey:'quick_'+field }
+  );
+  if(!ok0) return;
   const btn = document.getElementById(btnId);
   if(btn){ btn.classList.add('loading'); btn.textContent = '...'; }
 
@@ -6394,6 +6551,14 @@ async function tasksGenerarTexto(){
 }
 
 async function tasksCompletarDetectadas(indices){
+  const nombres = indices.map(function(i){ return (tasksPendientes[i]||{}).title; }).filter(Boolean);
+  const ok0 = await showConfirm(
+    'Tachar ' + nombres.length + ' tarea' + (nombres.length>1?'s':''),
+    'Se marcan como completadas en Google Tasks.',
+    { icono:'✅', okLabel:'Tachar todas',
+      detalle: nombres.map(function(n){ return '<div>• '+n+'</div>'; }).join('') }
+  );
+  if(!ok0) return;
   for(const i of indices){
     const t = tasksPendientes[i];
     if(t) await tasksComplete(tasksListId, t.id);
@@ -6403,6 +6568,11 @@ async function tasksCompletarDetectadas(indices){
 }
 
 async function completarTarea(taskId){
+  const t = (tasksPendientes||[]).filter(function(x){ return x.id===taskId; })[0];
+  const ok0 = await showConfirm('Tachar la tarea', 'Se marca como completada en Google Tasks.',
+    { icono:'✅', okLabel:'Tachar', skipKey:'task_tachar',
+      detalle: t ? '<div>'+t.title+'</div>' : '' });
+  if(!ok0) return;
   await tasksComplete(tasksListId, taskId);
   showToast('Tarea tachada', 'ok');
   openTasksModal(tasksModalRowIdx);
@@ -6411,6 +6581,10 @@ async function completarTarea(taskId){
 async function crearTarea(){
   const texto = document.getElementById('tasks-texto').value.trim();
   if(!texto){ alert('El texto esta vacio'); return; }
+  const ok0 = await showConfirm('Crear la tarea en Google Tasks', 'Se agrega a tu lista de tareas.',
+    { icono:'📋', okLabel:'Crear tarea', skipKey:'task_crear',
+      detalle:'<div>'+texto+'</div>' });
+  if(!ok0) return;
   await tasksCreate(tasksListId, texto);
   showToast('Tarea creada en Google Tasks', 'ok');
   openTasksModal(tasksModalRowIdx);
@@ -6821,6 +6995,13 @@ async function driveUploadForRow(rowIdx, files){
   const row = allRows[rowIdx];
   if(!row || !files.length) return;
   if(!accessToken){ alert('Conectate con Google primero'); return; }
+  const okUp = await confirmarAccion(
+    'Subir ' + files.length + ' archivo' + (files.length>1?'s':'') + ' al Drive',
+    'Se guardan en la carpeta del lote de esta carga.',
+    row, { icono:'📎', okLabel:'Subir al Drive',
+      detalle: Array.from(files).map(function(f){ return '<div>• '+f.name+'</div>'; }).join('') }
+  );
+  if(!okUp) return;
   showToast(`Subiendo ${files.length} archivo${files.length>1?'s':''}...`, 'info');
   try {
     const folder = await driveGetFolderForRow(row);
@@ -6891,6 +7072,10 @@ window.onload=()=>{
     <div class="confirm-icon" id="confirm-icon">⚠️</div>
     <div class="confirm-title" id="confirm-title">¿Confirmar acción?</div>
     <div class="confirm-msg" id="confirm-msg"></div>
+    <div class="confirm-detalle hidden" id="confirm-detalle"></div>
+    <label class="confirm-skip hidden" id="confirm-skip-wrap">
+      <input type="checkbox" id="confirm-skip"> No volver a preguntar por esta acción
+    </label>
     <div class="confirm-btns">
       <button class="btn" onclick="resolveConfirm(false)">Cancelar</button>
       <button class="btn primary" id="confirm-ok" onclick="resolveConfirm(true)">Confirmar</button>
