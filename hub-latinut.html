@@ -47,6 +47,33 @@ button{font-family:var(--font);cursor:pointer;border:none;background:none;}
 .sidebar{width:240px;min-height:100vh;background:rgba(255,255,255,.85);backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);border-right:1px solid var(--border);display:flex;flex-direction:column;position:fixed;top:0;left:0;z-index:10;}
 .main{margin-left:240px;flex:1;display:flex;flex-direction:column;min-height:100vh;}
 
+/* BARRA DE ACCIONES SOBRE LA SELECCION
+   Iba con position:sticky + left:50% + translateX(-50%). Dos problemas: sticky no
+   funciona si algun ancestro tiene overflow (y la tabla lo tiene), asi que la barra
+   se quedaba quieta al scrollear; y el 50% se mide sobre la ventana entera, de modo
+   que al correrla media barra a la izquierda terminaba tapando el menu lateral.
+   Ahora es fixed y arranca DONDE TERMINA el sidebar, centrada en lo que queda. */
+.bulk-bar{
+  display:none;
+  position:fixed;
+  bottom:20px;
+  left:240px;
+  right:0;
+  margin:0 auto;
+  width:fit-content;
+  max-width:calc(100vw - 280px);
+  z-index:50;
+  gap:10px;
+  align-items:center;
+  flex-wrap:wrap;
+  justify-content:center;
+  background:var(--bg2);
+  border:1px solid var(--border);
+  border-radius:30px;
+  padding:10px 20px;
+  box-shadow:var(--shadow-lg);
+}
+
 /* SIDEBAR */
 .logo{padding:24px 20px 20px;border-bottom:1px solid var(--border);}
 .logo-text{font-size:17px;font-weight:600;color:var(--text);letter-spacing:-0.4px;}
@@ -345,6 +372,7 @@ tr:hover .col-acciones{background:var(--bg3);}
 @media(min-width:769px) and (max-width:1024px){
   .sidebar{width:180px;}
   .main{margin-left:180px;}
+  .bulk-bar{left:180px;max-width:calc(100vw - 220px);}
   .stats-row{grid-template-columns:1fr 1fr;gap:10px;}
   .topbar{padding:12px 18px;}
   .content{padding:16px 18px;}
@@ -380,12 +408,10 @@ tr:hover .col-acciones{background:var(--bg3);}
   .modal-footer{padding:12px 16px;}
   .bottom-nav{display:block;}
   /* Bulk bar mobile - full width at bottom above nav */
-  #lib-bulk-bar,#cob-bulk-bar,#fc-bulk-bar{
-    position:fixed!important;
-    bottom:70px!important;
+  #lib-bulk-bar,#cob-bulk-bar,#fc-bulk-bar,.bulk-bar{
+    bottom:80px!important;
     left:12px!important;
     right:12px!important;
-    transform:none!important;
     border-radius:14px!important;
     padding:12px 16px!important;
     max-width:none!important;
@@ -394,7 +420,7 @@ tr:hover .col-acciones{background:var(--bg3);}
     gap:8px!important;
     align-items:stretch!important;
   }
-  #lib-bulk-bar button,#cob-bulk-bar button,#fc-bulk-bar button{
+  #lib-bulk-bar button,#cob-bulk-bar button,#fc-bulk-bar button,.bulk-bar button{
     width:100%;
     padding:12px!important;
     font-size:14px!important;
@@ -1235,7 +1261,7 @@ async function avisoClienteBulk(rowIndices){
 
   const ok = await showConfirm('Aviso al cliente por ' + r.n + ' carga' + (r.n>1?'s':''),
     'Se crea un borrador en Gmail para ' + r.customer + ' y se marca la columna de env\u00edo al cliente en la planilla.',
-    { icono:'\U0001F4E6', okLabel:'Generar aviso', detalle: detalle });
+    { icono:'📦', okLabel:'Generar aviso', detalle: detalle });
   if(!ok) return;
 
   showToast('Generando borrador...');
@@ -1276,7 +1302,7 @@ async function solicitarFCBulk(rowIndices){
 
   const okFC = await showConfirm('Solicitud FC para ' + r.n + ' carga' + (r.n>1?'s':''),
     'Se crea un solo borrador en Gmail que cubre las ' + r.n + ' cargas, y se marca la columna de env\u00edo en la planilla.',
-    { icono:'\U0001F4C4', okLabel:'Generar solicitud', detalle: detalle });
+    { icono:'📄', okLabel:'Generar solicitud', detalle: detalle });
   if(!okFC) return;
 
   showToast('Generando borrador...');
@@ -2753,18 +2779,20 @@ function renderCargas(showAll, sort){
         + (r.avisos.length ? '<span style="font-size:10px;color:var(--warn);">\u26a0 ' + r.avisos.length + ' aviso' + (r.avisos.length===1?'':'s') + ' \u2014 se detallan al confirmar</span>' : '');
     // Las tres acciones que se hacen por conjunto viven aca, no en cada fila:
     // asi no hay que ir hasta la punta derecha de la tabla para dispararlas.
-    const btnBarra = (accion, texto, principal) =>
+    // Cada una con su color: antes "Aviso al cliente" y "Liberación" eran dos
+    // botones blancos identicos y habia que leerlos para saber cual era cual.
+    const btnBarra = (accion, texto, color) =>
       '<button onclick="' + accion + '" ' + (r.bloqueo?'disabled':'')
-      + ' style="padding:8px 16px;border-radius:20px;border:' + (principal?'none':'1px solid var(--border2)')
-      + ';font-size:12px;font-weight:600;font-family:var(--font);cursor:' + (r.bloqueo?'not-allowed':'pointer')
-      + ';background:' + (r.bloqueo?'var(--border2)':(principal?'var(--accent)':'var(--bg2)'))
-      + ';color:' + (r.bloqueo?'#fff':(principal?'#fff':'var(--text2)')) + ';' + (r.bloqueo?'opacity:.5;':'') + '">' + texto + '</button>';
+      + ' style="padding:8px 16px;border-radius:20px;border:none;font-size:12px;font-weight:600;'
+      + 'font-family:var(--font);white-space:nowrap;cursor:' + (r.bloqueo?'not-allowed':'pointer')
+      + ';background:' + (r.bloqueo?'var(--border2)':color) + ';color:#fff;'
+      + (r.bloqueo?'opacity:.5;':'') + '">' + texto + '</button>';
 
     bar.innerHTML = '<div style="display:flex;flex-direction:column;gap:2px;align-items:flex-start;">' + resumen + '</div>'
-      + btnBarra('requestBulkFC()', '\U0001F4C4 Solicitud FC (' + n + ')', true)
-      + btnBarra('bulkAvisoCliente()', '\U0001F4E6 Aviso al cliente', false)
-      + btnBarra('bulkLiberacion()', '\U0001F6A2 Liberación', false)
-      + '<button onclick="limpiarSelFC()" style="padding:8px 14px;border-radius:20px;border:1px solid var(--border2);background:var(--bg2);color:var(--text3);font-size:12px;font-family:var(--font);cursor:pointer;">Limpiar</button>';
+      + btnBarra('requestBulkFC()', '📄 Solicitud FC (' + n + ')', 'var(--accent)')
+      + btnBarra('bulkAvisoCliente()', '📦 Aviso al cliente', '#f7941d')
+      + btnBarra('bulkLiberacion()', '🚢 Liberación', '#2e7d32')
+      + '<button onclick="limpiarSelFC()" style="padding:8px 14px;border-radius:20px;border:1px solid var(--border2);background:var(--bg2);color:var(--text3);font-size:12px;font-family:var(--font);cursor:pointer;white-space:nowrap;">Limpiar</button>';
   };
 
   window.toggleFCSelection = function(idx){
@@ -2838,7 +2866,7 @@ function renderCargas(showAll, sort){
       </div>
 
     </div>
-  <div id="fc-bulk-bar" style="display:none;position:sticky;bottom:20px;left:50%;transform:translateX(-50%);background:var(--bg2);border:1px solid var(--border);border-radius:30px;padding:10px 20px;box-shadow:var(--shadow-lg);z-index:20;gap:12px;align-items:center;flex-wrap:wrap;justify-content:center;max-width:90vw;width:fit-content;"></div>
+  <div id="fc-bulk-bar" class="bulk-bar"></div>
     <div style="overflow-x:auto;${isMobile()?'display:none;':''}">
     <table class="sticky-table">
       <thead><tr>
@@ -3478,7 +3506,7 @@ function renderLiberaciones(){
   }
   window.updateLibBulkBar=updateLibBulkBar;
 
-  html+=`<div id="lib-bulk-bar" style="display:none;position:sticky;bottom:20px;left:50%;transform:translateX(-50%);background:var(--bg2);border:1px solid var(--border);border-radius:30px;padding:10px 20px;box-shadow:var(--shadow-lg);z-index:20;gap:10px;flex-wrap:wrap;justify-content:center;max-width:90vw;width:fit-content;"></div>
+  html+=`<div id="lib-bulk-bar" class="bulk-bar"></div>
   <div class="alert-list">`;
 
   rows.forEach((row,localIdx)=>{
@@ -3756,7 +3784,7 @@ function renderCobranza(filterKey, filterVal){
         ${clienteSel}${sortSel}${resetBtn}
       </div>
     </div>
-    <button id="cob-bulk-bar" onclick="requestBulkReclamo()" style="display:none;position:sticky;bottom:20px;left:50%;transform:translateX(-50%);background:var(--accent);color:#fff;padding:10px 24px;border-radius:30px;font-weight:600;font-size:13px;cursor:pointer;z-index:20;box-shadow:var(--shadow-lg);border:none;font-family:var(--font);"></button>
+    <button id="cob-bulk-bar" class="bulk-bar" onclick="requestBulkReclamo()" style="background:var(--accent);color:#fff;font-weight:600;font-size:13px;cursor:pointer;border:none;font-family:var(--font);"></button>
     <div style="overflow-x:auto;${isMobile()?'display:none;':''}"><table>
     <thead><tr><th style="width:30px"></th><th>Customer</th><th>BL</th><th>Invoice</th><th>Total</th><th onclick="renderCobranza('sort',cobranzaFilters.sort==='due_asc'?'due_desc':'due_asc')" style="cursor:pointer;user-select:none;">Vencimiento ${cobranzaFilters.sort==='due_asc'?'↑':cobranzaFilters.sort==='due_desc'?'↓':'↕'}</th><th>Días</th><th>Reclamos</th><th>Contacto</th><th></th><th></th></tr></thead>
     <tbody>`;
