@@ -926,16 +926,68 @@ async function loadLog(){
 // col 5=BL, col 7=Accion (0-indexed: Fecha,Hora,Fuente,FC,FCServ,BL,Customer,Accion,Detalle)
 let _logPorBL = new Map();
 let _logIndexLen = -1;
+// ─── GRUPOS DE EMBARQUE ARMADOS A MANO ───────────────────────────────────────
+// Cuando se pide una solicitud de FC por varias cargas, ese conjunto queda
+// registrado en el LOG. Despues el pagare (y cualquier otra cosa que agrupe)
+// sugiere EL MISMO conjunto, no el que salga de comparar buque y fecha: si esas
+// cargas se pidieron juntas, se van a facturar y a avisar juntas.
+//
+// Se guarda en el LOG y no en el navegador a proposito: asi el grupo lo ve
+// tambien Valentina, y sobrevive a cambiar de compu.
+const ACCION_GRUPO = 'grupo de embarque';
+let _gruposManuales = new Map();   // lote normalizado -> id del grupo
+
+function claveLote(v){ return (v||'').toString().trim().toUpperCase().replace(/\s+/g,' '); }
+
+// Lotes de una linea de LOG de grupo. El detalle se guarda como "lotes: A | B | C".
+function lotesDeLineaGrupo(detalle){
+  const t = (detalle||'').toString();
+  const i = t.toLowerCase().indexOf('lotes:');
+  if(i < 0) return [];
+  return t.slice(i + 6).split('|').map(claveLote).filter(Boolean);
+}
+
 function construirIndiceLog(){
   _logPorBL = new Map();
+  _gruposManuales = new Map();
   _logIndexLen = logRows.length;
   for(let i=0;i<logRows.length;i++){
     const bl=(logRows[i][5]||'').trim();
-    if(!bl) continue;
-    let arr=_logPorBL.get(bl);
-    if(!arr){ arr=[]; _logPorBL.set(bl,arr); }
-    arr.push(logRows[i]);
+    if(bl){
+      let arr=_logPorBL.get(bl);
+      if(!arr){ arr=[]; _logPorBL.set(bl,arr); }
+      arr.push(logRows[i]);
+    }
+    // El LOG esta en orden cronologico, asi que la ultima definicion de un grupo
+    // pisa a las anteriores: si rearmaste el conjunto, vale el nuevo.
+    if((logRows[i][7]||'').toString().trim().toLowerCase() === ACCION_GRUPO){
+      const lotes = lotesDeLineaGrupo(logRows[i][8]);
+      if(lotes.length > 1){
+        const id = 'G|' + lotes.slice().sort().join('|');
+        lotes.forEach(l => _gruposManuales.set(l, id));
+      }
+    }
   }
+}
+
+// Id del grupo manual de una carga, o null si nunca se agrupo a mano.
+function grupoManualDe(row){
+  if(!_gruposManuales.size) return null;
+  if(_logIndexLen !== logRows.length) construirIndiceLog();
+  return _gruposManuales.get(claveLote(row[COL.LOTS])) || null;
+}
+
+// Deja asentado el conjunto en el LOG. Una sola linea: es la definicion del
+// grupo, no una accion por carga.
+async function registrarGrupoEmbarque(filas){
+  const lotes = filas.map(r => (r[COL.LOTS]||'').toString().trim()).filter(Boolean);
+  if(lotes.length < 2) return;   // una carga sola no es un grupo
+  await appendLog({
+    bl: (filas[0][COL.BL]||'').trim(),
+    customer: (filas[0][COL.CUSTOMER]||'').trim(),
+    accion: ACCION_GRUPO,
+    detalle: 'lotes: ' + lotes.join(' | ')
+  });
 }
 function getLogDeBL(bl){
   // Red de seguridad: si logRows cambio sin pasar por construirIndiceLog, reindexar.
@@ -1094,14 +1146,18 @@ function saveReclamo(bl, mailType){
 //         igual pueden ir en el mismo pagare.
 const _normClave = v => (v||'').toString().trim().toUpperCase().replace(/\s+/g,' ');
 
+// Si la carga ya se pidio dentro de un conjunto armado a mano, ese conjunto gana
+// sobre la deteccion automatica, en las dos vistas.
 function grupoKeyFC(row){
-  return [_normClave(row[COL.CUSTOMER]), _normClave(row[COL.VESSEL]),
+  return grupoManualDe(row) || [_normClave(row[COL.CUSTOMER]), _normClave(row[COL.VESSEL]),
           _normClave(fmtDate(row[COL.ETD])), _normClave(row[COL.PORT])].join('|');
 }
 function grupoKeyPagare(row){
-  return [_normClave(row[COL.CUSTOMER]), _normClave(row[COL.VESSEL]),
+  return grupoManualDe(row) || [_normClave(row[COL.CUSTOMER]), _normClave(row[COL.VESSEL]),
           _normClave(fmtDate(row[COL.ETD]))].join('|');
 }
+// Para poder mostrar distinto el grupo que armaste vos del que dedujo el hub.
+function esGrupoManual(key){ return typeof key === 'string' && key.indexOf('G|') === 0; }
 
 // Lo que va a contener la solicitud de FC de una seleccion de cargas.
 // Se calcula del lado del hub para poder mostrarlo ANTES de generar el borrador.
@@ -1185,6 +1241,9 @@ async function solicitarFCBulk(rowIndices){
 
   if(data && data.ok){
     showToast('\u2713 Borrador creado');
+    // El conjunto que acabas de pedir queda como grupo: el pagare va a sugerir
+    // estas mismas cargas, sin importar lo que digan buque y fecha.
+    await registrarGrupoEmbarque(r.filas);
     for(const row of r.filas){
       await appendLog({
         fc:(row[COL.INVOICE_CLIENTE]||'').trim(), fcServ:'',
@@ -2716,14 +2775,15 @@ function renderCargas(showAll, sort){
     <table class="sticky-table">
       <thead><tr>
         <th style="width:30px"></th>
-        <th>BL</th><th>Booking</th><th>Lote</th><th>Naviera</th>
+        <th style="text-align:right;">Tns</th>
+        <th>BL</th><th>Booking</th><th>Lote</th><th>Contenedor</th><th>Naviera</th>
         <th onclick="sortCargas('cliente')" style="cursor:pointer;user-select:none;">Customer ${cargasSort==='cliente_az'?'↑':cargasSort==='cliente_za'?'↓':'↕'}</th>
         <th>Vessel</th>
         <th onclick="sortCargas('eta')" style="cursor:pointer;user-select:none;">ETA ${cargasSort==='eta_asc'?'↑':cargasSort==='eta_desc'?'↓':'↕'}</th>
         <th>Docs</th><th>Env. Cliente</th><th>TELEX</th>${getNegocioConfig().sinPagares?'':'<th>Pagaré</th>'}
         <th>Invoice FC1</th><th>Total FC1</th><th>Invoice FC2</th><th>Total FC2</th><th>Total</th>
         <th onclick="sortCargas('cobro')" style="cursor:pointer;user-select:none;">Cobro Est. ${cargasSort==='cobro_asc'?'↑':cargasSort==='cobro_desc'?'↓':'↕'}</th>
-        <th></th><th></th><th></th>
+        <th></th><th></th><th></th><th></th>
       </tr></thead>
       <tbody>`;
 
@@ -2773,11 +2833,13 @@ function renderCargas(showAll, sort){
     html += `<tr id="fc-tr-${localIdx}" style="cursor:pointer" onclick="toggleFCSelection(${localIdx})">
       <td onclick="event.stopPropagation()" style="white-space:nowrap;">
         <input type="checkbox" id="fc-cb-${localIdx}" onclick="toggleFCSelection(${localIdx})" style="accent-color:var(--accent);cursor:pointer;">
-        ${window._fcEtiqueta[grupoKeyFC(row)]?`<span onclick="seleccionarGrupoFC('${grupoKeyFC(row).replace(/'/g,"\\'")}')" title="Salieron juntas: mismo cliente, buque, ETD y puerto. Un toque las selecciona a todas." style="cursor:pointer;margin-left:5px;font-size:9px;font-family:var(--mono);padding:2px 6px;border-radius:9px;background:rgba(0,113,227,.1);color:var(--accent);">${window._fcEtiqueta[grupoKeyFC(row)]}\u00b7${window._fcGrupos[grupoKeyFC(row)].length}</span>`:''}
+        ${window._fcEtiqueta[grupoKeyFC(row)]?`<span onclick="seleccionarGrupoFC('${grupoKeyFC(row).replace(/'/g,"\\'")}')" title="${esGrupoManual(grupoKeyFC(row))?'Estas cargas se pidieron juntas en una solicitud de FC anterior':'Salieron juntas: mismo cliente, buque, ETD y puerto. Un toque las selecciona a todas.'}" style="cursor:pointer;margin-left:5px;font-size:9px;font-family:var(--mono);padding:2px 6px;border-radius:9px;background:${esGrupoManual(grupoKeyFC(row))?'rgba(247,148,29,.15)':'rgba(0,113,227,.1)'};color:${esGrupoManual(grupoKeyFC(row))?'var(--warn)':'var(--accent)'};">${esGrupoManual(grupoKeyFC(row))?'\u270b':''}${window._fcEtiqueta[grupoKeyFC(row)]}\u00b7${window._fcGrupos[grupoKeyFC(row)].length}</span>`:''}
       </td>
+      <td class="mono" style="text-align:right;white-space:nowrap;">${(function(){const t=parseSheetNum(row[COL.TNS]);return isNaN(t)?'—':t.toLocaleString('es-AR',{maximumFractionDigits:2});})()}</td>
       <td class="mono">${(row[COL.BL]||'—').substring(0,20)}</td>
       <td class="mono">${(row[COL.BOOKING]||'—').substring(0,14)}</td>
       <td class="mono" style="color:var(--accent);font-size:11px">${(row[COL.LOTS]||'—').substring(0,18)}</td>
+      <td class="mono" style="font-size:11px">${(row[COL.CONTAINERS]||'—').substring(0,22)}</td>
       <td style="color:var(--text3);font-size:11px">${(row[COL.SHIPPING]||'—').substring(0,14)}</td>
       <td style="font-weight:500">${row[COL.CUSTOMER]||'—'}</td>
       <td style="color:var(--text3);font-size:11px">${(row[COL.VESSEL]||'—').substring(0,16)}</td>
@@ -4105,13 +4167,16 @@ function renderPagares(){
     const env  = (row[COL.PAGARE_ENVIADO]||'').trim() || '—';
     const firm = (row[COL.PAGARE_FIRMADO]||'').trim() || '—';
     const gk   = grupoKeyPagare(row);
+    const manual = esGrupoManual(gk);
     const gTag = conAcciones && etiquetaGrupo[gk]
-      ? `<span onclick="seleccionarGrupoPagare('${gk.replace(/'/g,"\\'")}')" title="Estas cargas salieron juntas: mismo cliente, mismo buque y mismo ETD" style="cursor:pointer;font-size:10px;font-family:var(--mono);padding:2px 7px;border-radius:10px;background:rgba(0,113,227,.1);color:var(--accent);white-space:nowrap;">grupo ${etiquetaGrupo[gk]} · ${porGrupo[gk].length}</span>`
+      ? `<span onclick="seleccionarGrupoPagare('${gk.replace(/'/g,"\\'")}')" title="${manual?'Estas cargas se pidieron juntas en una solicitud de FC, asi que el pagare las mantiene juntas':'Salieron juntas: mismo cliente, mismo buque y mismo ETD'}" style="cursor:pointer;font-size:10px;font-family:var(--mono);padding:2px 7px;border-radius:10px;background:${manual?'rgba(247,148,29,.15)':'rgba(0,113,227,.1)'};color:${manual?'var(--warn)':'var(--accent)'};white-space:nowrap;">${manual?'✋':''}grupo ${etiquetaGrupo[gk]} · ${porGrupo[gk].length}</span>`
       : `<span style="color:var(--text3);font-size:10px">—</span>`;
     const sel = window._pagSel.has(idx);
     return `<tr${sel?' style="background:rgba(0,113,227,.06);"':''}>
       ${conAcciones?`<td><input type="checkbox" ${sel?'checked':''} onchange="togglePagRow(${idx})"></td><td>${gTag}</td>`:''}
       <td class="mono" style="text-align:right;white-space:nowrap;">${tnsDe(row)}</td>
+      <td class="mono" style="color:var(--accent);font-size:11px">${(row[COL.LOTS]||'—').substring(0,18)}</td>
+      <td class="mono" style="font-size:11px">${(row[COL.CONTAINERS]||'—').substring(0,22)}</td>
       <td class="mono">${row[COL.NEGOCIO]||'—'}</td>
       <td style="font-weight:500">${row[COL.CUSTOMER]||'—'}</td>
       <td class="mono">${(row[COL.BL]||'—').substring(0,20)}</td>
@@ -4133,7 +4198,7 @@ function renderPagares(){
 
   const cab = (conAcciones) => `<thead><tr>
     ${conAcciones?'<th></th><th>Grupo</th>':''}
-    <th style="text-align:right;">Tns</th>
+    <th style="text-align:right;">Tns</th><th>Lote</th><th>Contenedor</th>
     <th>Negocio</th><th>Customer</th><th>BL</th><th>Buque</th><th>ETA</th>
     <th>Estado</th><th>Enviado</th><th>Firmado</th><th>Payment Due</th>
     ${conAcciones?'<th>Reclamos</th><th></th>':''}
@@ -4189,7 +4254,7 @@ function renderPagares(){
     const vacio = !total ? 'Ninguna carga activa lleva pagaré.'
                 : q ? 'Nada que coincida con “' + pagaresBusqueda + '”.'
                 : 'Ninguna carga con ese estado.';
-    html += `<tr><td colspan="14"><div class="empty" style="padding:30px;">${vacio}</div></td></tr>`;
+    html += `<tr><td colspan="16"><div class="empty" style="padding:30px;">${vacio}</div></td></tr>`;
   } else {
     visibles.forEach(o => { html += filaHtml(o, true); });
   }
