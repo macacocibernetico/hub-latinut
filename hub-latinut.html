@@ -233,6 +233,11 @@ button{font-family:var(--font);cursor:pointer;border:none;background:none;}
 
 /* STICKY TABLE HEADER */
 .sticky-table thead th{position:sticky;top:0;z-index:2;background:var(--bg3);box-shadow:0 1px 0 var(--border);}
+/* La columna de acciones viaja con el scroll horizontal: la tabla de Cargas es
+   muy ancha y antes habia que arrastrarse hasta el final para apretar un boton. */
+.col-acciones{position:sticky;right:0;z-index:3;background:var(--bg2);box-shadow:-6px 0 8px -6px rgba(0,0,0,.18);}
+.sticky-table thead th.col-acciones{z-index:4;background:var(--bg3);}
+tr:hover .col-acciones{background:var(--bg3);}
 
 /* PAGINATION */
 .pagination{display:flex;align-items:center;justify-content:space-between;padding:12px 16px;border-top:1px solid var(--border);background:var(--bg2);}
@@ -1210,6 +1215,47 @@ function resumenFC(rowIndices){
   return r;
 }
 
+// Aviso de embarque al cliente. Lo arma el AppScript (tabla naranja por lote),
+// el hub solo elige las cargas. Es la otra punta del grupo: pediste la FC por un
+// conjunto, ahora le avisas al cliente por el mismo conjunto.
+async function avisoClienteBulk(rowIndices){
+  const r = resumenFC(rowIndices);
+  if(r.bloqueo){ alert(r.bloqueo); return; }
+  if(!r.sheetRows.length){ alert('No pude ubicar las filas en la planilla. Recarga los datos.'); return; }
+
+  const linea = (k,v) => '<div><span style="color:var(--text3);">'+k+':</span> <b>'+v+'</b></div>';
+  let detalle = linea('Cliente',  r.customer)
+              + linea('Lotes',    r.lotes.join(', ') || '—')
+              + linea('Destino',  (r.puertos.join(', ') || '—') + (r.buques.length ? ' · ' + r.buques.join(', ') : ''))
+              + linea('Total',    (r.tns ? r.tns.toLocaleString('es-AR',{maximumFractionDigits:2}) + ' tns' : '—'))
+              + linea('Filas',    r.sheetRows.join(', '));
+  // Los avisos al cliente van SIN adjuntos: el AppScript no los pega solo.
+  detalle += '<div style="color:var(--warn);margin-top:6px;">\u26a0 El borrador sale sin adjuntos: acordate de sumar los documentos antes de enviarlo.</div>';
+  r.avisos.forEach(a => { detalle += '<div style="color:var(--warn);margin-top:6px;">\u26a0 ' + a + '</div>'; });
+
+  const ok = await showConfirm('Aviso al cliente por ' + r.n + ' carga' + (r.n>1?'s':''),
+    'Se crea un borrador en Gmail para ' + r.customer + ' y se marca la columna de env\u00edo al cliente en la planilla.',
+    { icono:'\U0001F4E6', okLabel:'Generar aviso', detalle: detalle });
+  if(!ok) return;
+
+  showToast('Generando borrador...');
+  const data = await callAppScriptFilas('avisoCliente', r.sheetRows);
+  if(data && data.ok){
+    showToast('\u2713 Borrador creado');
+    await registrarGrupoEmbarque(r.filas);
+    for(const row of r.filas){
+      await appendLog({
+        fc:(row[COL.INVOICE_CLIENTE]||'').trim(), fcServ:'',
+        bl:(row[COL.BL]||'').trim(), customer:r.customer,
+        accion:'aviso al cliente',
+        detalle:'Via AppScript - ' + r.n + ' cargas - filas ' + r.sheetRows.join(', ') + ' - lotes: ' + (r.lotes.join(', ')||'—')
+      });
+    }
+    await loadLog();
+    await loadData();
+  }
+}
+
 async function solicitarFCBulk(rowIndices){
   if(!rowIndices.length) return;
   const rows = rowIndices.map(i => allRows[i]);
@@ -2106,7 +2152,7 @@ function getAlerts(){
     const telexVacio = telex === '';
     const pagEnv = (row[COL.PAGARE_ENVIADO]||'').trim();
     const pagFirm = (row[COL.PAGARE_FIRMADO]||'').trim();
-    const pagNA = pagEnv === '-' || pagFirm === '-' || ncA.sinPagares;
+    const pagNA = !!motivoSinPagare(row, ncA);   // incluye los BL Original
     const docs = (row[COL.DOCUMENTOS]||'').trim();
     const inv1 = (row[COL.INVOICE_CLIENTE]||'').trim();
     const inv2raw = (row[COL.INVOICE_FC_SERV]||'').trim();
@@ -2705,8 +2751,19 @@ function renderCargas(showAll, sort){
         + (r.puertos.length ? ' \u00b7 ' + r.puertos.join(', ') : '')
         + '</span>'
         + (r.avisos.length ? '<span style="font-size:10px;color:var(--warn);">\u26a0 ' + r.avisos.length + ' aviso' + (r.avisos.length===1?'':'s') + ' \u2014 se detallan al confirmar</span>' : '');
+    // Las tres acciones que se hacen por conjunto viven aca, no en cada fila:
+    // asi no hay que ir hasta la punta derecha de la tabla para dispararlas.
+    const btnBarra = (accion, texto, principal) =>
+      '<button onclick="' + accion + '" ' + (r.bloqueo?'disabled':'')
+      + ' style="padding:8px 16px;border-radius:20px;border:' + (principal?'none':'1px solid var(--border2)')
+      + ';font-size:12px;font-weight:600;font-family:var(--font);cursor:' + (r.bloqueo?'not-allowed':'pointer')
+      + ';background:' + (r.bloqueo?'var(--border2)':(principal?'var(--accent)':'var(--bg2)'))
+      + ';color:' + (r.bloqueo?'#fff':(principal?'#fff':'var(--text2)')) + ';' + (r.bloqueo?'opacity:.5;':'') + '">' + texto + '</button>';
+
     bar.innerHTML = '<div style="display:flex;flex-direction:column;gap:2px;align-items:flex-start;">' + resumen + '</div>'
-      + '<button onclick="requestBulkFC()" ' + (r.bloqueo?'disabled':'') + ' style="padding:8px 18px;border-radius:20px;border:none;font-size:12px;font-weight:600;font-family:var(--font);cursor:' + (r.bloqueo?'not-allowed':'pointer') + ';background:' + (r.bloqueo?'var(--border2)':'var(--accent)') + ';color:#fff;' + (r.bloqueo?'opacity:.5;':'') + '">\U0001F4C4 Solicitud FC (' + n + ')</button>'
+      + btnBarra('requestBulkFC()', '\U0001F4C4 Solicitud FC (' + n + ')', true)
+      + btnBarra('bulkAvisoCliente()', '\U0001F4E6 Aviso al cliente', false)
+      + btnBarra('bulkLiberacion()', '\U0001F6A2 Liberación', false)
       + '<button onclick="limpiarSelFC()" style="padding:8px 14px;border-radius:20px;border:1px solid var(--border2);background:var(--bg2);color:var(--text3);font-size:12px;font-family:var(--font);cursor:pointer;">Limpiar</button>';
   };
 
@@ -2736,10 +2793,21 @@ function renderCargas(showAll, sort){
     window.actualizarBarraFC();
   };
 
+  // Los tres botones de la barra trabajan sobre la misma seleccion.
+  window._selFCaGlobal = function(){
+    return [...window._fcSelectedRows].map(i => allRows.indexOf(window._fcAllRows[i])).filter(i => i >= 0);
+  };
   window.requestBulkFC = function(){
     if(!window._fcSelectedRows.size) return;
-    const selected = [...window._fcSelectedRows].map(i => allRows.indexOf(window._fcAllRows[i]));
-    solicitarFCBulk(selected);
+    solicitarFCBulk(window._selFCaGlobal());
+  };
+  window.bulkAvisoCliente = function(){
+    if(!window._fcSelectedRows.size) return;
+    avisoClienteBulk(window._selFCaGlobal());
+  };
+  window.bulkLiberacion = function(){
+    if(!window._fcSelectedRows.size) return;
+    solicitarLiberacionBulkViaAppScript(window._selFCaGlobal());
   };
 
   // Pagination
@@ -2774,16 +2842,17 @@ function renderCargas(showAll, sort){
     <div style="overflow-x:auto;${isMobile()?'display:none;':''}">
     <table class="sticky-table">
       <thead><tr>
-        <th style="width:30px"></th>
+        <th style="width:30px">Grupo</th>
         <th style="text-align:right;">Tns</th>
-        <th>BL</th><th>Booking</th><th>Lote</th><th>Contenedor</th><th>Naviera</th>
-        <th onclick="sortCargas('cliente')" style="cursor:pointer;user-select:none;">Customer ${cargasSort==='cliente_az'?'↑':cargasSort==='cliente_za'?'↓':'↕'}</th>
+        <th>Product</th>
+        <th>Lote</th><th>Contenedor</th><th>Booking (Naviera)</th><th>BL</th>
         <th>Vessel</th>
         <th onclick="sortCargas('eta')" style="cursor:pointer;user-select:none;">ETA ${cargasSort==='eta_asc'?'↑':cargasSort==='eta_desc'?'↓':'↕'}</th>
         <th>Docs</th><th>Env. Cliente</th><th>TELEX</th>${getNegocioConfig().sinPagares?'':'<th>Pagaré</th>'}
+        <th onclick="sortCargas('cliente')" style="cursor:pointer;user-select:none;">Customer ${cargasSort==='cliente_az'?'↑':cargasSort==='cliente_za'?'↓':'↕'}</th>
         <th>Invoice FC1</th><th>Total FC1</th><th>Invoice FC2</th><th>Total FC2</th><th>Total</th>
         <th onclick="sortCargas('cobro')" style="cursor:pointer;user-select:none;">Cobro Est. ${cargasSort==='cobro_asc'?'↑':cargasSort==='cobro_desc'?'↓':'↕'}</th>
-        <th></th><th></th><th></th><th></th>
+        <th class="col-acciones">Acciones</th>
       </tr></thead>
       <tbody>`;
 
@@ -2804,10 +2873,11 @@ function renderCargas(showAll, sort){
     const pagEnv = (row[COL.PAGARE_ENVIADO]||'').trim().toUpperCase();
     const pagFirm = (row[COL.PAGARE_FIRMADO]||'').trim().toUpperCase();
     let pagLabel, pagColor;
-    if(pagFirm === 'SI'){ pagLabel='Firmado'; pagColor='var(--ok)'; }
+    const motivoPag = motivoSinPagare(row);
+    if(motivoPag){ pagLabel = motivoPag === 'BL Original' ? 'N/A · BL Orig' : 'N/A'; pagColor='var(--text3)'; }
+    else if(pagFirm === 'SI'){ pagLabel='Firmado'; pagColor='var(--ok)'; }
     else if(pagEnv === 'SI'){ pagLabel='En Docusign'; pagColor='var(--info)'; }
     else if(pagEnv === 'AXT'){ pagLabel='En AXT'; pagColor='var(--warn)'; }
-    else if(pagEnv === '-'){ pagLabel='N/A'; pagColor='var(--text3)'; }
     else { pagLabel='Sin enviar'; pagColor='var(--danger)'; }
 
     const docs = (row[COL.DOCUMENTOS]||'').trim();
@@ -2836,29 +2906,30 @@ function renderCargas(showAll, sort){
         ${window._fcEtiqueta[grupoKeyFC(row)]?`<span onclick="seleccionarGrupoFC('${grupoKeyFC(row).replace(/'/g,"\\'")}')" title="${esGrupoManual(grupoKeyFC(row))?'Estas cargas se pidieron juntas en una solicitud de FC anterior':'Salieron juntas: mismo cliente, buque, ETD y puerto. Un toque las selecciona a todas.'}" style="cursor:pointer;margin-left:5px;font-size:9px;font-family:var(--mono);padding:2px 6px;border-radius:9px;background:${esGrupoManual(grupoKeyFC(row))?'rgba(247,148,29,.15)':'rgba(0,113,227,.1)'};color:${esGrupoManual(grupoKeyFC(row))?'var(--warn)':'var(--accent)'};">${esGrupoManual(grupoKeyFC(row))?'\u270b':''}${window._fcEtiqueta[grupoKeyFC(row)]}\u00b7${window._fcGrupos[grupoKeyFC(row)].length}</span>`:''}
       </td>
       <td class="mono" style="text-align:right;white-space:nowrap;">${(function(){const t=parseSheetNum(row[COL.TNS]);return isNaN(t)?'—':t.toLocaleString('es-AR',{maximumFractionDigits:2});})()}</td>
-      <td class="mono">${(row[COL.BL]||'—').substring(0,20)}</td>
-      <td class="mono">${(row[COL.BOOKING]||'—').substring(0,14)}</td>
+      <td style="font-size:11px">${(row[COL.PRODUCT]||'—').substring(0,22)}</td>
       <td class="mono" style="color:var(--accent);font-size:11px">${(row[COL.LOTS]||'—').substring(0,18)}</td>
       <td class="mono" style="font-size:11px">${(row[COL.CONTAINERS]||'—').substring(0,22)}</td>
-      <td style="color:var(--text3);font-size:11px">${(row[COL.SHIPPING]||'—').substring(0,14)}</td>
-      <td style="font-weight:500">${row[COL.CUSTOMER]||'—'}</td>
+      <td class="mono" style="font-size:11px">${(row[COL.BOOKING]||'—').substring(0,14)}${(row[COL.SHIPPING]||'').trim()?` <span style="color:var(--text3);">(${(row[COL.SHIPPING]||'').trim().substring(0,12)})</span>`:''}</td>
+      <td class="mono">${(row[COL.BL]||'—').substring(0,20)}</td>
       <td style="color:var(--text3);font-size:11px">${(row[COL.VESSEL]||'—').substring(0,16)}</td>
       <td class="mono">${fmtDate(row[COL.ETA])}</td>
       <td><div class="doc-status"><div class="doc-dot ${docsOk?'green':'red'}"></div><span class="doc-text" title="${docs||'Pendiente'}">${docsOk?'OK':docs||'—'}</span></div></td>
       <td><span style="color:${(row[COL.CLIENTE_ENV]||'').trim().toUpperCase()==='SI'?'var(--ok)':'var(--text3)'};font-family:var(--mono);font-size:10px">${(row[COL.CLIENTE_ENV]||'—').trim()}</span></td>
       <td><span style="color:${telexOk?'var(--ok)':telex?'var(--info)':'var(--text3)'};font-family:var(--mono);font-size:10px">${telex||'—'}</span></td>
       ${getNegocioConfig().sinPagares?'<td>—</td>':`<td><span style="color:${pagColor};font-size:11px;font-family:var(--mono)">${pagLabel}</span></td>`}
+      <td style="font-weight:500">${row[COL.CUSTOMER]||'—'}</td>
       <td class="mono" style="color:var(--accent)">${inv1||'—'}</td>
       <td class="mono">${total1?'USD '+total1:'—'}</td>
       <td class="mono" style="color:var(--accent)">${inv2||'—'}</td>
       <td class="mono">${total2?'USD '+total2:'—'}</td>
       <td class="mono" style="font-weight:600;color:var(--text)">${totalCarga!=='—'?'USD '+totalCarga:'—'}</td>
       <td class="mono" style="color:var(--text3)">${fmtDate(row[getCobroCol()])}</td>
-      <td><button class="row-action" onclick="openMailModal(${idx},'reclamo_pago')">✉</button></td>
-      <td><button class="row-action" onclick="renderEditCarga(${idx})">✎ Editar</button></td>
-      <td><button class="row-action" onclick="solicitarFC(${idx})" title="Solicitud FC a AXT" style="color:var(--accent);border-color:var(--accent);">📄 FC</button></td>
-      <td onclick="event.stopPropagation()" style="white-space:nowrap;">
-        <button class="row-action" onclick="triggerDriveUpload(${idx})" title="Subir documentos al Drive" style="color:#4285f4;border-color:#4285f4;">📎 Subir</button>
+      <td class="col-acciones" onclick="event.stopPropagation()" style="white-space:nowrap;">
+        <button class="row-action" onclick="solicitarFC(${idx})" title="Solicitud de FC a AXT" style="color:var(--accent);border-color:var(--accent);">📄 FC</button>
+        <button class="row-action" onclick="avisoClienteBulk([${idx}])" title="Aviso de embarque al cliente" style="margin-left:4px;">📦 Cliente</button>
+        <button class="row-action" onclick="openMailModal(${idx},'reclamo_pago')" title="Reclamo de pago" style="margin-left:4px;">✉ Cobro</button>
+        <button class="row-action" onclick="renderEditCarga(${idx})" title="Editar la carga" style="margin-left:4px;">✎</button>
+        <button class="row-action" onclick="triggerDriveUpload(${idx})" title="Subir documentos al Drive" style="color:#4285f4;border-color:#4285f4;margin-left:4px;">📎</button>
         <button class="row-action" onclick="driveOpenFolder(${idx})" title="Abrir carpeta en Drive" style="margin-left:4px;">📁</button>
         <button class="row-action" onclick="openTasksModal(${idx})" title="Tasks" style="margin-left:4px;">📋</button>
       </td>
@@ -3281,16 +3352,18 @@ async function solicitarLiberacionBulkViaAppScript(rowIndices){
             + rows.map(function(r){ return '<div>• BL '+((r[COL.BL]||'').trim()||'—')+' · ETA '+fmtDate(r[COL.ETA])+'</div>'; }).join('') });
   if(!okLibB) return;
   showToast('Procesando...');
-  const minRow=Math.min(...sheetRows);
-  const maxRow=Math.max(...sheetRows);
-  const ok=await callAppScript('liberacion',minRow,maxRow);
-  if(ok){
+  // Las filas EXACTAS, no el rango: si la seleccion tiene huecos (750 y 755),
+  // mandar filaInicio/filaFin hacia que el AppScript liberara tambien las cuatro
+  // del medio, que nadie habia elegido. Mismo problema que tenia la solicitud FC.
+  const data=await callAppScriptFilas('liberacion', sheetRows);
+  if(data && data.ok){
+    showToast('\u2713 Borrador creado');
     for(let i=0;i<rowIndices.length;i++){
       const row=rows[i];
       const bl=(row[COL.BL]||'').trim();
       const inv1=(row[COL.INVOICE_CLIENTE]||'').trim();
       const inv2=(row[COL.INVOICE_FC_SERV]||'').trim();
-      await appendLog({fc:inv1||'',fcServ:inv2||'',bl,customer:(row[COL.CUSTOMER]||'').trim(),accion:'solicitar liberacion (bulk)',detalle:'Via AppScript - filas '+minRow+'-'+maxRow});
+      await appendLog({fc:inv1||'',fcServ:inv2||'',bl,customer:(row[COL.CUSTOMER]||'').trim(),accion:'solicitar liberacion (bulk)',detalle:'Via AppScript - filas '+sheetRows.join(', ')});
     }
     await loadLog();
     await loadData();
@@ -3418,7 +3491,7 @@ function renderLiberaciones(){
     const esBLOrig=telexLow.includes('bl orig');
     const esSolic=telexLow.includes('solicitado');
     const esRecib=telexLow.includes('recibir');
-    const pagNA=(row[COL.PAGARE_ENVIADO]||'').trim()==='-'||(row[COL.PAGARE_FIRMADO]||'').trim()==='-'||nc.sinPagares;
+    const pagNA=!!motivoSinPagare(row, nc);
     const pagFirm=(row[COL.PAGARE_FIRMADO]||'').trim().toUpperCase();
     const level=esBLOrig?'info':d<=3?'critical':'warning';
     const inv1=(row[COL.INVOICE_CLIENTE]||'').trim();
@@ -3792,10 +3865,34 @@ function renderCobranzaArchivados(){
 // Estado de una carga respecto del pagare.
 // El guion en cualquiera de las dos columnas significa "no corresponde": esa carga
 // no lleva pagare, asi que no es un pendiente y no se mezcla con los que faltan.
+// Motivo por el que una carga NO lleva pagare, o null si si lleva.
+// Hay tres razones y conviene tenerlas en un solo lugar: se usan en las alertas,
+// en Cargas, en Liberaciones, en las acciones rapidas y en Pagares, y cuando
+// vivian repetidas en cada vista era cuestion de tiempo que una quedara vieja.
+//
+// "BL Original" se deduce de TELEX: si la carga viaja con el BL en papel no hay
+// telex que liberar y tampoco pagare que firmar. El hub lo deduce pero NO lo
+// escribe: el "-" en la planilla lo pone una persona, con el boton que aparece
+// en la vista de Pagares.
+function motivoSinPagare(row, ncPre){
+  const nc = ncPre || getNegocioConfig();
+  if(nc.sinPagares) return 'Este negocio no usa pagarés';
+  if((row[COL.PAGARE_ENVIADO]||'').trim() === '-' ||
+     (row[COL.PAGARE_FIRMADO]||'').trim() === '-') return 'Marcada con “-”';
+  if((row[COL.TELEX]||'').trim().toLowerCase().includes('bl orig')) return 'BL Original';
+  return null;
+}
+// True cuando el hub sabe que no corresponde pero la planilla todavia no lo dice.
+function pagareFaltaMarcar(row, ncPre){
+  return motivoSinPagare(row, ncPre) === 'BL Original';
+}
+
 function estadoPagare(row){
   const env  = (row[COL.PAGARE_ENVIADO]||'').trim();
   const firm = (row[COL.PAGARE_FIRMADO]||'').trim();
-  if(env === '-' || firm === '-')   return {key:'na',         label:'No corresponde', color:'var(--text3)'};
+  const motivo = motivoSinPagare(row);
+  if(motivo) return {key:'na', label: motivo === 'Marcada con “-”' ? 'No corresponde' : 'No corresponde · ' + motivo,
+                     color:'var(--text3)', motivo: motivo, faltaMarcar: pagareFaltaMarcar(row)};
   if(firm.toUpperCase() === 'SI')   return {key:'firmado',    label:'Firmado',        color:'var(--ok)'};
   if(env.toUpperCase()  === 'SI')   return {key:'docusign',   label:'En Docusign',    color:'var(--info)'};
   if(env.toUpperCase()  === 'AXT')  return {key:'axt',        label:'En AXT',         color:'var(--warn)'};
@@ -3995,6 +4092,22 @@ async function cambiarEstadoPagare(idx, estadoKey){
   }
 }
 
+// Escribe el "-" en las cargas que son BL Original y todavia no lo tienen.
+// Es el unico camino por el que esa deduccion llega a la planilla, y pasa por
+// la misma confirmacion que cualquier otra escritura.
+async function marcarBLOriginalPendientes(){
+  const pend = [];
+  allRows.forEach((row, i) => { if(pagareFaltaMarcar(row)) pend.push(i); });
+  if(!pend.length){ showToast('No hay cargas BL Original sin marcar'); return; }
+  const previa = window._pagSel;
+  window._pagSel = new Set(pend);
+  try{ await marcarPagareBulk('na'); }
+  finally{
+    if(window._pagSel && window._pagSel.size) window._pagSel = previa || new Set();
+    renderPagares();
+  }
+}
+
 async function marcarPagareBulk(estadoKey){
   const est = ESTADOS_PAGARE[estadoKey];
   if(!est) return;
@@ -4188,7 +4301,7 @@ function renderPagares(){
             ${ORDEN_ESTADOS_PAGARE.map(k => `<option value="${k}" ${est.key===k?'selected':''}>${ESTADOS_PAGARE[k].label}</option>`).join('')}
           </select>`
         : `<span style="font-size:11px;font-weight:600;font-family:var(--mono);color:${est.color}">${est.label}</span>`}</td>
-      <td class="mono" style="font-size:10px;color:var(--text3)">${env}</td>
+      <td class="mono" style="font-size:10px;color:var(--text3)">${est.motivo === 'BL Original' ? '<span title="No lleva pagaré: viaja con BL Original" style="color:var(--info)">BL Orig</span>' : env}</td>
       <td class="mono" style="font-size:10px;color:var(--text3)">${firm}</td>
       <td class="mono">${fmtDate(row[getCobroCol()])}</td>
       ${conAcciones ? `<td>${recHtml}</td>
@@ -4261,6 +4374,20 @@ function renderPagares(){
   html += `</tbody></table></div></div>`;
 
   // ── Lista aparte: las que no corresponden ──
+  // Las que el hub dedujo (BL Original) pero la planilla todavia no dice.
+  const faltaMarcar = noCorresponde.filter(o => o.est.faltaMarcar);
+  if(faltaMarcar.length){
+    html += `<div class="table-wrap" style="border-left:3px solid var(--info);">
+      <div style="padding:12px 16px;display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;">
+        <div>
+          <div style="font-size:13px;font-weight:600;color:var(--text);">${faltaMarcar.length} carga${faltaMarcar.length===1?'':'s'} con BL Original</div>
+          <div style="font-size:11px;color:var(--text3);margin-top:3px;">Viajan con el BL en papel, así que no llevan pagaré. El hub ya las sacó de los pendientes, pero en la planilla siguen sin el “-”: ${faltaMarcar.map(o => (o.row[COL.LOTS]||o.row[COL.BL]||'—')).join(', ')}</div>
+        </div>
+        <button onclick="marcarBLOriginalPendientes()" style="padding:8px 16px;border-radius:8px;border:none;background:var(--accent);color:#fff;font-size:12px;font-weight:600;font-family:var(--font);cursor:pointer;white-space:nowrap;">Marcar con “-” en la planilla</button>
+      </div>
+    </div>`;
+  }
+
   if(naVisibles.length){
     // Si estas buscando, se abre sola: no tiene sentido esconder el resultado
     // atras de un "Ver ↓" cuando lo que buscas puede estar justo ahi.
@@ -4271,7 +4398,7 @@ function renderPagares(){
         <span style="font-size:11px;color:var(--accent);">${abierta?'Ocultar ↑':'Ver ↓'}</span>
       </div>`;
     if(abierta){
-      html += `<div style="padding:10px 16px 0;font-size:11px;color:var(--text3);">Marcadas con “-” en Enviado o Firmado. No cuentan como pendientes ni generan alertas.</div>
+      html += `<div style="padding:10px 16px 0;font-size:11px;color:var(--text3);">Marcadas con “-” en Enviado o Firmado, o con BL Original en TELEX. No cuentan como pendientes ni generan alertas.</div>
         <div style="overflow-x:auto;"><table>${cab(false)}<tbody>`;
       naVisibles.forEach(o => { html += filaHtml(o, false); });
       html += `</tbody></table></div>`;
@@ -5321,7 +5448,7 @@ function buildQuickActions(rowIdx){
   if(!row) return '';
   const pagEnv = (row[COL.PAGARE_ENVIADO]||'').trim().toUpperCase();
   const pagFirm = (row[COL.PAGARE_FIRMADO]||'').trim().toUpperCase();
-  const pagNA = pagEnv==='-'||pagFirm==='-'||getNegocioConfig().sinPagares;
+  const pagNA = !!motivoSinPagare(row);
   const docs = (row[COL.DOCUMENTOS]||'').trim().toUpperCase();
   const btns = [];
   const id = `qa-${rowIdx}`;
@@ -5417,7 +5544,7 @@ function renderCargasMobileCards(rows, pagedRows){
     const telex = (row[COL.TELEX]||'').trim();
     const pagEnv = (row[COL.PAGARE_ENVIADO]||'').trim().toUpperCase();
     const pagFirm = (row[COL.PAGARE_FIRMADO]||'').trim().toUpperCase();
-    const pagNA = pagEnv==='-'||pagFirm==='-'||getNegocioConfig().sinPagares;
+    const pagNA = !!motivoSinPagare(row);
     const docs = (row[COL.DOCUMENTOS]||'').trim();
     const total = totalCargaDe(row);
     const dColor = dc==='red'?'var(--danger)':dc==='warn'?'var(--warn)':'var(--ok)';
