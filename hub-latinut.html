@@ -1357,20 +1357,48 @@ async function callAppScriptRaw(accion, params){
     alert('No hay URL de AppScript configurada para ' + nc.label + '. Verific\u00e1 la configuraci\u00f3n.');
     return { ok:false, error:'Sin URL de AppScript' };
   }
+  // Se lee como TEXTO y despues se parsea a mano, a proposito. Con r.json()
+  // directo, cualquier respuesta que no fuera JSON (una pantalla de login de
+  // Google, el error de compilacion del script, una pagina de permisos) tiraba
+  // la misma excepcion generica y el hub decia "no pude conectar", que casi
+  // nunca era lo que pasaba: la conexion habia funcionado perfecto.
+  const full = url + '?' + new URLSearchParams(Object.assign({ accion: accion }, params || {})).toString();
+  let r, texto;
   try{
-    const qs = new URLSearchParams(Object.assign({ accion: accion }, params || {}));
-    const r = await fetch(url + '?' + qs.toString(), { method:'GET', redirect:'follow' });
-    const data = await r.json();
-    if(!data.ok){
-      console.error('AppScript error:', data.error);
-      alert('Error: ' + (data.error||'desconocido'));
-    }
-    return data;
+    r = await fetch(full, { method:'GET', redirect:'follow' });
+    texto = await r.text();
   } catch(e){
-    console.error('callAppScript error:', e);
-    alert('Error al conectar con el AppScript. Verific\u00e1 que est\u00e9 publicado correctamente.');
-    return { ok:false, error:'No se pudo conectar con el AppScript' };
+    console.error('callAppScript — no hubo respuesta:', e, full);
+    alert('No se pudo llegar al AppScript de ' + nc.label + '.\n\n'
+        + 'Suele ser la URL mal copiada en Configuraci\u00f3n, o el script sin publicar.\n\n'
+        + 'Prob\u00e1 abrir esta direcci\u00f3n en una pesta\u00f1a nueva para ver qu\u00e9 contesta:\n' + full);
+    return { ok:false, error:'No hubo respuesta del AppScript' };
   }
+
+  let data = null;
+  try{ data = JSON.parse(texto); }catch(e){ data = null; }
+
+  if(data === null){
+    // Llegamos, pero lo que volvio no es JSON. El texto crudo dice por que.
+    const t = (texto||'').toString();
+    const esLogin  = /accounts\.google\.com|ServiceLogin|Iniciar sesi|Sign in/i.test(t);
+    const esPermiso= /Authorization|autorizaci|permiso|needs? (your )?permission/i.test(t);
+    const esError  = /Script function not found|TypeError|ReferenceError|SyntaxError|Se produjo un error|Error en el script/i.test(t);
+    let motivo;
+    if(esLogin)        motivo = 'El AppScript te est\u00e1 pidiendo iniciar sesi\u00f3n.\n\nEn Implementar \u2192 Administrar implementaciones, pon\u00e9 "Qui\u00e9n tiene acceso: Cualquier usuario" y volv\u00e9 a implementar.';
+    else if(esPermiso) motivo = 'El AppScript necesita que le vuelvas a dar permisos.\n\nAbr\u00ed el editor, eleg\u00ed la funci\u00f3n y dale Ejecutar una vez a mano para aceptarlos.';
+    else if(esError)   motivo = 'El AppScript respondi\u00f3 con un error de ejecuci\u00f3n. Mir\u00e1 Ejecuciones en el editor para ver cu\u00e1l.';
+    else               motivo = 'El AppScript contest\u00f3 algo que no es JSON (HTTP ' + r.status + ').';
+    console.error('AppScript — respuesta no JSON (' + r.status + '):', t.slice(0, 2000), full);
+    alert(motivo + '\n\nRespuesta recibida:\n' + t.slice(0, 300).replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim());
+    return { ok:false, error:'El AppScript no devolvio JSON (HTTP ' + r.status + ')' };
+  }
+
+  if(!data.ok){
+    console.error('AppScript error:', data.error);
+    alert('El AppScript no pudo completar la acci\u00f3n:\n\n' + (data.error||'error desconocido'));
+  }
+  return data;
 }
 
 // Rango contiguo de filas (lo que usaban liberacion / solicitudFC).
