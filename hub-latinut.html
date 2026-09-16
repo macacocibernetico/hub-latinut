@@ -3748,12 +3748,27 @@ function togglePagaresNA(){ pagaresVerNA = !pagaresVerNA; renderPagares(); }
 // si no, quedarian cargas tildadas fuera de la vista y la barra de acciones
 // actuaria sobre cosas que no se estan viendo.
 let pagaresFiltro = new Set();
+let pagaresBusqueda = '';
+let pagaresOrden = 'pendientes';
+
+// Busca en lo que uno tiene a mano cuando arranca por un papel: el numero de
+// factura (la del cliente o la de servicios), el cliente, el BL, el lote,
+// el booking o el buque.
+function coincidePagare(row, q){
+  if(!q) return true;
+  const campos = [row[COL.CUSTOMER], row[COL.INVOICE_CLIENTE], row[COL.INVOICE_FC_SERV],
+                  row[COL.BL], row[COL.LOTS], row[COL.BOOKING], row[COL.VESSEL], row[COL.NEGOCIO]];
+  return campos.some(v => (v||'').toString().toLowerCase().includes(q));
+}
+function setPagaresOrden(v){ pagaresOrden = v; renderPagares(); }
+
 function togglePagaresEstado(k){
   if(pagaresFiltro.has(k)) pagaresFiltro.delete(k); else pagaresFiltro.add(k);
   window._pagSel = new Set();
   renderPagares();
 }
 function limpiarFiltroPagares(){ pagaresFiltro = new Set(); window._pagSel = new Set(); renderPagares(); }
+function limpiarBusquedaPagares(){ pagaresBusqueda = ''; window._pagSel = new Set(); renderPagares(); }
 
 // ─── PAGARES: GRUPOS, GENERACION Y ESTADOS ───────────────────────────────────
 // Un pagare no es siempre una carga. Si dos lotes salen para el mismo cliente en
@@ -3981,17 +3996,25 @@ function renderPagares(){
   const etiquetaGrupo = {};
   claves.forEach((k, i) => { etiquetaGrupo[k] = String.fromCharCode(65 + (i % 26)); });
 
-  // Los pendientes primero: sin enviar, en AXT, en Docusign, firmado
+  // Orden. Por defecto los pendientes primero (sin enviar, en AXT, en Docusign,
+  // firmado) y dentro de cada grupo por ETA; las otras dos opciones ordenan solo
+  // por ETA, para cuando lo que importa es que llega primero.
   const orden = {sin_enviar:0, axt:1, otro:2, docusign:3, firmado:4};
-  conPagare.sort((a,b) => {
-    const d = (orden[a.est.key]??9) - (orden[b.est.key]??9);
-    if(d !== 0) return d;
+  const porEta = (a, b, desc) => {
     const da = daysFrom(a.row[COL.ETA]), db = daysFrom(b.row[COL.ETA]);
     if(da === null && db === null) return 0;
-    if(da === null) return 1;
+    if(da === null) return 1;      // las que no tienen ETA, siempre al final
     if(db === null) return -1;
-    return da - db;
+    return desc ? db - da : da - db;
+  };
+  const ordenar = lista => lista.sort((a,b) => {
+    if(pagaresOrden === 'eta_asc')  return porEta(a, b, false);
+    if(pagaresOrden === 'eta_desc') return porEta(a, b, true);
+    const d = (orden[a.est.key]??9) - (orden[b.est.key]??9);
+    return d !== 0 ? d : porEta(a, b, false);
   });
+  ordenar(conPagare);
+  ordenar(noCorresponde);
 
   const cuenta = k => conPagare.filter(x => x.est.key === k).length;
   const pendientes = cuenta('sin_enviar') + cuenta('axt') + cuenta('otro');
@@ -3999,9 +4022,19 @@ function renderPagares(){
   // El filtro se aplica DESPUES de contar: las tarjetas de arriba siempre
   // muestran el total, si no cambiarian solas al filtrar y no se entenderia nada.
   const total = conPagare.length;
-  const visibles = pagaresFiltro.size
+  const q = pagaresBusqueda.trim().toLowerCase();
+  let visibles = pagaresFiltro.size
     ? conPagare.filter(o => pagaresFiltro.has(o.est.key))
     : conPagare;
+  if(q) visibles = visibles.filter(o => coincidePagare(o.row, q));
+  // La busqueda tambien mira las que no corresponden: si buscas una factura,
+  // te la tiene que encontrar aunque esa carga no lleve pagare.
+  const naVisibles = q ? noCorresponde.filter(o => coincidePagare(o.row, q)) : noCorresponde;
+  const hayRecorte = !!(q || pagaresFiltro.size);
+  const tnsVisibles = visibles.reduce((acc, o) => {
+    const t = parseSheetNum(o.row[COL.TNS]);
+    return acc + (isNaN(t) ? 0 : t);
+  }, 0);
 
   let html = `<div class="stats-row">
     <div class="stat-card ${pendientes?'alert-card':''}" style="cursor:pointer" onclick="togglePagaresEstado('sin_enviar')"><div class="stat-label">Sin enviar</div><div class="stat-value" style="color:${cuenta('sin_enviar')?'var(--danger)':'var(--text3)'}">${cuenta('sin_enviar')}</div><div class="stat-sub" style="color:${pagaresFiltro.has('sin_enviar')?'var(--accent)':''}">${pagaresFiltro.has('sin_enviar')?'✓ filtrando':'Hay que mandarlos'}</div></div>
@@ -4057,6 +4090,12 @@ function renderPagares(){
     </div>`;
   }
 
+  // Las tns de la carga, formateadas. Sin decimales si es un numero redondo.
+  const tnsDe = (row) => {
+    const t = parseSheetNum(row[COL.TNS]);
+    return isNaN(t) ? '—' : t.toLocaleString('es-AR', {maximumFractionDigits:2});
+  };
+
   const filaHtml = (o, conAcciones) => {
     const row = o.row, idx = o.idx, est = o.est;
     const recInfo = getReclamoInfoFromLog(row[COL.BL]||'','solicitar_pagare');
@@ -4072,6 +4111,7 @@ function renderPagares(){
     const sel = window._pagSel.has(idx);
     return `<tr${sel?' style="background:rgba(0,113,227,.06);"':''}>
       ${conAcciones?`<td><input type="checkbox" ${sel?'checked':''} onchange="togglePagRow(${idx})"></td><td>${gTag}</td>`:''}
+      <td class="mono" style="text-align:right;white-space:nowrap;">${tnsDe(row)}</td>
       <td class="mono">${row[COL.NEGOCIO]||'—'}</td>
       <td style="font-weight:500">${row[COL.CUSTOMER]||'—'}</td>
       <td class="mono">${(row[COL.BL]||'—').substring(0,20)}</td>
@@ -4093,6 +4133,7 @@ function renderPagares(){
 
   const cab = (conAcciones) => `<thead><tr>
     ${conAcciones?'<th></th><th>Grupo</th>':''}
+    <th style="text-align:right;">Tns</th>
     <th>Negocio</th><th>Customer</th><th>BL</th><th>Buque</th><th>ETA</th>
     <th>Estado</th><th>Enviado</th><th>Firmado</th><th>Payment Due</th>
     ${conAcciones?'<th>Reclamos</th><th></th>':''}
@@ -4105,6 +4146,23 @@ function renderPagares(){
     const on = pagaresFiltro.has(k);
     return `<span onclick="togglePagaresEstado('${k}')" style="font-size:11px;font-family:var(--mono);padding:5px 12px;border-radius:20px;cursor:pointer;white-space:nowrap;border:1px solid ${on?'var(--accent)':'var(--border2)'};background:${on?'var(--accent)':'var(--bg2)'};color:${on?'#fff':'var(--text3)'};">${label} (${n})</span>`;
   };
+  // Buscador. Mismo comportamiento que el de Cargas: espera a que dejes de
+  // tipear y despues devuelve el foco al input con el cursor donde estaba.
+  const buscador = `<div style="position:relative;display:flex;align-items:center;">
+    <span style="position:absolute;left:9px;font-size:13px;color:var(--text3);">🔍</span>
+    <input id="pagares-search-input" type="text" placeholder="Factura, cliente, BL, lote, buque..."
+      value="${pagaresBusqueda.replace(/"/g,'&quot;')}"
+      oninput="pagaresBusqueda=this.value;window._pagSel=new Set();if(this._t)clearTimeout(this._t);this._t=setTimeout(()=>{const v=this.value;renderPagares();setTimeout(()=>{const el=document.getElementById('pagares-search-input');if(el){el.focus();el.setSelectionRange(v.length,v.length);}},0);},300);"
+      style="font-size:11px;font-family:var(--mono);padding:5px 10px 5px 30px;border-radius:8px;border:1px solid ${pagaresBusqueda?'var(--accent)':'var(--border)'};background:${pagaresBusqueda?'var(--accent-light)':'var(--bg2)'};color:var(--text);width:230px;outline:none;">
+    ${pagaresBusqueda?`<span onclick="limpiarBusquedaPagares()" style="position:absolute;right:8px;cursor:pointer;font-size:12px;color:var(--text3);">×</span>`:''}
+  </div>`;
+
+  const ordenSel = `<select onchange="setPagaresOrden(this.value)" style="font-size:11px;font-family:var(--mono);padding:5px 8px;border-radius:8px;border:1px solid var(--border);background:var(--bg2);color:var(--text2);cursor:pointer;">
+    <option value="pendientes" ${pagaresOrden==='pendientes'?'selected':''}>Pendientes primero</option>
+    <option value="eta_asc" ${pagaresOrden==='eta_asc'?'selected':''}>ETA más cercana</option>
+    <option value="eta_desc" ${pagaresOrden==='eta_desc'?'selected':''}>ETA más lejana</option>
+  </select>`;
+
   const filtros = `<div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;">
     ${chipEstado('sin_enviar','Sin enviar')}
     ${chipEstado('axt','En AXT')}
@@ -4118,30 +4176,39 @@ function renderPagares(){
   html += `<div class="table-wrap">
     <div class="table-top" style="flex-direction:column;align-items:flex-start;gap:10px;padding:14px 16px;">
       <div style="display:flex;align-items:center;justify-content:space-between;width:100%;flex-wrap:wrap;gap:8px;">
-        <span style="font-size:13px;font-weight:600;color:var(--text);">Pagarés — ${pagaresFiltro.size?`${visibles.length} de ${total}`:`${total} carga${total===1?'':'s'}`}</span>
+        <span style="font-size:13px;font-weight:600;color:var(--text);">Pagarés — ${hayRecorte?`${visibles.length} de ${total}`:`${total} carga${total===1?'':'s'}`}${tnsVisibles?` · ${tnsVisibles.toLocaleString('es-AR',{maximumFractionDigits:2})} tns`:''}</span>
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">${buscador}${ordenSel}</div>
+      </div>
+      <div style="display:flex;align-items:center;justify-content:space-between;width:100%;flex-wrap:wrap;gap:8px;">
+        ${filtros}
         <span style="font-size:11px;color:var(--text3);">${pendientes} pendiente${pendientes===1?'':'s'} de gestionar${claves.length?` · ${claves.length} grupo${claves.length===1?'':'s'} de cargas que viajaron juntas`:''}</span>
       </div>
-      ${filtros}
     </div>
     <div style="overflow-x:auto;"><table>${cab(true)}<tbody>`;
   if(!visibles.length){
-    html += `<tr><td colspan="13"><div class="empty" style="padding:30px;">${total?'Ninguna carga con ese estado.':'Ninguna carga activa lleva pagaré.'}</div></td></tr>`;
+    const vacio = !total ? 'Ninguna carga activa lleva pagaré.'
+                : q ? 'Nada que coincida con “' + pagaresBusqueda + '”.'
+                : 'Ninguna carga con ese estado.';
+    html += `<tr><td colspan="14"><div class="empty" style="padding:30px;">${vacio}</div></td></tr>`;
   } else {
     visibles.forEach(o => { html += filaHtml(o, true); });
   }
   html += `</tbody></table></div></div>`;
 
   // ── Lista aparte: las que no corresponden ──
-  if(noCorresponde.length){
+  if(naVisibles.length){
+    // Si estas buscando, se abre sola: no tiene sentido esconder el resultado
+    // atras de un "Ver ↓" cuando lo que buscas puede estar justo ahi.
+    const abierta = pagaresVerNA || !!q;
     html += `<div class="table-wrap">
       <div class="table-top" style="cursor:pointer;" onclick="togglePagaresNA()">
-        <span style="font-size:13px;font-weight:600;color:var(--text2);">No corresponde — ${noCorresponde.length} carga${noCorresponde.length===1?'':'s'}</span>
-        <span style="font-size:11px;color:var(--accent);">${pagaresVerNA?'Ocultar ↑':'Ver ↓'}</span>
+        <span style="font-size:13px;font-weight:600;color:var(--text2);">No corresponde — ${q?`${naVisibles.length} de ${noCorresponde.length}`:`${noCorresponde.length} carga${noCorresponde.length===1?'':'s'}`}</span>
+        <span style="font-size:11px;color:var(--accent);">${abierta?'Ocultar ↑':'Ver ↓'}</span>
       </div>`;
-    if(pagaresVerNA){
+    if(abierta){
       html += `<div style="padding:10px 16px 0;font-size:11px;color:var(--text3);">Marcadas con “-” en Enviado o Firmado. No cuentan como pendientes ni generan alertas.</div>
         <div style="overflow-x:auto;"><table>${cab(false)}<tbody>`;
-      noCorresponde.forEach(o => { html += filaHtml(o, false); });
+      naVisibles.forEach(o => { html += filaHtml(o, false); });
       html += `</tbody></table></div>`;
     }
     html += `</div>`;
