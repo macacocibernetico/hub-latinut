@@ -1083,34 +1083,114 @@ function saveReclamo(bl, mailType){
 }
 
 // ─── SOLICITUD FC ────────────────────────────────────────────────────────────
+// ─── AGRUPACION POR EMBARQUE ─────────────────────────────────────────────────
+// Varias cargas que salieron juntas se gestionan juntas: un solo aviso de embarque
+// a AXT pidiendo las facturas, y despues un solo pagare que las cubre a todas.
+// Las dos claves son parecidas pero NO iguales, a proposito:
+//   - FC: exige ademas el mismo puerto, porque el aviso de embarque habla de un
+//         destino concreto y el asunto del mail lo nombra.
+//   - Pagare: no mira el puerto. Es un instrumento de pago del cliente; si el
+//         mismo cliente tiene dos cargas en el mismo buque a puertos distintos,
+//         igual pueden ir en el mismo pagare.
+const _normClave = v => (v||'').toString().trim().toUpperCase().replace(/\s+/g,' ');
+
+function grupoKeyFC(row){
+  return [_normClave(row[COL.CUSTOMER]), _normClave(row[COL.VESSEL]),
+          _normClave(fmtDate(row[COL.ETD])), _normClave(row[COL.PORT])].join('|');
+}
+function grupoKeyPagare(row){
+  return [_normClave(row[COL.CUSTOMER]), _normClave(row[COL.VESSEL]),
+          _normClave(fmtDate(row[COL.ETD]))].join('|');
+}
+
+// Lo que va a contener la solicitud de FC de una seleccion de cargas.
+// Se calcula del lado del hub para poder mostrarlo ANTES de generar el borrador.
+function resumenFC(rowIndices){
+  // El AppScript lee las filas en orden de planilla y arma el asunto y los datos
+  // con la primera. Ordenamos igual para que lo que se ve sea lo que va a salir.
+  const idx = (rowIndices||[]).filter(i => allRows[i])
+    .sort((a,b) => (allRows[a]._sheetRow||a) - (allRows[b]._sheetRow||b));
+  const filas = idx.map(i => allRows[i]);
+  const r = { n:filas.length, idx:idx, filas:filas, sheetRows:sheetRowsDe(idx),
+              clientes:[], customer:'', productos:[], puertos:[], buques:[], etds:[],
+              lotes:[], tns:0, yaPedidas:[], sinPrecio:0, avisos:[], bloqueo:null };
+  if(!filas.length){ r.bloqueo = 'No hay cargas seleccionadas.'; return r; }
+
+  const unico = (arr, v) => { const t=(v||'').toString().trim(); if(t && arr.indexOf(t)<0) arr.push(t); };
+  filas.forEach(row => {
+    unico(r.clientes,  row[COL.CUSTOMER]);
+    unico(r.productos, row[COL.PRODUCT]);
+    unico(r.puertos,   row[COL.PORT]);
+    unico(r.buques,    row[COL.VESSEL]);
+    unico(r.etds,      fmtDate(row[COL.ETD]));
+    unico(r.lotes,     row[COL.LOTS]);
+    const t = parseSheetNum(row[COL.TNS]);
+    if(!isNaN(t)) r.tns += t;
+    // Si la columna de envio ya esta marcada, esa FC ya se pidio una vez
+    if((row[COL.LOMBARD]||'').toString().trim()) r.yaPedidas.push((row[COL.LOTS]||row[COL.BL]||'?').toString().trim());
+    if(isNaN(parseSheetNum(row[COL.PRICE_CLIENTE]))) r.sinPrecio++;
+  });
+  r.customer = r.clientes[0] || '';
+
+  // Bloqueos: el mail pide "las facturas de AXT a X". Con dos clientes no cierra.
+  if(r.clientes.length > 1)
+    r.bloqueo = 'Hay ' + r.clientes.length + ' clientes distintos en la seleccion (' + r.clientes.join(', ') + '). El aviso de embarque es de un solo cliente.';
+  else if(!r.customer)
+    r.bloqueo = 'Las cargas seleccionadas no tienen Customer cargado.';
+
+  // Avisos: sale igual, pero conviene saberlo antes de mandarlo
+  if(r.puertos.length > 1)
+    r.avisos.push('Van a ' + r.puertos.length + ' puertos distintos (' + r.puertos.join(', ') + '). El asunto del mail va a decir solo ' + r.puertos[0] + '.');
+  if(r.buques.length > 1)
+    r.avisos.push('No viajan en el mismo buque (' + r.buques.join(', ') + ').');
+  if(r.etds.length > 1)
+    r.avisos.push('Tienen ETD distintos (' + r.etds.join(' · ') + '). El mail va a usar el de la primera: ' + r.etds[0] + '.');
+  if(r.productos.length > 1)
+    r.avisos.push('Hay ' + r.productos.length + ' productos distintos (' + r.productos.join(', ') + ') y el mail describe uno solo: ' + r.productos[0] + '.');
+  if(r.yaPedidas.length)
+    r.avisos.push(r.yaPedidas.length + ' carga' + (r.yaPedidas.length>1?'s ya tienen':' ya tiene') + ' marcada la columna de envio (' + r.yaPedidas.join(', ') + '): la FC ya se pidio.');
+  if(r.sinPrecio)
+    r.avisos.push(r.sinPrecio + ' carga' + (r.sinPrecio>1?'s':'') + ' sin precio cargado: el mail va a salir con "completar" a mano.');
+  return r;
+}
+
 async function solicitarFCBulk(rowIndices){
   if(!rowIndices.length) return;
   const rows = rowIndices.map(i => allRows[i]);
   const sheetRows = rows.map(r => r._sheetRow).filter(Boolean).sort((a,b)=>a-b);
   if(sheetRows.length !== rowIndices.length){ alert('No se pudieron determinar todas las filas.'); return; }
 
-  const customer = (rows[0][COL.CUSTOMER]||'').trim();
-  const product = (rows[0][COL.PRODUCT]||'').trim();
-  const minRow = sheetRows[0];
-  const maxRow = sheetRows[sheetRows.length-1];
+  const r = resumenFC(rowIndices);
+  if(r.bloqueo){ alert(r.bloqueo); return; }
 
-  const okFC = await showConfirm('Solicitud FC para ' + rowIndices.length + ' cargas',
-    'Se crea el borrador en Gmail y se marca la columna de envío en la planilla.',
-    { icono:'📄', okLabel:'Generar solicitud',
-      detalle:'<div><span style="color:var(--text3);">Cliente:</span> <b>'+customer+'</b></div>'
-            + '<div><span style="color:var(--text3);">Producto:</span> <b>'+product+'</b></div>'
-            + '<div><span style="color:var(--text3);">Filas:</span> <b>'+minRow+' a '+maxRow+'</b></div>' });
+  const linea = (k,v) => '<div><span style="color:var(--text3);">'+k+':</span> <b>'+v+'</b></div>';
+  let detalle = linea('Cliente',  r.customer)
+              + linea('Producto', r.productos.join(', ') || '—')
+              + linea('Lotes',    r.lotes.join(', ') || '—')
+              + linea('Destino',  (r.puertos.join(', ') || '—') + (r.buques.length ? ' · ' + r.buques.join(', ') : ''))
+              + linea('Total',    (r.tns ? r.tns.toLocaleString('es-AR',{maximumFractionDigits:2}) + ' tns' : '—'))
+              + linea('Filas',    r.sheetRows.join(', '));
+  r.avisos.forEach(a => { detalle += '<div style="color:var(--warn);margin-top:6px;">⚠ ' + a + '</div>'; });
+
+  const okFC = await showConfirm('Solicitud FC para ' + r.n + ' carga' + (r.n>1?'s':''),
+    'Se crea un solo borrador en Gmail que cubre las ' + r.n + ' cargas, y se marca la columna de env\u00edo en la planilla.',
+    { icono:'\U0001F4C4', okLabel:'Generar solicitud', detalle: detalle });
   if(!okFC) return;
 
   showToast('Generando borrador...');
-  const ok = await callAppScript('solicitudFC', minRow, maxRow);
+  // OJO: van las filas EXACTAS que se tildaron, no un rango. Antes se mandaba
+  // filaInicio/filaFin y si la seleccion tenia huecos (750 y 755) el AppScript
+  // procesaba tambien las del medio, que nadie habia elegido.
+  const data = await callAppScriptFilas('solicitudFC', r.sheetRows);
 
-  if(ok){
-    for(const row of rows){
+  if(data && data.ok){
+    showToast('\u2713 Borrador creado');
+    for(const row of r.filas){
       await appendLog({
         fc:(row[COL.INVOICE_CLIENTE]||'').trim(), fcServ:'',
-        bl:(row[COL.BL]||'').trim(), customer,
-        accion:'solicitud FC (bulk)', detalle:'Via AppScript - filas '+minRow+'-'+maxRow
+        bl:(row[COL.BL]||'').trim(), customer:r.customer,
+        accion:'solicitud FC (bulk)',
+        detalle:'Via AppScript - ' + r.n + ' cargas - filas ' + r.sheetRows.join(', ') + ' - lotes: ' + (r.lotes.join(', ')||'—')
       });
     }
     await loadLog();
@@ -1267,30 +1347,55 @@ function buildPagination(total, page, onPage){
 function setCargasPage(p){ cargasPage = p; renderCargas(); }
 
 // ─── APPS SCRIPT BRIDGE ──────────────────────────────────────────────────────
-async function callAppScript(accion, filaInicio, filaFin){
+// Llamada cruda: devuelve el objeto completo que responde el AppScript, no un
+// booleano. Hace falta para las acciones que traen datos de vuelta (por ejemplo
+// el pagare, que devuelve la url del PDF que genero en Drive).
+async function callAppScriptRaw(accion, params){
   const nc = getNegocioConfig();
   const url = nc.appsScriptUrl;
-  if(!url){ alert('No hay URL de AppScript configurada para ' + nc.label + '. Verificá la configuración.'); return false; }
+  if(!url){
+    alert('No hay URL de AppScript configurada para ' + nc.label + '. Verific\u00e1 la configuraci\u00f3n.');
+    return { ok:false, error:'Sin URL de AppScript' };
+  }
   try{
-    const params = new URLSearchParams({accion, filaInicio, filaFin: filaFin||filaInicio});
-    const r = await fetch(url + '?' + params.toString(), {
-      method: 'GET',
-      redirect: 'follow'
-    });
+    const qs = new URLSearchParams(Object.assign({ accion: accion }, params || {}));
+    const r = await fetch(url + '?' + qs.toString(), { method:'GET', redirect:'follow' });
     const data = await r.json();
-    if(data.ok){
-      showToast('✓ Acción ejecutada correctamente');
-      return true;
-    } else {
+    if(!data.ok){
       console.error('AppScript error:', data.error);
       alert('Error: ' + (data.error||'desconocido'));
-      return false;
     }
+    return data;
   } catch(e){
     console.error('callAppScript error:', e);
-    alert('Error al conectar con el AppScript. Verificá que esté publicado correctamente.');
-    return false;
+    alert('Error al conectar con el AppScript. Verific\u00e1 que est\u00e9 publicado correctamente.');
+    return { ok:false, error:'No se pudo conectar con el AppScript' };
   }
+}
+
+// Rango contiguo de filas (lo que usaban liberacion / solicitudFC).
+async function callAppScript(accion, filaInicio, filaFin){
+  const data = await callAppScriptRaw(accion, { filaInicio: filaInicio, filaFin: filaFin||filaInicio });
+  if(data.ok) showToast('\u2713 Acci\u00f3n ejecutada correctamente');
+  return !!data.ok;
+}
+
+// Filas sueltas, no necesariamente contiguas: "750,752,755". El doGet del
+// AppScript entiende el parametro "filas" y lo parsea con parsearFilas().
+//
+// Van TAMBIEN filaInicio/filaFin, aunque el hub no los necesite: si algun
+// AppScript todavia no fue actualizado y solo mira el rango, sigue funcionando
+// como antes en vez de recibir un NaN y romperse. Los que entienden "filas"
+// le dan prioridad y usan la lista exacta.
+async function callAppScriptFilas(accion, sheetRows, extra){
+  const lista = (sheetRows||[]).filter(Boolean);
+  if(!lista.length) return { ok:false, error:'No hay filas seleccionadas' };
+  const nums = lista.map(Number).filter(n => !isNaN(n));
+  return callAppScriptRaw(accion, Object.assign({
+    filas: lista.join(','),
+    filaInicio: Math.min.apply(null, nums),
+    filaFin:    Math.max.apply(null, nums)
+  }, extra||{}));
 }
 
 // ─── GOOGLE AUTH ─────────────────────────────────────────────────────────────
@@ -1415,6 +1520,18 @@ function normalizarHdr(s){
     .replace(/\s+/g,' ').trim();
 }
 
+// Columnas que se mapean por si alguna vez hacen falta, pero que HOY el hub no lee.
+// Si cambian de nombre o las borran de la planilla, no pasa nada y no se avisa.
+// Si en el futuro alguna empieza a usarse, hay que sacarla de esta lista para que
+// vuelva a estar vigilada.
+const COLS_OPCIONALES = new Set([
+  'ANIO_ETD','COMISION_BROKER','COM_EUROPA','CONSOL_ETD','CONTRACT_PROVEEDOR',
+  'COSTO_STENN','C_NUTRIN','DIAS_PAGAR_LT','FECHA_LT','FECHA_PAGO_LT',
+  'FEC_EST_O_REAL_COBRO','FEC_FACT_CLIENTE','FEC_FACT_PLANTA','FEC_PAGO_EFECTIVO',
+  'INVOICE_PROVEEDOR','MES_CONSOL','MONTO_LT','NUM_FC_LT','OV','PAGO_90',
+  'PAGO_SALDO','PRECIO_FINAL_TN','STENN','TOTAL_FCA'
+]);
+
 function mapearColumnasPorNombre(headerRow){
   const H = headerRow.map(normalizarHdr);
   // Coincidencia EXACTA sobre el encabezado normalizado (ignora mayúsculas/acentos/espacios).
@@ -1432,9 +1549,14 @@ function mapearColumnasPorNombre(headerRow){
   // Columnas que NO se pudieron resolver por nombre y cayeron en un indice fijo.
   // Se listan en un cartel arriba para enterarse si alguien renombro un encabezado.
   const sinNombre = [];
+  // Si una columna OPCIONAL no aparece, queda en -1 y listo: nadie la lee, asi que no
+  // tiene sentido ni avisar ni inventarle una posicion fija (que ademas quedaria mal
+  // si alguien borro o movio columnas a su izquierda).
+  // Solo se avisa por las que el hub REALMENTE usa para calcular algo.
   const aplicarFallbacks = (tabla) => {
     Object.keys(tabla).forEach(k => {
       if(map[k] === undefined || map[k] < 0){
+        if(COLS_OPCIONALES.has(k)){ map[k] = -1; return; }
         map[k] = tabla[k];
         if(!sinNombre.includes(k)) sinNombre.push(k);
       }
@@ -1536,8 +1658,12 @@ function mapearColumnasPorNombre(headerRow){
     map.NUM_FC_LT     = col('N° de Fc LT');
     map.MONTO_LT      = col('Monto LT');
     map.FECHA_PAGO_LT = col('Fecha pago LT');
+    // En la planilla paso a llamarse "Fecha pago LT", igual que la de al lado. Como
+    // col() devuelve la PRIMERA coincidencia, esta queda en -1. No se usa, asi que no
+    // molesta; se deja mapeada por si algun dia le ponen un nombre propio.
     map.DIAS_PAGAR_LT = col('Dias p/ pagar LT');
-    // La planilla AXT dice "C -NUTRIN" (sin espacio despues del guion)
+    // "C -NUTRIN" se elimino de la planilla AXT. Se sigue buscando por si vuelve,
+    // pero al ser opcional no dispara ningun aviso si no esta.
     map.C_NUTRIN      = (col('C -NUTRIN') >= 0) ? col('C -NUTRIN') : col('C - NUTRIN');
     map.CONSOL_ETD    = col('CONSOL-ETD');
     map.COM_EUROPA    = col('COM. EUROPA');
@@ -2131,8 +2257,8 @@ function mostrarAvisoColumnas(){
           'Hay ' + faltan.length + ' columna' + (faltan.length>1?'s':'') + ' que no se encontr' + (faltan.length>1?'aron':'o') + ' por nombre en ' + nc.label +
         '</div>' +
         '<div style="font-size:11px;color:var(--text2);margin-bottom:6px;">' +
-          'El hub las esta leyendo por posicion fija, asi que los datos pueden estar corridos. ' +
-          'Revisa el encabezado en la fila 2 de la planilla.' +
+          'Son columnas que el hub usa para calcular, y las está leyendo por posición fija. ' +
+          'Los datos pueden estar corridos. Revisá el encabezado en la fila 2 de la planilla.' +
         '</div>' +
         '<ul style="font-size:11px;color:var(--text2);margin:0;padding-left:18px;">' + items + '</ul>' +
       '</div>' +
@@ -2456,19 +2582,71 @@ function renderCargas(showAll, sort){
   window._fcSelectedRows = new Set();
   window._fcAllRows = rows;
 
+  // Grupos de embarque: mismo cliente, buque, ETD y puerto. Se calculan sobre
+  // TODAS las cargas del filtro, no solo la pagina visible, para que un grupo
+  // partido por la paginacion se siga pudiendo seleccionar entero de un toque.
+  window._fcGrupos = {};
+  rows.forEach((r, i) => {
+    const k = grupoKeyFC(r);
+    (window._fcGrupos[k] = window._fcGrupos[k] || []).push(i);
+  });
+  window._fcEtiqueta = {};
+  Object.keys(window._fcGrupos).filter(k => window._fcGrupos[k].length > 1).sort()
+    .forEach((k, i) => { window._fcEtiqueta[k] = String.fromCharCode(65 + (i % 26)); });
+
+  window._pintarFilaFC = function(i){
+    const cb = document.getElementById('fc-cb-'+i);
+    const tr = document.getElementById('fc-tr-'+i);
+    if(cb) cb.checked = window._fcSelectedRows.has(i);
+    if(tr) tr.style.background = window._fcSelectedRows.has(i)?'rgba(0,113,227,.05)':'';
+  };
+
+  window.actualizarBarraFC = function(){
+    const bar = document.getElementById('fc-bulk-bar');
+    if(!bar) return;
+    const n = window._fcSelectedRows.size;
+    bar.style.display = n>0?'flex':'none';
+    if(!n) return;
+    const sel = [...window._fcSelectedRows].map(i => allRows.indexOf(window._fcAllRows[i])).filter(i => i >= 0);
+    const r = resumenFC(sel);
+    // El resumen sale de la misma cuenta que despues valida el envio, asi que lo
+    // que se lee aca es exactamente lo que va a ir en el mail.
+    const resumen = r.bloqueo
+      ? '<span style="font-size:11px;color:var(--danger);">\u26a0 ' + r.bloqueo + '</span>'
+      : '<span style="font-size:11px;color:var(--text2);"><b>' + r.customer + '</b> \u00b7 ' + r.n + ' carga' + (r.n===1?'':'s')
+        + (r.tns ? ' \u00b7 ' + r.tns.toLocaleString('es-AR',{maximumFractionDigits:2}) + ' tns' : '')
+        + (r.puertos.length ? ' \u00b7 ' + r.puertos.join(', ') : '')
+        + '</span>'
+        + (r.avisos.length ? '<span style="font-size:10px;color:var(--warn);">\u26a0 ' + r.avisos.length + ' aviso' + (r.avisos.length===1?'':'s') + ' \u2014 se detallan al confirmar</span>' : '');
+    bar.innerHTML = '<div style="display:flex;flex-direction:column;gap:2px;align-items:flex-start;">' + resumen + '</div>'
+      + '<button onclick="requestBulkFC()" ' + (r.bloqueo?'disabled':'') + ' style="padding:8px 18px;border-radius:20px;border:none;font-size:12px;font-weight:600;font-family:var(--font);cursor:' + (r.bloqueo?'not-allowed':'pointer') + ';background:' + (r.bloqueo?'var(--border2)':'var(--accent)') + ';color:#fff;' + (r.bloqueo?'opacity:.5;':'') + '">\U0001F4C4 Solicitud FC (' + n + ')</button>'
+      + '<button onclick="limpiarSelFC()" style="padding:8px 14px;border-radius:20px;border:1px solid var(--border2);background:var(--bg2);color:var(--text3);font-size:12px;font-family:var(--font);cursor:pointer;">Limpiar</button>';
+  };
+
   window.toggleFCSelection = function(idx){
     if(window._fcSelectedRows.has(idx)) window._fcSelectedRows.delete(idx);
     else window._fcSelectedRows.add(idx);
-    const cb = document.getElementById('fc-cb-'+idx);
-    const tr = document.getElementById('fc-tr-'+idx);
-    if(cb) cb.checked = window._fcSelectedRows.has(idx);
-    if(tr) tr.style.background = window._fcSelectedRows.has(idx)?'rgba(0,113,227,.05)':'';
-    const bar = document.getElementById('fc-bulk-bar');
-    if(bar){
-      const n = window._fcSelectedRows.size;
-      bar.style.display = n>0?'block':'none';
-      bar.textContent = '📄 Solicitud FC ('+ n +' cargas)';
-    }
+    window._pintarFilaFC(idx);
+    window.actualizarBarraFC();
+  };
+
+  // Un toque en el chip selecciona (o deselecciona) todo el embarque.
+  window.seleccionarGrupoFC = function(key){
+    const ids = window._fcGrupos[key] || [];
+    if(!ids.length) return;
+    const todos = ids.every(i => window._fcSelectedRows.has(i));
+    ids.forEach(i => {
+      if(todos) window._fcSelectedRows.delete(i); else window._fcSelectedRows.add(i);
+      window._pintarFilaFC(i);   // las de otras paginas no estan en el DOM: no pasa nada
+    });
+    window.actualizarBarraFC();
+  };
+
+  window.limpiarSelFC = function(){
+    const ids = [...window._fcSelectedRows];
+    window._fcSelectedRows = new Set();
+    ids.forEach(i => window._pintarFilaFC(i));
+    window.actualizarBarraFC();
   };
 
   window.requestBulkFC = function(){
@@ -2505,7 +2683,7 @@ function renderCargas(showAll, sort){
       </div>
 
     </div>
-  <button id="fc-bulk-bar" onclick="requestBulkFC()" style="display:none;position:sticky;bottom:20px;left:50%;transform:translateX(-50%);background:var(--accent);color:#fff;padding:10px 24px;border-radius:30px;font-weight:600;font-size:13px;cursor:pointer;z-index:20;box-shadow:var(--shadow-lg);border:none;font-family:var(--font);"></button>
+  <div id="fc-bulk-bar" style="display:none;position:sticky;bottom:20px;left:50%;transform:translateX(-50%);background:var(--bg2);border:1px solid var(--border);border-radius:30px;padding:10px 20px;box-shadow:var(--shadow-lg);z-index:20;gap:12px;align-items:center;flex-wrap:wrap;justify-content:center;max-width:90vw;width:fit-content;"></div>
     <div style="overflow-x:auto;${isMobile()?'display:none;':''}">
     <table class="sticky-table">
       <thead><tr>
@@ -2565,7 +2743,10 @@ function renderCargas(showAll, sort){
     const totalCarga = isNaN(totalCargaRaw) ? '—' : totalCargaRaw.toLocaleString('es-AR',{maximumFractionDigits:0});
 
     html += `<tr id="fc-tr-${localIdx}" style="cursor:pointer" onclick="toggleFCSelection(${localIdx})">
-      <td onclick="event.stopPropagation()"><input type="checkbox" id="fc-cb-${localIdx}" onclick="toggleFCSelection(${localIdx})" style="accent-color:var(--accent);cursor:pointer;"></td>
+      <td onclick="event.stopPropagation()" style="white-space:nowrap;">
+        <input type="checkbox" id="fc-cb-${localIdx}" onclick="toggleFCSelection(${localIdx})" style="accent-color:var(--accent);cursor:pointer;">
+        ${window._fcEtiqueta[grupoKeyFC(row)]?`<span onclick="seleccionarGrupoFC('${grupoKeyFC(row).replace(/'/g,"\\'")}')" title="Salieron juntas: mismo cliente, buque, ETD y puerto. Un toque las selecciona a todas." style="cursor:pointer;margin-left:5px;font-size:9px;font-family:var(--mono);padding:2px 6px;border-radius:9px;background:rgba(0,113,227,.1);color:var(--accent);">${window._fcEtiqueta[grupoKeyFC(row)]}\u00b7${window._fcGrupos[grupoKeyFC(row)].length}</span>`:''}
+      </td>
       <td class="mono">${(row[COL.BL]||'—').substring(0,20)}</td>
       <td class="mono">${(row[COL.BOOKING]||'—').substring(0,14)}</td>
       <td class="mono" style="color:var(--accent);font-size:11px">${(row[COL.LOTS]||'—').substring(0,18)}</td>
@@ -3518,36 +3699,346 @@ function renderCobranzaArchivados(){
 }
 
 
-function renderPagares(){
-  if(getNegocioConfig().sinPagares){document.getElementById('content').innerHTML='<div class="empty"><div class="empty-icon">—</div>Buzaram no utiliza pagarés.</div>';return;}
-  let html=`<div class="table-wrap"><div class="table-top"><span style="font-size:13px;font-weight:700;">Estado de pagarés</span></div><div style="overflow-x:auto;"><table>
-    <thead><tr><th>Negocio</th><th>Customer</th><th>BL</th><th>Naviera</th><th>ETA</th><th>Enviado</th><th>Firmado</th><th>Payment Due</th><th>Reclamos</th><th></th></tr></thead><tbody>`;
-  allRows.forEach((row,idx)=>{
-    const pagEnv=(row[COL.PAGARE_ENVIADO]||'').trim().toUpperCase();
-    const pagFirmRaw=(row[COL.PAGARE_FIRMADO]||'').trim();
-    const pagFirm=pagFirmRaw==='-'?'NA':pagFirmRaw.toUpperCase();
-    const pagEnvRaw=(row[COL.PAGARE_ENVIADO]||'').trim();
-    const pagEnvLib=pagEnvRaw==='-'?'NA':pagEnvRaw.toUpperCase();
-    const recInfo=getReclamoInfoFromLog(row[COL.BL]||'','solicitar_pagare');
-    const recHtml=recInfo?`<span style="color:var(--warn);font-size:10px;font-family:var(--mono)">${recInfo.count}x · ${recInfo.timeStr}</span>`:`<span style="color:var(--muted);font-size:10px">—</span>`;
-    html+=`<tr>
-      <td class="mono">${row[COL.NEGOCIO]||'—'}</td>
-      <td>${row[COL.CUSTOMER]||'—'}</td>
-      <td class="mono">${(row[COL.BL]||'—').substring(0,20)}</td>
-      <td style="color:var(--muted2);font-size:11px">${(row[COL.SHIPPING]||'—').substring(0,14)}</td>
-      <td class="mono">${fmtDate(row[COL.ETA])}</td>
-      <td>${pagEnv==='SI'?'<span class="pagare-status enviado">SI</span>':'<span class="pagare-status pendiente">NO</span>'}</td>
-      <td>${pagFirm==='SI'?'<span class="pagare-status enviado">SI</span>':'<span class="pagare-status pendiente">NO</span>'}</td>
-      <td class="mono">${fmtDate(row[getCobroCol()])}</td>
-      <td>${recHtml}</td>
-      <td>${pagEnv!=='SI'?`<button class="row-action" onclick="openMailModal(${idx},'solicitar_pagare')">✉ Solicitar</button>`:''}</td>
-    </tr>`;
-  });
-  html+=`</tbody></table></div></div>`;
-  document.getElementById('content').innerHTML=html;
+// Estado de una carga respecto del pagare.
+// El guion en cualquiera de las dos columnas significa "no corresponde": esa carga
+// no lleva pagare, asi que no es un pendiente y no se mezcla con los que faltan.
+function estadoPagare(row){
+  const env  = (row[COL.PAGARE_ENVIADO]||'').trim();
+  const firm = (row[COL.PAGARE_FIRMADO]||'').trim();
+  if(env === '-' || firm === '-')   return {key:'na',         label:'No corresponde', color:'var(--text3)'};
+  if(firm.toUpperCase() === 'SI')   return {key:'firmado',    label:'Firmado',        color:'var(--ok)'};
+  if(env.toUpperCase()  === 'SI')   return {key:'docusign',   label:'En Docusign',    color:'var(--info)'};
+  if(env.toUpperCase()  === 'AXT')  return {key:'axt',        label:'En AXT',         color:'var(--warn)'};
+  if(env === '')                    return {key:'sin_enviar', label:'Sin enviar',     color:'var(--danger)'};
+  return {key:'otro', label:env, color:'var(--warn)'};   // cualquier otro texto que usen
 }
 
-let logVerTodos = false;
+let pagaresVerNA = false;
+function togglePagaresNA(){ pagaresVerNA = !pagaresVerNA; renderPagares(); }
+
+// ─── PAGARES: GRUPOS, GENERACION Y ESTADOS ───────────────────────────────────
+// Un pagare no es siempre una carga. Si dos lotes salen para el mismo cliente en
+// el mismo buque, van juntos en UN pagare que lista TODAS las facturas de las dos
+// (la del cliente y la de servicios de cada una). Por eso la vista trabaja con
+// una seleccion de cargas, no con una fila suelta.
+
+// Templates cargados en Drive ("Promissory Notes AXT - Appscript/Templates").
+// Solo se usa para avisar antes de llamar al AppScript: si el cliente no tiene
+// template, el pagare no se puede generar y conviene decirlo antes.
+const TEMPLATES_PAGARE = ['IDI','ABW','PIDCO','FARM TRADING'];
+
+const usdPagare = n => 'USD ' + (Number(n)||0).toLocaleString('es-AR',{maximumFractionDigits:0});
+// grupoKeyPagare vive arriba, junto a grupoKeyFC, para tener las dos claves de
+// agrupacion en el mismo lugar y que se vea la diferencia entre una y otra.
+
+// Lo que va a contener el pagare de una seleccion. Es la misma cuenta que hace el
+// AppScript, pero del lado del hub, para poder mostrarla ANTES de generar nada.
+function resumenPagare(rowIndices){
+  // El AppScript lee las filas en orden de planilla y toma fechas/template de la
+  // primera. Ordenamos igual para que lo que se muestra sea lo que va a salir.
+  const idx = (rowIndices||[]).filter(i => allRows[i])
+    .sort((a,b) => (allRows[a]._sheetRow||a) - (allRows[b]._sheetRow||b));
+  const filas = idx.map(i => allRows[i]);
+  const r = { n:filas.length, idx:idx, filas:filas, sheetRows:sheetRowsDe(idx),
+              clientes:[], customer:'', facturas:[], sinFactura:0, total:0,
+              etd:'', vencimientos:[], avisos:[], bloqueo:null };
+  if(!filas.length){ r.bloqueo = 'No hay cargas seleccionadas.'; return r; }
+
+  filas.forEach(row => {
+    const cust = (row[COL.CUSTOMER]||'').trim();
+    if(cust && r.clientes.indexOf(cust) < 0) r.clientes.push(cust);
+    const fc1 = (row[COL.INVOICE_CLIENTE]||'').trim();
+    const fc2 = (row[COL.INVOICE_FC_SERV]||'').trim();
+    if(!fc1 && !fc2) r.sinFactura++;
+    [fc1, fc2].forEach(f => { if(f && r.facturas.indexOf(f) < 0) r.facturas.push(f); });
+    const t = totalCargaDe(row);
+    if(!isNaN(t)) r.total += t;
+    const venc = fmtDate(row[getCobroCol()]);
+    if(venc && venc !== '—' && r.vencimientos.indexOf(venc) < 0) r.vencimientos.push(venc);
+  });
+  r.customer = r.clientes[0] || '';
+  r.etd = fmtDate(filas[0][COL.ETD]);
+
+  // Bloqueos: con esto mal, el pagare sale mal o directamente no sale
+  if(r.clientes.length > 1)
+    r.bloqueo = 'Hay ' + r.clientes.length + ' clientes distintos en la seleccion (' + r.clientes.join(', ') + '). Un pagare es de un solo cliente.';
+  else if(!r.customer)
+    r.bloqueo = 'Las cargas seleccionadas no tienen Customer cargado.';
+  else if(TEMPLATES_PAGARE.indexOf(r.customer.toUpperCase()) < 0)
+    r.bloqueo = 'No hay template de pagare para ' + r.customer + '. Los que estan en Drive son: ' + TEMPLATES_PAGARE.join(', ') + '.';
+
+  // Avisos: se puede generar igual, pero conviene mirarlo antes
+  if(r.vencimientos.length > 1)
+    r.avisos.push('Las cargas vencen en fechas distintas (' + r.vencimientos.join(' · ') + '). El pagare va a usar la de la primera: ' + r.vencimientos[0] + '.');
+  if(r.sinFactura)
+    r.avisos.push(r.sinFactura + ' carga' + (r.sinFactura>1?'s':'') + ' sin numero de factura cargado: no va a figurar en el pagare.');
+  if(!r.total)
+    r.avisos.push('El total de la seleccion da 0. Revisa la columna TOTAL FINAL.');
+  return r;
+}
+
+// ── Seleccion ──
+window._pagSel = window._pagSel || new Set();
+function togglePagRow(idx){
+  if(window._pagSel.has(idx)) window._pagSel.delete(idx); else window._pagSel.add(idx);
+  renderPagares();
+}
+function seleccionarGrupoPagare(key){
+  const delGrupo = [];
+  allRows.forEach((row, i) => {
+    if(estadoPagare(row).key !== 'na' && grupoKeyPagare(row) === key) delGrupo.push(i);
+  });
+  const todosPuestos = delGrupo.length && delGrupo.every(i => window._pagSel.has(i));
+  delGrupo.forEach(i => { if(todosPuestos) window._pagSel.delete(i); else window._pagSel.add(i); });
+  renderPagares();
+}
+function limpiarPagSel(){ window._pagSel = new Set(); renderPagares(); }
+
+// ── Generar el pagare (el PDF lo arma el AppScript, que tiene los templates) ──
+let _ultimoPagare = null;
+
+async function generarPagareSel(){
+  const r = resumenPagare([...(window._pagSel||[])]);
+  if(r.bloqueo){ alert(r.bloqueo); return; }
+  if(!r.sheetRows.length){ alert('No pude ubicar las filas en la planilla. Recarga los datos y proba de nuevo.'); return; }
+
+  const linea = (k,v) => '<div><span style="color:var(--text3);">'+k+':</span> <b>'+v+'</b></div>';
+  let detalle = linea('Cliente', r.customer)
+              + linea('Cargas', r.n + ' (filas ' + r.sheetRows.join(', ') + ')')
+              + linea('Facturas', r.facturas.length ? r.facturas.join(', ') : '— ninguna')
+              + linea('Total', usdPagare(r.total))
+              + linea('Vencimiento', r.vencimientos[0] || '—');
+  r.avisos.forEach(a => { detalle += '<div style="color:var(--warn);margin-top:6px;">⚠ ' + a + '</div>'; });
+
+  const ok = await showConfirm('Generar pagare',
+    'Se genera un pagare que cubre ' + r.n + ' carga' + (r.n>1?'s':'') + ' y ' + r.facturas.length + ' factura' + (r.facturas.length===1?'':'s') + '. Las filas quedan marcadas como "En AXT".',
+    { icono:'📄', okLabel:'Generar', detalle: detalle });
+  if(!ok) return;
+
+  showProgress(); showToast('Generando el pagare...');
+  const data = await callAppScriptFilas('pagare', r.sheetRows);
+  hideProgress();
+  if(!data || !data.ok) return;
+
+  _ultimoPagare = { nombre: data.nombre || ('Promissory Note - ' + r.customer),
+                    url: data.url || '', cargas: r.n, facturas: r.facturas.slice(), total: r.total };
+  for(const i of r.idx){
+    const row = allRows[i]; if(!row) continue;
+    await appendLog({ fc:(row[COL.INVOICE_CLIENTE]||'').trim(), fcServ:(row[COL.INVOICE_FC_SERV]||'').trim(),
+      bl:(row[COL.BL]||'').trim(), customer:r.customer, accion:'pagare generado',
+      detalle:'Grupo de ' + r.n + ' carga' + (r.n>1?'s':'') + ' · facturas: ' + (r.facturas.join(', ')||'—') + ' · total ' + usdPagare(r.total) });
+  }
+  window._pagSel = new Set();
+  showToast('✓ Pagare generado');
+  await loadLog(); await loadData();
+}
+
+// ── Cambiar el estado ──
+// El criterio de color es el mismo que en liberaciones: los pasos intermedios
+// quedan en naranja (todavia hay algo que hacer) y el estado final en blanco.
+const ESTADOS_PAGARE = {
+  axt:      { label:'En AXT',         env:'AXT', firm:null, final:false, icono:'🏢', accion:'pagare enviado a AXT' },
+  docusign: { label:'En Docusign',    env:'SI',  firm:null, final:false, icono:'✍️', accion:'pagare en Docusign' },
+  firmado:  { label:'Firmado',        env:null,  firm:'SI', final:true,  icono:'✅', accion:'pagare firmado' },
+  na:       { label:'No corresponde', env:'-',   firm:'-',  final:true,  icono:'—',  accion:'pagare no corresponde' }
+};
+
+async function marcarPagareBulk(estadoKey){
+  const est = ESTADOS_PAGARE[estadoKey];
+  if(!est) return;
+  if(!accessToken){ alert('Conectate con Google primero para escribir en la planilla.'); return; }
+  const idx = [...(window._pagSel||[])].filter(i => allRows[i]);
+  if(!idx.length) return;
+  const rowsSel = idx.map(i => allRows[i]);
+
+  const cambios = [ est.env  !== null ? 'Enviado = "' + est.env  + '"' : '',
+                    est.firm !== null ? 'Firmado = "' + est.firm + '"' : '' ].filter(Boolean).join(' y ');
+  const ok = await showConfirm('Marcar como ' + est.label,
+    'Se escribe ' + cambios + ' en ' + idx.length + ' carga' + (idx.length>1?'s':'') + ' de la planilla.',
+    { icono: est.icono, okLabel:'Confirmar', peligro: estadoKey === 'na',
+      detalle: rowsSel.map(r => '<div>• ' + ((r[COL.CUSTOMER]||'').trim()||'—') + ' · BL ' + ((r[COL.BL]||'').trim()||'—') + '</div>').join('') });
+  if(!ok) return;
+
+  showToast('Actualizando...');
+  for(const i of idx){
+    const row = allRows[i];
+    if(est.env  !== null) await writeCell(i, COL.PAGARE_ENVIADO, est.env);
+    if(est.firm !== null) await writeCell(i, COL.PAGARE_FIRMADO, est.firm);
+    await appendLog({ fc:(row[COL.INVOICE_CLIENTE]||'').trim(), fcServ:(row[COL.INVOICE_FC_SERV]||'').trim(),
+      bl:(row[COL.BL]||'').trim(), customer:(row[COL.CUSTOMER]||'').trim(), accion:est.accion, detalle:'' });
+  }
+
+  const sheetRows = sheetRowsDe(idx);
+  const bg = est.final ? COLOR_BLANCO : COLOR_NARANJA;
+  if(est.env  !== null) await pintarCeldas(sheetRows, COL.PAGARE_ENVIADO, bg);
+  if(est.firm !== null) await pintarCeldas(sheetRows, COL.PAGARE_FIRMADO, bg);
+  // Al firmar, el "SI" de Enviado tambien deja de pedir atencion: se blanquea.
+  if(estadoKey === 'firmado') await pintarCeldas(sheetRows, COL.PAGARE_ENVIADO, COLOR_BLANCO);
+
+  window._pagSel = new Set();
+  showToast('✓ ' + idx.length + ' carga' + (idx.length>1?'s':'') + ' marcadas: ' + est.label);
+  await loadLog(); await loadData();
+}
+
+function renderPagares(){
+  if(getNegocioConfig().sinPagares){
+    document.getElementById('content').innerHTML='<div class="empty"><div class="empty-icon">—</div>Buzaram no utiliza pagarés.</div>';
+    return;
+  }
+  if(!window._pagSel) window._pagSel = new Set();
+
+  // Separar las que no llevan pagare del resto
+  const conPagare = [], noCorresponde = [];
+  allRows.forEach((row, idx) => {
+    const est = estadoPagare(row);
+    (est.key === 'na' ? noCorresponde : conPagare).push({row, idx, est});
+  });
+
+  // Grupos naturales: mismo cliente + buque + ETD, con mas de una carga
+  const porGrupo = {};
+  conPagare.forEach(o => {
+    const k = grupoKeyPagare(o.row);
+    (porGrupo[k] = porGrupo[k] || []).push(o);
+  });
+  const claves = Object.keys(porGrupo).filter(k => porGrupo[k].length > 1).sort();
+  const etiquetaGrupo = {};
+  claves.forEach((k, i) => { etiquetaGrupo[k] = String.fromCharCode(65 + (i % 26)); });
+
+  // Los pendientes primero: sin enviar, en AXT, en Docusign, firmado
+  const orden = {sin_enviar:0, axt:1, otro:2, docusign:3, firmado:4};
+  conPagare.sort((a,b) => {
+    const d = (orden[a.est.key]??9) - (orden[b.est.key]??9);
+    if(d !== 0) return d;
+    const da = daysFrom(a.row[COL.ETA]), db = daysFrom(b.row[COL.ETA]);
+    if(da === null && db === null) return 0;
+    if(da === null) return 1;
+    if(db === null) return -1;
+    return da - db;
+  });
+
+  const cuenta = k => conPagare.filter(x => x.est.key === k).length;
+  const pendientes = cuenta('sin_enviar') + cuenta('axt') + cuenta('otro');
+
+  let html = `<div class="stats-row">
+    <div class="stat-card ${pendientes?'alert-card':''}"><div class="stat-label">Sin enviar</div><div class="stat-value" style="color:${cuenta('sin_enviar')?'var(--danger)':'var(--text3)'}">${cuenta('sin_enviar')}</div><div class="stat-sub">Hay que mandarlos</div></div>
+    <div class="stat-card"><div class="stat-label">En circulación</div><div class="stat-value" style="color:var(--warn)">${cuenta('axt')+cuenta('docusign')+cuenta('otro')}</div><div class="stat-sub">En AXT o Docusign</div></div>
+    <div class="stat-card"><div class="stat-label">Firmados</div><div class="stat-value" style="color:var(--ok)">${cuenta('firmado')}</div><div class="stat-sub">Cerrados</div></div>
+    <div class="stat-card"><div class="stat-label">No corresponde</div><div class="stat-value" style="color:var(--text3)">${noCorresponde.length}</div><div class="stat-sub" style="${noCorresponde.length?'cursor:pointer;color:var(--accent);':''}" ${noCorresponde.length?'onclick="togglePagaresNA()"':''}>${noCorresponde.length?(pagaresVerNA?'Ocultar lista ↑':'Ver la lista →'):'Sin cargas marcadas'}</div></div>
+  </div>`;
+
+  // ── Ultimo pagare generado en esta sesion ──
+  if(_ultimoPagare){
+    html += `<div class="table-wrap" style="border-left:3px solid var(--ok);">
+      <div style="padding:12px 16px;display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;">
+        <div>
+          <div style="font-size:13px;font-weight:600;color:var(--text);">📄 ${_ultimoPagare.nombre}</div>
+          <div style="font-size:11px;color:var(--text3);margin-top:3px;">${_ultimoPagare.cargas} carga${_ultimoPagare.cargas===1?'':'s'} · ${_ultimoPagare.facturas.length} factura${_ultimoPagare.facturas.length===1?'':'s'}: ${_ultimoPagare.facturas.join(', ')||'—'} · ${usdPagare(_ultimoPagare.total)}</div>
+        </div>
+        <div style="display:flex;gap:8px;">
+          ${_ultimoPagare.url?`<a href="${_ultimoPagare.url}" target="_blank" rel="noopener" class="btn primary" style="text-decoration:none;font-size:12px;">Abrir PDF ↗</a>`:`<span style="font-size:11px;color:var(--text3);">Está en la carpeta “Promissory Notes AXT - Appscript”</span>`}
+          <button class="btn" style="font-size:12px;" onclick="_ultimoPagare=null;renderPagares();">Ocultar</button>
+        </div>
+      </div>
+    </div>`;
+  }
+
+  // ── Barra de acciones sobre la seleccion ──
+  const sel = [...window._pagSel].filter(i => allRows[i]);
+  if(sel.length){
+    const r = resumenPagare(sel);
+    const btn = 'padding:7px 14px;border-radius:7px;border:none;font-size:12px;font-weight:600;cursor:pointer;';
+    let resumenHtml;
+    if(r.bloqueo){
+      resumenHtml = `<div style="font-size:12px;color:var(--danger);">⚠ ${r.bloqueo}</div>`;
+    } else {
+      resumenHtml = `<div style="font-size:12px;color:var(--text2);">
+        <b>${r.customer}</b> · ${r.n} carga${r.n===1?'':'s'} · ${r.facturas.length} factura${r.facturas.length===1?'':'s'} (${r.facturas.join(', ')||'—'}) · <b>${usdPagare(r.total)}</b> · vence ${r.vencimientos[0]||'—'}
+      </div>` + r.avisos.map(a => `<div style="font-size:11px;color:var(--warn);margin-top:3px;">⚠ ${a}</div>`).join('');
+    }
+    html += `<div class="table-wrap" style="border-left:3px solid var(--accent);">
+      <div style="padding:12px 16px;display:flex;flex-direction:column;gap:10px;">
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;">
+          <span style="font-size:13px;font-weight:600;color:var(--text);">${sel.length} carga${sel.length===1?'':'s'} seleccionada${sel.length===1?'':'s'}</span>
+          <span style="font-size:11px;color:var(--accent);cursor:pointer;" onclick="limpiarPagSel()">Limpiar selección</span>
+        </div>
+        ${resumenHtml}
+        <div style="display:flex;gap:8px;flex-wrap:wrap;">
+          <button onclick="generarPagareSel()" style="${btn}background:${r.bloqueo?'var(--border2)':'var(--accent)'};color:#fff;${r.bloqueo?'opacity:.5;cursor:not-allowed;':''}" ${r.bloqueo?'disabled':''}>📄 Generar pagaré</button>
+          <button onclick="marcarPagareBulk('axt')" style="${btn}background:#f97316;color:#fff;">🏢 En AXT</button>
+          <button onclick="marcarPagareBulk('docusign')" style="${btn}background:var(--info);color:#fff;">✍️ En Docusign</button>
+          <button onclick="marcarPagareBulk('firmado')" style="${btn}background:var(--ok);color:#fff;">✅ Firmado</button>
+          <button onclick="marcarPagareBulk('na')" style="${btn}background:var(--bg2);color:var(--text3);border:1px solid var(--border2);">— No corresponde</button>
+        </div>
+      </div>
+    </div>`;
+  }
+
+  const filaHtml = (o, conAcciones) => {
+    const row = o.row, idx = o.idx, est = o.est;
+    const recInfo = getReclamoInfoFromLog(row[COL.BL]||'','solicitar_pagare');
+    const recHtml = recInfo
+      ? `<span style="color:var(--warn);font-size:10px;font-family:var(--mono)">${recInfo.count}x · ${recInfo.timeStr}</span>`
+      : `<span style="color:var(--text3);font-size:10px">—</span>`;
+    const env  = (row[COL.PAGARE_ENVIADO]||'').trim() || '—';
+    const firm = (row[COL.PAGARE_FIRMADO]||'').trim() || '—';
+    const gk   = grupoKeyPagare(row);
+    const gTag = conAcciones && etiquetaGrupo[gk]
+      ? `<span onclick="seleccionarGrupoPagare('${gk.replace(/'/g,"\\'")}')" title="Estas cargas salieron juntas: mismo cliente, mismo buque y mismo ETD" style="cursor:pointer;font-size:10px;font-family:var(--mono);padding:2px 7px;border-radius:10px;background:rgba(0,113,227,.1);color:var(--accent);white-space:nowrap;">grupo ${etiquetaGrupo[gk]} · ${porGrupo[gk].length}</span>`
+      : `<span style="color:var(--text3);font-size:10px">—</span>`;
+    const sel = window._pagSel.has(idx);
+    return `<tr${sel?' style="background:rgba(0,113,227,.06);"':''}>
+      ${conAcciones?`<td><input type="checkbox" ${sel?'checked':''} onchange="togglePagRow(${idx})"></td><td>${gTag}</td>`:''}
+      <td class="mono">${row[COL.NEGOCIO]||'—'}</td>
+      <td style="font-weight:500">${row[COL.CUSTOMER]||'—'}</td>
+      <td class="mono">${(row[COL.BL]||'—').substring(0,20)}</td>
+      <td style="color:var(--text3);font-size:11px">${(row[COL.VESSEL]||'—').substring(0,14)}</td>
+      <td class="mono">${fmtDate(row[COL.ETA])}</td>
+      <td><span style="font-size:11px;font-weight:600;font-family:var(--mono);color:${est.color}">${est.label}</span></td>
+      <td class="mono" style="font-size:10px;color:var(--text3)">${env}</td>
+      <td class="mono" style="font-size:10px;color:var(--text3)">${firm}</td>
+      <td class="mono">${fmtDate(row[getCobroCol()])}</td>
+      ${conAcciones ? `<td>${recHtml}</td>
+      <td>${est.key!=='firmado'&&est.key!=='docusign'?`<button class="row-action" onclick="openMailModal(${idx},'solicitar_pagare')">✉ Solicitar</button>`:''}</td>` : ''}
+    </tr>`;
+  };
+
+  const cab = (conAcciones) => `<thead><tr>
+    ${conAcciones?'<th></th><th>Grupo</th>':''}
+    <th>Negocio</th><th>Customer</th><th>BL</th><th>Buque</th><th>ETA</th>
+    <th>Estado</th><th>Enviado</th><th>Firmado</th><th>Payment Due</th>
+    ${conAcciones?'<th>Reclamos</th><th></th>':''}
+  </tr></thead>`;
+
+  // ── Lista principal: todo lo que SI lleva pagaré ──
+  html += `<div class="table-wrap">
+    <div class="table-top"><span style="font-size:13px;font-weight:600;color:var(--text);">Pagarés — ${conPagare.length} carga${conPagare.length===1?'':'s'}</span>
+    <span style="font-size:11px;color:var(--text3);">${pendientes} pendiente${pendientes===1?'':'s'} de gestionar${claves.length?` · ${claves.length} grupo${claves.length===1?'':'s'} de cargas que viajaron juntas`:''}</span></div>
+    <div style="overflow-x:auto;"><table>${cab(true)}<tbody>`;
+  if(!conPagare.length){
+    html += `<tr><td colspan="13"><div class="empty" style="padding:30px;">Ninguna carga activa lleva pagaré.</div></td></tr>`;
+  } else {
+    conPagare.forEach(o => { html += filaHtml(o, true); });
+  }
+  html += `</tbody></table></div></div>`;
+
+  // ── Lista aparte: las que no corresponden ──
+  if(noCorresponde.length){
+    html += `<div class="table-wrap">
+      <div class="table-top" style="cursor:pointer;" onclick="togglePagaresNA()">
+        <span style="font-size:13px;font-weight:600;color:var(--text2);">No corresponde — ${noCorresponde.length} carga${noCorresponde.length===1?'':'s'}</span>
+        <span style="font-size:11px;color:var(--accent);">${pagaresVerNA?'Ocultar ↑':'Ver ↓'}</span>
+      </div>`;
+    if(pagaresVerNA){
+      html += `<div style="padding:10px 16px 0;font-size:11px;color:var(--text3);">Marcadas con “-” en Enviado o Firmado. No cuentan como pendientes ni generan alertas.</div>
+        <div style="overflow-x:auto;"><table>${cab(false)}<tbody>`;
+      noCorresponde.forEach(o => { html += filaHtml(o, false); });
+      html += `</tbody></table></div>`;
+    }
+    html += `</div>`;
+  }
+
+  document.getElementById('content').innerHTML = html;
+}
 
 async function renderLog(){
   if(!accessToken){
