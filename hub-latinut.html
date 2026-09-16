@@ -1620,6 +1620,74 @@ function normalizarFuente(v){
   return t || 'AXT';
 }
 
+// ─── FORMATO DE CELDAS ───────────────────────────────────────────────────────
+// La API de "values" (la que usa writeCell) SOLO escribe valores, no toca el formato.
+// Para pintar el fondo hay que ir por spreadsheets:batchUpdate, que pide el gid
+// numerico de la hoja — no sirve el nombre.
+const COLOR_BLANCO  = {red:1, green:1, blue:1};
+const COLOR_NARANJA = {red:1, green:0.6, blue:0};   // 255,153,0 — el mismo del AppScript
+const COLOR_NEGRO   = {red:0, green:0, blue:0};
+
+const _gidCache = {};
+async function getGidHoja(){
+  if(!accessToken) return null;
+  const nc = getNegocioConfig();
+  const sid = nc.sheetId || cfg.sheetId;
+  const nombre = (nc.sheetName || cfg.sheetName || '').toLowerCase();
+  const clave = sid + '|' + nombre;
+  if(_gidCache[clave] !== undefined) return _gidCache[clave];
+  try{
+    const r = await fetch('https://sheets.googleapis.com/v4/spreadsheets/' + sid + '?fields=sheets.properties',
+      { headers:{ Authorization:'Bearer ' + accessToken } });
+    if(!r.ok){ console.warn('getGidHoja: HTTP ' + r.status); return null; }
+    const data = await r.json();
+    const hoja = (data.sheets||[]).find(function(h){
+      return ((h.properties||{}).title||'').toLowerCase() === nombre;
+    });
+    const gid = hoja ? hoja.properties.sheetId : null;
+    _gidCache[clave] = gid;
+    return gid;
+  }catch(e){ console.warn('getGidHoja:', e); return null; }
+}
+
+// Pinta el fondo de una misma columna en varias filas, en UNA sola llamada.
+// Si falla, no rompe nada: el valor ya quedo escrito, solo no se pinto.
+async function pintarCeldas(sheetRows, colIdx, bg, fg){
+  if(!accessToken || !sheetRows || !sheetRows.length) return false;
+  if(colIdx === undefined || colIdx === null || colIdx < 0) return false;
+  const gid = await getGidHoja();
+  if(gid === null || gid === undefined){
+    console.warn('pintarCeldas: no pude obtener el gid de la hoja, dejo el formato como estaba');
+    return false;
+  }
+  const nc = getNegocioConfig();
+  const requests = sheetRows.filter(Boolean).map(function(f){
+    return { repeatCell: {
+      range: { sheetId: gid, startRowIndex: f-1, endRowIndex: f, startColumnIndex: colIdx, endColumnIndex: colIdx+1 },
+      cell: { userEnteredFormat: { backgroundColor: bg, textFormat: { foregroundColor: fg || COLOR_NEGRO } } },
+      fields: 'userEnteredFormat.backgroundColor,userEnteredFormat.textFormat.foregroundColor'
+    }};
+  });
+  if(!requests.length) return false;
+  try{
+    const r = await fetch('https://sheets.googleapis.com/v4/spreadsheets/' + (nc.sheetId||cfg.sheetId) + ':batchUpdate', {
+      method:'POST',
+      headers:{ 'Authorization':'Bearer '+accessToken, 'Content-Type':'application/json' },
+      body: JSON.stringify({ requests: requests })
+    });
+    if(!r.ok) console.warn('pintarCeldas: HTTP ' + r.status);
+    return r.ok;
+  }catch(e){ console.warn('pintarCeldas:', e); return false; }
+}
+
+// Filas de la planilla correspondientes a unos indices de allRows
+function sheetRowsDe(rowIndices){
+  return rowIndices.map(function(i){
+    const r = allRows[i];
+    return r && r._sheetRow ? r._sheetRow : null;
+  }).filter(Boolean);
+}
+
 async function appendLog(data){
   if(!accessToken) return;
   const {fecha,hora}=nowStr();
@@ -2976,6 +3044,8 @@ async function marcarPedroOkBulk(rowIndices){
     await writeCell(rowIdx,COL.TELEX,'recibir');
     await appendLog({fc:(row[COL.INVOICE_CLIENTE]||'').trim(),fcServ:'',bl:(row[COL.BL]||'').trim(),customer:(row[COL.CUSTOMER]||'').trim(),accion:'ok liberacion - a recibir',detalle:''});
   }
+  // Paso intermedio: sigue pendiente, queda naranja
+  await pintarCeldas(sheetRowsDe(rowIndices), COL.TELEX, COLOR_NARANJA);
   showToast('✓ '+n+' carga'+(n>1?'s':'')+' actualizadas');
   await loadLog();await loadData();
 }
@@ -2996,6 +3066,9 @@ async function marcarLiberadoBulk(rowIndices){
     await writeCell(rowIdx,COL.TELEX,'SI');
     await appendLog({fc:(row[COL.INVOICE_CLIENTE]||'').trim(),fcServ:'',bl:(row[COL.BL]||'').trim(),customer:(row[COL.CUSTOMER]||'').trim(),accion:'liberacion recibida',detalle:''});
   }
+  // El SI final va en BLANCO: la carga ya esta liberada, deja de necesitar atencion.
+  // Los pasos intermedios (solicitado / recibir) se quedan en naranja.
+  await pintarCeldas(sheetRowsDe(rowIndices), COL.TELEX, COLOR_BLANCO);
   showToast('✓ '+n+' carga'+(n>1?'s':'')+' liberadas');
   await loadLog();await loadData();
 }
@@ -3889,13 +3962,18 @@ async function sendDraft(){
         detalle: subject
       });
     }
+    // Recien solicitada: naranja, igual que lo deja el AppScript
+    await pintarCeldas(sheetRowsDe(rowIndices), COL.TELEX, COLOR_NARANJA);
     showToast(`✓ ${rowIndices.length} TELEX actualizados en planilla`);
   } else if(d){
     // Single
     saveReclamo(d.bl, mailType);
     if(mailType==='solicitar_liberacion'){
       const ok=await writeCell(rowIdx, COL.TELEX, 'solicitado, falta ok');
-      if(ok) showToast('✓ TELEX actualizado en planilla');
+      if(ok){
+        await pintarCeldas(sheetRowsDe([rowIdx]), COL.TELEX, COLOR_NARANJA);
+        showToast('✓ TELEX actualizado en planilla');
+      }
     }
     await appendLog({
       fc: d.inv1||d.negocio,
