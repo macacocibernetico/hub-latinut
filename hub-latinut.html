@@ -3744,6 +3744,17 @@ function estadoPagare(row){
 let pagaresVerNA = false;
 function togglePagaresNA(){ pagaresVerNA = !pagaresVerNA; renderPagares(); }
 
+// Filtro por estado. Vacio = se ven todas. Al cambiarlo se limpia la seleccion:
+// si no, quedarian cargas tildadas fuera de la vista y la barra de acciones
+// actuaria sobre cosas que no se estan viendo.
+let pagaresFiltro = new Set();
+function togglePagaresEstado(k){
+  if(pagaresFiltro.has(k)) pagaresFiltro.delete(k); else pagaresFiltro.add(k);
+  window._pagSel = new Set();
+  renderPagares();
+}
+function limpiarFiltroPagares(){ pagaresFiltro = new Set(); window._pagSel = new Set(); renderPagares(); }
+
 // ─── PAGARES: GRUPOS, GENERACION Y ESTADOS ───────────────────────────────────
 // Un pagare no es siempre una carga. Si dos lotes salen para el mismo cliente en
 // el mismo buque, van juntos en UN pagare que lista TODAS las facturas de las dos
@@ -3848,6 +3859,21 @@ async function generarPagareSel(){
   hideProgress();
   if(!data || !data.ok) return;
 
+  // Un ok PELADO no es un pagare generado. El doGet del AppScript, cuando no
+  // reconoce la accion, no falla: se saltea todos los if y termina en
+  // "return _json({ok:true})". Si nos quedaramos con el ok, el hub cantaria
+  // exito mientras en Drive no hay ningun PDF y la planilla quedo intacta.
+  // El pagare de verdad siempre vuelve con nombre y url.
+  if(!data.nombre && !data.url){
+    alert('El AppScript de ' + getNegocioConfig().label + ' respondi\u00f3 OK pero no gener\u00f3 nada.\n\n'
+        + 'Eso pasa cuando la versi\u00f3n publicada todav\u00eda no conoce la acci\u00f3n "pagare": '
+        + 'no da error, simplemente no hace nada.\n\n'
+        + 'En el editor: Implementar \u2192 Administrar implementaciones \u2192 el l\u00e1piz \u2192 '
+        + 'Versi\u00f3n: Versi\u00f3n nueva \u2192 Implementar.\n\n'
+        + 'Guardar el c\u00f3digo no alcanza: la web app sigue corriendo la versi\u00f3n anterior.');
+    return;
+  }
+
   _ultimoPagare = { nombre: data.nombre || ('Promissory Note - ' + r.customer),
                     url: data.url || '', cargas: r.n, facturas: r.facturas.slice(), total: r.total };
   for(const i of r.idx){
@@ -3868,8 +3894,29 @@ const ESTADOS_PAGARE = {
   axt:      { label:'En AXT',         env:'AXT', firm:null, final:false, icono:'🏢', accion:'pagare enviado a AXT' },
   docusign: { label:'En Docusign',    env:'SI',  firm:null, final:false, icono:'✍️', accion:'pagare en Docusign' },
   firmado:  { label:'Firmado',        env:null,  firm:'SI', final:true,  icono:'✅', accion:'pagare firmado' },
-  na:       { label:'No corresponde', env:'-',   firm:'-',  final:true,  icono:'—',  accion:'pagare no corresponde' }
+  na:       { label:'No corresponde', env:'-',   firm:'-',  final:true,  icono:'—',  accion:'pagare no corresponde' },
+  // Para deshacer: vacia las dos celdas y la carga vuelve a "Sin enviar".
+  // Va aparte de los otros porque borra datos, asi que pregunta en rojo.
+  sin_enviar:{ label:'Sin enviar',    env:'',    firm:'',   final:true,  icono:'↩️', accion:'pagare vuelto a sin enviar', borra:true }
 };
+
+// Orden en que se ofrecen los estados en el selector de cada fila.
+const ORDEN_ESTADOS_PAGARE = ['sin_enviar','axt','docusign','firmado','na'];
+
+// Cambiar el estado de UNA carga desde su propia fila, sin tener que tildarla.
+// Es el camino natural: el pagare va cambiando de mano de a uno.
+async function cambiarEstadoPagare(idx, estadoKey){
+  if(!ESTADOS_PAGARE[estadoKey]){ renderPagares(); return; }
+  const previa = window._pagSel;
+  window._pagSel = new Set([idx]);
+  try{ await marcarPagareBulk(estadoKey); }
+  finally{
+    // Si la confirmacion se cancelo, la seleccion de antes sigue como estaba y
+    // el desplegable hay que volverlo al valor real: por eso siempre se redibuja.
+    if(window._pagSel && window._pagSel.size) window._pagSel = previa || new Set();
+    renderPagares();
+  }
+}
 
 async function marcarPagareBulk(estadoKey){
   const est = ESTADOS_PAGARE[estadoKey];
@@ -3879,11 +3926,13 @@ async function marcarPagareBulk(estadoKey){
   if(!idx.length) return;
   const rowsSel = idx.map(i => allRows[i]);
 
-  const cambios = [ est.env  !== null ? 'Enviado = "' + est.env  + '"' : '',
-                    est.firm !== null ? 'Firmado = "' + est.firm + '"' : '' ].filter(Boolean).join(' y ');
-  const ok = await showConfirm('Marcar como ' + est.label,
-    'Se escribe ' + cambios + ' en ' + idx.length + ' carga' + (idx.length>1?'s':'') + ' de la planilla.',
-    { icono: est.icono, okLabel:'Confirmar', peligro: estadoKey === 'na',
+  const nombreValor = v => v === '' ? 'vacio' : '"' + v + '"';
+  const cambios = [ est.env  !== null ? 'Enviado = ' + nombreValor(est.env)  : '',
+                    est.firm !== null ? 'Firmado = ' + nombreValor(est.firm) : '' ].filter(Boolean).join(' y ');
+  const ok = await showConfirm(est.borra ? 'Volver a Sin enviar' : 'Marcar como ' + est.label,
+    (est.borra ? 'Se BORRA lo que haya en Enviado y Firmado' : 'Se escribe ' + cambios)
+      + ' en ' + idx.length + ' carga' + (idx.length>1?'s':'') + ' de la planilla.',
+    { icono: est.icono, okLabel:'Confirmar', peligro: estadoKey === 'na' || !!est.borra,
       detalle: rowsSel.map(r => '<div>• ' + ((r[COL.CUSTOMER]||'').trim()||'—') + ' · BL ' + ((r[COL.BL]||'').trim()||'—') + '</div>').join('') });
   if(!ok) return;
 
@@ -3947,10 +3996,17 @@ function renderPagares(){
   const cuenta = k => conPagare.filter(x => x.est.key === k).length;
   const pendientes = cuenta('sin_enviar') + cuenta('axt') + cuenta('otro');
 
+  // El filtro se aplica DESPUES de contar: las tarjetas de arriba siempre
+  // muestran el total, si no cambiarian solas al filtrar y no se entenderia nada.
+  const total = conPagare.length;
+  const visibles = pagaresFiltro.size
+    ? conPagare.filter(o => pagaresFiltro.has(o.est.key))
+    : conPagare;
+
   let html = `<div class="stats-row">
-    <div class="stat-card ${pendientes?'alert-card':''}"><div class="stat-label">Sin enviar</div><div class="stat-value" style="color:${cuenta('sin_enviar')?'var(--danger)':'var(--text3)'}">${cuenta('sin_enviar')}</div><div class="stat-sub">Hay que mandarlos</div></div>
+    <div class="stat-card ${pendientes?'alert-card':''}" style="cursor:pointer" onclick="togglePagaresEstado('sin_enviar')"><div class="stat-label">Sin enviar</div><div class="stat-value" style="color:${cuenta('sin_enviar')?'var(--danger)':'var(--text3)'}">${cuenta('sin_enviar')}</div><div class="stat-sub" style="color:${pagaresFiltro.has('sin_enviar')?'var(--accent)':''}">${pagaresFiltro.has('sin_enviar')?'✓ filtrando':'Hay que mandarlos'}</div></div>
     <div class="stat-card"><div class="stat-label">En circulación</div><div class="stat-value" style="color:var(--warn)">${cuenta('axt')+cuenta('docusign')+cuenta('otro')}</div><div class="stat-sub">En AXT o Docusign</div></div>
-    <div class="stat-card"><div class="stat-label">Firmados</div><div class="stat-value" style="color:var(--ok)">${cuenta('firmado')}</div><div class="stat-sub">Cerrados</div></div>
+    <div class="stat-card" style="cursor:pointer" onclick="togglePagaresEstado('firmado')"><div class="stat-label">Firmados</div><div class="stat-value" style="color:var(--ok)">${cuenta('firmado')}</div><div class="stat-sub" style="color:${pagaresFiltro.has('firmado')?'var(--accent)':''}">${pagaresFiltro.has('firmado')?'✓ filtrando':'Cerrados'}</div></div>
     <div class="stat-card"><div class="stat-label">No corresponde</div><div class="stat-value" style="color:var(--text3)">${noCorresponde.length}</div><div class="stat-sub" style="${noCorresponde.length?'cursor:pointer;color:var(--accent);':''}" ${noCorresponde.length?'onclick="togglePagaresNA()"':''}>${noCorresponde.length?(pagaresVerNA?'Ocultar lista ↑':'Ver la lista →'):'Sin cargas marcadas'}</div></div>
   </div>`;
 
@@ -4021,7 +4077,12 @@ function renderPagares(){
       <td class="mono">${(row[COL.BL]||'—').substring(0,20)}</td>
       <td style="color:var(--text3);font-size:11px">${(row[COL.VESSEL]||'—').substring(0,14)}</td>
       <td class="mono">${fmtDate(row[COL.ETA])}</td>
-      <td><span style="font-size:11px;font-weight:600;font-family:var(--mono);color:${est.color}">${est.label}</span></td>
+      <td>${conAcciones
+        ? `<select onchange="cambiarEstadoPagare(${idx}, this.value)" title="Cambiar el estado de esta carga" style="font-size:11px;font-weight:600;font-family:var(--mono);color:${est.color};background:var(--bg2);border:1px solid var(--border2);border-radius:7px;padding:4px 6px;cursor:pointer;max-width:130px;">
+            ${est.key==='otro'?`<option value="otro" selected>${est.label}</option>`:''}
+            ${ORDEN_ESTADOS_PAGARE.map(k => `<option value="${k}" ${est.key===k?'selected':''}>${ESTADOS_PAGARE[k].label}</option>`).join('')}
+          </select>`
+        : `<span style="font-size:11px;font-weight:600;font-family:var(--mono);color:${est.color}">${est.label}</span>`}</td>
       <td class="mono" style="font-size:10px;color:var(--text3)">${env}</td>
       <td class="mono" style="font-size:10px;color:var(--text3)">${firm}</td>
       <td class="mono">${fmtDate(row[getCobroCol()])}</td>
@@ -4037,15 +4098,36 @@ function renderPagares(){
     ${conAcciones?'<th>Reclamos</th><th></th>':''}
   </tr></thead>`;
 
+  // ── Chips de filtro por estado ──
+  const chipEstado = (k, label) => {
+    const n = cuenta(k);
+    if(!n && !pagaresFiltro.has(k)) return '';
+    const on = pagaresFiltro.has(k);
+    return `<span onclick="togglePagaresEstado('${k}')" style="font-size:11px;font-family:var(--mono);padding:5px 12px;border-radius:20px;cursor:pointer;white-space:nowrap;border:1px solid ${on?'var(--accent)':'var(--border2)'};background:${on?'var(--accent)':'var(--bg2)'};color:${on?'#fff':'var(--text3)'};">${label} (${n})</span>`;
+  };
+  const filtros = `<div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;">
+    ${chipEstado('sin_enviar','Sin enviar')}
+    ${chipEstado('axt','En AXT')}
+    ${chipEstado('docusign','En Docusign')}
+    ${chipEstado('firmado','Firmados')}
+    ${chipEstado('otro','Otros')}
+    ${pagaresFiltro.size?`<span onclick="limpiarFiltroPagares()" style="font-size:11px;color:var(--accent);cursor:pointer;padding:5px 8px;">Ver todos ✕</span>`:''}
+  </div>`;
+
   // ── Lista principal: todo lo que SI lleva pagaré ──
   html += `<div class="table-wrap">
-    <div class="table-top"><span style="font-size:13px;font-weight:600;color:var(--text);">Pagarés — ${conPagare.length} carga${conPagare.length===1?'':'s'}</span>
-    <span style="font-size:11px;color:var(--text3);">${pendientes} pendiente${pendientes===1?'':'s'} de gestionar${claves.length?` · ${claves.length} grupo${claves.length===1?'':'s'} de cargas que viajaron juntas`:''}</span></div>
+    <div class="table-top" style="flex-direction:column;align-items:flex-start;gap:10px;padding:14px 16px;">
+      <div style="display:flex;align-items:center;justify-content:space-between;width:100%;flex-wrap:wrap;gap:8px;">
+        <span style="font-size:13px;font-weight:600;color:var(--text);">Pagarés — ${pagaresFiltro.size?`${visibles.length} de ${total}`:`${total} carga${total===1?'':'s'}`}</span>
+        <span style="font-size:11px;color:var(--text3);">${pendientes} pendiente${pendientes===1?'':'s'} de gestionar${claves.length?` · ${claves.length} grupo${claves.length===1?'':'s'} de cargas que viajaron juntas`:''}</span>
+      </div>
+      ${filtros}
+    </div>
     <div style="overflow-x:auto;"><table>${cab(true)}<tbody>`;
-  if(!conPagare.length){
-    html += `<tr><td colspan="13"><div class="empty" style="padding:30px;">Ninguna carga activa lleva pagaré.</div></td></tr>`;
+  if(!visibles.length){
+    html += `<tr><td colspan="13"><div class="empty" style="padding:30px;">${total?'Ninguna carga con ese estado.':'Ninguna carga activa lleva pagaré.'}</div></td></tr>`;
   } else {
-    conPagare.forEach(o => { html += filaHtml(o, true); });
+    visibles.forEach(o => { html += filaHtml(o, true); });
   }
   html += `</tbody></table></div></div>`;
 
