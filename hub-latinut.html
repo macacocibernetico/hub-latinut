@@ -567,6 +567,9 @@ tr:hover .col-acciones{background:var(--bg3);}
       <div class="nav-item" id="nav-pagares" onclick="showView('pagares')">
         <span class="icon">📄</span> Pagarés
       </div>
+      <div class="nav-item" id="nav-tarifario" onclick="showView('tarifario')">
+        <span class="icon">🚢</span> Tarifario
+      </div>
     </div>
     <div class="nav-section">
       <div class="nav-label">Historial</div>
@@ -1177,11 +1180,20 @@ function saveReclamo(bl, mailType){
 //         igual pueden ir en el mismo pagare.
 const _normClave = v => (v||'').toString().trim().toUpperCase().replace(/\s+/g,' ');
 
+// NOP es certificacion organica: esa mercaderia se factura y se documenta aparte
+// de la convencional, asi que nunca puede ir en el mismo aviso de embarque aunque
+// comparta cliente, buque, fecha y puerto.
+// Se busca NOP como palabra suelta: "Blanched NOP" si, "nopal" no.
+function esNOP(row){
+  return /\bNOP\b/i.test((row[COL.PRODUCT]||'').toString());
+}
+
 // Si la carga ya se pidio dentro de un conjunto armado a mano, ese conjunto gana
 // sobre la deteccion automatica, en las dos vistas.
 function grupoKeyFC(row){
   return grupoManualDe(row) || [_normClave(row[COL.CUSTOMER]), _normClave(row[COL.VESSEL]),
-          _normClave(fmtDate(row[COL.ETD])), _normClave(row[COL.PORT])].join('|');
+          _normClave(fmtDate(row[COL.ETD])), _normClave(row[COL.PORT]),
+          esNOP(row) ? 'NOP' : 'CONV'].join('|');
 }
 function grupoKeyPagare(row){
   return grupoManualDe(row) || [_normClave(row[COL.CUSTOMER]), _normClave(row[COL.VESSEL]),
@@ -1234,6 +1246,11 @@ function resumenFC(rowIndices){
     r.avisos.push('Tienen ETD distintos (' + r.etds.join(' · ') + '). El mail va a usar el de la primera: ' + r.etds[0] + '.');
   if(r.productos.length > 1)
     r.avisos.push('Hay ' + r.productos.length + ' productos distintos (' + r.productos.join(', ') + ') y el mail describe uno solo: ' + r.productos[0] + '.');
+  // Mezclar organico con convencional no es un detalle de redaccion: son dos
+  // mercaderias que se documentan por separado.
+  const conNOP = r.filas.filter(esNOP).length;
+  if(conNOP && conNOP < r.n)
+    r.avisos.push('Estás mezclando mercadería NOP con convencional (' + conNOP + ' NOP y ' + (r.n - conNOP) + ' convencional' + ((r.n-conNOP)>1?'es':'') + '). Se documentan por separado.');
   if(r.yaPedidas.length)
     r.avisos.push(r.yaPedidas.length + ' carga' + (r.yaPedidas.length>1?'s ya tienen':' ya tiene') + ' marcada la columna de envio (' + r.yaPedidas.join(', ') + '): la FC ya se pidio.');
   if(r.sinPrecio)
@@ -1241,8 +1258,184 @@ function resumenFC(rowIndices){
   return r;
 }
 
-// Aviso de embarque al cliente. Lo arma el AppScript (tabla naranja por lote),
-// el hub solo elige las cargas. Es la otra punta del grupo: pediste la FC por un
+// ─── MAILS QUE ARMA EL HUB ───────────────────────────────────────────────────
+// El aviso al cliente y la solicitud de liberacion se generan aca y no en el
+// AppScript. El motivo es concreto: el AppScript corre siempre como el dueño de
+// la implementacion, asi que el borrador aparecia en la casilla de esa persona
+// aunque lo disparara otra. El hub usa el token de quien esta logueado.
+//
+// El contenido replica el del AppScript (misma tabla naranja, mismos textos y
+// mismos destinatarios) para que no se note la diferencia con lo que ya sale
+// desde el menu de la planilla.
+const DESTINATARIOS_CLIENTE = {
+  'IDI':   'alex@nutrin.com,cindell@nutrin.com',
+  'PIDCO': 'alex@nutrin.com,cindell@nutrin.com',
+  'ABW':   'litzi@inagrica.com,comex@abw.com.pa'
+};
+const CC_AVISO_CLIENTE = 'export@latinutsa.com,pberro@axtsolutions.com,josefina@nutrin.com.ar';
+
+// Tabla vertical de un lote. Las filas sin dato no se imprimen, igual que en el
+// AppScript: una tabla llena de guiones no le sirve a nadie.
+function tablaAvisoLote(f){
+  const TD_LBL  = 'padding:7px 12px;border:1px solid #E2E2DE;background-color:#F6F6F4;font-family:Arial,sans-serif;font-size:12px;color:#444;white-space:nowrap;';
+  const TD_VAL  = 'padding:7px 12px;border:1px solid #E2E2DE;font-family:Arial,sans-serif;font-size:13px;color:#000;';
+  const TD_HEAD = 'padding:8px 12px;background-color:#F7941D;color:#FFFFFF;font-family:Arial,sans-serif;font-size:12px;font-weight:bold;letter-spacing:.04em;border:1px solid #d97c0a;';
+  const fila = (label, valor) => (valor === '' || valor === null || valor === undefined) ? ''
+    : '<tr><td style="' + TD_LBL + '">' + label + '</td><td style="' + TD_VAL + '">' + valor + '</td></tr>';
+  return '<table cellpadding="0" cellspacing="0" style="border-collapse:collapse;margin:0 0 14px 0;width:100%;max-width:520px;">'
+    + '<tr><td colspan="2" style="' + TD_HEAD + '">LOTE ' + f.lote + '</td></tr>'
+    + fila('Mercadería', f.tns ? f.tns + ' tn ' + f.product : f.product)
+    + fila('Packaging', f.packing)
+    + fila('Contenedor', f.containers)
+    + fila('BL', f.bl)
+    + fila('Buque', f.vessel)
+    + fila('Puerto de destino', f.port)
+    + fila('ETD', f.etd)
+    + fila('ETA', f.eta)
+    + fila('Cargador', f.exporter)
+    + '</table>';
+}
+
+function armarAvisoCliente(filas){
+  const t = (row, c) => (row[c]||'').toString().trim();
+  const primera = filas[0];
+  const customer = t(primera, COL.CUSTOMER);
+  const product  = t(primera, COL.PRODUCT);
+  const port     = t(primera, COL.PORT);
+  const vessel   = t(primera, COL.VESSEL);
+  const etd      = t(primera, COL.ETD) ? fmtDate(primera[COL.ETD]) : '';
+  const eta      = t(primera, COL.ETA) ? fmtDate(primera[COL.ETA]) : '';
+  const tns = filas.reduce((a, r) => { const v = parseSheetNum(r[COL.TNS]); return a + (isNaN(v)?0:v); }, 0);
+
+  const bloques = filas.map(r => ({
+    lote: t(r, COL.LOTS), tns: parseSheetNum(r[COL.TNS])||0, product: t(r, COL.PRODUCT),
+    packing: t(r, COL.PACKING), containers: t(r, COL.CONTAINERS), bl: t(r, COL.BL),
+    vessel: t(r, COL.VESSEL), port: t(r, COL.PORT),
+    etd: t(r, COL.ETD) ? fmtDate(r[COL.ETD]) : '', eta: t(r, COL.ETA) ? fmtDate(r[COL.ETA]) : '',
+    exporter: t(r, COL.EXPORTER) || 'Argen Peanuts'
+  }));
+
+  const varias = bloques.length > 1;
+  const buqueFrase = vessel ? 'La carga viaja en el buque ' + vessel + '. ' : '';
+  const fechaFrase = eta ? 'El arribo estimado es el ' + eta + '.' : '';
+  const intro = varias
+    ? 'Les adjunto los documentos correspondientes a los ' + bloques.length + ' embarques detallados a continuación, con destino a ' + port + ', por un total de ' + tns + ' tn. ' + buqueFrase + fechaFrase
+    : 'Les adjunto los documentos correspondientes al embarque de ' + tns + ' tn de ' + product + ' con destino a ' + port + '. ' + buqueFrase + fechaFrase;
+
+  const P = 'font-family:Arial,sans-serif;font-size:13px;line-height:1.6;color:#000;margin:0 0 14px 0;';
+  const html = '<p style="' + P + '">Estimados,</p>'
+    + '<p style="' + P + '">' + intro + '</p>'
+    + bloques.map(tablaAvisoLote).join('')
+    + '<p style="' + P + '">Quedamos a disposición ante cualquier consulta.</p>';
+
+  const texto = 'Estimados,\n\n' + intro + '\n\n' + bloques.map(f =>
+    'LOTE ' + f.lote + '\n'
+    + (f.tns ? '  Mercadería: ' + f.tns + ' tn ' + f.product + '\n' : '')
+    + (f.packing ? '  Packaging: ' + f.packing + '\n' : '')
+    + (f.containers ? '  Contenedor: ' + f.containers + '\n' : '')
+    + (f.bl ? '  BL: ' + f.bl + '\n' : '')
+    + (f.vessel ? '  Buque: ' + f.vessel + '\n' : '')
+    + (f.port ? '  Puerto de destino: ' + f.port + '\n' : '')
+    + (f.etd ? '  ETD: ' + f.etd + '\n' : '')
+    + (f.eta ? '  ETA: ' + f.eta + '\n' : '')
+  ).join('\n') + '\nQuedamos a disposición ante cualquier consulta.';
+
+  const asunto = 'Embarque ' + customer + ' - AXT Trading - ' + tns + ' tn ' + product + ' - ETD ' + etd + ' - ETA ' + eta;
+  const dest = DESTINATARIOS_CLIENTE[customer.toUpperCase()] || '';
+  return { asunto, html, texto, dest, cc: CC_AVISO_CLIENTE, customer, tns };
+}
+
+// ── SOLICITUD DE FC A AXT ──
+// Replica del mail que genera el AppScript. La diferencia: este sale de la casilla
+// de quien aprieta el boton, y NO adjunta la factura ni el BL — esos los busca el
+// AppScript en Drive y el hub no tiene como hacerlo.
+const DEST_FC_AXT = 'ogarbuglia@axtsolutions.com,mgarbuglia@axtsolutions.com,pberro@axtsolutions.com';
+const AVISO_FACTURA_POR_CONTENEDOR = 'Por favor, emitir una factura por cada contenedor.';
+const PUERTOS_USA_FC = ['norfolk','new york'];
+const CLIENTES_2FC = ['idi','pidco'];
+
+// Mismo cuadro de costos que usa el AppScript.
+function costoLogisticoFC(product, packing){
+  const p = (product||'').toString().toLowerCase(), k = (packing||'').toString().toLowerCase();
+  if(p.indexOf('blanch') !== -1) return 600;
+  if((p.indexOf('roasted') !== -1 || p.indexOf('tostado') !== -1) && p.indexOf('nop') !== -1) return 331;
+  if(p.indexOf('roasted') !== -1 || p.indexOf('tostado') !== -1) return 220;
+  if((p.indexOf('paste') !== -1 || p.indexOf('pasta') !== -1) && p.indexOf('nop') !== -1 && k.indexOf('pote') !== -1) return null;
+  if((p.indexOf('paste') !== -1 || p.indexOf('pasta') !== -1) && p.indexOf('nop') !== -1) return 331;
+  if((p.indexOf('paste') !== -1 || p.indexOf('pasta') !== -1) && k.indexOf('pote') !== -1) return 354;
+  return null;
+}
+const numFC = v => { const n = parseSheetNum(v); return isNaN(n) ? '' : n.toLocaleString('en-US'); };
+
+function armarSolicitudFC(filas){
+  const nc = getNegocioConfig();
+  const t = (row, c) => (row[c]||'').toString().trim();
+  const p0 = filas[0];
+  const product  = t(p0, COL.PRODUCT);
+  const packing  = t(p0, COL.PACKING);
+  const etd      = t(p0, COL.ETD) ? fmtDate(p0[COL.ETD]) : '⚠️ sin fecha';
+  const eta      = t(p0, COL.ETA) ? fmtDate(p0[COL.ETA]) : '⚠️ sin fecha';
+  const port     = t(p0, COL.PORT);
+  const customer = t(p0, COL.CUSTOMER);
+  const priceLomb= t(p0, COL.PRICE_CLIENTE);
+  const flete    = t(p0, COL.FLETE);
+  const incoterm = t(p0, COL.INCOTERM);
+  const exporter = t(p0, COL.EXPORTER) || 'Argen Peanuts';
+  const tns = filas.reduce((a, r) => { const v = parseSheetNum(r[COL.TNS]); return a + (isNaN(v)?0:v); }, 0);
+
+  const esUSA = PUERTOS_USA_FC.some(x => port.toLowerCase().indexOf(x) !== -1);
+  const es2FC = CLIENTES_2FC.indexOf(customer.toLowerCase()) >= 0 && esUSA;
+
+  let texto, html;
+  if(es2FC){
+    const cl = costoLogisticoFC(product, packing);
+    const costoLogStr = cl !== null ? cl + ' USD/TN' : '⚠️ PRODUCTO NO RECONOCIDO – completar manualmente';
+    const precioSinFlete = priceLomb ? numFC(priceLomb) + ' USD/TN' : '⚠️ completar';
+    const fleteStr = flete ? numFC(flete) + ' por tonelada' : '⚠️ completar';
+    texto = 'Buenos días!\n\n'
+      + 'Les adjunto la FC de ' + exporter + ' por las ' + tns + ' tns de ' + product + ' a ' + port + '.\n\n'
+      + 'Factura 1 – Mercadería + Flete\n'
+      + 'En la factura de la mercadería se debe detallar por separado el precio por tonelada de la mercadería y el precio del flete por tonelada.\n\n'
+      + 'Tomar como referencia la información detallada en la factura de ' + exporter + ' para confeccionar las de AXT a ' + customer + '\n\n'
+      + 'Detallo información adicional para la confección de la 1era FC:\n'
+      + 'Descripcion: ' + product + '\nPacking: ' + packing + '\nProducer: ' + exporter + '\nOrigin: Argentina\n'
+      + 'Incoterm: ' + incoterm + '\nPrecio por tonelada sin flete: ' + precioSinFlete + '\nPrecio del flete: ' + fleteStr + '\n\n'
+      + 'Factura 2 – Logistic services\n'
+      + 'En la factura de servicios logísticos, debemos detallar el costo logístico por tonelada y el número de contenedor.\n\n'
+      + 'Costo logístico: ' + costoLogStr;
+    html = 'Buenos días!<br><br>'
+      + 'Les adjunto la FC de ' + exporter + ' por las ' + tns + ' tns de ' + product + ' a ' + port + '.<br><br>'
+      + '<u><b>Factura 1 – Mercadería + Flete</b></u><br>'
+      + 'En la factura de la mercadería se debe detallar por separado el precio por tonelada de la mercadería y el precio del flete por tonelada.<br><br>'
+      + 'Tomar como referencia la información detallada en la factura de ' + exporter + ' para confeccionar las de AXT a ' + customer + '<br><br>'
+      + 'Detallo información adicional para la confección de la 1era FC:<br>'
+      + 'Descripcion: ' + product + '<br>Packing: ' + packing + '<br>Producer: ' + exporter + '<br>Origin: Argentina<br>'
+      + 'Incoterm: ' + incoterm + '<br>Precio por tonelada sin flete: ' + precioSinFlete + '<br>Precio del flete: ' + fleteStr + '<br><br>'
+      + '<u><b>Factura 2 – Logistic services</b></u><br>'
+      + 'En la factura de servicios logísticos, debemos detallar el costo logístico por tonelada y el número de contenedor.<br><br>'
+      + 'Costo logístico: ' + costoLogStr;
+  } else {
+    const precioStr = priceLomb ? numFC(priceLomb) + ' USD/TN' : '⚠️ completar';
+    const precioBloque = flete
+      ? 'PRECIO: ' + precioStr + '\nFLETE POR TN: ' + numFC(flete) + ' USD/TN'
+      : 'PRECIO ' + precioStr;
+    texto = 'Buenos días!\n\n'
+      + 'Les adjunto la FC de ' + exporter + ' por las ' + tns + ' tns de ' + product + ' a ' + port + '.\n'
+      + 'Por favor, tomar como referencia la información detallada en la factura de ' + exporter + ' para confeccionar las de AXT a ' + customer + '\n'
+      + 'Descripcion: ' + product + '\nPacking: ' + packing + '\nExporter: ' + exporter + '\nOrigin: Argentina\n'
+      + 'Incoterm: ' + incoterm + '\n\n' + precioBloque;
+    html = texto.replace(/\n/g, '<br>');
+  }
+  texto += '\n\n' + AVISO_FACTURA_POR_CONTENEDOR;
+  html  += '<br><br><b>' + AVISO_FACTURA_POR_CONTENEDOR + '</b>';
+
+  const asunto = 'AVISO DE EMBARQUE – ' + tns + ' tns ' + product + ' - ' + nc.label + ' – '
+               + exporter + ' - ETD ' + etd + ' - ETA ' + eta + ' - ' + port + ' - ' + customer;
+  const htmlFinal = '<div style="font-family:Arial,sans-serif;font-size:13px;color:#000;">' + html + '</div>';
+  return { asunto, html: htmlFinal, texto, dest: DEST_FC_AXT, cc: CC_EQUIPO, es2FC, tns };
+}
+
+// Aviso de embarque al cliente. Es la otra punta del grupo: pediste la FC por un
 // conjunto, ahora le avisas al cliente por el mismo conjunto.
 async function avisoClienteBulk(rowIndices){
   const r = resumenFC(rowIndices);
@@ -1265,21 +1458,30 @@ async function avisoClienteBulk(rowIndices){
   if(!ok) return;
 
   showToast('Generando borrador...');
-  const data = await callAppScriptFilas('avisoCliente', r.sheetRows);
-  if(data && data.ok){
-    showToast('\u2713 Borrador creado');
-    await registrarGrupoEmbarque(r.filas);
-    for(const row of r.filas){
-      await appendLog({
-        fc:(row[COL.INVOICE_CLIENTE]||'').trim(), fcServ:'',
-        bl:(row[COL.BL]||'').trim(), customer:r.customer,
-        accion:'aviso al cliente',
-        detalle:'Via AppScript - ' + r.n + ' cargas - filas ' + r.sheetRows.join(', ') + ' - lotes: ' + (r.lotes.join(', ')||'—')
-      });
-    }
-    await loadLog();
-    await loadData();
+  const mail = armarAvisoCliente(r.filas);
+  if(!mail.dest){
+    alert('No hay destinatarios configurados para ' + r.customer + '.\n\n' +
+          'Los que estan cargados son: ' + Object.keys(DESTINATARIOS_CLIENTE).join(', ') + '.');
+    return;
   }
+  const hecho = await createGmailDraftHtml(mail.dest, sanitizarCC(mail.cc), mail.asunto, mail.texto, mail.html);
+  if(!hecho) return;
+
+  await registrarGrupoEmbarque(r.filas);
+  // La marca en la planilla la hace el hub, porque el mail ya no pasa por el AppScript.
+  for(const i of r.idx){
+    const row = allRows[i]; if(!row) continue;
+    await writeCell(i, COL.CLIENTE_ENV, 'SI');
+    await appendLog({
+      fc:(row[COL.INVOICE_CLIENTE]||'').trim(), fcServ:'',
+      bl:(row[COL.BL]||'').trim(), customer:r.customer,
+      accion:'aviso al cliente',
+      detalle: r.n + ' carga' + (r.n>1?'s':'') + ' - filas ' + r.sheetRows.join(', ') + ' - lotes: ' + (r.lotes.join(', ')||'—')
+    });
+  }
+  await pintarCeldas(sheetRowsDe(r.idx), COL.CLIENTE_ENV, COLOR_NARANJA);
+  await loadLog();
+  await loadData();
 }
 
 async function solicitarFCBulk(rowIndices){
@@ -1300,62 +1502,43 @@ async function solicitarFCBulk(rowIndices){
               + linea('Filas',    r.sheetRows.join(', '));
   r.avisos.forEach(a => { detalle += '<div style="color:var(--warn);margin-top:6px;">⚠ ' + a + '</div>'; });
 
+  // El borrador lo arma el hub, no el AppScript, para que caiga en la casilla de
+  // quien aprieta el boton. El costo es que va sin adjuntos: la factura y el BL
+  // los buscaba el AppScript en Drive y el hub no tiene como hacerlo.
+  detalle += '<div style="color:var(--warn);margin-top:6px;">\u26a0 El borrador sale sin adjuntos: acordate de sumar la factura y el BL antes de enviarlo.</div>';
+
   const okFC = await showConfirm('Solicitud FC para ' + r.n + ' carga' + (r.n>1?'s':''),
-    'Se crea un solo borrador en Gmail que cubre las ' + r.n + ' cargas, y se marca la columna de env\u00edo en la planilla.',
+    'Se crea un solo borrador en tu Gmail que cubre las ' + r.n + ' cargas, y se marca la columna de env\u00edo en la planilla.',
     { icono:'📄', okLabel:'Generar solicitud', detalle: detalle });
   if(!okFC) return;
 
   showToast('Generando borrador...');
-  // OJO: van las filas EXACTAS que se tildaron, no un rango. Antes se mandaba
-  // filaInicio/filaFin y si la seleccion tenia huecos (750 y 755) el AppScript
-  // procesaba tambien las del medio, que nadie habia elegido.
-  const data = await callAppScriptFilas('solicitudFC', r.sheetRows);
+  const mail = armarSolicitudFC(r.filas);
+  const hecho = await createGmailDraftHtml(mail.dest, sanitizarCC(mail.cc), mail.asunto, mail.texto, mail.html);
+  if(!hecho) return;
 
-  if(data && data.ok){
-    showToast('\u2713 Borrador creado');
-    // El conjunto que acabas de pedir queda como grupo: el pagare va a sugerir
-    // estas mismas cargas, sin importar lo que digan buque y fecha.
-    await registrarGrupoEmbarque(r.filas);
-    for(const row of r.filas){
-      await appendLog({
-        fc:(row[COL.INVOICE_CLIENTE]||'').trim(), fcServ:'',
-        bl:(row[COL.BL]||'').trim(), customer:r.customer,
-        accion:'solicitud FC (bulk)',
-        detalle:'Via AppScript - ' + r.n + ' cargas - filas ' + r.sheetRows.join(', ') + ' - lotes: ' + (r.lotes.join(', ')||'—')
-      });
-    }
-    await loadLog();
-    await loadData();
+  // El conjunto que acabas de pedir queda como grupo: el pagare va a sugerir
+  // estas mismas cargas, sin importar lo que digan buque y fecha.
+  await registrarGrupoEmbarque(r.filas);
+  for(const i of r.idx){
+    const row = allRows[i]; if(!row) continue;
+    await writeCell(i, COL.LOMBARD, 'SI');
+    await appendLog({
+      fc:(row[COL.INVOICE_CLIENTE]||'').trim(), fcServ:'',
+      bl:(row[COL.BL]||'').trim(), customer:r.customer,
+      accion:'solicitud FC (bulk)',
+      detalle: r.n + ' carga' + (r.n>1?'s':'') + ' - filas ' + r.sheetRows.join(', ') + ' - lotes: ' + (r.lotes.join(', ')||'—')
+    });
   }
+  await pintarCeldas(sheetRowsDe(r.idx), COL.LOMBARD, COLOR_NARANJA);
+  await loadLog();
+  await loadData();
 }
 
+// Una sola carga: pasa por el mismo camino que el bulk, para que no queden dos
+// versiones del mismo mail que despues se desincronizan.
 async function solicitarFC(rowIdx){
-  const row = allRows[rowIdx];
-  if(!row) return;
-  const sheetRow = row._sheetRow;
-  if(!sheetRow){ alert('No se pudo determinar la fila en la planilla.'); return; }
-
-  const product = (row[COL.PRODUCT]||'').trim();
-  const customer = (row[COL.CUSTOMER]||'').trim();
-  const eta = fmtDate(row[COL.ETA]);
-
-  const okFC = await confirmarAccion('Solicitud FC',
-    'Se crea el borrador en Gmail y se marca la columna de envío en la planilla.',
-    row, { icono:'📄', okLabel:'Generar solicitud', skipKey:'fc_individual' });
-  if(!okFC) return;
-
-  showToast('Generando borrador...');
-  const ok = await callAppScript('solicitudFC', sheetRow, sheetRow);
-
-  if(ok){
-    const inv1=(row[COL.INVOICE_CLIENTE]||'').trim();
-    await appendLog({
-      fc:inv1||'', fcServ:'', bl:(row[COL.BL]||'').trim(),
-      customer, accion:'solicitud FC', detalle:'Via AppScript - fila '+sheetRow
-    });
-    await loadLog();
-    await loadData();
-  }
+  await solicitarFCBulk([rowIdx]);
 }
 
 // ─── PROGRESS BAR ────────────────────────────────────────────────────────────
@@ -1659,6 +1842,8 @@ async function loadData(){
     });
     allRowsAll = validRows; // todas, incluyendo cerradas — para pagos
     allRows = validRows.filter(row=>!isClosed(row)); // solo activas
+    // El tarifario va aparte: si falla, las cargas tienen que seguir andando.
+    loadTarifario().catch(e => console.warn('tarifario:', e));
     _dataVersion++;   // invalida el cache de alertas
     await loadContacts();
     await loadLog();
@@ -1865,6 +2050,207 @@ function setSheetStatus(state,text){
   document.getElementById('sheet-status-text').textContent=text;
 }
 
+// ─── TARIFARIO ───────────────────────────────────────────────────────────────
+// Hoja "Tarifario" dentro de la planilla de AXT. El forwarder manda una tanda de
+// precios por mes y ahi se van acumulando, sin pisar los anteriores: por eso una
+// carga de julio se compara contra la tarifa que regia en julio, no contra la
+// ultima cargada.
+//
+// Columnas: FECHA · POL · DESTINO · CNT · FLETE · CARRIER · ALL IN · DIAS LIBRES · FORWARDER
+const HOJA_TARIFARIO = 'Tarifario';
+let tarifas = [];          // [{fecha, mes, pol, destino, cnt, flete, carrier, allIn, diasLibres, forwarder, _sheetRow}]
+let _tarifarioError = null;
+
+const MESES_TARIFARIO = {
+  ENE:0, JAN:0, FEB:1, MAR:2, ABR:3, APR:3, MAY:4, JUN:5, JUL:6,
+  AGO:7, AUG:7, SEP:8, SET:8, OCT:9, NOV:10, DIC:11, DEC:11
+};
+
+// "SEP-2026", "sep 2026", "09/2026", o una fecha de verdad -> numero comparable
+// AAAAMM. Se trabaja a nivel mes porque el tarifario es mensual.
+function mesTarifa(v){
+  if(v instanceof Date) return v.getFullYear()*100 + v.getMonth() + 1;
+  const t = (v||'').toString().trim().toUpperCase();
+  if(!t) return null;
+  let m = t.match(/^([A-Z]{3})[A-Z]*[\s\-\/]+(\d{2,4})$/);
+  if(m && MESES_TARIFARIO[m[1]] !== undefined){
+    let a = parseInt(m[2],10); if(a < 100) a += 2000;
+    return a*100 + MESES_TARIFARIO[m[1]] + 1;
+  }
+  m = t.match(/^(\d{1,2})[\s\-\/](\d{4})$/);            // 09/2026
+  if(m) return parseInt(m[2],10)*100 + parseInt(m[1],10);
+  const d = parseDate(t);                                   // dd/mm/aaaa
+  if(d) return d.getFullYear()*100 + d.getMonth() + 1;
+  return null;
+}
+function mesDeFecha(v){
+  const d = parseDate(v);
+  return d ? d.getFullYear()*100 + d.getMonth() + 1 : null;
+}
+function mesLegible(n){
+  if(!n) return '—';
+  const nombres = ['ENE','FEB','MAR','ABR','MAY','JUN','JUL','AGO','SEP','OCT','NOV','DIC'];
+  return nombres[(n%100)-1] + '-' + Math.floor(n/100);
+}
+
+// Normaliza para comparar: sin acentos, sin puntuacion, sin dobles espacios.
+function normTar(v){
+  let t = (v||'').toString().trim().toUpperCase();
+  try{ t = t.normalize('NFD').replace(/[\u0300-\u036f]/g,''); }catch(e){}
+  return t.replace(/[.,;:()]/g,' ').replace(/\s+/g,' ').trim();
+}
+
+// "Done Deal" y "Done Deal FS" son la misma empresa. Se agrupan por la primera
+// palabra significativa para que el tarifario no los cuente como dos forwarders.
+function claveForwarder(v){
+  const t = normTar(v);
+  if(!t) return '';
+  if(t.indexOf('DONE DEAL') === 0) return 'DONE DEAL';
+  return t;
+}
+
+// Puertos y navieras se escriben de mil maneras ("Norfolk, VA" / "NORFOLK";
+// "MSC" / "MSC Mediterranean"). Alcanza con que uno contenga al otro.
+function coincideTexto(a, b){
+  const x = normTar(a), y = normTar(b);
+  if(!x || !y) return false;
+  return x === y || x.indexOf(y) >= 0 || y.indexOf(x) >= 0;
+}
+
+async function loadTarifario(){
+  tarifas = []; _tarifarioError = null;
+  const nc = getNegocioConfig();
+  const sid = nc.sheetId || cfg.sheetId;
+  if(!sid) return;
+  try{
+    const range = encodeURIComponent(HOJA_TARIFARIO + '!A1:L500');
+    let url, opts = {};
+    if(accessToken){
+      url = 'https://sheets.googleapis.com/v4/spreadsheets/' + sid + '/values/' + range;
+      opts = { headers:{ Authorization:'Bearer ' + accessToken } };
+    } else {
+      url = 'https://sheets.googleapis.com/v4/spreadsheets/' + sid + '/values/' + range + '?key=' + cfg.apiKey;
+    }
+    const r = await fetch(url, opts);
+    if(!r.ok){
+      // 400 = la hoja no existe. No es un error: Buzaram no tiene tarifario.
+      _tarifarioError = r.status === 400 ? null : 'HTTP ' + r.status;
+      return;
+    }
+    const data = await r.json();
+    const filas = data.values || [];
+    if(!filas.length) return;
+
+    // Encabezados por nombre, igual que el resto del hub: si maniana mueven una
+    // columna de lugar, el hub la sigue encontrando.
+    const H = (filas[0]||[]).map(normTar);
+    const col = (...nombres) => {
+      for(const n of nombres){ const i = H.indexOf(normTar(n)); if(i >= 0) return i; }
+      return -1;
+    };
+    const c = {
+      fecha: col('FECHA'), pol: col('POL'), destino: col('DESTINO','DESTINATION','PUERTO'),
+      cnt: col('CNT','CONTENEDOR','TIPO'), flete: col('FLETE','FREIGHT'),
+      carrier: col('CARRIER','NAVIERA','SHIPPING LINE'), allIn: col('ALL IN','ALLIN','ALL-IN'),
+      dias: col('DIAS LIBRES','FREE DAYS'), forwarder: col('FORWARDER')
+    };
+    if(c.destino < 0 || c.carrier < 0){
+      _tarifarioError = 'La hoja ' + HOJA_TARIFARIO + ' no tiene las columnas DESTINO y CARRIER.';
+      return;
+    }
+    const g = (fila, i) => i >= 0 ? (fila[i]||'').toString().trim() : '';
+    for(let i = 1; i < filas.length; i++){
+      const f = filas[i];
+      if(!f || !g(f, c.destino)) continue;
+      tarifas.push({
+        _sheetRow: i + 1,
+        fechaTxt: g(f, c.fecha), mes: mesTarifa(f[c.fecha]),
+        pol: g(f, c.pol), destino: g(f, c.destino), cnt: g(f, c.cnt),
+        flete: parseSheetNum(f[c.flete]), carrier: g(f, c.carrier),
+        allIn: parseSheetNum(f[c.allIn]), diasLibres: g(f, c.dias),
+        forwarder: g(f, c.forwarder)
+      });
+    }
+    console.log('Tarifario: ' + tarifas.length + ' tarifas cargadas');
+  }catch(e){
+    _tarifarioError = e.message;
+    console.warn('loadTarifario:', e);
+  }
+}
+
+// Tarifa vigente para una carga: mismo destino y misma naviera, del mes del ETD
+// o del ultimo mes anterior que este cargado. Una tarifa de octubre no se aplica
+// a una carga que salio en julio.
+function tarifaPara(row){
+  if(!tarifas.length) return null;
+  const destino = row[COL.PORT], carrier = row[COL.SHIPPING];
+  const mesCarga = mesDeFecha(row[COL.ETD]) || mesDeFecha(row[COL.ETA]);
+  const candidatas = tarifas.filter(t => coincideTexto(t.destino, destino) && coincideTexto(t.carrier, carrier));
+  if(!candidatas.length) return null;
+  if(!mesCarga){
+    // Sin ETD no hay con que comparar la vigencia: se usa la mas nueva.
+    return candidatas.slice().sort((a,b) => (b.mes||0) - (a.mes||0))[0];
+  }
+  const vigentes = candidatas.filter(t => t.mes && t.mes <= mesCarga);
+  if(vigentes.length) return vigentes.sort((a,b) => b.mes - a.mes)[0];
+  // Solo hay tarifas posteriores a la carga: se devuelve la mas vieja de esas,
+  // avisando que es de despues.
+  const post = candidatas.filter(t => t.mes).sort((a,b) => a.mes - b.mes)[0];
+  return post ? Object.assign({}, post, { posterior:true }) : candidatas[0];
+}
+
+// Cuantos contenedores tiene la carga. La celda suele traer varios separados por
+// coma, barra o salto de linea.
+function cantidadContenedores(row){
+  const t = (row[COL.CONTAINERS]||'').toString().trim();
+  if(!t) return 1;
+  const partes = t.split(/[,;\/\n|]+/).map(x => x.trim()).filter(Boolean);
+  return partes.length || 1;
+}
+
+const TOL_ROJO_FLETE = 10;   // % de desvio a partir del cual se marca en rojo
+
+// Compara lo facturado con la tarifa. Como el importe a veces viene por
+// contenedor y a veces como total de la carga, se prueban las dos lecturas y se
+// informa cual cierra; asi el hub no canta un desvio que en realidad no existe.
+function compararFlete(row){
+  const importe = parseSheetNum(row[COL.MONTO_FLETE]);
+  const tarifa = tarifaPara(row);
+  if(isNaN(importe) || !importe) return { estado:'sin_importe', tarifa: tarifa };
+  if(!tarifa) return { estado:'sin_tarifa', importe: importe };
+
+  const ref = !isNaN(tarifa.allIn) && tarifa.allIn ? tarifa.allIn : tarifa.flete;
+  const campoRef = (!isNaN(tarifa.allIn) && tarifa.allIn) ? 'ALL IN' : 'FLETE';
+  if(isNaN(ref) || !ref) return { estado:'sin_tarifa', importe: importe, tarifa: tarifa };
+
+  const n = cantidadContenedores(row);
+  const lecturas = [{ modo:'contenedor', etiqueta:'por contenedor', valor: importe }];
+  if(n > 1) lecturas.push({ modo:'total', etiqueta:'total de ' + n + ' contenedores', valor: importe / n });
+  lecturas.forEach(l => {
+    l.dif = l.valor - ref;
+    l.pct = ref ? (l.dif / ref) * 100 : 0;
+  });
+  // La lectura que mejor cierra es la que decide el semaforo.
+  const mejor = lecturas.slice().sort((a,b) => Math.abs(a.pct) - Math.abs(b.pct))[0];
+  const abs = Math.abs(mejor.pct);
+  const estado = abs < 0.5 ? 'ok' : (abs >= TOL_ROJO_FLETE ? 'bad' : 'warn');
+  return { estado, importe, tarifa, ref, campoRef, lecturas, mejor, contenedores: n };
+}
+
+const COLOR_FLETE = { ok:'var(--ok)', warn:'var(--warn)', bad:'var(--danger)', sin_tarifa:'var(--text3)', sin_importe:'var(--text3)' };
+function textoComparacionFlete(cmp){
+  if(!cmp) return '';
+  if(cmp.estado === 'sin_importe') return 'Sin importe cargado';
+  if(cmp.estado === 'sin_tarifa')  return 'Sin tarifa cargada para ese destino y naviera';
+  const signo = cmp.mejor.dif >= 0 ? '+' : '−';
+  const base = 'Tarifa ' + cmp.campoRef + ' ' + mesLegible(cmp.tarifa.mes) + ': USD ' +
+               Math.round(cmp.ref).toLocaleString('es-AR');
+  if(cmp.estado === 'ok') return base + ' · coincide' + (cmp.mejor.modo === 'total' ? ' leyendo el importe como ' + cmp.mejor.etiqueta : '');
+  return base + ' · ' + signo + 'USD ' + Math.round(Math.abs(cmp.mejor.dif)).toLocaleString('es-AR') +
+         ' (' + signo + Math.abs(cmp.mejor.pct).toFixed(1) + '%)' +
+         (cmp.mejor.modo === 'total' ? ' leyendo el importe como ' + cmp.mejor.etiqueta : '');
+}
+
 // ─── WRITE TO SHEET ───────────────────────────────────────────────────────────
 async function writeCell(row, col, value){
   if(!accessToken){alert('Conectate con Google primero para escribir en la planilla.');return false;}
@@ -2063,6 +2449,63 @@ function firmaHtmlAText(html){
     .replace(/\n{3,}/g, '\n\n')
     .trim();
   return t;
+}
+
+// Igual que createGmailDraft pero con un cuerpo HTML ya armado (tablas, colores).
+// Existe aparte porque createGmailDraft escapa el body como texto plano, que es lo
+// correcto para los mails escritos a mano pero destruiria estas tablas.
+//
+// Lo importante de que el draft lo cree el HUB y no el AppScript: sale con el token
+// de quien esta usando el hub, asi que aparece en SU casilla. El AppScript corre
+// siempre como el dueño de la implementacion, por eso los borradores que generaba
+// Clara terminaban en la cuenta de Agustin.
+async function createGmailDraftHtml(to, cc, subject, texto, html){
+  if(!accessToken){ alert('Conectate con Google primero para crear el borrador.'); return false; }
+  const firmaHtml = await getFirmaGmail();
+  const firmaTxt  = firmaHtml ? firmaHtmlAText(firmaHtml) : '';
+  const textFinal = firmaTxt ? texto + '\n\n' + firmaTxt : texto;
+  const htmlFinal = html + (firmaHtml ? '<br>' + firmaHtml : '');
+
+  const b64 = t => btoa(unescape(encodeURIComponent(t)));
+  const boundary = 'latinut_' + Date.now().toString(36);
+  const email = [
+    'To: ' + to,
+    'Cc: ' + cc,
+    'Subject: ' + encodeHeader(subject),
+    'MIME-Version: 1.0',
+    'Content-Type: multipart/alternative; boundary="' + boundary + '"',
+    '',
+    '--' + boundary,
+    'Content-Type: text/plain; charset="UTF-8"',
+    'Content-Transfer-Encoding: base64',
+    '',
+    b64(textFinal),
+    '',
+    '--' + boundary,
+    'Content-Type: text/html; charset="UTF-8"',
+    'Content-Transfer-Encoding: base64',
+    '',
+    b64(htmlFinal),
+    '',
+    '--' + boundary + '--',
+    ''
+  ].join('\r\n');
+
+  const encoded = b64(email).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');
+  const r = await fetch('https://gmail.googleapis.com/gmail/v1/users/me/drafts', {
+    method: 'POST',
+    headers: {'Authorization':'Bearer ' + accessToken, 'Content-Type':'application/json'},
+    body: JSON.stringify({ message:{ raw: encoded } })
+  });
+  if(r.ok){
+    if(!firmaHtml) showToast('✓ Borrador creado, pero SIN firma: ' + (_firmaError || 'no se pudo leer de Gmail'), 'err');
+    else showToast('✓ Borrador creado en tu Gmail', 'ok');
+    return true;
+  }
+  let detalle = '';
+  try{ const err = await r.json(); detalle = (err.error && err.error.message) || ''; }catch(e){}
+  showToast('No se pudo crear el borrador' + (detalle ? ': ' + detalle : ''), 'err');
+  return false;
 }
 
 async function createGmailDraft(to, cc, subject, body){
@@ -2346,14 +2789,14 @@ function showView(view){
   updateBottomNav(view);
   currentView=view;
   document.querySelectorAll('.nav-item').forEach(el=>el.classList.remove('active'));
-  const titles=window._viewTitles||{alertas:'Alertas',cargas:'Cargas AXT',nueva_carga:'Nueva Carga',cobranza:'Cobranza',cashflow:'Calendario',liberaciones:'Liberaciones',pagares:'Pagarés',log:'Log de acciones',config:'Configuración'};
+  const titles=window._viewTitles||{alertas:'Alertas',cargas:'Cargas AXT',nueva_carga:'Nueva Carga',cobranza:'Cobranza',cashflow:'Calendario',liberaciones:'Liberaciones',pagares:'Pagarés',tarifario:'Tarifario de fletes',log:'Log de acciones',config:'Configuración'};
   document.getElementById('view-title').textContent=titles[view]||view;
   document.querySelectorAll('.nav-item').forEach(el=>{if(el.getAttribute('onclick')?.includes(`'${view}'`))el.classList.add('active');});
   renderView(view);
   if(window.innerWidth<=768)closeSidebar();
 }
 function renderView(v){
-  ({alertas:renderAlertas,cargas:renderCargas,nueva_carga:renderNuevaCarga,cobranza:renderCobranza,cashflow:renderCashFlow,liberaciones:renderLiberaciones,pagares:renderPagares,log:renderLog,config:renderConfig}[v]||renderAlertas)();
+  ({alertas:renderAlertas,cargas:renderCargas,nueva_carga:renderNuevaCarga,cobranza:renderCobranza,cashflow:renderCashFlow,liberaciones:renderLiberaciones,pagares:renderPagares,tarifario:renderTarifario,log:renderLog,config:renderConfig}[v]||renderAlertas)();
   mostrarAvisoColumnas();
 }
 
@@ -3104,6 +3547,9 @@ function formToRowData(d){
   set(COL.INCOTERM, d.incoterm);
   set(COL.INVOICE_FC_SERV, d.invoiceFCServ);
   set(COL.PRICE_SERV, d.priceFCServ);
+  set(COL.PROVEEDOR_FLETE, d.proveedorFlete);
+  set(COL.FC_FLETE, d.fcFlete);
+  set(COL.MONTO_FLETE, d.montoFlete);
   set(COL.PAGARE_ENVIADO, d.pagareEnviado);
   set(COL.PAGARE_FIRMADO, d.pagareFirmado);
   set(COL.FECHA_EST_COBRO, d.fechaEstCobro);
@@ -3216,9 +3662,46 @@ function dateField(prefix, id, label, value=''){
   </div>`;
 }
 
+// Compara contra el tarifario con lo que hay escrito EN EL FORMULARIO, no con lo
+// que esta guardado: asi ves el desvio mientras cargas el importe, antes de
+// guardar nada.
+function actualizarComparadorFlete(prefix){
+  const caja = document.getElementById(prefix + '-flete-cmp');
+  if(!caja) return;
+  const val = id => { const el = document.getElementById(prefix + '-' + id); return el ? (el.value||'') : ''; };
+  // Fila falsa con los campos que le importan a la comparacion
+  const fake = [];
+  fake[COL.PORT] = val('port');
+  fake[COL.SHIPPING] = val('shipping');
+  fake[COL.ETD] = val('etd');
+  fake[COL.CONTAINERS] = val('containers');
+  fake[COL.MONTO_FLETE] = val('montoFlete');
+
+  if(!tarifas.length){
+    caja.innerHTML = _tarifarioError
+      ? '<span style="color:var(--warn);">No pude leer el tarifario: ' + _tarifarioError + '</span>'
+      : 'Sin tarifario cargado. <span style="color:var(--accent);cursor:pointer;" onclick="showView(\'tarifario\')">Ver el tarifario →</span>';
+    caja.style.background = 'var(--bg3)';
+    return;
+  }
+  const cmp = compararFlete(fake);
+  const color = COLOR_FLETE[cmp.estado] || 'var(--text3)';
+  const punto = cmp.estado === 'ok' ? '●' : cmp.estado === 'warn' ? '▲' : cmp.estado === 'bad' ? '■' : '○';
+  let extra = '';
+  if(cmp.tarifa){
+    extra = ' <span style="color:var(--text3);">· ' + cmp.tarifa.destino + ' / ' + cmp.tarifa.carrier +
+            (cmp.tarifa.forwarder ? ' / ' + cmp.tarifa.forwarder : '') + '</span>';
+    if(cmp.tarifa.posterior) extra += ' <span style="color:var(--warn);">(es una tarifa posterior a esta carga)</span>';
+  }
+  caja.innerHTML = '<span style="color:' + color + ';font-weight:600;">' + punto + ' ' + textoComparacionFlete(cmp) + '</span>' + extra;
+  caja.style.background = cmp.estado === 'bad' ? 'rgba(255,59,48,.07)' : cmp.estado === 'warn' ? 'rgba(247,148,29,.07)' : 'var(--bg3)';
+}
+
 function buildCargaForm(prefix, d={}, fullEdit=false){
+  // Estos campos cambian el resultado de la comparacion contra el tarifario.
+  const AFECTAN_FLETE = ['montoFlete','containers','port','shipping','etd'];
   const field = (id, label, value='', type='text', placeholder='') =>
-    `<div class="config-field"><div class="config-label">${label}</div><input class="config-input" id="${prefix}-${id}" type="${type}" value="${value}" placeholder="${placeholder}"></div>`;
+    `<div class="config-field"><div class="config-label">${label}</div><input class="config-input" id="${prefix}-${id}" type="${type}" value="${value}" placeholder="${placeholder}"${AFECTAN_FLETE.indexOf(id)>=0?` oninput="actualizarComparadorFlete('${prefix}')"`:''}></div>`;
 
   const section = (title) =>
     `<div style="grid-column:1/-1;margin-top:12px;padding-bottom:6px;border-bottom:1px solid var(--border);"><span style="font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.5px;color:var(--text3);">${title}</span></div>`;
@@ -3263,6 +3746,13 @@ function buildCargaForm(prefix, d={}, fullEdit=false){
     ${section('Pagaré')}
     ${field('pagareEnviado','Pagare enviado',d.pagareEnviado||'','text','ej: SI')}
     ${field('pagareFirmado','Pagare firmado',d.pagareFirmado||'','text','ej: SI')}
+    ${section('Pago a forwarder')}
+    ${smartField(prefix,'proveedorFlete','Proveedor de flete',d.proveedorFlete||'','ej: Done Deal', COL.PROVEEDOR_FLETE)}
+    ${field('fcFlete','FC Flete',d.fcFlete||'','text','ej: 4521')}
+    ${field('montoFlete','Importe USD/FCL',d.montoFlete||'','text','ej: 3200')}
+    <div class="config-field" style="grid-column:1/-1;">
+      <div id="${prefix}-flete-cmp" style="font-size:11px;padding:8px 10px;border-radius:8px;background:var(--bg3);color:var(--text3);"></div>
+    </div>
     ${section('Cobranza')}
     ${dateField(prefix,'fechaEstCobro','Fecha estimada de cobro',d.fechaEstCobro||'')}
     ${dateField(prefix,'fechaCobro','Fecha de cobro real',d.fechaCobro||'')}`;
@@ -3327,6 +3817,9 @@ function renderEditCarga(rowIdx){
     invoiceFCServ:    g('INVOICE_FC_SERV'),
     priceFCServ:      g('PRICE_SERV'),
     customer:         g('CUSTOMER'),
+    proveedorFlete:   g('PROVEEDOR_FLETE'),
+    fcFlete:          g('FC_FLETE'),
+    montoFlete:       g('MONTO_FLETE'),
     pagareEnviado:    g('PAGARE_ENVIADO'),
     pagareFirmado:    g('PAGARE_FIRMADO'),
     fechaEstCobro:    g('FECHA_EST_COBRO'),
@@ -3345,26 +3838,10 @@ function renderEditCarga(rowIdx){
 }
 
 
+// Una sola carga: mismo camino que el bulk. Asi el mail sale igual y va a parar
+// a la casilla de quien lo pide, sin una segunda version que mantener.
 async function solicitarLiberacionViaAppScript(rowIdx){
-  const row=allRows[rowIdx];
-  if(!row) return;
-  const sheetRow=row._sheetRow;
-  if(!sheetRow){alert('No se pudo determinar la fila en la planilla.');return;}
-  const bl=(row[COL.BL]||'').trim();
-  const customer=(row[COL.CUSTOMER]||'').trim();
-  const okLib = await confirmarAccion('Solicitar la liberación',
-    'Se crea el borrador en Gmail y se marca TELEX = "Solicitado, falta ok" en la planilla.',
-    row, { icono:'🚢', okLabel:'Solicitar liberación' });
-  if(!okLib) return;
-  showToast('Procesando...');
-  const ok=await callAppScript('liberacion',sheetRow,sheetRow);
-  if(ok){
-    const inv1=(row[COL.INVOICE_CLIENTE]||'').trim();
-    const inv2=(row[COL.INVOICE_FC_SERV]||'').trim();
-    await appendLog({fc:inv1||'',fcServ:inv2||'',bl,customer,accion:'solicitar liberacion',detalle:'Via AppScript - fila '+sheetRow});
-    await loadLog();
-    await loadData();
-  }
+  await solicitarLiberacionBulkViaAppScript([rowIdx]);
 }
 
 async function solicitarLiberacionBulkViaAppScript(rowIndices){
@@ -3380,22 +3857,72 @@ async function solicitarLiberacionBulkViaAppScript(rowIndices){
             + rows.map(function(r){ return '<div>• BL '+((r[COL.BL]||'').trim()||'—')+' · ETA '+fmtDate(r[COL.ETA])+'</div>'; }).join('') });
   if(!okLibB) return;
   showToast('Procesando...');
-  // Las filas EXACTAS, no el rango: si la seleccion tiene huecos (750 y 755),
-  // mandar filaInicio/filaFin hacia que el AppScript liberara tambien las cuatro
-  // del medio, que nadie habia elegido. Mismo problema que tenia la solicitud FC.
-  const data=await callAppScriptFilas('liberacion', sheetRows);
-  if(data && data.ok){
-    showToast('\u2713 Borrador creado');
-    for(let i=0;i<rowIndices.length;i++){
-      const row=rows[i];
-      const bl=(row[COL.BL]||'').trim();
-      const inv1=(row[COL.INVOICE_CLIENTE]||'').trim();
-      const inv2=(row[COL.INVOICE_FC_SERV]||'').trim();
-      await appendLog({fc:inv1||'',fcServ:inv2||'',bl,customer:(row[COL.CUSTOMER]||'').trim(),accion:'solicitar liberacion (bulk)',detalle:'Via AppScript - filas '+sheetRows.join(', ')});
-    }
-    await loadLog();
-    await loadData();
+  // El borrador lo arma el hub con el token del usuario logueado, asi aparece en
+  // SU casilla. Antes salia del AppScript y caia siempre en la del dueño.
+  showToast('Generando borrador...');
+  const mail = armarLiberacion(rows);
+  const rLib = destinatariosLiberacion();
+  const hecho = await createGmailDraftHtml(rLib.to, rLib.cc, mail.asunto, mail.texto, mail.html);
+  if(!hecho) return;
+
+  for(let i=0;i<rowIndices.length;i++){
+    const row=rows[i];
+    await writeCell(rowIndices[i], COL.TELEX, 'Solicitado, falta ok');
+    const bl=(row[COL.BL]||'').trim();
+    const inv1=(row[COL.INVOICE_CLIENTE]||'').trim();
+    const inv2=(row[COL.INVOICE_FC_SERV]||'').trim();
+    await appendLog({fc:inv1||'',fcServ:inv2||'',bl,customer:(row[COL.CUSTOMER]||'').trim(),accion:'solicitar liberacion (bulk)',detalle:'filas '+sheetRows.join(', ')});
   }
+  await pintarCeldas(sheetRows, COL.TELEX, COLOR_NARANJA);
+  await loadLog();
+  await loadData();
+}
+
+// Mismo mail que genera el AppScript: tabla naranja con los datos del embarque y
+// el pedido de OK a la contraparte.
+function armarLiberacion(filas){
+  const nc = getNegocioConfig();
+  const t = (row, c) => (row[c]||'').toString().trim();
+  const det = filas.map(r => ({
+    containers: t(r, COL.CONTAINERS), booking: t(r, COL.BOOKING), bl: t(r, COL.BL),
+    shipping: t(r, COL.SHIPPING), vessel: t(r, COL.VESSEL),
+    consol: t(r, COL.CONSOLIDACION) ? fmtDate(r[COL.CONSOLIDACION]) : '',
+    etd: t(r, COL.ETD) ? fmtDate(r[COL.ETD]) : '', eta: t(r, COL.ETA) ? fmtDate(r[COL.ETA]) : '',
+    port: t(r, COL.PORT)
+  }));
+  const unicos = k => [...new Set(det.map(d => d[k]).filter(Boolean))];
+  const etas = unicos('eta'), puertos = unicos('port');
+  const etaTxt = etas.length ? etas.join(' - ') : 's/d';
+  const puertoTxt = puertos.length ? puertos.join(' - ') : 's/d';
+  const exporter = (filas[0][COL.EXPORTER]||'').toString().trim() || 'Argen Peanuts';
+  const asunto = 'Solicitud liberación - ' + nc.label + ' - ' + exporter + ' - ' +
+                 (etas.length > 1 ? 'ETAs ' : 'ETA ') + etaTxt + ' - ' + puertoTxt;
+
+  const naranja = '#F7941D', gris = '#F9F9F9';
+  const heads = ['Containers','Booking','BL','Shipping Line','Vessel','Consolidación','ETD','ETA','Port'];
+  let tabla = '<table border="1" cellpadding="0" cellspacing="0" style="border-collapse:collapse;font-family:Arial,sans-serif;font-size:12px;"><thead><tr>';
+  heads.forEach(h => { tabla += '<th style="background-color:' + naranja + ';color:#FFFFFF;font-weight:bold;text-align:left;padding:8px 10px;border:1px solid #d97c0a;">' + h + '</th>'; });
+  tabla += '</tr></thead><tbody>';
+  det.forEach((f, i) => {
+    const td = 'padding:7px 10px;border:1px solid #cccccc;color:#000000;background-color:' + (i % 2 === 0 ? '#FFFFFF' : gris) + ';';
+    tabla += '<tr><td style="' + td + '">' + f.containers + '</td><td style="' + td + '">' + f.booking
+          + '</td><td style="' + td + '">' + f.bl + '</td><td style="' + td + '">' + f.shipping
+          + '</td><td style="' + td + '">' + f.vessel + '</td><td style="' + td + '">' + f.consol
+          + '</td><td style="' + td + '">' + f.etd + '</td><td style="' + td + 'font-weight:bold;">' + f.eta
+          + '</td><td style="' + td + '">' + f.port + '</td></tr>';
+  });
+  tabla += '</tbody></table>';
+
+  const plural = det.length > 1;
+  const cp = (nc.contraparte || {}).nombre || '';
+  const P = "font-family:Arial,sans-serif;font-size:13px;";
+  const html = '<p style="' + P + '">Buenos días!</p>'
+    + '<p style="' + P + '">' + (plural ? 'Las siguientes cargas' : 'La siguiente carga') + ' de ' + nc.label + ' '
+    + (plural ? 'están' : 'está') + ' en condiciones de ser liberada' + (plural ? 's' : '') + ':</p>'
+    + tabla
+    + '<p style="' + P + '">' + (cp ? '@' + cp + ' aguardamos por el ok.' : 'Aguardamos por el ok.') + '</p>';
+  const texto = 'Buenos días!\n\nAguardamos ok para liberar.';
+  return { asunto, html, texto };
 }
 
 // ─── LIBERACIONES ────────────────────────────────────────────────────────────
@@ -4139,6 +4666,13 @@ async function marcarBLOriginalPendientes(){
 async function marcarPagareBulk(estadoKey){
   const est = ESTADOS_PAGARE[estadoKey];
   if(!est) return;
+  // En Buzaram las columnas de pagare no existen. La vista ya lo dice, pero la
+  // funcion es llamable igual (un atajo viejo, el historial del navegador), y sin
+  // esta guarda pedia una confirmacion para despues no poder escribir nada.
+  if(getNegocioConfig().sinPagares){
+    showToast(getNegocioConfig().label + ' no usa pagarés', 'err');
+    return;
+  }
   if(!accessToken){ alert('Conectate con Google primero para escribir en la planilla.'); return; }
   const idx = [...(window._pagSel||[])].filter(i => allRows[i]);
   if(!idx.length) return;
@@ -4435,6 +4969,248 @@ function renderPagares(){
   }
 
   document.getElementById('content').innerHTML = html;
+}
+
+// ─── EDICION DEL TARIFARIO ───────────────────────────────────────────────────
+// Se escribe la fila entera de una, en el orden en que estan los encabezados.
+// Si alguien reordena las columnas de la hoja, el orden se relee de ahi y no de
+// una constante: por eso se guarda el indice de cada campo al cargar.
+const CAMPOS_TARIFA = [
+  {k:'fechaTxt',  label:'Fecha',       ph:'SEP-2026'},
+  {k:'pol',       label:'POL',         ph:'Buenos Aires'},
+  {k:'destino',   label:'Destino *',   ph:'Norfolk'},
+  {k:'cnt',       label:'CNT',         ph:"40'HC"},
+  {k:'flete',     label:'Flete',       ph:'2800'},
+  {k:'carrier',   label:'Carrier *',   ph:'MSC'},
+  {k:'allIn',     label:'All in',      ph:'3200'},
+  {k:'diasLibres',label:'Días libres', ph:'14'},
+  {k:'forwarder', label:'Forwarder',   ph:'Done Deal'}
+];
+
+let _tarifaEditando = null;   // indice en tarifas, o null si es nueva
+
+function nuevaTarifa(){ abrirFormTarifa(null); }
+function editarTarifa(i){ abrirFormTarifa(i); }
+
+function abrirFormTarifa(i){
+  if(!accessToken){ alert('Conectate con Google primero para escribir en la planilla.'); return; }
+  _tarifaEditando = i;
+  const t = (i === null || i === undefined) ? {} : tarifas[i];
+  const val = k => {
+    const v = t[k];
+    if(v === undefined || v === null || (typeof v === 'number' && isNaN(v))) return '';
+    return String(v).replace(/"/g,'&quot;');
+  };
+  const campos = CAMPOS_TARIFA.map(c =>
+    `<div class="config-field"><div class="config-label">${c.label}</div>
+      <input class="config-input" id="tf-${c.k}" value="${val(c.k)}" placeholder="${c.ph}"></div>`).join('');
+
+  document.getElementById('content').innerHTML = `
+  <div class="config-section" style="max-width:760px;">
+    <div class="config-title">${i===null||i===undefined ? 'Nueva tarifa' : 'Editar tarifa'}</div>
+    <div class="config-desc">${i===null||i===undefined
+      ? 'Se agrega una fila al final de la hoja ' + HOJA_TARIFARIO + '.'
+      : 'Se modifica la fila ' + t._sheetRow + ' de la hoja ' + HOJA_TARIFARIO + '.'}
+      La fecha puede ir como SEP-2026, 09/2026 o una fecha completa.</div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:0 16px;">${campos}</div>
+    <div class="config-save">
+      <button class="btn" onclick="showView('tarifario')" style="margin-right:8px;">Cancelar</button>
+      <button class="btn primary" onclick="guardarTarifa()">Guardar</button>
+    </div>
+  </div>`;
+}
+
+async function guardarTarifa(){
+  const g = k => (document.getElementById('tf-' + k)||{}).value || '';
+  const datos = {}; CAMPOS_TARIFA.forEach(c => { datos[c.k] = g(c.k).trim(); });
+  if(!datos.destino || !datos.carrier){
+    alert('Destino y Carrier son obligatorios: sin esos dos, la tarifa no se puede cruzar con ninguna carga.');
+    return;
+  }
+  if(datos.fechaTxt && mesTarifa(datos.fechaTxt) === null){
+    alert('No entiendo la fecha “' + datos.fechaTxt + '”.\n\nProbá con SEP-2026, 09/2026 o 01/09/2026.');
+    return;
+  }
+  const esNueva = _tarifaEditando === null || _tarifaEditando === undefined;
+  const t = esNueva ? null : tarifas[_tarifaEditando];
+
+  const ok = await showConfirm(esNueva ? 'Agregar tarifa' : 'Guardar cambios',
+    esNueva ? 'Se agrega una fila nueva a la hoja ' + HOJA_TARIFARIO + '.'
+            : 'Se sobrescribe la fila ' + t._sheetRow + ' de la hoja ' + HOJA_TARIFARIO + '.',
+    { icono:'🚢', okLabel:'Guardar',
+      detalle: '<div><span style="color:var(--text3);">Destino:</span> <b>' + datos.destino + '</b></div>'
+             + '<div><span style="color:var(--text3);">Carrier:</span> <b>' + datos.carrier + '</b></div>'
+             + '<div><span style="color:var(--text3);">Mes:</span> <b>' + (mesLegible(mesTarifa(datos.fechaTxt))) + '</b></div>'
+             + '<div><span style="color:var(--text3);">All in:</span> <b>' + (datos.allIn||'—') + '</b></div>' });
+  if(!ok) return;
+
+  const fila = CAMPOS_TARIFA.map(c => datos[c.k]);
+  const nc = getNegocioConfig();
+  const sid = nc.sheetId || cfg.sheetId;
+  showToast('Guardando...');
+  try{
+    let url, body;
+    if(esNueva){
+      url = 'https://sheets.googleapis.com/v4/spreadsheets/' + sid + '/values/' +
+            encodeURIComponent(HOJA_TARIFARIO + '!A:I') +
+            ':append?valueInputOption=USER_ENTERED&insertDataOption=INSERT_ROWS';
+      body = { values:[fila] };
+    } else {
+      url = 'https://sheets.googleapis.com/v4/spreadsheets/' + sid + '/values/' +
+            encodeURIComponent(HOJA_TARIFARIO + '!A' + t._sheetRow + ':I' + t._sheetRow) +
+            '?valueInputOption=USER_ENTERED';
+      body = { values:[fila] };
+    }
+    const r = await fetch(url, {
+      method: esNueva ? 'POST' : 'PUT',
+      headers:{ Authorization:'Bearer ' + accessToken, 'Content-Type':'application/json' },
+      body: JSON.stringify(body)
+    });
+    if(!r.ok){ alert('No se pudo guardar (HTTP ' + r.status + ').'); return; }
+    await appendLog({ customer: datos.destino, accion: esNueva ? 'tarifa agregada' : 'tarifa modificada',
+      detalle: datos.destino + ' / ' + datos.carrier + ' / ' + (datos.fechaTxt||'sin fecha') +
+               ' · all in ' + (datos.allIn||'—') + ' · ' + (datos.forwarder||'sin forwarder') });
+    showToast('✓ Tarifa guardada');
+    await loadTarifario();
+    await loadLog();
+    showView('tarifario');
+  }catch(e){
+    console.error('guardarTarifa:', e);
+    alert('No se pudo guardar la tarifa: ' + e.message);
+  }
+}
+
+// ─── VISTA TARIFARIO ─────────────────────────────────────────────────────────
+let tarifarioMes = '';        // '' = todos
+let tarifarioBusqueda = '';
+
+function setTarifarioMes(v){ tarifarioMes = v; renderTarifario(); }
+
+async function recargarTarifario(){
+  showToast('Leyendo el tarifario...');
+  await loadTarifario();
+  renderTarifario();
+  showToast('✓ Tarifario actualizado');
+}
+
+function renderTarifario(){
+  const nc = getNegocioConfig();
+  const cont = document.getElementById('content');
+
+  if(!tarifas.length){
+    const motivo = _tarifarioError
+      ? 'No pude leer la hoja: ' + _tarifarioError
+      : 'No encontré la hoja “' + HOJA_TARIFARIO + '” en la planilla de ' + nc.label + ', o está vacía.';
+    cont.innerHTML = `<div class="empty"><div class="empty-icon">🚢</div>
+      <div style="margin-bottom:8px;">${motivo}</div>
+      <div style="font-size:12px;color:var(--text3);margin-bottom:16px;max-width:460px;">
+        La hoja tiene que llamarse <b>${HOJA_TARIFARIO}</b> y su primera fila ser los encabezados:
+        FECHA · POL · DESTINO · CNT · FLETE · CARRIER · ALL IN · DIAS LIBRES · FORWARDER
+      </div>
+      <button class="btn primary" onclick="recargarTarifario()">Volver a leer</button></div>`;
+    return;
+  }
+
+  // Agrupar por mes para el selector
+  const meses = [...new Set(tarifas.map(t => t.mes).filter(Boolean))].sort((a,b) => b - a);
+  const q = tarifarioBusqueda.trim().toLowerCase();
+  let visibles = tarifas.slice();
+  if(tarifarioMes) visibles = visibles.filter(t => String(t.mes) === String(tarifarioMes));
+  if(q) visibles = visibles.filter(t =>
+    [t.destino, t.carrier, t.forwarder, t.pol, t.cnt].some(v => (v||'').toLowerCase().includes(q)));
+
+  // Orden: mes mas nuevo primero, despues destino
+  visibles.sort((a,b) => (b.mes||0) - (a.mes||0) || normTar(a.destino).localeCompare(normTar(b.destino)));
+
+  const forwarders = [...new Set(tarifas.map(t => claveForwarder(t.forwarder)).filter(Boolean))];
+  const destinos = [...new Set(tarifas.map(t => normTar(t.destino)))].length;
+
+  let html = `<div class="stats-row">
+    <div class="stat-card"><div class="stat-label">Tarifas</div><div class="stat-value">${tarifas.length}</div><div class="stat-sub">${tarifarioMes?visibles.length+' en el mes elegido':'de todos los meses'}</div></div>
+    <div class="stat-card"><div class="stat-label">Destinos</div><div class="stat-value">${destinos}</div><div class="stat-sub">puertos distintos</div></div>
+    <div class="stat-card"><div class="stat-label">Forwarders</div><div class="stat-value">${forwarders.length}</div><div class="stat-sub">${forwarders.join(', ')||'—'}</div></div>
+    <div class="stat-card"><div class="stat-label">Último mes</div><div class="stat-value" style="font-size:18px">${mesLegible(meses[0])}</div><div class="stat-sub">el más reciente cargado</div></div>
+  </div>`;
+
+  const opts = ['<option value="">Todos los meses</option>']
+    .concat(meses.map(m => `<option value="${m}" ${String(tarifarioMes)===String(m)?'selected':''}>${mesLegible(m)}</option>`)).join('');
+
+  html += `<div class="table-wrap">
+    <div class="table-top" style="flex-direction:column;align-items:flex-start;gap:10px;padding:14px 16px;">
+      <div style="display:flex;align-items:center;justify-content:space-between;width:100%;flex-wrap:wrap;gap:8px;">
+        <span style="font-size:13px;font-weight:600;color:var(--text);">${visibles.length} tarifa${visibles.length===1?'':'s'}</span>
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+          <div style="position:relative;display:flex;align-items:center;">
+            <span style="position:absolute;left:9px;font-size:13px;color:var(--text3);">🔍</span>
+            <input id="tarifario-search" type="text" placeholder="Destino, naviera, forwarder..." value="${tarifarioBusqueda.replace(/"/g,'&quot;')}"
+              oninput="tarifarioBusqueda=this.value;if(this._t)clearTimeout(this._t);this._t=setTimeout(()=>{const v=this.value;renderTarifario();setTimeout(()=>{const el=document.getElementById('tarifario-search');if(el){el.focus();el.setSelectionRange(v.length,v.length);}},0);},300);"
+              style="font-size:11px;font-family:var(--mono);padding:5px 10px 5px 30px;border-radius:8px;border:1px solid ${tarifarioBusqueda?'var(--accent)':'var(--border)'};background:var(--bg2);color:var(--text);width:210px;outline:none;">
+          </div>
+          <select onchange="setTarifarioMes(this.value)" style="font-size:11px;font-family:var(--mono);padding:5px 8px;border-radius:8px;border:1px solid var(--border);background:var(--bg2);color:var(--text2);cursor:pointer;">${opts}</select>
+          <button class="btn" style="font-size:11px;padding:5px 12px;" onclick="recargarTarifario()">↻ Releer</button>
+          <button class="btn primary" style="font-size:11px;padding:5px 12px;" onclick="nuevaTarifa()">＋ Nueva tarifa</button>
+        </div>
+      </div>
+    </div>
+    <div style="overflow-x:auto;"><table>
+      <thead><tr>
+        <th>Fecha</th><th>POL</th><th>Destino</th><th>CNT</th>
+        <th style="text-align:right;">Flete</th><th>Carrier</th>
+        <th style="text-align:right;">All in</th><th>Días libres</th><th>Forwarder</th><th></th>
+      </tr></thead><tbody>`;
+
+  if(!visibles.length){
+    html += `<tr><td colspan="10"><div class="empty" style="padding:30px;">Nada que coincida con el filtro.</div></td></tr>`;
+  } else {
+    visibles.forEach(t => {
+      const i = tarifas.indexOf(t);
+      const num = v => isNaN(v) ? '—' : 'USD ' + v.toLocaleString('es-AR',{maximumFractionDigits:0});
+      html += `<tr>
+        <td class="mono" style="white-space:nowrap;">${mesLegible(t.mes)}${t.mes?'':' <span style="color:var(--warn);" title="No pude interpretar la fecha">⚠</span>'}</td>
+        <td class="mono" style="font-size:11px;">${t.pol||'—'}</td>
+        <td style="font-weight:500">${t.destino||'—'}</td>
+        <td class="mono" style="font-size:11px;">${t.cnt||'—'}</td>
+        <td class="mono" style="text-align:right;">${num(t.flete)}</td>
+        <td style="font-size:11px;">${t.carrier||'—'}</td>
+        <td class="mono" style="text-align:right;font-weight:600;">${num(t.allIn)}</td>
+        <td class="mono" style="font-size:11px;">${t.diasLibres||'—'}</td>
+        <td style="font-size:11px;color:var(--text3);">${t.forwarder||'—'}</td>
+        <td><button class="row-action" onclick="editarTarifa(${i})">✎ Editar</button></td>
+      </tr>`;
+    });
+  }
+  html += `</tbody></table></div></div>`;
+
+  // Cargas cuyo flete facturado no coincide con la tarifa
+  const desvios = allRows.map((row, idx) => ({row, idx, cmp: compararFlete(row)}))
+    .filter(x => x.cmp.estado === 'warn' || x.cmp.estado === 'bad')
+    .sort((a,b) => Math.abs(b.cmp.mejor.pct) - Math.abs(a.cmp.mejor.pct));
+  if(desvios.length){
+    html += `<div class="table-wrap">
+      <div class="table-top"><span style="font-size:13px;font-weight:600;color:var(--text);">Cargas fuera de tarifa — ${desvios.length}</span>
+      <span style="font-size:11px;color:var(--text3);">lo facturado no coincide con el tarifario vigente</span></div>
+      <div style="overflow-x:auto;"><table>
+        <thead><tr><th>Lote</th><th>Customer</th><th>Destino</th><th>Naviera</th><th>ETD</th>
+          <th style="text-align:right;">Facturado</th><th style="text-align:right;">Tarifa</th><th style="text-align:right;">Diferencia</th><th></th></tr></thead><tbody>`;
+    desvios.forEach(x => {
+      const c = x.cmp, color = COLOR_FLETE[c.estado];
+      const signo = c.mejor.dif >= 0 ? '+' : '−';
+      html += `<tr>
+        <td class="mono" style="color:var(--accent);font-size:11px;">${(x.row[COL.LOTS]||'—').substring(0,18)}</td>
+        <td style="font-weight:500">${x.row[COL.CUSTOMER]||'—'}</td>
+        <td style="font-size:11px;">${x.row[COL.PORT]||'—'}</td>
+        <td style="font-size:11px;color:var(--text3);">${x.row[COL.SHIPPING]||'—'}</td>
+        <td class="mono">${fmtDate(x.row[COL.ETD])}</td>
+        <td class="mono" style="text-align:right;">USD ${Math.round(c.importe).toLocaleString('es-AR')}${c.mejor.modo==='total'?`<div style="font-size:9px;color:var(--text3);">${Math.round(c.mejor.valor).toLocaleString('es-AR')} x ${c.contenedores} cnt</div>`:''}</td>
+        <td class="mono" style="text-align:right;color:var(--text3);">USD ${Math.round(c.ref).toLocaleString('es-AR')}<div style="font-size:9px;">${mesLegible(c.tarifa.mes)}</div></td>
+        <td class="mono" style="text-align:right;color:${color};font-weight:600;">${signo}${Math.abs(c.mejor.pct).toFixed(1)}%</td>
+        <td><button class="row-action" onclick="renderEditCarga(${x.idx})">✎ Ver carga</button></td>
+      </tr>`;
+    });
+    html += `</tbody></table></div></div>`;
+  }
+
+  cont.innerHTML = html;
 }
 
 async function renderLog(){
