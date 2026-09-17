@@ -2050,6 +2050,43 @@ function setSheetStatus(state,text){
   document.getElementById('sheet-status-text').textContent=text;
 }
 
+// ─── ORDENES QUE SIRVEN PARA TRABAJAR ────────────────────────────────────────
+// Ordenar por fecha ascendente trae primero cargas que llegaron hace meses;
+// descendente, las que faltan dos meses. En los dos casos lo accionable queda
+// enterrado en el medio. Estas dos vistas resuelven eso de distinta manera.
+
+// Cuantas filas muestra "como la planilla". Son las ultimas del sheet, que es lo
+// que se mira cuando se abre Sheets y se va al final, antes de TOTALES.
+const FILAS_ULTIMAS = 35;
+
+// Distancia en dias a hoy, sin signo: sirve para poner primero lo que esta
+// pasando ahora, venga de atras o de adelante.
+function distanciaAHoy(v){
+  const d = daysFrom(v);
+  return d === null ? null : Math.abs(d);
+}
+
+// Compara dos filas por cercania a hoy. Lo de fecha desconocida va al final.
+function cmpCercaDeHoy(a, b, col){
+  const da = distanciaAHoy(a[col]), db = distanciaAHoy(b[col]);
+  if(da === null && db === null) return 0;
+  if(da === null) return 1;
+  if(db === null) return -1;
+  return da - db;
+}
+
+// Orden de la planilla: por numero de fila. Las ultimas cargadas al final,
+// igual que en Sheets.
+function cmpPlanilla(a, b){
+  return (a._sheetRow || 0) - (b._sheetRow || 0);
+}
+
+// Se queda con las ultimas N filas de la planilla, conservando el orden de Sheets.
+function ultimasFilas(lista, n){
+  const ordenada = [...lista].sort(cmpPlanilla);
+  return n && ordenada.length > n ? ordenada.slice(-n) : ordenada;
+}
+
 // ─── TARIFARIO ───────────────────────────────────────────────────────────────
 // Hoja "Tarifario" dentro de la planilla de AXT. El forwarder manda una tanda de
 // precios por mes y ahi se van acumulando, sin pisar los anteriores: por eso una
@@ -2978,7 +3015,9 @@ function renderAlertas(){
 }
 
 let cargasShowAll = false;
-let cargasSort = 'eta_asc';
+// Arranca en "mas cerca de hoy": es lo que uno quiere ver al abrir la vista.
+// Los ordenes por fecha siguen estando en el selector.
+let cargasSort = 'cerca_hoy';
 let cargasSearch = ''; // búsqueda libre
 let cargasPagareStates = new Set(); // multi-select pagaré
 let cargasDropFilters = {
@@ -3094,7 +3133,12 @@ function renderCargas(showAll, sort){
 
   // Sort using absolute date value, not relative days
   const dateVal = (v) => { const d = parseDate(v); return d ? d.getTime() : null; };
+  // "Como la planilla" recorta ANTES de ordenar: son las ultimas 35 filas del
+  // sheet, mostradas en el mismo orden en que se ven en Sheets.
+  if(cargasSort === 'planilla') rows = ultimasFilas(rows, FILAS_ULTIMAS);
   rows = [...rows].sort((a,b) => {
+    if(cargasSort === 'planilla') return cmpPlanilla(a, b);
+    if(cargasSort === 'cerca_hoy') return cmpCercaDeHoy(a, b, COL.ETA);
     if(cargasSort === 'cliente_az') return (a[COL.CUSTOMER]||'').localeCompare(b[COL.CUSTOMER]||'');
     if(cargasSort === 'cliente_za') return (b[COL.CUSTOMER]||'').localeCompare(a[COL.CUSTOMER]||'');
     let da, db;
@@ -3129,6 +3173,8 @@ function renderCargas(showAll, sort){
     `<span onclick="${onclick}" style="font-size:11px;font-family:var(--mono);padding:5px 12px;border-radius:20px;border:1px solid ${active?'var(--accent)':'var(--border2)'};cursor:pointer;background:${active?'var(--accent)':'var(--bg2)'};color:${active?'#fff':'var(--text3)'};transition:all .15s;">${label}</span>`;
 
   const sortSel = `<select onchange="renderCargas(undefined,this.value)" style="font-size:11px;font-family:var(--mono);padding:5px 8px;border-radius:8px;border:1px solid var(--border);background:var(--bg2);color:var(--text2);cursor:pointer;outline:none;">
+    <option value="cerca_hoy" ${cargasSort==='cerca_hoy'?'selected':''}>Más cerca de hoy</option>
+    <option value="planilla" ${cargasSort==='planilla'?'selected':''}>Últimas ${FILAS_ULTIMAS} (como la planilla)</option>
     <option value="eta_asc" ${cargasSort==='eta_asc'?'selected':''}>ETA próximo → lejano</option>
     <option value="eta_desc" ${cargasSort==='eta_desc'?'selected':''}>ETA lejano → próximo</option>
     <option value="cobro_asc" ${cargasSort==='cobro_asc'?'selected':''}>Cobro próximo → lejano</option>
@@ -3299,6 +3345,7 @@ function renderCargas(showAll, sort){
       </div>
       <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
         ${searchHtml}
+        ${sortSel}
         ${sel('cliente', cargasDropFilters.cliente, 'Cliente', uniqueClientes.map(c=>({val:c,label:c})))}
         ${pagareDropHtml}
         ${sel('docs', cargasDropFilters.docs, 'Docs', [{val:'pendientes',label:'Pendientes'},{val:'completos',label:'Completos'}])}
@@ -4267,7 +4314,13 @@ function renderCobranza(filterKey, filterVal){
     rows = rows.filter(r => (r[COL.CUSTOMER]||'').trim() === cobranzaFilters.cliente);
   }
 
+  // Igual que en Cargas: "como la planilla" recorta a las ultimas filas antes de
+  // ordenar; "cerca de hoy" pone primero lo que vence estos dias, venga de atras
+  // o de adelante, en vez de arrancar por lo vencido hace medio año.
+  if(cobranzaFilters.sort === 'planilla') rows = ultimasFilas(rows, FILAS_ULTIMAS);
   rows = [...rows].sort((a,b) => {
+    if(cobranzaFilters.sort === 'planilla')  return cmpPlanilla(a, b);
+    if(cobranzaFilters.sort === 'cerca_hoy') return cmpCercaDeHoy(a, b, getCobroCol());
     const da = daysFrom(a[getCobroCol()]);
     const db = daysFrom(b[getCobroCol()]);
     if(da===null&&db===null) return 0;
@@ -4287,6 +4340,8 @@ function renderCobranza(filterKey, filterVal){
   </select>`;
 
   const sortSel = `<select onchange="renderCobranza('sort',this.value)" style="font-size:11px;font-family:var(--mono);padding:5px 8px;border-radius:8px;border:1px solid var(--border);background:var(--bg2);color:var(--text2);outline:none;cursor:pointer;">
+    <option value="cerca_hoy" ${cobranzaFilters.sort==='cerca_hoy'?'selected':''}>Más cerca de hoy</option>
+    <option value="planilla" ${cobranzaFilters.sort==='planilla'?'selected':''}>Últimas ${FILAS_ULTIMAS} (como la planilla)</option>
     <option value="due_asc" ${cobranzaFilters.sort==='due_asc'?'selected':''}>Vencimiento: próximo primero</option>
     <option value="due_desc" ${cobranzaFilters.sort==='due_desc'?'selected':''}>Vencimiento: lejano primero</option>
   </select>`;
@@ -4717,7 +4772,7 @@ function renderPagares(){
   if(!window._pagSel) window._pagSel = new Set();
 
   // Separar las que no llevan pagare del resto
-  const conPagare = [], noCorresponde = [];
+  let conPagare = []; const noCorresponde = [];
   allRows.forEach((row, idx) => {
     const est = estadoPagare(row);
     (est.key === 'na' ? noCorresponde : conPagare).push({row, idx, est});
@@ -4747,9 +4802,16 @@ function renderPagares(){
   const ordenar = lista => lista.sort((a,b) => {
     if(pagaresOrden === 'eta_asc')  return porEta(a, b, false);
     if(pagaresOrden === 'eta_desc') return porEta(a, b, true);
+    if(pagaresOrden === 'cerca_hoy') return cmpCercaDeHoy(a.row, b.row, COL.ETA);
+    if(pagaresOrden === 'planilla')  return cmpPlanilla(a.row, b.row);
     const d = (orden[a.est.key]??9) - (orden[b.est.key]??9);
     return d !== 0 ? d : porEta(a, b, false);
   });
+  // "Como la planilla" recorta a las ultimas filas antes de ordenar.
+  if(pagaresOrden === 'planilla'){
+    const ult = new Set(ultimasFilas(conPagare.map(o => o.row), FILAS_ULTIMAS));
+    conPagare = conPagare.filter(o => ult.has(o.row));
+  }
   ordenar(conPagare);
   ordenar(noCorresponde);
 
@@ -4899,6 +4961,8 @@ function renderPagares(){
 
   const ordenSel = `<select onchange="setPagaresOrden(this.value)" style="font-size:11px;font-family:var(--mono);padding:5px 8px;border-radius:8px;border:1px solid var(--border);background:var(--bg2);color:var(--text2);cursor:pointer;">
     <option value="pendientes" ${pagaresOrden==='pendientes'?'selected':''}>Pendientes primero</option>
+    <option value="cerca_hoy" ${pagaresOrden==='cerca_hoy'?'selected':''}>Más cerca de hoy</option>
+    <option value="planilla" ${pagaresOrden==='planilla'?'selected':''}>Últimas ${FILAS_ULTIMAS} (como la planilla)</option>
     <option value="eta_asc" ${pagaresOrden==='eta_asc'?'selected':''}>ETA más cercana</option>
     <option value="eta_desc" ${pagaresOrden==='eta_desc'?'selected':''}>ETA más lejana</option>
   </select>`;
