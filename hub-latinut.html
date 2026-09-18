@@ -2215,25 +2215,35 @@ async function loadTarifario(){
   }
 }
 
-// Tarifa vigente para una carga: mismo destino y misma naviera, del mes del ETD
-// o del ultimo mes anterior que este cargado. Una tarifa de octubre no se aplica
-// a una carga que salio en julio.
+// Meses con los que se puede comparar una carga: el del ETD y el de la
+// consolidacion. El forwarder cotiza por mes de embarque, asi que cualquiera de
+// los dos es una referencia razonable.
+function mesesDeCarga(row){
+  const m = [mesDeFecha(row[COL.ETD]), mesDeFecha(row[COL.CONSOLIDACION])];
+  return m.filter(Boolean);
+}
+
+// Tarifa para una carga: mismo destino, misma naviera y MISMO MES que el ETD o
+// la consolidacion.
+//
+// Antes, si faltaba el tarifario de ese mes se usaba el del mes anterior, y eso
+// generaba reclamos falsos: te marcaba en rojo una diferencia que solo existia
+// porque el precio de ese mes nunca se habia cargado. Si no esta el mes, no hay
+// con que comparar y el hub no dice nada.
 function tarifaPara(row){
   if(!tarifas.length) return null;
   const destino = row[COL.PORT], carrier = row[COL.SHIPPING];
-  const mesCarga = mesDeFecha(row[COL.ETD]) || mesDeFecha(row[COL.ETA]);
   const candidatas = tarifas.filter(t => coincideTexto(t.destino, destino) && coincideTexto(t.carrier, carrier));
   if(!candidatas.length) return null;
-  if(!mesCarga){
-    // Sin ETD no hay con que comparar la vigencia: se usa la mas nueva.
-    return candidatas.slice().sort((a,b) => (b.mes||0) - (a.mes||0))[0];
+
+  const meses = mesesDeCarga(row);
+  if(!meses.length) return null;         // sin fechas no hay mes al que referirse
+  // Se prueba primero el mes del ETD y despues el de la consolidacion.
+  for(const m of meses){
+    const delMes = candidatas.filter(t => t.mes === m);
+    if(delMes.length) return delMes[0];
   }
-  const vigentes = candidatas.filter(t => t.mes && t.mes <= mesCarga);
-  if(vigentes.length) return vigentes.sort((a,b) => b.mes - a.mes)[0];
-  // Solo hay tarifas posteriores a la carga: se devuelve la mas vieja de esas,
-  // avisando que es de despues.
-  const post = candidatas.filter(t => t.mes).sort((a,b) => a.mes - b.mes)[0];
-  return post ? Object.assign({}, post, { posterior:true }) : candidatas[0];
+  return null;
 }
 
 // Cuantos contenedores tiene la carga. La celda suele traer varios separados por
@@ -2254,7 +2264,14 @@ function compararFlete(row){
   const importe = parseSheetNum(row[COL.MONTO_FLETE]);
   const tarifa = tarifaPara(row);
   if(isNaN(importe) || !importe) return { estado:'sin_importe', tarifa: tarifa };
-  if(!tarifa) return { estado:'sin_tarifa', importe: importe };
+  if(!tarifa){
+    // Se distingue el caso para que el mensaje sirva: no es lo mismo "nunca
+    // cargamos ese destino" que "falta el tarifario de este mes".
+    const meses = mesesDeCarga(row);
+    const hayDestino = tarifas.some(t => coincideTexto(t.destino, row[COL.PORT]) && coincideTexto(t.carrier, row[COL.SHIPPING]));
+    return { estado:'sin_tarifa', importe: importe,
+             faltaMes: hayDestino && meses.length ? meses[0] : null };
+  }
 
   const ref = !isNaN(tarifa.allIn) && tarifa.allIn ? tarifa.allIn : tarifa.flete;
   const campoRef = (!isNaN(tarifa.allIn) && tarifa.allIn) ? 'ALL IN' : 'FLETE';
@@ -2278,7 +2295,11 @@ const COLOR_FLETE = { ok:'var(--ok)', warn:'var(--warn)', bad:'var(--danger)', s
 function textoComparacionFlete(cmp){
   if(!cmp) return '';
   if(cmp.estado === 'sin_importe') return 'Sin importe cargado';
-  if(cmp.estado === 'sin_tarifa')  return 'Sin tarifa cargada para ese destino y naviera';
+  if(cmp.estado === 'sin_tarifa'){
+    return cmp.faltaMes
+      ? 'No hay tarifa de ' + mesLegible(cmp.faltaMes) + ' para ese destino y naviera, así que no hay con qué comparar'
+      : 'Sin tarifa cargada para ese destino y naviera';
+  }
   const signo = cmp.mejor.dif >= 0 ? '+' : '−';
   const base = 'Tarifa ' + cmp.campoRef + ' ' + mesLegible(cmp.tarifa.mes) + ': USD ' +
                Math.round(cmp.ref).toLocaleString('es-AR');
@@ -3738,7 +3759,6 @@ function actualizarComparadorFlete(prefix){
   if(cmp.tarifa){
     extra = ' <span style="color:var(--text3);">· ' + cmp.tarifa.destino + ' / ' + cmp.tarifa.carrier +
             (cmp.tarifa.forwarder ? ' / ' + cmp.tarifa.forwarder : '') + '</span>';
-    if(cmp.tarifa.posterior) extra += ' <span style="color:var(--warn);">(es una tarifa posterior a esta carga)</span>';
   }
   caja.innerHTML = '<span style="color:' + color + ';font-weight:600;">' + punto + ' ' + textoComparacionFlete(cmp) + '</span>' + extra;
   caja.style.background = cmp.estado === 'bad' ? 'rgba(255,59,48,.07)' : cmp.estado === 'warn' ? 'rgba(247,148,29,.07)' : 'var(--bg3)';
@@ -5051,6 +5071,26 @@ const CAMPOS_TARIFA = [
   {k:'forwarder', label:'Forwarder',   ph:'Done Deal'}
 ];
 
+// Meses que ofrece el formulario: un año para atras y medio para adelante,
+// mas los que ya esten cargados en la hoja aunque queden fuera de esa ventana.
+// Se elige de una lista y no se escribe a mano para que la columna FECHA quede
+// toda con el mismo formato: antes cada uno ponia SEP-2026, 09/2026 o 1/9/26 y
+// despues habia que adivinar a que mes se referia cada fila.
+function mesesParaElegir(){
+  const hoy = new Date();
+  const base = hoy.getFullYear()*100 + hoy.getMonth() + 1;
+  const mover = (n, k) => {
+    let a = Math.floor(n/100), m = (n%100) + k;
+    while(m > 12){ m -= 12; a++; }
+    while(m < 1){ m += 12; a--; }
+    return a*100 + m;
+  };
+  const lista = [];
+  for(let k = 6; k >= -12; k--) lista.push(mover(base, k));
+  tarifas.forEach(t => { if(t.mes && lista.indexOf(t.mes) < 0) lista.push(t.mes); });
+  return lista.sort((a,b) => b - a);
+}
+
 let _tarifaEditando = null;   // indice en tarifas, o null si es nueva
 
 function nuevaTarifa(){ abrirFormTarifa(null); }
@@ -5065,9 +5105,20 @@ function abrirFormTarifa(i){
     if(v === undefined || v === null || (typeof v === 'number' && isNaN(v))) return '';
     return String(v).replace(/"/g,'&quot;');
   };
-  const campos = CAMPOS_TARIFA.map(c =>
-    `<div class="config-field"><div class="config-label">${c.label}</div>
-      <input class="config-input" id="tf-${c.k}" value="${val(c.k)}" placeholder="${c.ph}"></div>`).join('');
+  // El mes va en un desplegable; el resto son campos libres.
+  const mesActual = t.mes || mesTarifa(t.fechaTxt) ||
+    (new Date().getFullYear()*100 + new Date().getMonth() + 1);
+  const opcionesMes = mesesParaElegir()
+    .map(m => `<option value="${mesLegible(m)}" ${m===mesActual?'selected':''}>${mesLegible(m)}</option>`).join('');
+
+  const campos = CAMPOS_TARIFA.map(c => {
+    if(c.k === 'fechaTxt'){
+      return `<div class="config-field"><div class="config-label">${c.label}</div>
+        <select class="config-input" id="tf-fechaTxt">${opcionesMes}</select></div>`;
+    }
+    return `<div class="config-field"><div class="config-label">${c.label}</div>
+      <input class="config-input" id="tf-${c.k}" value="${val(c.k)}" placeholder="${c.ph}"></div>`;
+  }).join('');
 
   document.getElementById('content').innerHTML = `
   <div class="config-section" style="max-width:760px;">
@@ -5075,7 +5126,7 @@ function abrirFormTarifa(i){
     <div class="config-desc">${i===null||i===undefined
       ? 'Se agrega una fila al final de la hoja ' + HOJA_TARIFARIO + '.'
       : 'Se modifica la fila ' + t._sheetRow + ' de la hoja ' + HOJA_TARIFARIO + '.'}
-      La fecha puede ir como SEP-2026, 09/2026 o una fecha completa.</div>
+      El mes se elige de la lista y se guarda siempre como MMM-AAAA.</div>
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:0 16px;">${campos}</div>
     <div class="config-save">
       <button class="btn" onclick="showView('tarifario')" style="margin-right:8px;">Cancelar</button>
@@ -5108,6 +5159,10 @@ async function guardarTarifa(){
              + '<div><span style="color:var(--text3);">All in:</span> <b>' + (datos.allIn||'—') + '</b></div>' });
   if(!ok) return;
 
+  // La fecha se guarda siempre como MMM-AAAA, venga de donde venga: asi la hoja
+  // queda pareja aunque alguien haya escrito otra cosa a mano.
+  const mesNum = mesTarifa(datos.fechaTxt);
+  if(mesNum) datos.fechaTxt = mesLegible(mesNum);
   const fila = CAMPOS_TARIFA.map(c => datos[c.k]);
   const nc = getNegocioConfig();
   const sid = nc.sheetId || cfg.sheetId;
