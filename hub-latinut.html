@@ -676,12 +676,14 @@ function getBuzaramCfg(){
     COL_TOTAL_CFR:       c('TOTAL_CFR'),        // "VALOR TOTAL" = FC1 + FC2 ya sumadas
     COL_TOTAL_FC1:       c('TOTAL_CFR_ORIG'),   // "Total CFR"
     COL_TOTAL_FC2:       c('PRICE_SERV'),       // "Price Serv"
-    ccFijo: 'yaelvaleria.arrua@newsan.com.ar',
+    // ccFijo: la contraparte sale de la hoja CONTACTOS (columna Contraparte).
     // Quien da el OK de liberacion en este negocio. Misma convencion que el AppScript
     // de Buzaram: Yael va en el campo Para junto al despachante, no en copia.
-    contraparte: { nombre: 'Yael', email: 'yaelvaleria.arrua@newsan.com.ar', enPara: true },
+    // La contraparte (quien da el OK para liberar) sale de la hoja CONTACTOS,
+    // columna Contraparte = "Para" o "CC". Ver contraparteDeHoja().
     // Copia extra solo en las liberaciones de Buzaram
-    ccLiberacion: ['marcelanatalia.perez@newsan.com.ar'],   // Marcela - Newsan
+    // Las copias fijas del pedido de liberacion tambien salen de la hoja,
+    // columna CC_Liberacion.
     sinPagares: true,
     // Pagos forwarder Buzaram
     PAGO_FC_FLETE:      c('FC_FLETE'),          // "FC flete"
@@ -709,10 +711,10 @@ function getNegocioConfig(){
     COL_TOTAL_CFR:       c('TOTAL_CFR'),        // "TOTAL FINAL"
     COL_TOTAL_FC1:       c('TOTAL_CFR_ORIG'),   // "Total CFR"
     COL_TOTAL_FC2:       c('PRICE_SERV'),       // "Price serv"
-    ccFijo: 'pberro@axtsolutions.com',
+    // ccFijo: idem, hoja CONTACTOS.
     // En AXT el OK lo da Pedro, y va en copia (no en Para).
-    contraparte: { nombre: 'Pedro Berro Madero', email: 'pberro@axtsolutions.com', enPara: false },
-    ccLiberacion: [],   // AXT no suma nadie mas; Araceli va por CC_DESPACHANTE
+    // Contraparte: ver la hoja CONTACTOS, columna Contraparte.
+    // Copias fijas del pedido: hoja CONTACTOS, columna CC_Liberacion.
     sinPagares: false,
     // Pagos forwarder AXT
     PAGO_FC_FLETE:      c('FC_FLETE'),
@@ -806,7 +808,7 @@ let logRows = []; // Cache del LOG del HUB sheet
 async function loadContacts(){
   if(!cfg.hubSheetId) return;
   try{
-    const range=encodeURIComponent('CONTACTOS!A2:E');
+    const range=encodeURIComponent('CONTACTOS!A2:I');
     // Use OAuth if available (required for private sheets), fallback to API key
     let url, headers={};
     if(accessToken){
@@ -821,12 +823,23 @@ async function loadContacts(){
     const r=await fetch(url,{headers});
     if(!r.ok){ console.error('Contacts load failed:', r.status); return; }
     const data=await r.json();
+    // Columnas de la hoja CONTACTOS:
+    //   A Empresa · B Contacto · C Mail · D Rol · E CC_Siempre
+    //   F Contraparte · G Solicitud_FC · H CC_Aviso · I CC_Liberacion
+    // Las cuatro ultimas reemplazan lo que antes estaba escrito en el codigo.
+    // Asi cambiar un destinatario es editar la hoja, no volver a subir el HTML.
+    const siNo = v => (v||'').toString().trim().toUpperCase() === 'SI';
     contacts=(data.values||[]).map(row=>({
       empresa:(row[0]||'').trim(),
       contacto:(row[1]||'').trim(),
       email:(row[2]||'').trim(),
       rol:(row[3]||'').trim(),
-      ccSiempre:(row[4]||'').trim().toUpperCase()==='SI'
+      ccSiempre:siNo(row[4]),
+      // "Para" o "CC": donde va la contraparte del negocio en el pedido de liberacion.
+      contraparte:(row[5]||'').trim(),
+      solicitudFC:siNo(row[6]),
+      ccAviso:siNo(row[7]),
+      ccLiberacion:siNo(row[8])
     })).filter(c=>c.email);
     console.log(`Loaded ${contacts.length} contacts`);
   }catch(e){console.error('Error loading contacts',e);}
@@ -842,12 +855,53 @@ const CC_EQUIPO = 'operaciones@latinutsa.com';
 // Gente del despachante que va SIEMPRE en copia en las solicitudes de liberacion,
 // en los dos negocios. Es un respaldo por si no estan cargados en la hoja CONTACTOS:
 // si estan, el hub los toma de ahi igual y no se duplican.
-const CC_DESPACHANTE = ['asena@transcargoarg.com'];   // Araceli - Transcargo
+// ─── CONSULTAS SOBRE LA HOJA CONTACTOS ───────────────────────────────────────
+// Todo lo que antes era una direccion escrita en el codigo ahora se busca aca.
+// Cada funcion devuelve lo que encuentra y, si no encuentra nada, lo deja dicho
+// en `faltantes` para que la pantalla avise en vez de mandar un mail a medias.
 
-// Direcciones internas que SI pueden ir en copia. Cualquier otra @latinutsa.com que
-// aparezca (por ejemplo cargada como "CC siempre" en la hoja CONTACTOS) se descarta:
-// la copia interna es una sola, la del equipo. Si algun dia hace falta sumar otra
-// direccion interna fija, se agrega a esta lista y listo.
+// Empresa de la hoja que corresponde al negocio activo ("AXT" / "Buzaram").
+function empresaDelNegocio(){
+  const l = (getNegocioConfig().label||'').toUpperCase();
+  return l.indexOf('BUZ') >= 0 ? 'BUZARAM' : 'AXT';
+}
+function esDelNegocio(c){
+  return (c.empresa||'').toUpperCase().indexOf(empresaDelNegocio()) >= 0;
+}
+function comoDestinatario(c){
+  return c.contacto ? c.contacto + ' <' + c.email + '>' : c.email;
+}
+
+// La contraparte del negocio: Pedro en AXT, Yael en Buzaram. La columna
+// Contraparte dice ademas si va en el Para o en copia.
+function contraparteDeHoja(){
+  const c = contacts.filter(x => x.contraparte && esDelNegocio(x))[0];
+  if(!c) return null;
+  return { nombre: c.contacto || c.email, email: c.email,
+           enPara: (c.contraparte||'').toUpperCase().indexOf('PARA') >= 0 };
+}
+
+// Quienes reciben la solicitud de FC.
+function destinatariosFCHoja(){
+  return contacts.filter(c => c.solicitudFC && esDelNegocio(c)).map(c => c.email);
+}
+
+// Quienes van en copia del aviso al cliente.
+function ccAvisoHoja(){
+  return contacts.filter(c => c.ccAviso).map(c => c.email);
+}
+
+// Quienes van siempre en copia del pedido de liberacion de este negocio.
+function ccLiberacionHoja(){
+  return contacts.filter(c => c.ccLiberacion && esDelNegocio(c)).map(c => c.email);
+}
+
+// Los contactos del despachante salen SOLO de la hoja CONTACTOS: es la unica
+// fuente de verdad. Antes ademas habia una direccion fija en el codigo, y cuando
+// en la hoja figuraba la misma persona con el dominio mal escrito el pedido salia
+// a las dos: la buena del codigo y la mala de la hoja. Con una sola fuente eso no
+// puede volver a pasar, y cambiar un contacto es editar la hoja, no el HTML.
+
 const DOMINIO_INTERNO = '@latinutsa.com';
 const CC_INTERNOS_OK = [CC_EQUIPO];
 
@@ -886,7 +940,14 @@ function sanitizarCC(ccStr){
   // Una sola copia interna. Se descarta cualquier direccion del dominio propio que no
   // sea la del equipo — asi no se cuelan Agustin ni Valentina por venir marcados como
   // "CC siempre" en la hoja CONTACTOS.
-  const permitidos = CC_INTERNOS_OK.map(x => x.toLowerCase());
+  // Las casillas internas que la hoja marca explicitamente para copia (CC_Aviso o
+  // CC_Liberacion) tambien valen: son casillas de trabajo como export@, no personas.
+  // El filtro sigue existiendo para que no se cuelen las direcciones personales
+  // de cada uno por venir marcadas como "CC siempre".
+  const internasDeHoja = contacts
+    .filter(c => (c.ccAviso || c.ccLiberacion) && (c.email||'').toLowerCase().indexOf(DOMINIO_INTERNO) >= 0)
+    .map(c => c.email.toLowerCase());
+  const permitidos = CC_INTERNOS_OK.map(x => x.toLowerCase()).concat(internasDeHoja);
   emails = emails.filter(e => {
     const m = soloEmail(e);
     if(m.indexOf(DOMINIO_INTERNO) < 0) return true;
@@ -1267,12 +1328,8 @@ function resumenFC(rowIndices){
 // El contenido replica el del AppScript (misma tabla naranja, mismos textos y
 // mismos destinatarios) para que no se note la diferencia con lo que ya sale
 // desde el menu de la planilla.
-const DESTINATARIOS_CLIENTE = {
-  'IDI':   'alex@nutrin.com,cindell@nutrin.com',
-  'PIDCO': 'alex@nutrin.com,cindell@nutrin.com',
-  'ABW':   'litzi@inagrica.com,comex@abw.com.pa'
-};
-const CC_AVISO_CLIENTE = 'export@latinutsa.com,pberro@axtsolutions.com,josefina@nutrin.com.ar';
+// Los destinatarios del aviso salen de la hoja: los contactos cuya Empresa
+// coincide con el Customer de la carga. Las copias, de la columna CC_Aviso.
 
 // Tabla vertical de un lote. Las filas sin dato no se imprimen, igual que en el
 // AppScript: una tabla llena de guiones no le sirve a nadie.
@@ -1341,15 +1398,17 @@ function armarAvisoCliente(filas){
   ).join('\n') + '\nQuedamos a disposición ante cualquier consulta.';
 
   const asunto = 'Embarque ' + customer + ' - AXT Trading - ' + tns + ' tn ' + product + ' - ETD ' + etd + ' - ETA ' + eta;
-  const dest = DESTINATARIOS_CLIENTE[customer.toUpperCase()] || '';
-  return { asunto, html, texto, dest, cc: CC_AVISO_CLIENTE, customer, tns };
+  const delCliente = getContactsForEmpresa(customer);
+  const cc = [delCliente.cc, ccAvisoHoja().join(', ')].filter(Boolean).join(', ');
+  const faltantes = delCliente.to ? []
+    : ['No hay ningún contacto de ' + customer + ' en la hoja CONTACTOS.'];
+  return { asunto, html, texto, dest: delCliente.to, cc: cc, customer, tns, faltantes };
 }
 
 // ── SOLICITUD DE FC A AXT ──
 // Replica del mail que genera el AppScript. La diferencia: este sale de la casilla
 // de quien aprieta el boton, y NO adjunta la factura ni el BL — esos los busca el
 // AppScript en Drive y el hub no tiene como hacerlo.
-const DEST_FC_AXT = 'ogarbuglia@axtsolutions.com,mgarbuglia@axtsolutions.com,pberro@axtsolutions.com';
 const AVISO_FACTURA_POR_CONTENEDOR = 'Por favor, emitir una factura por cada contenedor.';
 const PUERTOS_USA_FC = ['norfolk','new york'];
 const CLIENTES_2FC = ['idi','pidco'];
@@ -1432,7 +1491,11 @@ function armarSolicitudFC(filas){
   const asunto = 'AVISO DE EMBARQUE – ' + tns + ' tns ' + product + ' - ' + nc.label + ' – '
                + exporter + ' - ETD ' + etd + ' - ETA ' + eta + ' - ' + port + ' - ' + customer;
   const htmlFinal = '<div style="font-family:Arial,sans-serif;font-size:13px;color:#000;">' + html + '</div>';
-  return { asunto, html: htmlFinal, texto, dest: DEST_FC_AXT, cc: CC_EQUIPO, es2FC, tns };
+  // Quienes reciben la solicitud salen de la hoja CONTACTOS (columna Solicitud_FC).
+  const dest = destinatariosFCHoja();
+  const faltantes = dest.length ? []
+    : ['Nadie de ' + empresaDelNegocio() + ' tiene "Sí" en la columna Solicitud_FC de la hoja CONTACTOS.'];
+  return { asunto, html: htmlFinal, texto, dest: dest.join(','), cc: CC_EQUIPO, es2FC, tns, faltantes };
 }
 
 // Aviso de embarque al cliente. Es la otra punta del grupo: pediste la FC por un
@@ -1452,19 +1515,21 @@ async function avisoClienteBulk(rowIndices){
   detalle += '<div style="color:var(--warn);margin-top:6px;">\u26a0 El borrador sale sin adjuntos: acordate de sumar los documentos antes de enviarlo.</div>';
   r.avisos.forEach(a => { detalle += '<div style="color:var(--warn);margin-top:6px;">\u26a0 ' + a + '</div>'; });
 
+  // Se arma el mail antes de preguntar, asi la confirmacion muestra a quien va a
+  // llegar y avisa si en la hoja CONTACTOS falta alguien.
+  const mail = armarAvisoCliente(r.filas);
+  const ccLimpio = sanitizarCC(mail.cc);
+  detalle += '<div style="margin-top:6px;"><span style="color:var(--text3);">Para:</span> ' + (mail.dest||'—') + '</div>'
+           + '<div><span style="color:var(--text3);">CC:</span> ' + (ccLimpio||'—') + '</div>'
+           + avisoContactosFaltantes(mail.faltantes);
+
   const ok = await showConfirm('Aviso al cliente por ' + r.n + ' carga' + (r.n>1?'s':''),
-    'Se crea un borrador en Gmail para ' + r.customer + ' y se marca la columna de env\u00edo al cliente en la planilla.',
+    'Se crea un borrador en tu Gmail para ' + r.customer + ' y se marca la columna de env\u00edo al cliente en la planilla.',
     { icono:'📦', okLabel:'Generar aviso', detalle: detalle });
   if(!ok) return;
 
   showToast('Generando borrador...');
-  const mail = armarAvisoCliente(r.filas);
-  if(!mail.dest){
-    alert('No hay destinatarios configurados para ' + r.customer + '.\n\n' +
-          'Los que estan cargados son: ' + Object.keys(DESTINATARIOS_CLIENTE).join(', ') + '.');
-    return;
-  }
-  const hecho = await createGmailDraftHtml(mail.dest, sanitizarCC(mail.cc), mail.asunto, mail.texto, mail.html);
+  const hecho = await createGmailDraftHtml(mail.dest, ccLimpio, mail.asunto, mail.texto, mail.html);
   if(!hecho) return;
 
   await registrarGrupoEmbarque(r.filas);
@@ -1507,14 +1572,19 @@ async function solicitarFCBulk(rowIndices){
   // los buscaba el AppScript en Drive y el hub no tiene como hacerlo.
   detalle += '<div style="color:var(--warn);margin-top:6px;">\u26a0 El borrador sale sin adjuntos: acordate de sumar la factura y el BL antes de enviarlo.</div>';
 
+  const mail = armarSolicitudFC(r.filas);
+  const ccFC = sanitizarCC(mail.cc);
+  detalle += '<div style="margin-top:6px;"><span style="color:var(--text3);">Para:</span> ' + (mail.dest||'—') + '</div>'
+           + '<div><span style="color:var(--text3);">CC:</span> ' + (ccFC||'—') + '</div>'
+           + avisoContactosFaltantes(mail.faltantes);
+
   const okFC = await showConfirm('Solicitud FC para ' + r.n + ' carga' + (r.n>1?'s':''),
     'Se crea un solo borrador en tu Gmail que cubre las ' + r.n + ' cargas, y se marca la columna de env\u00edo en la planilla.',
     { icono:'📄', okLabel:'Generar solicitud', detalle: detalle });
   if(!okFC) return;
 
   showToast('Generando borrador...');
-  const mail = armarSolicitudFC(r.filas);
-  const hecho = await createGmailDraftHtml(mail.dest, sanitizarCC(mail.cc), mail.asunto, mail.texto, mail.html);
+  const hecho = await createGmailDraftHtml(mail.dest, ccFC, mail.asunto, mail.texto, mail.html);
   if(!hecho) return;
 
   // El conjunto que acabas de pedir queda como grupo: el pagare va a sugerir
@@ -3917,19 +3987,24 @@ async function solicitarLiberacionBulkViaAppScript(rowIndices){
   const sheetRows=rows.map(r=>r._sheetRow).filter(Boolean);
   if(sheetRows.length!==rowIndices.length){alert('No se pudieron determinar todas las filas.');return;}
   const customer=(rows[0][COL.CUSTOMER]||'').trim();
+  // Se calculan los destinatarios ANTES de preguntar, asi la confirmacion puede
+  // mostrar a quien le va a llegar y avisar si hubo que corregir alguna direccion.
+  const rDest = destinatariosLiberacion();
   const okLibB = await showConfirm('Solicitar liberación de ' + rowIndices.length + ' cargas',
-    'Se crea un borrador en Gmail y se marca TELEX en todas estas cargas.',
+    'Se crea un borrador en tu Gmail y se marca TELEX en todas estas cargas.',
     { icono:'🚢', okLabel:'Solicitar liberación',
       detalle:'<div><span style="color:var(--text3);">Cliente:</span> <b>'+customer+'</b></div>'
-            + rows.map(function(r){ return '<div>• BL '+((r[COL.BL]||'').trim()||'—')+' · ETA '+fmtDate(r[COL.ETA])+'</div>'; }).join('') });
+            + '<div><span style="color:var(--text3);">Para:</span> '+rDest.to+'</div>'
+            + '<div><span style="color:var(--text3);">CC:</span> '+(rDest.cc||'—')+'</div>'
+            + rows.map(function(r){ return '<div>• BL '+((r[COL.BL]||'').trim()||'—')+' · ETA '+fmtDate(r[COL.ETA])+'</div>'; }).join('')
+            + avisoContactosFaltantes(rDest.faltantes) });
   if(!okLibB) return;
   showToast('Procesando...');
   // El borrador lo arma el hub con el token del usuario logueado, asi aparece en
   // SU casilla. Antes salia del AppScript y caia siempre en la del dueño.
   showToast('Generando borrador...');
   const mail = armarLiberacion(rows);
-  const rLib = destinatariosLiberacion();
-  const hecho = await createGmailDraftHtml(rLib.to, rLib.cc, mail.asunto, mail.texto, mail.html);
+  const hecho = await createGmailDraftHtml(rDest.to, rDest.cc, mail.asunto, mail.texto, mail.html);
   if(!hecho) return;
 
   for(let i=0;i<rowIndices.length;i++){
@@ -3981,7 +4056,7 @@ function armarLiberacion(filas){
   tabla += '</tbody></table>';
 
   const plural = det.length > 1;
-  const cp = (nc.contraparte || {}).nombre || '';
+  const cp = (contraparteDeHoja() || {}).nombre || '';
   const P = "font-family:Arial,sans-serif;font-size:13px;";
   const html = '<p style="' + P + '">Buenos días!</p>'
     + '<p style="' + P + '">' + (plural ? 'Las siguientes cargas' : 'La siguiente carga') + ' de ' + nc.label + ' '
@@ -5531,8 +5606,8 @@ function buildMailBody(mailType,d,lang){
       es:{subject:`Consulta de pago - ${d.customer} - AXT Trading - Vencimiento ${d.paymentDueFmt}`,body:`${saludoReclamo},\n\nNos comunicamos para consultar respecto al siguiente pago:\n\nCliente: ${d.customer}\nInvoice: ${d.inv1||d.bl}${d.inv2?'\nFC Servicios: '+d.inv2:''}\nFecha de vencimiento: ${d.paymentDueFmt}\n\nAgradecemos confirmar estado del pago.`}
     },
     solicitar_liberacion:{
-      en:{subject:`Release request - ${d.exporter||d.customer} - ${d.negocioLabel||'AXT'} - ETA ${d.etaFmt}`,body:`Dear,\n\nWe kindly request the release of the following shipment:\n\nExporter: ${d.exporter||d.customer}\nCustomer: ${d.customer}\nBL: ${d.bl}\nBooking: ${d.booking}\nContainer(s): ${d.containers}\nVessel: ${d.vessel}\nPort: ${d.port}\nETA: ${d.etaFmt}\n\n@${d.contraparte||'Pedro Berro Madero'} Please confirm to proceed with the release.`},
-      es:{subject:`Solicitud de liberacion - ${d.exporter||d.customer} - ${d.negocioLabel||'AXT'} - ETA ${d.etaFmt}`,body:`Estimado/a,\n\nSolicitamos la liberacion del siguiente embarque:\n\nExporter: ${d.exporter||d.customer}\nCliente: ${d.customer}\nBL: ${d.bl}\nBooking: ${d.booking}\nContainer(s): ${d.containers}\nBuque: ${d.vessel}\nPuerto: ${d.port}\nETA: ${d.etaFmt}\n\n@${d.contraparte||'Pedro Berro Madero'} Por favor, dar el ok para proceder con la liberacion.\n\nQuedamos a la espera de confirmacion.`}
+      en:{subject:`Release request - ${d.exporter||d.customer} - ${d.negocioLabel||'AXT'} - ETA ${d.etaFmt}`,body:`Dear,\n\nWe kindly request the release of the following shipment:\n\nExporter: ${d.exporter||d.customer}\nCustomer: ${d.customer}\nBL: ${d.bl}\nBooking: ${d.booking}\nContainer(s): ${d.containers}\nVessel: ${d.vessel}\nPort: ${d.port}\nETA: ${d.etaFmt}\n\n@${d.contraparte||'la contraparte'} Please confirm to proceed with the release.`},
+      es:{subject:`Solicitud de liberacion - ${d.exporter||d.customer} - ${d.negocioLabel||'AXT'} - ETA ${d.etaFmt}`,body:`Estimado/a,\n\nSolicitamos la liberacion del siguiente embarque:\n\nExporter: ${d.exporter||d.customer}\nCliente: ${d.customer}\nBL: ${d.bl}\nBooking: ${d.booking}\nContainer(s): ${d.containers}\nBuque: ${d.vessel}\nPuerto: ${d.port}\nETA: ${d.etaFmt}\n\n@${d.contraparte||'la contraparte'} Por favor, dar el ok para proceder con la liberacion.\n\nQuedamos a la espera de confirmacion.`}
     }
   };
   const tpl = tpls[mailType]?.[lang]||tpls[mailType]?.en||{subject:'',body:''};
@@ -5545,16 +5620,21 @@ function buildMailBody(mailType,d,lang){
 // Buzaram); en AXT, Pedro va en copia. La casilla del equipo siempre en CC.
 function destinatariosLiberacion(){
   const nc=getNegocioConfig();
-  const cp=nc.contraparte||{};
+  // La contraparte sale de la hoja (columna Contraparte). Si no esta cargada,
+  // se avisa mas abajo en vez de caer en una direccion escrita en el codigo.
+  const cp=contraparteDeHoja()||{};
 
   // Todos los contactos del despachante. El principal va en Para y EL RESTO EN COPIA.
   // Antes solo se usaba el principal y los demas se descartaban en silencio, asi que
   // Araceli no aparecia aunque estuviera cargada en la hoja CONTACTOS.
   const despContactos = contacts.filter(c => (c.empresa||'').toUpperCase().indexOf('TRANSCARGO') >= 0);
   const principalDesp = despContactos.filter(c => (c.rol||'').toLowerCase().indexOf('principal') >= 0)[0] || despContactos[0];
+  // Sin fallback a una direccion escrita en el codigo: si el despachante no esta
+  // en la hoja, el hub lo dice en vez de mandarle a una direccion que quiza ya
+  // no sea la correcta.
   const desp = principalDesp
     ? (principalDesp.contacto ? principalDesp.contacto + ' <' + principalDesp.email + '>' : principalDesp.email)
-    : 'Thomas Laurenti <tlaurenti@transcargoarg.com>';
+    : '';
   const otrosDesp = despContactos.filter(c => c !== principalDesp).map(c => c.email);
 
   const to = (cp.enPara && cp.email) ? [cp.email, desp].join(', ') : desp;
@@ -5564,7 +5644,7 @@ function destinatariosLiberacion(){
   const cc=[];
   if(cp.email && !cp.enPara) cc.push(cp.email);
   // Resto del despachante (Araceli) + los fijos del despachante + los propios del negocio
-  cc.push(...otrosDesp, ...CC_DESPACHANTE, ...(nc.ccLiberacion||[]));
+  cc.push(...otrosDesp, ...ccLiberacionHoja());
   cc.push(...ccSiempre, CC_EQUIPO);
 
   // Nadie repetido en CC si ya esta en Para
@@ -5573,7 +5653,20 @@ function destinatariosLiberacion(){
     .split(',').map(e=>e.trim()).filter(Boolean)
     .filter(e=>enTo.indexOf(soloEmail(e))<0);
 
-  return { to: to, cc: ccFinal.join(', '), contraparte: cp.nombre||'' };
+  // Con la hoja como unica fuente, lo que hay que vigilar es que no falte nadie.
+  const faltantes = [];
+  if(!despContactos.length) faltantes.push('No hay ningún contacto de Transcargo cargado en la hoja CONTACTOS.');
+  else if(!principalDesp)   faltantes.push('Ningún contacto de Transcargo está marcado como principal.');
+  if(!cp.email) faltantes.push('Nadie de ' + empresaDelNegocio() + ' tiene "Para" o "CC" en la columna Contraparte.');
+  return { to: to, cc: ccFinal.join(', '), contraparte: cp.nombre||'', faltantes: faltantes };
+}
+
+// Aviso para la confirmacion cuando la hoja CONTACTOS esta incompleta.
+function avisoContactosFaltantes(faltantes){
+  if(!faltantes || !faltantes.length) return '';
+  return faltantes.map(f =>
+    '<div style="color:var(--danger);margin-top:6px;">⚠ ' + f + ' El borrador va a salir sin destinatario.</div>'
+  ).join('');
 }
 
 function openBulkMailModal(rowIndices, mailType){
@@ -5601,7 +5694,7 @@ function openBulkMailModal(rowIndices, mailType){
   const rLib=destinatariosLiberacion();
 
   const subject=`Solicitud de liberaciones - ${exporter} - ${negocioActivo==='buzaram'?'Buzaram':'AXT'} - ETA ${etaStr}`;
-  const body=`Estimado/a,\n\nSolicitamos la liberacion de los siguientes embarques:\n\n${lines}\n\n@${rLib.contraparte||'Pedro Berro Madero'} Por favor, dar el ok para proceder con la liberacion.\n\nQuedamos a la espera de confirmacion.`;
+  const body=`Estimado/a,\n\nSolicitamos la liberacion de los siguientes embarques:\n\n${lines}\n\n@${rLib.contraparte||'la contraparte'} Por favor, dar el ok para proceder con la liberacion.\n\nQuedamos a la espera de confirmacion.`;
 
   modalData={rowIndices, mailType, isBulk:true, exporter, rows};
   document.getElementById('lang-en').classList.remove('active');
@@ -5636,7 +5729,7 @@ function openMailModal(rowIdx, mailType){
     docsNote:(row[COL.DOCUMENTOS]||'').trim(),
     inv1:(row[COL.INVOICE_CLIENTE]||'').trim(),
     inv2:(row[COL.INVOICE_FC_SERV]||'').trim(),
-    contraparte:((getNegocioConfig().contraparte||{}).nombre)||'',
+    contraparte:((contraparteDeHoja()||{}).nombre)||'',
     negocioLabel:(negocioActivo==='buzaram'?'Buzaram':'AXT')
   };
   // Default ES for: liberacion (Transcargo) + Italian group customers
@@ -5666,11 +5759,12 @@ function openMailModal(rowIdx, mailType){
     toStr=contactInfo.to||`${d.customer} <sin contacto cargado>`;
     const reciproca=getReciprocaCC().split(',').map(e=>e.trim()).filter(Boolean);
     const ccBase=(contactInfo.cc||'').split(',').map(e=>e.trim()).filter(Boolean);
-    ccStr=[...new Set([...ccBase,...reciproca,'josefina@nutrin.com.ar'])].join(', ');
+    // Las copias fijas del envio de documentos salen de la columna CC_Aviso.
+    ccStr=[...new Set([...ccBase,...reciproca,...ccAvisoHoja()])].join(', ');
   } else {
     const contactInfo=getContactsForEmpresa(d.customer);
     toStr=contactInfo.to||`${d.customer} <sin contacto cargado>`;
-    ccStr=contactInfo.cc||'pedro@axt.com';
+    ccStr=contactInfo.cc||'';
   }
   document.getElementById('modal-to').textContent=toStr;
   document.getElementById('modal-cc').textContent=sanitizarCC(ccStr);
