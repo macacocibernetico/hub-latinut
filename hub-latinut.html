@@ -567,6 +567,9 @@ tr:hover .col-acciones{background:var(--bg3);}
       <div class="nav-item" id="nav-pagares" onclick="showView('pagares')">
         <span class="icon">📄</span> Pagarés
       </div>
+      <div class="nav-item" id="nav-contratos" onclick="showView('contratos')">
+        <span class="icon">📑</span> Contratos
+      </div>
       <div class="nav-item" id="nav-tarifario" onclick="showView('tarifario')">
         <span class="icon">🚢</span> Tarifario
       </div>
@@ -767,6 +770,9 @@ function updateNegocioPill(){
   // Hide pagarés for Buzaram
   const pagNav = document.getElementById('nav-pagares');
   if(pagNav) pagNav.style.display = isBuz?'none':'';
+  // Contratos: por ahora solo AXT
+  const conNav = document.getElementById('nav-contratos');
+  if(conNav) conNav.style.display = isBuz?'none':'';
   // Update sidebar subtitle
   const label = document.getElementById('negocio-label');
   if(label) label.textContent = isBuz?'Buzaram':'AXT Solutions';
@@ -2130,6 +2136,9 @@ function setSheetStatus(state,text){
 const HOJA_CONTRATOS = 'Contratos abiertos';
 let contratos = [];
 let _contratosError = null;
+let _contratosHeaders = [];     // encabezados tal cual estan en la hoja
+let _contratosFilas = [];       // filas crudas, para la vista
+let _contratosFormulas = [];    // indices de columnas que se calculan con formula
 
 async function loadContratos(){
   contratos = []; _contratosError = null;
@@ -2151,6 +2160,27 @@ async function loadContratos(){
     const data = await r.json();
     const filas = data.values || [];
     if(!filas.length) return;
+    _contratosHeaders = (filas[0]||[]).map(x => (x||'').toString().trim());
+    _contratosFilas = filas.slice(1).map((f, i) => Object.assign([...f], { _fila: i + 2 }))
+                           .filter(f => f.some(x => (x||'').toString().trim()));
+    // Que columnas tienen formula: se mira la ultima fila con datos. Esas no se
+    // piden en el formulario ni se escriben: se copia la formula de la fila de
+    // arriba, asi el saldo y demas calculos siguen andando en el contrato nuevo.
+    _contratosFormulas = [];
+    if(accessToken && _contratosFilas.length){
+      try{
+        const ult = _contratosFilas[_contratosFilas.length - 1]._fila;
+        const rf = await fetch('https://sheets.googleapis.com/v4/spreadsheets/' + sid + '/values/' +
+          encodeURIComponent(HOJA_CONTRATOS + '!A' + ult + ':Z' + ult) + '?valueRenderOption=FORMULA',
+          { headers:{ Authorization:'Bearer ' + accessToken } });
+        if(rf.ok){
+          const df = await rf.json();
+          ((df.values||[])[0]||[]).forEach((v, i) => {
+            if(typeof v === 'string' && v.charAt(0) === '=') _contratosFormulas.push(i);
+          });
+        }
+      }catch(e){ console.warn('formulas contratos:', e); }
+    }
 
     // Encabezados por nombre, como en el resto del hub.
     const H = (filas[0]||[]).map(normTar);
@@ -3041,14 +3071,14 @@ function showView(view){
   updateBottomNav(view);
   currentView=view;
   document.querySelectorAll('.nav-item').forEach(el=>el.classList.remove('active'));
-  const titles=window._viewTitles||{alertas:'Alertas',cargas:'Cargas AXT',nueva_carga:'Nueva Carga',cobranza:'Cobranza',cashflow:'Calendario',liberaciones:'Liberaciones',pagares:'Pagarés',tarifario:'Tarifario de fletes',log:'Log de acciones',config:'Configuración'};
+  const titles=window._viewTitles||{alertas:'Alertas',cargas:'Cargas AXT',nueva_carga:'Nueva Carga',cobranza:'Cobranza',cashflow:'Calendario',liberaciones:'Liberaciones',pagares:'Pagarés',contratos:'Contratos abiertos',tarifario:'Tarifario de fletes',log:'Log de acciones',config:'Configuración'};
   document.getElementById('view-title').textContent=titles[view]||view;
   document.querySelectorAll('.nav-item').forEach(el=>{if(el.getAttribute('onclick')?.includes(`'${view}'`))el.classList.add('active');});
   renderView(view);
   if(window.innerWidth<=768)closeSidebar();
 }
 function renderView(v){
-  ({alertas:renderAlertas,cargas:renderCargas,nueva_carga:renderNuevaCarga,cobranza:renderCobranza,cashflow:renderCashFlow,liberaciones:renderLiberaciones,pagares:renderPagares,tarifario:renderTarifario,log:renderLog,config:renderConfig}[v]||renderAlertas)();
+  ({alertas:renderAlertas,cargas:renderCargas,nueva_carga:renderNuevaCarga,cobranza:renderCobranza,cashflow:renderCashFlow,liberaciones:renderLiberaciones,pagares:renderPagares,contratos:renderContratos,tarifario:renderTarifario,log:renderLog,config:renderConfig}[v]||renderAlertas)();
   mostrarAvisoColumnas();
 }
 
@@ -5598,6 +5628,221 @@ async function guardarTarifa(){
     console.error('guardarTarifa:', e);
     alert('No se pudo guardar la tarifa: ' + e.message);
   }
+}
+
+// ─── CONTRATOS: VISTA Y ALTA ─────────────────────────────────────────────────
+let contratosBusqueda = '';
+
+// Tipo de campo segun el nombre del encabezado.
+function tipoCampoContrato(h){
+  const n = normTar(h);
+  if(n.indexOf('FECHA') >= 0 || n === 'DATE') return 'fecha';
+  if(/PRICE|PRECIO|FLETE|FREIGHT|SERVICIO|TNS|TONELADAS|MONTO|IMPORTE|TOTAL|SALDO|CANTIDAD|USD/.test(n)) return 'numero';
+  return 'texto';
+}
+// Que encabezado es obligatorio: sin estos el contrato no se puede cruzar con cargas.
+function esObligatorioContrato(h){
+  const n = normTar(h);
+  return ['CONTRATO','CONTRACT','IMPORTADOR','IMPORTER','PRODUCTO','PRODUCT'].indexOf(n) >= 0;
+}
+
+// Proximo numero de contrato para un importador: 2026-AXT-PIDCO.01, .02, ...
+function proximoNumeroContrato(importador){
+  const anio = new Date().getFullYear();
+  const cli = (importador||'').toString().trim().toUpperCase().replace(/\s+/g,'');
+  if(!cli) return '';
+  const base = anio + '-AXT-' + cli + '.';
+  let max = 0;
+  contratos.forEach(k => {
+    const c = (k.contrato||'').toUpperCase().replace(/\s+/g,'');
+    if(c.indexOf(base) === 0){ const n = parseInt(c.slice(base.length), 10); if(!isNaN(n) && n > max) max = n; }
+  });
+  return base + String(max + 1).padStart(2, '0');
+}
+
+function renderContratos(){
+  const cont = document.getElementById('content');
+  if(getNegocioConfig().sinPagares){
+    cont.innerHTML = '<div class="empty"><div class="empty-icon">📑</div>Por ahora los contratos se manejan solo en AXT.</div>';
+    return;
+  }
+  if(!_contratosHeaders.length){
+    cont.innerHTML = `<div class="empty"><div class="empty-icon">📑</div>
+      <div style="margin-bottom:12px;">${_contratosError || 'No pude leer la hoja “' + HOJA_CONTRATOS + '”.'}</div>
+      <button class="btn primary" onclick="recargarContratos()">Volver a leer</button></div>`;
+    return;
+  }
+  const q = contratosBusqueda.trim().toLowerCase();
+  const filas = q ? _contratosFilas.filter(f => f.some(x => (x||'').toString().toLowerCase().includes(q))) : _contratosFilas;
+  const idxVisibles = _contratosHeaders.map((h,i) => h ? i : -1).filter(i => i >= 0);
+
+  let html = `<div class="table-wrap">
+    <div class="table-top" style="gap:10px;flex-wrap:wrap;">
+      <span style="font-size:13px;font-weight:600;color:var(--text);">${filas.length} contrato${filas.length===1?'':'s'} abierto${filas.length===1?'':'s'}${q?' (filtrado)':''}</span>
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+        <div style="position:relative;display:flex;align-items:center;">
+          <span style="position:absolute;left:9px;font-size:13px;color:var(--text3);">🔍</span>
+          <input id="contratos-search" type="text" placeholder="Contrato, cliente, producto..." value="${contratosBusqueda.replace(/"/g,'&quot;')}"
+            oninput="contratosBusqueda=this.value;if(this._t)clearTimeout(this._t);this._t=setTimeout(()=>{const v=this.value;renderContratos();setTimeout(()=>{const el=document.getElementById('contratos-search');if(el){el.focus();el.setSelectionRange(v.length,v.length);}},0);},300);"
+            style="font-size:11px;font-family:var(--mono);padding:5px 10px 5px 30px;border-radius:8px;border:1px solid var(--border);background:var(--bg2);color:var(--text);width:220px;outline:none;">
+        </div>
+        <button class="btn" style="font-size:11px;padding:5px 12px;" onclick="recargarContratos()">↻ Releer</button>
+        <button class="btn primary" style="font-size:11px;padding:5px 12px;" onclick="abrirFormContrato()">＋ Nuevo contrato</button>
+      </div>
+    </div>
+    <div style="overflow-x:auto;"><table><thead><tr>${idxVisibles.map(i => `<th>${_contratosHeaders[i]}</th>`).join('')}</tr></thead><tbody>`;
+  if(!filas.length) html += `<tr><td colspan="${idxVisibles.length}"><div class="empty" style="padding:24px;">Nada que coincida.</div></td></tr>`;
+  filas.forEach(f => {
+    html += '<tr>' + idxVisibles.map(i => `<td class="mono" style="font-size:11px;white-space:nowrap;">${(f[i]||'—')}</td>`).join('') + '</tr>';
+  });
+  html += '</tbody></table></div></div>';
+  cont.innerHTML = html;
+}
+
+async function recargarContratos(){
+  showToast('Leyendo contratos...');
+  await loadContratos();
+  renderContratos();
+}
+
+function abrirFormContrato(){
+  if(!accessToken){ alert('Conectate con Google primero para escribir en la planilla.'); return; }
+  if(!_contratosHeaders.length){ alert('No pude leer los encabezados de ' + HOJA_CONTRATOS + '.'); return; }
+  const unicos = i => [...new Set(_contratosFilas.map(f => (f[i]||'').toString().trim()).filter(Boolean))].sort();
+
+  let campos = '';
+  _contratosHeaders.forEach((h, i) => {
+    if(!h) return;
+    const id = 'kc-' + i;
+    if(_contratosFormulas.indexOf(i) >= 0){
+      campos += `<div class="config-field"><div class="config-label">${h}</div>
+        <div style="font-size:11px;color:var(--text3);padding:8px 0;">Se calcula con la fórmula de la planilla</div></div>`;
+      return;
+    }
+    const tipo = tipoCampoContrato(h);
+    const oblig = esObligatorioContrato(h) ? ' *' : '';
+    const n = normTar(h);
+    const extra = (n === 'IMPORTADOR' || n === 'IMPORTER') ? ' oninput="sugerirNumeroContrato()"' : '';
+    if(tipo === 'fecha'){
+      campos += `<div class="config-field"><div class="config-label">${h}${oblig}</div>
+        <input class="config-input" type="date" id="${id}"></div>`;
+    } else {
+      // Datalist con lo ya usado en esa columna: sugiere sin obligar
+      const lista = tipo === 'texto' ? unicos(i) : [];
+      campos += `<div class="config-field"><div class="config-label">${h}${oblig}</div>
+        <input class="config-input" id="${id}" ${lista.length?`list="${id}-dl"`:''} ${tipo==='numero'?'inputmode="decimal"':''}${extra}>
+        ${lista.length?`<datalist id="${id}-dl">${lista.map(v=>`<option value="${v.replace(/"/g,'&quot;')}">`).join('')}</datalist>`:''}</div>`;
+    }
+  });
+
+  document.getElementById('content').innerHTML = `
+  <div class="config-section" style="max-width:860px;">
+    <div class="config-title">Nuevo contrato AXT → Cliente</div>
+    <div class="config-desc">Se agrega una fila al final de la hoja “${HOJA_CONTRATOS}”. Los campos son los mismos encabezados de la hoja.
+      En Puerto podés poner dos separados por coma. ${_contratosFormulas.length?'Las columnas con fórmula se copian de la fila de arriba.':''}</div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:0 16px;">${campos}</div>
+    <div class="config-save">
+      <button class="btn" onclick="showView('contratos')" style="margin-right:8px;">Cancelar</button>
+      <button class="btn primary" onclick="guardarContrato()">Guardar contrato</button>
+    </div>
+  </div>`;
+}
+
+function idxHeaderContrato(...nombres){
+  for(const n of nombres){ const i = _contratosHeaders.map(normTar).indexOf(normTar(n)); if(i >= 0) return i; }
+  return -1;
+}
+// Al escribir el importador, propone el proximo numero si el campo esta vacio
+// o si todavia tiene una propuesta anterior.
+function sugerirNumeroContrato(){
+  const iImp = idxHeaderContrato('Importador','Importer');
+  const iCon = idxHeaderContrato('Contrato','Contract','N° Contrato','Nro Contrato','Contrato Cliente');
+  if(iImp < 0 || iCon < 0) return;
+  const imp = (document.getElementById('kc-' + iImp)||{}).value || '';
+  const el = document.getElementById('kc-' + iCon);
+  if(!el) return;
+  if(!el.value || el.dataset.sugerido === '1'){
+    el.value = proximoNumeroContrato(imp);
+    el.dataset.sugerido = '1';
+  }
+}
+
+async function guardarContrato(){
+  const fila = [];
+  const faltan = [];
+  _contratosHeaders.forEach((h, i) => {
+    if(!h || _contratosFormulas.indexOf(i) >= 0){ fila[i] = ''; return; }
+    const el = document.getElementById('kc-' + i);
+    let v = el ? (el.value||'').trim() : '';
+    if(v && tipoCampoContrato(h) === 'fecha' && /^\d{4}-\d{2}-\d{2}$/.test(v)){
+      const [a,m,d] = v.split('-'); v = d + '/' + m + '/' + a;   // formato de la planilla
+    }
+    if(v && tipoCampoContrato(h) === 'numero' && isNaN(parseSheetNum(v))) faltan.push(h + ' (no es un número)');
+    if(!v && esObligatorioContrato(h)) faltan.push(h);
+    fila[i] = v;
+  });
+  for(let i = 0; i < _contratosHeaders.length; i++) if(fila[i] === undefined) fila[i] = '';
+  if(faltan.length){ alert('Falta completar:\n\n• ' + faltan.join('\n• ')); return; }
+
+  const iCon = idxHeaderContrato('Contrato','Contract','N° Contrato','Nro Contrato','Contrato Cliente');
+  const numero = iCon >= 0 ? fila[iCon] : '';
+  if(numero && contratos.some(k => normTar(k.contrato) === normTar(numero))){
+    alert('Ya existe un contrato ' + numero + ' en la hoja. Usá otro número.');
+    return;
+  }
+
+  const resumen = _contratosHeaders.map((h,i) => (h && fila[i]) ? '<div><span style="color:var(--text3);">' + h + ':</span> <b>' + fila[i] + '</b></div>' : '').join('');
+  const ok = await showConfirm('Agregar contrato ' + (numero||''), 'Se agrega una fila nueva al final de la hoja ' + HOJA_CONTRATOS + '.',
+    { icono:'📑', okLabel:'Guardar', detalle: resumen });
+  if(!ok) return;
+
+  const nc = getNegocioConfig();
+  const sid = nc.sheetId || cfg.sheetId;
+  showToast('Guardando...');
+  try{
+    const r = await fetch('https://sheets.googleapis.com/v4/spreadsheets/' + sid + '/values/' +
+      encodeURIComponent(HOJA_CONTRATOS + '!A:Z') + ':append?valueInputOption=USER_ENTERED&insertDataOption=INSERT_ROWS', {
+      method:'POST', headers:{ Authorization:'Bearer ' + accessToken, 'Content-Type':'application/json' },
+      body: JSON.stringify({ values:[fila] })
+    });
+    if(!r.ok){ alert('No se pudo guardar (HTTP ' + r.status + ').'); return; }
+    const res = await r.json();
+    // Copiar las formulas de la fila de arriba a la nueva, para que el saldo y
+    // demas calculos funcionen en el contrato recien cargado.
+    const m = ((res.updates||{}).updatedRange||'').match(/![A-Z]+(\d+)/);
+    const filaNueva = m ? parseInt(m[1], 10) : null;
+    if(filaNueva && filaNueva > 2 && _contratosFormulas.length) await copiarFormulasContrato(sid, filaNueva);
+
+    await appendLog({ customer: fila[idxHeaderContrato('Importador','Importer')] || '', accion:'contrato agregado',
+      detalle: (numero||'sin numero') + ' · ' + (fila[idxHeaderContrato('Producto','Product')]||'') });
+    showToast('✓ Contrato ' + (numero||'') + ' guardado');
+    await loadContratos();
+    showView('contratos');
+  }catch(e){
+    console.error('guardarContrato:', e);
+    alert('No se pudo guardar el contrato: ' + e.message);
+  }
+}
+
+async function copiarFormulasContrato(sid, filaNueva){
+  try{
+    const rm = await fetch('https://sheets.googleapis.com/v4/spreadsheets/' + sid + '?fields=sheets.properties',
+      { headers:{ Authorization:'Bearer ' + accessToken } });
+    if(!rm.ok) return;
+    const meta = await rm.json();
+    const hoja = (meta.sheets||[]).find(h => ((h.properties||{}).title||'').toLowerCase() === HOJA_CONTRATOS.toLowerCase());
+    if(!hoja) return;
+    const gid = hoja.properties.sheetId;
+    const requests = _contratosFormulas.map(c => ({ copyPaste: {
+      source:      { sheetId:gid, startRowIndex:filaNueva-2, endRowIndex:filaNueva-1, startColumnIndex:c, endColumnIndex:c+1 },
+      destination: { sheetId:gid, startRowIndex:filaNueva-1, endRowIndex:filaNueva,   startColumnIndex:c, endColumnIndex:c+1 },
+      pasteType: 'PASTE_FORMULA'
+    }}));
+    await fetch('https://sheets.googleapis.com/v4/spreadsheets/' + sid + ':batchUpdate', {
+      method:'POST', headers:{ Authorization:'Bearer ' + accessToken, 'Content-Type':'application/json' },
+      body: JSON.stringify({ requests })
+    });
+  }catch(e){ console.warn('copiarFormulasContrato:', e); }
 }
 
 // ─── VISTA TARIFARIO ─────────────────────────────────────────────────────────
