@@ -1912,8 +1912,10 @@ async function loadData(){
     });
     allRowsAll = validRows; // todas, incluyendo cerradas — para pagos
     allRows = validRows.filter(row=>!isClosed(row)); // solo activas
-    // El tarifario va aparte: si falla, las cargas tienen que seguir andando.
+    // El tarifario y los contratos van aparte: si alguno falla, las cargas tienen
+    // que seguir andando igual.
     loadTarifario().catch(e => console.warn('tarifario:', e));
+    loadContratos().catch(e => console.warn('contratos:', e));
     _dataVersion++;   // invalida el cache de alertas
     await loadContacts();
     await loadLog();
@@ -2119,6 +2121,128 @@ function setSheetStatus(state,text){
   dot.className='sheet-dot'+(state==='err'?' err':state==='loading'?' loading':'');
   document.getElementById('sheet-status-text').textContent=text;
 }
+
+// ─── CONTRATOS ABIERTOS ──────────────────────────────────────────────────────
+// Hoja "Contratos abiertos" de la planilla de AXT. Es el acuerdo AXT–Cliente:
+// precio, flete, incoterm y servicios pactados. Al cargar una carga, el hub cruza
+// cliente + producto + puerto y completa esa parte sola, en vez de tener que ir a
+// buscar el contrato a mano y copiar seis numeros.
+const HOJA_CONTRATOS = 'Contratos abiertos';
+let contratos = [];
+let _contratosError = null;
+
+async function loadContratos(){
+  contratos = []; _contratosError = null;
+  const nc = getNegocioConfig();
+  if(nc.sinPagares) return;                 // solo AXT tiene esta hoja
+  const sid = nc.sheetId || cfg.sheetId;
+  if(!sid) return;
+  try{
+    const range = encodeURIComponent(HOJA_CONTRATOS + '!A1:Z400');
+    let url, opts = {};
+    if(accessToken){
+      url = 'https://sheets.googleapis.com/v4/spreadsheets/' + sid + '/values/' + range;
+      opts = { headers:{ Authorization:'Bearer ' + accessToken } };
+    } else {
+      url = 'https://sheets.googleapis.com/v4/spreadsheets/' + sid + '/values/' + range + '?key=' + cfg.apiKey;
+    }
+    const r = await fetch(url, opts);
+    if(!r.ok){ _contratosError = r.status === 400 ? null : 'HTTP ' + r.status; return; }
+    const data = await r.json();
+    const filas = data.values || [];
+    if(!filas.length) return;
+
+    // Encabezados por nombre, como en el resto del hub.
+    const H = (filas[0]||[]).map(normTar);
+    const col = (...nombres) => {
+      for(const n of nombres){ const i = H.indexOf(normTar(n)); if(i >= 0) return i; }
+      return -1;
+    };
+    const c = {
+      contrato:   col('Contrato','Contract','N° Contrato','Nro Contrato','Contrato Cliente'),
+      importador: col('Importador','Importer','Cliente','Customer'),
+      producto:   col('Producto','Product'),
+      puerto:     col('Puerto','Port','Puertos','Destino'),
+      price:      col('Price Cliente','Precio Cliente','Price','Precio'),
+      flete:      col('Flete','Freight'),
+      incoterm:   col('INCOTERM','Incoterm'),
+      fcServ:     col('FC Servicios','FC Servicio','Fc Serv','Servicios')
+    };
+    const faltan = [];
+    if(c.importador < 0) faltan.push('Importador');
+    if(c.producto   < 0) faltan.push('Producto');
+    if(c.puerto     < 0) faltan.push('Puerto');
+    if(faltan.length){
+      _contratosError = 'A la hoja ' + HOJA_CONTRATOS + ' le faltan las columnas: ' + faltan.join(', ');
+      return;
+    }
+    const g = (fila, i) => i >= 0 ? (fila[i]||'').toString().trim() : '';
+    for(let i = 1; i < filas.length; i++){
+      const f = filas[i];
+      if(!f || !g(f, c.importador)) continue;
+      contratos.push({
+        _fila: i + 1,
+        contrato: g(f, c.contrato), importador: g(f, c.importador), producto: g(f, c.producto),
+        // El puerto puede traer dos separados por coma: "Norfolk, New York".
+        puertos: g(f, c.puerto).split(/[,;\/]+/).map(x => x.trim()).filter(Boolean),
+        puertoTxt: g(f, c.puerto),
+        price: parseSheetNum(f[c.price]), flete: parseSheetNum(f[c.flete]),
+        incoterm: g(f, c.incoterm), fcServ: parseSheetNum(f[c.fcServ])
+      });
+    }
+    console.log('Contratos abiertos: ' + contratos.length);
+  }catch(e){
+    _contratosError = e.message;
+    console.warn('loadContratos:', e);
+  }
+}
+
+// Contratos que podrian corresponder a una carga. El producto y el importador se
+// comparan exactos (sin acentos ni mayusculas); el puerto alcanza con que este
+// entre los del contrato.
+function contratosPara(customer, producto, puerto){
+  const cli = normTar(customer), prod = normTar(producto), pto = normTar(puerto);
+  if(!cli || !prod) return [];
+  return contratos.filter(k => {
+    if(normTar(k.importador) !== cli) return false;
+    if(normTar(k.producto) !== prod) return false;
+    if(!pto) return true;                       // sin puerto todavia, no filtra
+    if(!k.puertos.length) return true;          // contrato sin puerto: sirve para cualquiera
+    return k.puertos.some(x => normTar(x) === pto);
+  });
+}
+
+// Los numeros que se derivan de un contrato para una carga de N toneladas.
+// Total CFR = (precio + flete) x tns · Price serv = FC Servicios x tns
+// TOTAL FINAL = Total CFR + Price serv · Precio final x tn = TOTAL FINAL / tns
+function calcularDesdeContrato(k, tns, puertoCarga){
+  const n = parseSheetNum(tns);
+  const price = isNaN(k.price) ? 0 : k.price;
+  const flete = isNaN(k.flete) ? 0 : k.flete;
+  const fcServ = isNaN(k.fcServ) ? 0 : k.fcServ;
+  const hayTns = !isNaN(n) && n > 0;
+
+  const totalCFR  = hayTns ? (price + flete) * n : NaN;
+  const priceServ = (hayTns && fcServ) ? fcServ * n : NaN;
+  const totalFinal = isNaN(totalCFR) ? NaN : totalCFR + (isNaN(priceServ) ? 0 : priceServ);
+  const finalPorTn = (hayTns && !isNaN(totalFinal)) ? totalFinal / n : NaN;
+
+  // Del incoterm del contrato se toman las 3 primeras letras y se le pega el
+  // puerto de ESTA carga: el contrato puede tener dos puertos y confundir.
+  const inco = (k.incoterm||'').toString().trim().slice(0,3).toUpperCase();
+  const incoterm = inco ? (puertoCarga ? inco + ' ' + puertoCarga : inco) : '';
+
+  return {
+    contrato: k.contrato, price: isNaN(k.price) ? '' : k.price,
+    flete: isNaN(k.flete) ? '' : k.flete,       // vacio si el contrato no lo tiene
+    totalCFR: isNaN(totalCFR) ? '' : redondear2(totalCFR),
+    incoterm: incoterm,
+    priceServ: isNaN(priceServ) ? '' : redondear2(priceServ),
+    totalFinal: isNaN(totalFinal) ? '' : redondear2(totalFinal),
+    finalPorTn: isNaN(finalPorTn) ? '' : redondear2(finalPorTn)
+  };
+}
+function redondear2(x){ return Math.round(x * 100) / 100; }
 
 // ─── ORDENES QUE SIRVEN PARA TRABAJAR ────────────────────────────────────────
 // Ordenar por fecha ascendente trae primero cargas que llegaron hace meses;
@@ -3685,6 +3809,8 @@ function formToRowData(d){
   set(COL.INCOTERM, d.incoterm);
   set(COL.INVOICE_FC_SERV, d.invoiceFCServ);
   set(COL.PRICE_SERV, d.priceFCServ);
+  set(COL.TOTAL_CFR, d.totalFinal);
+  set(COL.PRECIO_FINAL_TN, d.precioFinalTn);
   set(COL.PROVEEDOR_FLETE, d.proveedorFlete);
   set(COL.FC_FLETE, d.fcFlete);
   set(COL.MONTO_FLETE, d.montoFlete);
@@ -3734,8 +3860,66 @@ async function submitEditCarga(rowIdx){
   else { alert('Error al guardar.'); btn.textContent='Guardar cambios'; btn.disabled=false; }
 }
 
+// Valores distintos de una columna para los desplegables.
+// Se agrupan por su forma normalizada (sin mayusculas, acentos ni espacios de mas):
+// antes "Peanut paste NOP" y "Peanut paste NOP " —o "Peanut Paste NOP"— salian
+// como dos opciones distintas. De cada grupo se muestra la escritura mas usada.
 function getUnique(col){
-  return [...new Set(allRows.map(r=>(r[col]||'').trim()).filter(Boolean))].sort();
+  const grupos = {};
+  allRows.forEach(r => {
+    const v = (r[col]||'').toString().trim().replace(/\s+/g,' ');
+    if(!v) return;
+    const k = normTar(v);
+    if(!grupos[k]) grupos[k] = {};
+    grupos[k][v] = (grupos[k][v]||0) + 1;
+  });
+  return Object.values(grupos)
+    .map(g => Object.keys(g).sort((a,b) => g[b] - g[a] || a.localeCompare(b))[0])
+    .sort((a,b) => a.localeCompare(b));
+}
+
+// Pone un valor en un smartField (select + input), buscando la opcion por su
+// forma normalizada para que "peanut paste nop" encuentre "Peanut paste NOP".
+function setSmartValue(prefix, id, value){
+  const sel = document.getElementById(prefix + '-' + id + '-sel');
+  const inp = document.getElementById(prefix + '-' + id);
+  if(value === undefined || value === null) return;
+  if(sel && sel.options){
+    const opt = [...sel.options].find(o => o.value !== '__otro__' && o.value && normTar(o.value) === normTar(value));
+    if(opt){ sel.value = opt.value; if(inp){ inp.style.display = 'none'; inp.value = opt.value; } return; }
+    sel.value = '__otro__';
+  }
+  if(inp){ inp.style.display = 'block'; inp.value = value; }
+}
+
+// ── Reglas de producto ──
+// ABW a Norfolk siempre es pasta NOP: si la carga se detecto como pasta a secas
+// (la planilla del despachante no distingue), se corrige sola.
+function productoSegunReglas(producto, customer, port){
+  const p = normTar(producto), c = normTar(customer), pt = normTar(port);
+  const esPasta = p.indexOf('PASTE') >= 0 || p.indexOf('PASTA') >= 0;
+  if(esPasta && c === 'ABW' && pt.indexOf('NORFOLK') >= 0 && !/\bNOP\b/.test(p)){
+    return 'Peanut paste NOP';
+  }
+  return producto;
+}
+
+// Cuando cambia cliente, producto o puerto: aplica las reglas de producto y
+// vuelve a buscar el contrato. Antes estos tres campos (que son desplegables)
+// no disparaban la busqueda: solo funcionaba el boton.
+// Solo reacciona a los tres campos que definen el contrato. Si reaccionara a
+// cualquier desplegable (Packing, Naviera...), volveria a aplicar el contrato y
+// pisaria un precio que hayas corregido a mano.
+function alCambiarCampoCarga(prefix, id){
+  if(id && ['customer','product','port'].indexOf(id) < 0) return;
+  const prod = valForm(prefix, 'product');
+  const corregido = productoSegunReglas(prod, valForm(prefix, 'customer'), valForm(prefix, 'port'));
+  if(corregido && corregido !== prod){
+    setSmartValue(prefix, 'product', corregido);
+    showToast('Producto ajustado a ' + corregido + ' (ABW a Norfolk siempre es NOP)');
+  }
+  if(document.getElementById(prefix + '-contrato-box')) buscarContratos(prefix);
+  actualizarComparadorFlete(prefix);
 }
 
 function smartField(prefix, id, label, value='', placeholder='', colIdx=null){
@@ -3744,20 +3928,20 @@ function smartField(prefix, id, label, value='', placeholder='', colIdx=null){
     // No data yet - plain input
     return `<div class="config-field">
       <div class="config-label">${label}</div>
-      <input class="config-input" id="${prefix}-${id}" value="${value}" placeholder="${placeholder}">
+      <input class="config-input" id="${prefix}-${id}" value="${value}" placeholder="${placeholder}" oninput="alCambiarCampoCarga('${prefix}','${id}')">
     </div>`;
   }
   const selectId = `${prefix}-${id}-sel`;
   const inputId = `${prefix}-${id}`;
-  const isOther = value && !options.includes(value);
+  const isOther = value && !options.some(o => normTar(o) === normTar(value));
   return `<div class="config-field">
     <div class="config-label">${label}</div>
-    <select id="${selectId}" onchange="handleSmartField('${selectId}','${inputId}')" style="width:100%;background:var(--bg3);border:1px solid var(--border);border-radius:7px;color:var(--text);font-family:var(--mono);font-size:11px;padding:7px 10px;outline:none;transition:border-color .15s;margin-bottom:4px;">
+    <select id="${selectId}" onchange="handleSmartField('${selectId}','${inputId}');alCambiarCampoCarga('${prefix}','${id}')" style="width:100%;background:var(--bg3);border:1px solid var(--border);border-radius:7px;color:var(--text);font-family:var(--mono);font-size:11px;padding:7px 10px;outline:none;transition:border-color .15s;margin-bottom:4px;">
       <option value="">— Seleccioná —</option>
-      ${options.map(o=>`<option value="${o}" ${(value===o&&!isOther)?'selected':''}>${o}</option>`).join('')}
+      ${options.map(o=>`<option value="${o}" ${(normTar(value)===normTar(o)&&!isOther)?'selected':''}>${o}</option>`).join('')}
       <option value="__otro__" ${isOther?'selected':''}>✏ Escribir otro...</option>
     </select>
-    <input class="config-input" id="${inputId}" value="${value}" placeholder="${placeholder}" style="display:${isOther||!value?'block':'none'};">
+    <input class="config-input" id="${inputId}" value="${value}" placeholder="${placeholder}" oninput="alCambiarCampoCarga('${prefix}','${id}')" style="display:${isOther||!value?'block':'none'};">
   </div>`;
 }
 
@@ -3834,11 +4018,134 @@ function actualizarComparadorFlete(prefix){
   caja.style.background = cmp.estado === 'bad' ? 'rgba(255,59,48,.07)' : cmp.estado === 'warn' ? 'rgba(247,148,29,.07)' : 'var(--bg3)';
 }
 
+// ── Buscar el contrato y volcar sus numeros al formulario ──
+// Se dispara al tocar el boton y tambien solo, cuando cambian cliente, producto,
+// puerto o toneladas: son los cuatro datos que determinan que contrato aplica y
+// cuanto da cada importe.
+function valForm(prefix, id){
+  const el = document.getElementById(prefix + '-' + id);
+  return el ? (el.value||'').trim() : '';
+}
+function setForm(prefix, id, v){
+  const el = document.getElementById(prefix + '-' + id);
+  if(el && v !== undefined && v !== null) el.value = v;
+}
+
+function buscarContratos(prefix){
+  const caja = document.getElementById(prefix + '-contrato-box');
+  if(!caja) return;
+  const customer = valForm(prefix, 'customer');
+  const producto = valForm(prefix, 'product');
+  const puerto   = valForm(prefix, 'port');
+
+  if(_contratosError){
+    caja.innerHTML = '<span style="color:var(--danger);">' + _contratosError + '</span>';
+    return;
+  }
+  if(!contratos.length){
+    caja.innerHTML = '<span style="color:var(--text3);">No pude leer la hoja “' + HOJA_CONTRATOS + '” o está vacía.</span>';
+    return;
+  }
+  if(!customer || !producto){
+    caja.innerHTML = '<span style="color:var(--text3);">Completá Customer y Product para que busque el contrato.</span>';
+    return;
+  }
+
+  const encontrados = contratosPara(customer, producto, puerto);
+  window['_contratos_' + prefix] = encontrados;
+
+  if(!encontrados.length){
+    // Se afloja el filtro para poder explicar por que no encontro nada.
+    const soloCliente = contratos.filter(k => normTar(k.importador) === normTar(customer));
+    let pista = '';
+    if(!soloCliente.length) pista = ' No hay ningún contrato abierto de ' + customer + '.';
+    else {
+      const prods = [...new Set(soloCliente.map(k => k.producto))].filter(Boolean);
+      pista = ' De ' + customer + ' hay contratos de: ' + prods.join(', ') + '.';
+    }
+    caja.innerHTML = '<span style="color:var(--warn);">⚠ Ningún contrato coincide con ' + producto +
+                     (puerto ? ' a ' + puerto : '') + '.' + pista + ' Cargá los valores a mano.</span>';
+    return;
+  }
+
+  if(encontrados.length === 1){
+    aplicarContrato(prefix, 0);
+    return;
+  }
+
+  // Varios: se elige de una lista, y no se toca nada hasta que elijas.
+  const opts = encontrados.map((k, i) =>
+    '<option value="' + i + '">' + (k.contrato || '(sin número)') + ' — ' +
+    (isNaN(k.price) ? 's/precio' : 'USD ' + k.price) +
+    (k.puertoTxt ? ' · ' + k.puertoTxt : '') + '</option>').join('');
+  caja.innerHTML = '<div style="color:var(--warn);margin-bottom:6px;">Hay ' + encontrados.length +
+    ' contratos que coinciden. Elegí cuál:</div>' +
+    '<select id="' + prefix + '-contrato-sel" onchange="aplicarContrato(\'' + prefix + '\', this.value)" ' +
+    'style="font-size:11px;font-family:var(--mono);padding:5px 8px;border-radius:8px;border:1px solid var(--accent);background:var(--bg2);color:var(--text);width:100%;">' +
+    '<option value="">— elegir contrato —</option>' + opts + '</select>';
+}
+
+function aplicarContrato(prefix, i){
+  const lista = window['_contratos_' + prefix] || [];
+  const k = lista[Number(i)];
+  const caja = document.getElementById(prefix + '-contrato-box');
+  if(!k){ return; }
+
+  const tns = valForm(prefix, 'tns');
+  const puerto = valForm(prefix, 'port');
+  const v = calcularDesdeContrato(k, tns, puerto);
+
+  setForm(prefix, 'contractCliente', v.contrato);
+  setForm(prefix, 'priceCFR',        v.price);
+  setForm(prefix, 'flete',           v.flete);
+  setForm(prefix, 'totalCFR',        v.totalCFR);
+  setForm(prefix, 'incoterm',        v.incoterm);
+  setForm(prefix, 'priceFCServ',     v.priceServ);
+  setForm(prefix, 'totalFinal',      v.totalFinal);
+  setForm(prefix, 'precioFinalTn',   v.finalPorTn);
+
+  if(caja){
+    const avisos = [];
+    if(!tns) avisos.push('Falta cargar las Tns: los totales quedan vacíos hasta que las pongas.');
+    if(isNaN(k.flete)) avisos.push('El contrato no tiene flete, así que ese campo queda en blanco.');
+    if(!k.incoterm) avisos.push('El contrato no tiene INCOTERM cargado.');
+    caja.innerHTML = '<span style="color:var(--ok);font-weight:600;">✓ Contrato ' + (k.contrato||'(sin número)') + '</span>' +
+      '<span style="color:var(--text3);"> · ' + k.producto + (k.puertoTxt ? ' · ' + k.puertoTxt : '') +
+      (isNaN(k.fcServ) || !k.fcServ ? '' : ' · servicios USD ' + k.fcServ + '/tn') + '</span>' +
+      (lista.length > 1 ? '<span style="color:var(--text3);"> · de ' + lista.length + ' posibles</span>' : '') +
+      avisos.map(a => '<div style="color:var(--warn);margin-top:4px;">⚠ ' + a + '</div>').join('');
+  }
+}
+
+// Recalcula los totales con lo que haya escrito, sin volver al contrato. Sirve
+// cuando corregis las toneladas o el precio a mano despues de traer el contrato.
+function recalcularTotales(prefix){
+  const n = parseSheetNum(valForm(prefix, 'tns'));
+  const price = parseSheetNum(valForm(prefix, 'priceCFR'));
+  const flete = parseSheetNum(valForm(prefix, 'flete'));
+  const serv  = parseSheetNum(valForm(prefix, 'priceFCServ'));
+  if(isNaN(n) || n <= 0 || isNaN(price)) return;
+  const totalCFR = (price + (isNaN(flete) ? 0 : flete)) * n;
+  const totalFinal = totalCFR + (isNaN(serv) ? 0 : serv);
+  setForm(prefix, 'totalCFR', redondear2(totalCFR));
+  setForm(prefix, 'totalFinal', redondear2(totalFinal));
+  setForm(prefix, 'precioFinalTn', redondear2(totalFinal / n));
+}
+
 function buildCargaForm(prefix, d={}, fullEdit=false){
   // Estos campos cambian el resultado de la comparacion contra el tarifario.
   const AFECTAN_FLETE = ['montoFlete','containers','port','shipping','etd'];
+  // Y estos, los numeros del contrato.
+  const AFECTAN_TOTALES = ['tns','priceCFR','flete','priceFCServ'];
+  const extraEventos = (id) => {
+    const ev = [];
+    if(AFECTAN_FLETE.indexOf(id) >= 0) ev.push("actualizarComparadorFlete('" + prefix + "')");
+    if(AFECTAN_TOTALES.indexOf(id) >= 0) ev.push("recalcularTotales('" + prefix + "')");
+    if(['customer','product','port'].indexOf(id) >= 0) ev.push("buscarContratos('" + prefix + "')");
+    return ev.length ? ' oninput="' + ev.join(';') + '"' : '';
+  };
   const field = (id, label, value='', type='text', placeholder='') =>
-    `<div class="config-field"><div class="config-label">${label}</div><input class="config-input" id="${prefix}-${id}" type="${type}" value="${value}" placeholder="${placeholder}"${AFECTAN_FLETE.indexOf(id)>=0?` oninput="actualizarComparadorFlete('${prefix}')"`:''}></div>`;
+    `<div class="config-field"><div class="config-label">${label}</div><input class="config-input" id="${prefix}-${id}" type="${type}" value="${value}" placeholder="${placeholder}"${extraEventos(id)}></div>`;
 
   const section = (title) =>
     `<div style="grid-column:1/-1;margin-top:12px;padding-bottom:6px;border-bottom:1px solid var(--border);"><span style="font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.5px;color:var(--text3);">${title}</span></div>`;
@@ -3862,7 +4169,31 @@ function buildCargaForm(prefix, d={}, fullEdit=false){
     ${smartField(prefix,'port','Port *',d.port||'','ej: Norfolk', COL.PORT)}
     ${smartField(prefix,'exporter','Exporter',d.exporter||'','ej: Argen Peanuts', COL.EXPORTER)}`;
 
-  if(!fullEdit) return `<div style="display:grid;grid-template-columns:1fr 1fr;gap:0 16px;">${basicFields}</div>`;
+  // ── AXT → Cliente ──
+  // Lo de arriba es el embarque (Planta → AXT), que sale de la planilla del
+  // despachante. Esto es el acuerdo comercial con el cliente, que sale del
+  // contrato: por eso va aparte y se completa solo.
+  const seccionContrato = `
+    <div style="grid-column:1/-1;margin-top:20px;padding:12px 14px;border-radius:10px;background:var(--accent-light);border:1px solid var(--accent);">
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;">
+        <div>
+          <div style="font-size:12px;font-weight:700;color:var(--accent);letter-spacing:.3px;">AXT → CLIENTE</div>
+          <div style="font-size:11px;color:var(--text3);margin-top:2px;">Se completa con el contrato de la hoja “${HOJA_CONTRATOS}”, cruzando cliente, producto y puerto.</div>
+        </div>
+        <button type="button" class="btn" style="font-size:11px;padding:5px 12px;" onclick="buscarContratos('${prefix}')">🔎 Buscar contrato</button>
+      </div>
+      <div id="${prefix}-contrato-box" style="margin-top:10px;font-size:11px;"></div>
+    </div>
+    ${field('contractCliente','Contract Cliente',d.contractCliente||'','text','se completa solo')}
+    ${field('priceCFR','Price Cliente',d.priceCFR||'','text','ej: 1130')}
+    ${field('flete','Flete',d.flete||'','text','ej: 270')}
+    ${field('totalCFR','Total CFR',d.totalCFR||'','text','(Price + Flete) × Tns')}
+    ${field('incoterm','INCOTERM',d.incoterm||'','text','ej: CFR Norfolk')}
+    ${field('priceFCServ','Price serv',d.priceFCServ||'','text','FC Servicios × Tns')}
+    ${field('totalFinal','TOTAL FINAL',d.totalFinal||'','text','Total CFR + Price serv')}
+    ${field('precioFinalTn','Precio final x tn',d.precioFinalTn||'','text','TOTAL FINAL ÷ Tns')}`;
+
+  if(!fullEdit) return `<div style="display:grid;grid-template-columns:1fr 1fr;gap:0 16px;">${basicFields}${seccionContrato}</div>`;
 
   const extraFields = `
     ${section('Documentos')}
@@ -3870,16 +4201,9 @@ function buildCargaForm(prefix, d={}, fullEdit=false){
     ${field('lombard','Envío a Lombard',d.lombard||'','text','ej: SI')}
     ${field('clienteEnv','Envío al Cliente',d.clienteEnv||'','text','ej: SI')}
     ${field('telex','TELEX',d.telex||'','text','ej: solicitado, falta ok')}
-    ${section('FC Lombard')}
+    ${section('Facturas')}
     ${field('invoiceCliente','Invoice Cliente',d.invoiceCliente||'','text','ej: 13117')}
-    ${field('contractCliente','Contract Cliente',d.contractCliente||'','text','')}
-    ${field('priceCFR','Price CFR',d.priceCFR||'','text','ej: 1130')}
-    ${field('flete','Flete',d.flete||'','text','ej: 270')}
-    ${field('totalCFR','Total CFR',d.totalCFR||'','text','ej: 30800')}
-    ${field('incoterm','INCOTERM',d.incoterm||'','text','ej: CFR Norfolk')}
-    ${section('FC Servicios')}
     ${field('invoiceFCServ','Invoice Serv',d.invoiceFCServ||'','text','ej: 13118')}
-    ${field('priceFCServ','Price Serv',d.priceFCServ||'','text','ej: 13200')}
     ${section('Pagaré')}
     ${field('pagareEnviado','Pagare enviado',d.pagareEnviado||'','text','ej: SI')}
     ${field('pagareFirmado','Pagare firmado',d.pagareFirmado||'','text','ej: SI')}
@@ -3894,7 +4218,7 @@ function buildCargaForm(prefix, d={}, fullEdit=false){
     ${dateField(prefix,'fechaEstCobro','Fecha estimada de cobro',d.fechaEstCobro||'')}
     ${dateField(prefix,'fechaCobro','Fecha de cobro real',d.fechaCobro||'')}`;
 
-  return `<div style="display:grid;grid-template-columns:1fr 1fr;gap:0 16px;">${basicFields}${extraFields}</div>`;
+  return `<div style="display:grid;grid-template-columns:1fr 1fr;gap:0 16px;">${basicFields}${seccionContrato}${extraFields}</div>`;
 }
 function renderNuevaCarga(){
   if(!accessToken){
@@ -3954,6 +4278,8 @@ function renderEditCarga(rowIdx){
     invoiceFCServ:    g('INVOICE_FC_SERV'),
     priceFCServ:      g('PRICE_SERV'),
     customer:         g('CUSTOMER'),
+    totalFinal:       g('TOTAL_CFR'),
+    precioFinalTn:    g('PRECIO_FINAL_TN'),
     proveedorFlete:   g('PROVEEDOR_FLETE'),
     fcFlete:          g('FC_FLETE'),
     montoFlete:       g('MONTO_FLETE'),
@@ -6374,9 +6700,9 @@ function fillImportData(data){
     const sel = document.getElementById(`${prefix}-${id}-sel`);
     const inp = document.getElementById(`${prefix}-${id}`);
     if(sel){
-      // Check if value exists in options
-      const opt = [...sel.options].find(o=>o.value===value);
-      if(opt){ sel.value = value; inp.style.display='none'; inp.value=value; }
+      // Check if value exists in options (sin distinguir mayusculas ni espacios)
+      const opt = [...sel.options].find(o=>o.value && o.value!=='__otro__' && normTar(o.value)===normTar(value));
+      if(opt){ sel.value = opt.value; inp.style.display='none'; inp.value=opt.value; }
       else {
         // Use "Escribir otro" option
         sel.value = '__otro__';
@@ -6411,6 +6737,8 @@ function fillImportData(data){
   // Also fill incoterm if field exists
   const incotermInp = document.getElementById(`${prefix}-incoterm`);
   if(incotermInp && data.incoterm) incotermInp.value = data.incoterm;
+  // Con todo cargado: reglas de producto (ABW + Norfolk + pasta = NOP) y contrato.
+  alCambiarCampoCarga(prefix);
 }
 
 // ─── ACCIONES RÁPIDAS ────────────────────────────────────────────────────────
