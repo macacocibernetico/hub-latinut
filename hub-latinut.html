@@ -2164,8 +2164,9 @@ async function loadContratos(){
     // Los encabezados no siempre estan en la fila 1: la hoja puede tener un titulo
     // arriba, como Cargas. Se prueban las primeras filas y se queda con la que mas
     // nombres conocidos tiene. Asumir la fila 1 dejaba todas las columnas corridas.
-    const CONOCIDOS = ['CONTRATO','CONTRACT','IMPORTADOR','IMPORTER','PRODUCTO','PRODUCT','PUERTO','PORT',
-                       'PRICE CLIENTE','PRECIO','FLETE','INCOTERM','FC SERVICIOS','TNS','SALDO','FECHA'];
+    const CONOCIDOS = ['CONTRATO','CONTRACT','IMPORTADOR','IMPORTER','EXPORTADOR','PRODUCTO','PRODUCT',
+                       'PUERTO','PUERTOS','PORT','PRICE CLIENTE','PRECIO','FLETE','INCOTERM','FC SERVICIOS',
+                       'TNS','TONELADAS','SALDO','FECHA','PACKAGING','TIPO'];
     let hdr = 0, mejor = -1;
     for(let i = 0; i < Math.min(6, filas.length); i++){
       const pts = (filas[i]||[]).filter(x => CONOCIDOS.indexOf(normTar(x)) >= 0).length;
@@ -5702,7 +5703,11 @@ function renderContratos(){
     flete:    ix('Flete','Freight'),
     inco:     ix('INCOTERM','Incoterm'),
     serv:     ix('FC Servicios','FC Servicio','Fc Serv','Servicios'),
-    fecha:    ix('Fecha','Fecha contrato','Date')
+    fecha:    ix('Fecha','Fecha contrato','Date'),
+    tipo:     ix('Tipo'),
+    periodo:  ix('Periodo de embarque','Periodo embarque','Periodo'),
+    avance:   ix('% Completado','Completado','% Avance'),
+    pagare:   ix('Pagare?','Pagare','Pagaré?','Pagaré')
   };
   const usados = Object.values(C).filter(i => i >= 0);
   const otras = _contratosHeaders.map((h,i) => (h && usados.indexOf(i) < 0) ? i : -1).filter(i => i >= 0);
@@ -5739,11 +5744,13 @@ function renderContratos(){
     </div>
     <div style="overflow-x:auto;"><table>
       <thead><tr>
-        <th>Contrato</th><th>Cliente</th><th>Producto</th><th>Puerto</th>
+        <th>Contrato</th><th>Cliente</th><th>Producto</th><th>Puertos</th>
         ${C.tns>=0?'<th style="text-align:right;">Tns</th>':''}
         ${C.saldo>=0?'<th style="text-align:right;">Saldo</th>':''}
+        ${C.periodo>=0?'<th>Embarque</th>':''}
         <th style="text-align:right;">Precio</th><th style="text-align:right;">Flete</th>
-        <th>Incoterm</th><th style="text-align:right;">Servicios /tn</th>
+        <th style="text-align:right;">Servicios /tn</th><th>Incoterm</th>
+        ${C.pagare>=0?'<th>Pagaré</th>':''}
         ${C.fecha>=0?'<th>Fecha</th>':''}
         ${contratosVerTodo?otras.map(i=>`<th>${_contratosHeaders[i]}</th>`).join(''):''}
       </tr></thead><tbody>`;
@@ -5754,18 +5761,27 @@ function renderContratos(){
   filas.forEach(f => {
     const puertos = v(f, C.puerto).split(/[,;\/]+/).map(x => x.trim()).filter(Boolean);
     const tns = parseSheetNum(v(f, C.tns)), saldo = parseSheetNum(v(f, C.saldo));
-    const pct = (!isNaN(tns) && tns > 0 && !isNaN(saldo)) ? Math.max(0, Math.min(100, (saldo/tns)*100)) : null;
+    // Lo que queda por embarcar, en %. Si la hoja trae "% Completado" se usa ese
+    // (es lo embarcado, asi que se invierte); si no, se calcula con saldo / tns.
+    let pct = null;
+    const avance = parseSheetNum(v(f, C.avance).replace('%',''));
+    if(!isNaN(avance)) pct = Math.max(0, Math.min(100, 100 - (avance <= 1 && v(f,C.avance).indexOf('%') < 0 ? avance*100 : avance)));
+    else if(!isNaN(tns) && tns > 0 && !isNaN(saldo)) pct = Math.max(0, Math.min(100, (saldo/tns)*100));
+    const tipo = v(f, C.tipo);
     html += `<tr>
-      <td class="mono" style="font-weight:600;color:var(--accent);white-space:nowrap;">${v(f,C.contrato)||'—'}</td>
+      <td class="mono" style="font-weight:600;color:var(--accent);white-space:nowrap;">${v(f,C.contrato)||'—'}
+        <button class="row-action" style="margin-left:6px;" onclick="abrirFormContrato(${_contratosFilas.indexOf(f)})" title="Editar este contrato">✎</button></td>
       <td style="font-weight:500;">${v(f,C.cliente)||'—'}</td>
-      <td style="font-size:12px;">${v(f,C.producto)||'—'}</td>
+      <td style="font-size:12px;">${v(f,C.producto)||'—'}${tipo?` <span style="font-size:9px;font-family:var(--mono);padding:1px 6px;border-radius:8px;background:${/NOP/i.test(tipo)?'rgba(46,125,50,.12)':'var(--bg3)'};color:${/NOP/i.test(tipo)?'var(--ok)':'var(--text3)'};">${tipo}</span>`:''}</td>
       <td>${puertos.length?puertos.map(p=>`<span style="font-size:10px;font-family:var(--mono);padding:2px 7px;border-radius:9px;background:var(--bg3);margin-right:3px;white-space:nowrap;">${p}</span>`).join(''):'—'}</td>
       ${C.tns>=0?`<td class="mono" style="text-align:right;">${num(v(f,C.tns))}</td>`:''}
-      ${C.saldo>=0?`<td class="mono" style="text-align:right;white-space:nowrap;">${num(v(f,C.saldo))}${pct!==null?`<div style="height:3px;background:var(--bg3);border-radius:2px;margin-top:3px;"><div style="height:3px;width:${pct}%;background:${pct<20?'var(--warn)':'var(--ok)'};border-radius:2px;"></div></div>`:''}</td>`:''}
+      ${C.saldo>=0?`<td class="mono" style="text-align:right;white-space:nowrap;">${num(v(f,C.saldo))}${pct!==null?`<div title="${Math.round(pct)}% por embarcar" style="height:3px;background:var(--bg3);border-radius:2px;margin-top:3px;"><div style="height:3px;width:${pct}%;background:${pct<20?'var(--warn)':'var(--ok)'};border-radius:2px;"></div></div>`:''}</td>`:''}
+      ${C.periodo>=0?`<td class="mono" style="font-size:11px;white-space:nowrap;">${v(f,C.periodo)||'—'}</td>`:''}
       <td class="mono" style="text-align:right;">${usd(v(f,C.price))}</td>
       <td class="mono" style="text-align:right;color:var(--text3);">${v(f,C.flete)?usd(v(f,C.flete)):'—'}</td>
-      <td class="mono" style="font-size:11px;">${v(f,C.inco)||'—'}</td>
       <td class="mono" style="text-align:right;color:var(--text3);">${v(f,C.serv)?usd(v(f,C.serv)):'—'}</td>
+      <td class="mono" style="font-size:11px;">${v(f,C.inco)||'—'}</td>
+      ${C.pagare>=0?`<td class="mono" style="font-size:11px;">${v(f,C.pagare)||'—'}</td>`:''}
       ${C.fecha>=0?`<td class="mono" style="font-size:11px;">${v(f,C.fecha)||'—'}</td>`:''}
       ${contratosVerTodo?otras.map(i=>`<td class="mono" style="font-size:11px;white-space:nowrap;">${v(f,i)||'—'}</td>`).join(''):''}
     </tr>`;
@@ -5780,9 +5796,28 @@ async function recargarContratos(){
   renderContratos();
 }
 
-function abrirFormContrato(){
+let _contratoEditando = null;   // indice en _contratosFilas, o null si es alta
+
+// "01/09/2026" -> "2026-09-01" para el <input type=date>, y al reves al guardar.
+function fechaAInput(v){
+  const m = (v||'').toString().trim().match(/^(\d{1,2})\/(\d{1,2})\/(\d{2,4})$/);
+  if(!m) return '';
+  const a = m[3].length === 2 ? '20' + m[3] : m[3];
+  return a + '-' + m[2].padStart(2,'0') + '-' + m[1].padStart(2,'0');
+}
+function inputAFecha(v){
+  const m = (v||'').toString().match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  return m ? m[3] + '/' + m[2] + '/' + m[1] : (v||'');
+}
+
+function abrirFormContrato(idxEditar){
   if(!accessToken){ alert('Conectate con Google primero para escribir en la planilla.'); return; }
   if(!_contratosHeaders.length){ alert('No pude leer los encabezados de ' + HOJA_CONTRATOS + '.'); return; }
+  const editando = (idxEditar !== undefined && idxEditar !== null && _contratosFilas[idxEditar]);
+  _contratoEditando = editando ? idxEditar : null;
+  const orig = editando ? _contratosFilas[idxEditar] : [];
+  const valOrig = i => (orig[i]||'').toString().trim();
+  const esc = t => (t||'').toString().replace(/"/g,'&quot;');
   const unicos = i => [...new Set(_contratosFilas.map(f => (f[i]||'').toString().trim()).filter(Boolean))].sort();
 
   let campos = '';
@@ -5791,7 +5826,7 @@ function abrirFormContrato(){
     const id = 'kc-' + i;
     if(_contratosFormulas.indexOf(i) >= 0){
       campos += `<div class="config-field"><div class="config-label">${h}</div>
-        <div style="font-size:11px;color:var(--text3);padding:8px 0;">Se calcula con la fórmula de la planilla</div></div>`;
+        <div style="font-size:11px;color:var(--text3);padding:8px 0;">${editando && valOrig(i) ? '<b style="color:var(--text2);">'+valOrig(i)+'</b> · ' : ''}Se calcula con la fórmula de la planilla</div></div>`;
       return;
     }
     const tipo = tipoCampoContrato(h);
@@ -5800,25 +5835,27 @@ function abrirFormContrato(){
     const extra = (n === 'IMPORTADOR' || n === 'IMPORTER') ? ' oninput="sugerirNumeroContrato()"' : '';
     if(tipo === 'fecha'){
       campos += `<div class="config-field"><div class="config-label">${h}${oblig}</div>
-        <input class="config-input" type="date" id="${id}"></div>`;
+        <input class="config-input" type="date" id="${id}" value="${editando ? fechaAInput(valOrig(i)) : ''}"></div>`;
     } else {
       // Datalist con lo ya usado en esa columna: sugiere sin obligar
       const lista = tipo === 'texto' ? unicos(i) : [];
       campos += `<div class="config-field"><div class="config-label">${h}${oblig}</div>
-        <input class="config-input" id="${id}" ${lista.length?`list="${id}-dl"`:''} ${tipo==='numero'?'inputmode="decimal"':''}${extra}>
+        <input class="config-input" id="${id}" value="${editando ? esc(valOrig(i)) : ''}" ${lista.length?`list="${id}-dl"`:''} ${tipo==='numero'?'inputmode="decimal"':''}${editando?'':extra}>
         ${lista.length?`<datalist id="${id}-dl">${lista.map(v=>`<option value="${v.replace(/"/g,'&quot;')}">`).join('')}</datalist>`:''}</div>`;
     }
   });
 
   document.getElementById('content').innerHTML = `
   <div class="config-section" style="max-width:860px;">
-    <div class="config-title">Nuevo contrato AXT → Cliente</div>
-    <div class="config-desc">Se agrega una fila al final de la hoja “${HOJA_CONTRATOS}”. Los campos son los mismos encabezados de la hoja.
-      En Puerto podés poner dos separados por coma. ${_contratosFormulas.length?'Las columnas con fórmula se copian de la fila de arriba.':''}</div>
+    <div class="config-title">${editando ? 'Editar contrato ' + esc(valOrig(idxHeaderContrato('Contrato','Contract'))) : 'Nuevo contrato AXT → Cliente'}</div>
+    <div class="config-desc">${editando
+      ? 'Se modifica la fila ' + orig._fila + ' de la hoja “' + HOJA_CONTRATOS + '”. Solo se escriben los campos que cambies; antes de guardar te muestro cada cambio para que lo revises.'
+      : 'Se agrega una fila al final de la hoja “' + HOJA_CONTRATOS + '”. Los campos son los mismos encabezados de la hoja.'}
+      En Puertos podés poner dos separados por coma. ${_contratosFormulas.length?'Las columnas con fórmula no se tocan.':''}</div>
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:0 16px;">${campos}</div>
     <div class="config-save">
       <button class="btn" onclick="showView('contratos')" style="margin-right:8px;">Cancelar</button>
-      <button class="btn primary" onclick="guardarContrato()">Guardar contrato</button>
+      <button class="btn primary" onclick="${editando ? 'guardarEdicionContrato()' : 'guardarContrato()'}">${editando ? 'Revisar cambios' : 'Guardar contrato'}</button>
     </div>
   </div>`;
 }
@@ -5896,6 +5933,107 @@ async function guardarContrato(){
   }catch(e){
     console.error('guardarContrato:', e);
     alert('No se pudo guardar el contrato: ' + e.message);
+  }
+}
+
+// Edicion con doble control:
+//  1) se comparan los campos con los originales y se muestran SOLO los que cambian,
+//     antes -> despues, para revisarlos uno por uno;
+//  2) justo antes de escribir se relee la fila de la planilla y se verifica que siga
+//     siendo el mismo contrato y que nadie la haya modificado mientras tanto.
+//     Si algo no coincide, no se escribe nada.
+//  Solo se escriben las celdas que cambiaron: el resto de la fila no se toca.
+async function guardarEdicionContrato(){
+  const idx = _contratoEditando;
+  const orig = _contratosFilas[idx];
+  if(!orig){ alert('No encuentro el contrato que estabas editando. Recargá y probá de nuevo.'); return; }
+
+  const cambios = [], errores = [];
+  _contratosHeaders.forEach((h, i) => {
+    if(!h || _contratosFormulas.indexOf(i) >= 0) return;
+    const el = document.getElementById('kc-' + i);
+    if(!el) return;
+    const tipo = tipoCampoContrato(h);
+    let nuevo = (el.value||'').trim();
+    if(tipo === 'fecha') nuevo = inputAFecha(nuevo);
+    const antes = (orig[i]||'').toString().trim();
+    if(tipo === 'numero' && nuevo && isNaN(parseSheetNum(nuevo))) errores.push(h + ' (no es un número)');
+    if(!nuevo && esObligatorioContrato(h)) errores.push(h + ' no puede quedar vacío');
+    // Numeros: "1130" y "1.130" son lo mismo, no cuenta como cambio
+    const igual = (tipo === 'numero' && !isNaN(parseSheetNum(nuevo)) && !isNaN(parseSheetNum(antes)))
+      ? parseSheetNum(nuevo) === parseSheetNum(antes) : nuevo === antes;
+    if(!igual) cambios.push({ col: i, campo: h, antes: antes, nuevo: nuevo });
+  });
+  if(errores.length){ alert('Hay que corregir:\n\n• ' + errores.join('\n• ')); return; }
+  if(!cambios.length){ showToast('No cambiaste nada'); return; }
+
+  const iCon = idxHeaderContrato('Contrato','Contract','N° Contrato','Nro Contrato','Contrato Cliente');
+  const numeroOrig = iCon >= 0 ? (orig[iCon]||'').toString().trim() : '';
+  const cambioNumero = cambios.find(c => c.col === iCon);
+  if(cambioNumero && contratos.some(k => normTar(k.contrato) === normTar(cambioNumero.nuevo))){
+    alert('Ya existe otro contrato ' + cambioNumero.nuevo + '. Usá otro número.'); return;
+  }
+
+  // ── Doble check 1: la lista de cambios ──
+  let detalle = '<div style="margin-bottom:6px;">Contrato <b>' + numeroOrig + '</b> · fila ' + orig._fila + '</div>' +
+    '<table style="width:100%;border-collapse:collapse;font-size:12px;">' +
+    '<tr><th style="text-align:left;padding:3px 6px;color:var(--text3);">Campo</th><th style="text-align:left;padding:3px 6px;color:var(--text3);">Antes</th><th style="text-align:left;padding:3px 6px;color:var(--text3);">Después</th></tr>' +
+    cambios.map(c => '<tr><td style="padding:3px 6px;">' + c.campo + '</td>' +
+      '<td style="padding:3px 6px;color:var(--danger);text-decoration:line-through;">' + (c.antes||'<i>vacío</i>') + '</td>' +
+      '<td style="padding:3px 6px;color:var(--ok);font-weight:600;">' + (c.nuevo||'<i>vacío</i>') + '</td></tr>').join('') +
+    '</table>';
+  if(cambioNumero){
+    detalle += '<div style="color:var(--warn);margin-top:8px;">⚠ Estás cambiando el número de contrato. Las cargas que ya tienen cargado “' +
+      numeroOrig + '” en Contract Cliente no se actualizan solas.</div>';
+  }
+  const ok = await showConfirm('Revisá los cambios', 'Se van a modificar ' + cambios.length + ' campo' + (cambios.length>1?'s':'') + ' en la hoja ' + HOJA_CONTRATOS + '.',
+    { icono:'📑', okLabel:'Confirmar cambios', peligro: !!cambioNumero, detalle: detalle });
+  if(!ok) return;
+
+  const nc = getNegocioConfig();
+  const sid = nc.sheetId || cfg.sheetId;
+  showToast('Verificando la fila...');
+  try{
+    // ── Doble check 2: releer la fila tal como esta AHORA en la planilla ──
+    const ultCol = colIndexToLetter(Math.max(_contratosHeaders.length - 1, 0));
+    const rr = await fetch('https://sheets.googleapis.com/v4/spreadsheets/' + sid + '/values/' +
+      encodeURIComponent(HOJA_CONTRATOS + '!A' + orig._fila + ':' + ultCol + orig._fila),
+      { headers:{ Authorization:'Bearer ' + accessToken } });
+    if(!rr.ok){ alert('No pude verificar la fila antes de guardar (HTTP ' + rr.status + '). No se escribió nada.'); return; }
+    const actual = (((await rr.json()).values||[])[0]||[]).map(x => (x||'').toString().trim());
+    if(iCon >= 0 && (actual[iCon]||'') !== numeroOrig){
+      alert('La fila ' + orig._fila + ' ya no es el contrato ' + numeroOrig + ' (ahora dice “' + (actual[iCon]||'vacío') +
+            '”). Alguien movió o borró filas. No se escribió nada: recargá los contratos y volvé a editar.');
+      return;
+    }
+    const pisados = cambios.filter(c => (actual[c.col]||'') !== c.antes);
+    if(pisados.length){
+      alert('Mientras editabas, alguien cambió en la planilla:\n\n' +
+        pisados.map(c => '• ' + c.campo + ': ahora dice “' + (actual[c.col]||'vacío') + '”').join('\n') +
+        '\n\nNo se escribió nada para no pisar ese cambio. Recargá y volvé a editar.');
+      return;
+    }
+
+    // Escribir solo las celdas que cambiaron, en una sola llamada
+    const data = cambios.map(c => ({
+      range: HOJA_CONTRATOS + '!' + colIndexToLetter(c.col) + orig._fila,
+      values: [[c.nuevo]]
+    }));
+    const rw = await fetch('https://sheets.googleapis.com/v4/spreadsheets/' + sid + '/values:batchUpdate', {
+      method:'POST', headers:{ Authorization:'Bearer ' + accessToken, 'Content-Type':'application/json' },
+      body: JSON.stringify({ valueInputOption:'USER_ENTERED', data: data })
+    });
+    if(!rw.ok){ alert('No se pudo guardar (HTTP ' + rw.status + ').'); return; }
+
+    await appendLog({ customer: (orig[idxHeaderContrato('Importador','Importer')]||'').toString(), accion:'contrato modificado',
+      detalle: numeroOrig + ' · ' + cambios.map(c => c.campo + ': ' + (c.antes||'vacío') + ' → ' + (c.nuevo||'vacío')).join(' · ') });
+    showToast('✓ Contrato ' + (cambioNumero ? cambioNumero.nuevo : numeroOrig) + ' actualizado');
+    _contratoEditando = null;
+    await loadContratos();
+    showView('contratos');
+  }catch(e){
+    console.error('guardarEdicionContrato:', e);
+    alert('No se pudo guardar: ' + e.message);
   }
 }
 
