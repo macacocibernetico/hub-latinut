@@ -2139,6 +2139,7 @@ let _contratosError = null;
 let _contratosHeaders = [];     // encabezados tal cual estan en la hoja
 let _contratosFilas = [];       // filas crudas, para la vista
 let _contratosFormulas = [];    // indices de columnas que se calculan con formula
+let _contratosHeaderFila = 1;
 
 async function loadContratos(){
   contratos = []; _contratosError = null;
@@ -2160,8 +2161,19 @@ async function loadContratos(){
     const data = await r.json();
     const filas = data.values || [];
     if(!filas.length) return;
-    _contratosHeaders = (filas[0]||[]).map(x => (x||'').toString().trim());
-    _contratosFilas = filas.slice(1).map((f, i) => Object.assign([...f], { _fila: i + 2 }))
+    // Los encabezados no siempre estan en la fila 1: la hoja puede tener un titulo
+    // arriba, como Cargas. Se prueban las primeras filas y se queda con la que mas
+    // nombres conocidos tiene. Asumir la fila 1 dejaba todas las columnas corridas.
+    const CONOCIDOS = ['CONTRATO','CONTRACT','IMPORTADOR','IMPORTER','PRODUCTO','PRODUCT','PUERTO','PORT',
+                       'PRICE CLIENTE','PRECIO','FLETE','INCOTERM','FC SERVICIOS','TNS','SALDO','FECHA'];
+    let hdr = 0, mejor = -1;
+    for(let i = 0; i < Math.min(6, filas.length); i++){
+      const pts = (filas[i]||[]).filter(x => CONOCIDOS.indexOf(normTar(x)) >= 0).length;
+      if(pts > mejor){ mejor = pts; hdr = i; }
+    }
+    _contratosHeaderFila = hdr + 1;      // numero de fila en la planilla
+    _contratosHeaders = (filas[hdr]||[]).map(x => (x||'').toString().trim());
+    _contratosFilas = filas.slice(hdr + 1).map((f, i) => Object.assign([...f], { _fila: hdr + 2 + i }))
                            .filter(f => f.some(x => (x||'').toString().trim()));
     // Que columnas tienen formula: se mira la ultima fila con datos. Esas no se
     // piden en el formulario ni se escriben: se copia la formula de la fila de
@@ -2183,7 +2195,7 @@ async function loadContratos(){
     }
 
     // Encabezados por nombre, como en el resto del hub.
-    const H = (filas[0]||[]).map(normTar);
+    const H = (filas[hdr]||[]).map(normTar);
     const col = (...nombres) => {
       for(const n of nombres){ const i = H.indexOf(normTar(n)); if(i >= 0) return i; }
       return -1;
@@ -2207,7 +2219,7 @@ async function loadContratos(){
       return;
     }
     const g = (fila, i) => i >= 0 ? (fila[i]||'').toString().trim() : '';
-    for(let i = 1; i < filas.length; i++){
+    for(let i = hdr + 1; i < filas.length; i++){
       const f = filas[i];
       if(!f || !g(f, c.importador)) continue;
       contratos.push({
@@ -5660,6 +5672,8 @@ function proximoNumeroContrato(importador){
   return base + String(max + 1).padStart(2, '0');
 }
 
+let contratosVerTodo = false;
+
 function renderContratos(){
   const cont = document.getElementById('content');
   if(getNegocioConfig().sinPagares){
@@ -5672,13 +5686,45 @@ function renderContratos(){
       <button class="btn primary" onclick="recargarContratos()">Volver a leer</button></div>`;
     return;
   }
-  const q = contratosBusqueda.trim().toLowerCase();
-  const filas = q ? _contratosFilas.filter(f => f.some(x => (x||'').toString().toLowerCase().includes(q))) : _contratosFilas;
-  const idxVisibles = _contratosHeaders.map((h,i) => h ? i : -1).filter(i => i >= 0);
 
-  let html = `<div class="table-wrap">
+  // Las columnas que importan, en un orden que se lee: primero quien y que,
+  // despues la plata. El resto de las columnas de la hoja queda detras de
+  // "ver todas", para que la tabla no sea una pared de celdas vacias.
+  const ix = (...n) => idxHeaderContrato(...n);
+  const C = {
+    contrato: ix('Contrato','Contract','N° Contrato','Nro Contrato','Contrato Cliente'),
+    cliente:  ix('Importador','Importer','Cliente','Customer'),
+    producto: ix('Producto','Product'),
+    puerto:   ix('Puerto','Port','Puertos','Destino'),
+    tns:      ix('Tns','Toneladas','TN'),
+    saldo:    ix('Saldo','Saldo Tns','Pendiente'),
+    price:    ix('Price Cliente','Precio Cliente','Price','Precio'),
+    flete:    ix('Flete','Freight'),
+    inco:     ix('INCOTERM','Incoterm'),
+    serv:     ix('FC Servicios','FC Servicio','Fc Serv','Servicios'),
+    fecha:    ix('Fecha','Fecha contrato','Date')
+  };
+  const usados = Object.values(C).filter(i => i >= 0);
+  const otras = _contratosHeaders.map((h,i) => (h && usados.indexOf(i) < 0) ? i : -1).filter(i => i >= 0);
+
+  const q = contratosBusqueda.trim().toLowerCase();
+  const filas = (q ? _contratosFilas.filter(f => f.some(x => (x||'').toString().toLowerCase().includes(q))) : _contratosFilas)
+    .slice().sort((a,b) => (a[C.cliente]||'').toString().localeCompare((b[C.cliente]||'').toString())
+                        || (a[C.contrato]||'').toString().localeCompare((b[C.contrato]||'').toString()));
+
+  const v = (f, i) => (i >= 0 ? (f[i]||'').toString().trim() : '');
+  const usd = x => { const n = parseSheetNum(x); return isNaN(n) ? '—' : 'USD ' + n.toLocaleString('es-AR',{maximumFractionDigits:2}); };
+  const num = x => { const n = parseSheetNum(x); return isNaN(n) ? '—' : n.toLocaleString('es-AR',{maximumFractionDigits:2}); };
+  const clientes = [...new Set(_contratosFilas.map(f => v(f, C.cliente)).filter(Boolean))];
+
+  let html = `<div class="stats-row">
+    <div class="stat-card"><div class="stat-label">Contratos abiertos</div><div class="stat-value">${_contratosFilas.length}</div><div class="stat-sub">en la hoja</div></div>
+    <div class="stat-card"><div class="stat-label">Clientes</div><div class="stat-value">${clientes.length}</div><div class="stat-sub">${clientes.slice(0,4).join(', ')}${clientes.length>4?'…':''}</div></div>
+    ${C.saldo>=0?`<div class="stat-card"><div class="stat-label">Saldo total</div><div class="stat-value" style="font-size:20px">${num(_contratosFilas.reduce((a,f)=>{const n=parseSheetNum(f[C.saldo]);return a+(isNaN(n)?0:n);},0))} tns</div><div class="stat-sub">por embarcar</div></div>`:''}
+  </div>
+  <div class="table-wrap">
     <div class="table-top" style="gap:10px;flex-wrap:wrap;">
-      <span style="font-size:13px;font-weight:600;color:var(--text);">${filas.length} contrato${filas.length===1?'':'s'} abierto${filas.length===1?'':'s'}${q?' (filtrado)':''}</span>
+      <span style="font-size:13px;font-weight:600;color:var(--text);">${filas.length} contrato${filas.length===1?'':'s'}${q?' encontrados':''}</span>
       <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
         <div style="position:relative;display:flex;align-items:center;">
           <span style="position:absolute;left:9px;font-size:13px;color:var(--text3);">🔍</span>
@@ -5686,14 +5732,43 @@ function renderContratos(){
             oninput="contratosBusqueda=this.value;if(this._t)clearTimeout(this._t);this._t=setTimeout(()=>{const v=this.value;renderContratos();setTimeout(()=>{const el=document.getElementById('contratos-search');if(el){el.focus();el.setSelectionRange(v.length,v.length);}},0);},300);"
             style="font-size:11px;font-family:var(--mono);padding:5px 10px 5px 30px;border-radius:8px;border:1px solid var(--border);background:var(--bg2);color:var(--text);width:220px;outline:none;">
         </div>
+        ${otras.length?`<span onclick="contratosVerTodo=!contratosVerTodo;renderContratos();" style="font-size:11px;color:var(--accent);cursor:pointer;">${contratosVerTodo?'Ocultar columnas extra':'Ver todas las columnas ('+otras.length+' más)'}</span>`:''}
         <button class="btn" style="font-size:11px;padding:5px 12px;" onclick="recargarContratos()">↻ Releer</button>
         <button class="btn primary" style="font-size:11px;padding:5px 12px;" onclick="abrirFormContrato()">＋ Nuevo contrato</button>
       </div>
     </div>
-    <div style="overflow-x:auto;"><table><thead><tr>${idxVisibles.map(i => `<th>${_contratosHeaders[i]}</th>`).join('')}</tr></thead><tbody>`;
-  if(!filas.length) html += `<tr><td colspan="${idxVisibles.length}"><div class="empty" style="padding:24px;">Nada que coincida.</div></td></tr>`;
+    <div style="overflow-x:auto;"><table>
+      <thead><tr>
+        <th>Contrato</th><th>Cliente</th><th>Producto</th><th>Puerto</th>
+        ${C.tns>=0?'<th style="text-align:right;">Tns</th>':''}
+        ${C.saldo>=0?'<th style="text-align:right;">Saldo</th>':''}
+        <th style="text-align:right;">Precio</th><th style="text-align:right;">Flete</th>
+        <th>Incoterm</th><th style="text-align:right;">Servicios /tn</th>
+        ${C.fecha>=0?'<th>Fecha</th>':''}
+        ${contratosVerTodo?otras.map(i=>`<th>${_contratosHeaders[i]}</th>`).join(''):''}
+      </tr></thead><tbody>`;
+
+  if(!filas.length){
+    html += `<tr><td colspan="14"><div class="empty" style="padding:24px;">${q?'Nada que coincida con “'+contratosBusqueda+'”.':'No hay contratos cargados.'}</div></td></tr>`;
+  }
   filas.forEach(f => {
-    html += '<tr>' + idxVisibles.map(i => `<td class="mono" style="font-size:11px;white-space:nowrap;">${(f[i]||'—')}</td>`).join('') + '</tr>';
+    const puertos = v(f, C.puerto).split(/[,;\/]+/).map(x => x.trim()).filter(Boolean);
+    const tns = parseSheetNum(v(f, C.tns)), saldo = parseSheetNum(v(f, C.saldo));
+    const pct = (!isNaN(tns) && tns > 0 && !isNaN(saldo)) ? Math.max(0, Math.min(100, (saldo/tns)*100)) : null;
+    html += `<tr>
+      <td class="mono" style="font-weight:600;color:var(--accent);white-space:nowrap;">${v(f,C.contrato)||'—'}</td>
+      <td style="font-weight:500;">${v(f,C.cliente)||'—'}</td>
+      <td style="font-size:12px;">${v(f,C.producto)||'—'}</td>
+      <td>${puertos.length?puertos.map(p=>`<span style="font-size:10px;font-family:var(--mono);padding:2px 7px;border-radius:9px;background:var(--bg3);margin-right:3px;white-space:nowrap;">${p}</span>`).join(''):'—'}</td>
+      ${C.tns>=0?`<td class="mono" style="text-align:right;">${num(v(f,C.tns))}</td>`:''}
+      ${C.saldo>=0?`<td class="mono" style="text-align:right;white-space:nowrap;">${num(v(f,C.saldo))}${pct!==null?`<div style="height:3px;background:var(--bg3);border-radius:2px;margin-top:3px;"><div style="height:3px;width:${pct}%;background:${pct<20?'var(--warn)':'var(--ok)'};border-radius:2px;"></div></div>`:''}</td>`:''}
+      <td class="mono" style="text-align:right;">${usd(v(f,C.price))}</td>
+      <td class="mono" style="text-align:right;color:var(--text3);">${v(f,C.flete)?usd(v(f,C.flete)):'—'}</td>
+      <td class="mono" style="font-size:11px;">${v(f,C.inco)||'—'}</td>
+      <td class="mono" style="text-align:right;color:var(--text3);">${v(f,C.serv)?usd(v(f,C.serv)):'—'}</td>
+      ${C.fecha>=0?`<td class="mono" style="font-size:11px;">${v(f,C.fecha)||'—'}</td>`:''}
+      ${contratosVerTodo?otras.map(i=>`<td class="mono" style="font-size:11px;white-space:nowrap;">${v(f,i)||'—'}</td>`).join(''):''}
+    </tr>`;
   });
   html += '</tbody></table></div></div>';
   cont.innerHTML = html;
