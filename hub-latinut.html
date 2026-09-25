@@ -187,6 +187,25 @@ button{font-family:var(--font);cursor:pointer;border:none;background:none;}
 .days-label{font-size:9px;color:var(--text3);text-transform:uppercase;letter-spacing:1px;margin-top:3px;font-weight:500;}
 
 /* TABLE */
+/* Vista de cargas por embarque */
+.cargas-toolbar{position:sticky;top:0;z-index:40;display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:10px 14px;margin-bottom:10px;background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius-lg);box-shadow:var(--shadow);}
+.cargas-toolbar .tb-btn{padding:6px 12px;border-radius:8px;border:1px solid var(--border2);background:var(--bg2);color:var(--text);font-size:12px;font-weight:500;font-family:var(--font);cursor:pointer;white-space:nowrap;}
+.cargas-toolbar .tb-btn.prim{background:var(--accent);border-color:var(--accent);color:#fff;}
+.cargas-toolbar .tb-btn[disabled]{opacity:.45;cursor:not-allowed;}
+.grp-head{display:flex;align-items:center;gap:10px;padding:9px 14px;background:var(--bg3);border-top:1px solid var(--border);font-size:12px;cursor:pointer;user-select:none;}
+.grp-head .grp-tit{font-weight:600;color:var(--text);}
+.grp-head .grp-sub{color:var(--text3);font-family:var(--mono);font-size:11px;}
+.crow{display:grid;grid-template-columns:26px 120px minmax(120px,1.4fr) minmax(90px,1fr) 70px 64px 92px;gap:10px;align-items:center;padding:8px 14px;border-top:1px solid var(--border);font-size:12px;cursor:pointer;}
+.crow:hover{background:var(--bg3);}
+.crow.en-grupo{padding-left:30px;}
+.st-dot{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:4px;}
+.panel-carga{position:fixed;top:0;right:0;bottom:0;width:400px;max-width:94vw;background:var(--bg2);border-left:1px solid var(--border);box-shadow:var(--shadow-lg);z-index:60;transform:translateX(105%);transition:transform .2s ease;overflow-y:auto;padding:18px 20px;}
+.panel-carga.open{transform:none;}
+.panel-carga .pc-row{display:flex;justify-content:space-between;gap:10px;padding:5px 0;border-bottom:1px solid var(--border);font-size:12px;}
+.panel-carga .pc-row span:first-child{color:var(--text3);}
+.panel-carga .pc-acc{display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:14px;}
+.panel-carga .pc-acc button{padding:9px;border-radius:8px;border:1px solid var(--border2);background:var(--bg2);font-size:12px;font-weight:500;cursor:pointer;font-family:var(--font);color:var(--text);}
+@media (max-width:768px){.crow{grid-template-columns:26px 1fr 70px;}.crow .c-hide{display:none;}}
 .table-wrap{background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius-lg);overflow:hidden;margin-bottom:24px;box-shadow:var(--shadow);}
 .table-top{display:flex;align-items:center;justify-content:space-between;padding:12px 16px;border-bottom:1px solid var(--border);}
 .table-wrap table{width:100%;border-collapse:collapse;}
@@ -3276,6 +3295,11 @@ let cargasShowAll = false;
 // Arranca en "mas cerca de hoy": es lo que uno quiere ver al abrir la vista.
 // Los ordenes por fecha siguen estando en el selector.
 let cargasSort = 'cerca_hoy';
+// 'grupos' = cargas agrupadas por embarque con barra de acciones arriba.
+// 'tabla'  = la tabla ancha de siempre, con todas las columnas.
+let cargasVista = 'grupos';
+let cargasGruposCerrados = new Set();   // claves de grupo plegadas
+let cargasLimite = 80;                  // cuantas filas dibuja la vista por embarque
 let cargasSearch = ''; // búsqueda libre
 let cargasPagareStates = new Set(); // multi-select pagaré
 let cargasDropFilters = {
@@ -3508,6 +3532,7 @@ function renderCargas(showAll, sort){
   };
 
   window.actualizarBarraFC = function(){
+    if(cargasVista === 'grupos' && currentView === 'cargas' && document.getElementById('cargas-toolbar')){ actualizarToolbarCargas(); return; }
     const bar = document.getElementById('fc-bulk-bar');
     if(!bar) return;
     const n = window._fcSelectedRows.size;
@@ -3596,6 +3621,9 @@ function renderCargas(showAll, sort){
       <div style="display:flex;align-items:center;justify-content:space-between;width:100%;flex-wrap:wrap;gap:8px;">
         <span style="font-size:13px;font-weight:600;color:var(--text);">${rows.length} cargas</span>
         <div style="display:flex;gap:6px;align-items:center;">
+          ${viewChip('Por embarque', cargasVista==='grupos', "cargasVista='grupos';renderCargas()")}
+          ${viewChip('Tabla', cargasVista==='tabla', "cargasVista='tabla';renderCargas()")}
+          <span style="width:1px;height:18px;background:var(--border);margin:0 4px;"></span>
           ${viewChip('Activas', !cargasShowAll, "renderCargas(false)")}
           ${viewChip('Todas', cargasShowAll, "renderCargas(true)")}
           ${resetBtn}
@@ -3643,8 +3671,23 @@ function renderCargas(showAll, sort){
     return;
   }
 
+  // Vista por embarque: reusa filtros, buscador y orden de arriba; cambia como se
+  // dibujan las filas. El HTML de los filtros se corta antes de la tabla.
+  if(cargasVista === 'grupos'){
+    const corte = html.indexOf('<div id="fc-bulk-bar"');
+    const filtrosHtml = (corte >= 0 ? html.slice(0, corte) : html) + '</div>';
+    document.getElementById('content').innerHTML = filtrosHtml + renderCargasGrupos(rows);
+    window.actualizarBarraFC();
+    return;
+  }
+
   const ncC = getNegocioConfig();
-  pagedRows.forEach((row, localIdx) => {
+  // localIdx tiene que ser la posicion en la lista COMPLETA (rows), no en la pagina:
+  // la seleccion y las acciones en lote lo buscan en window._fcAllRows = rows.
+  // Antes era el indice dentro de la pagina, y en la pagina 2 tildar una carga
+  // seleccionaba la que ocupaba ese lugar en la pagina 1.
+  pagedRows.forEach((row) => {
+    const localIdx = rows.indexOf(row);
     const idx = allRows.indexOf(row);
     const pagEnv = (row[COL.PAGARE_ENVIADO]||'').trim().toUpperCase();
     const pagFirm = (row[COL.PAGARE_FIRMADO]||'').trim().toUpperCase();
@@ -7329,6 +7372,172 @@ document.addEventListener('touchend', () => {
 
 // Mobile card view for Cargas AXT
 function isMobile(){ return window.innerWidth <= 768; }
+
+// ─── VISTA DE CARGAS POR EMBARQUE ────────────────────────────────────────────
+// Las cargas que viajan juntas (mismo cliente, buque, ETD y puerto, o un grupo
+// armado a mano al pedir la FC) quedan bajo un encabezado que se pliega. Las
+// acciones van en una barra fija arriba, que actua sobre lo seleccionado, y el
+// detalle de una carga se abre en un panel a la derecha al tocar la fila.
+// Asi no hay que desplazarse hasta el final de una tabla ancha para apretar nada.
+
+function estadoCargaDots(row){
+  const docs = (row[COL.DOCUMENTOS]||'').trim().toUpperCase();
+  const env  = (row[COL.CLIENTE_ENV]||'').trim().toUpperCase();
+  const tl   = (row[COL.TELEX]||'').trim().toLowerCase();
+  const color = ok => ok === true ? 'var(--ok)' : ok === 'mid' ? 'var(--warn)' : 'var(--border2)';
+  const dots = [
+    ['Docs: ' + (docs || 'pendiente'), docs === 'SI' ? true : (docs ? 'mid' : false)],
+    ['Aviso al cliente: ' + (env || 'no enviado'), env === 'SI' ? true : false],
+    ['TELEX: ' + (tl || 'sin solicitar'), (tl === 'si' || tl.indexOf('bl orig') >= 0) ? true : (tl ? 'mid' : false)]
+  ];
+  if(!getNegocioConfig().sinPagares){
+    const est = estadoPagare(row);
+    dots.push(['Pagaré: ' + est.label, est.key === 'firmado' || est.key === 'na' ? true : (est.key === 'sin_enviar' ? false : 'mid')]);
+  }
+  return dots.map(d => `<span class="st-dot" title="${d[0]}" style="background:${color(d[1])};"></span>`).join('');
+}
+
+function filaCargaGrupos(row, i, enGrupo, mostrarCliente){
+  const tns = parseSheetNum(row[COL.TNS]);
+  const d = daysFrom(row[COL.ETA]);
+  const dTxt = d === null ? '' : (d === 0 ? 'hoy' : (d > 0 ? 'en ' + d + 'd' : 'hace ' + (-d) + 'd'));
+  const sel = window._fcSelectedRows && window._fcSelectedRows.has(i);
+  const idx = allRows.indexOf(row);
+  return `<div class="crow${enGrupo?' en-grupo':''}" id="fc-tr-${i}" style="${sel?'background:rgba(0,113,227,.06);':''}" onclick="abrirPanelCarga(${idx})">
+    <input type="checkbox" id="fc-cb-${i}" ${sel?'checked':''} onclick="event.stopPropagation();toggleFCSelection(${i})" style="accent-color:var(--accent);cursor:pointer;">
+    <span class="mono" style="color:var(--accent);font-weight:600;">${(row[COL.LOTS]||'—').substring(0,18)}</span>
+    <span>${mostrarCliente?`<b>${row[COL.CUSTOMER]||'—'}</b> · `:''}${(row[COL.PRODUCT]||'—').substring(0,34)}${esNOP(row)?' <span style="font-size:9px;padding:1px 5px;border-radius:6px;background:rgba(46,125,50,.12);color:var(--ok);">NOP</span>':''}</span>
+    <span class="mono c-hide" style="color:var(--text3);font-size:11px;">${(row[COL.CONTAINERS]||'—').substring(0,22)}</span>
+    <span class="mono" style="text-align:right;">${isNaN(tns)?'—':tns.toLocaleString('es-AR',{maximumFractionDigits:2})+' tn'}</span>
+    <span class="mono c-hide" title="ETA ${fmtDate(row[COL.ETA])}" style="font-size:11px;">${fmtDate(row[COL.ETA])}<div style="color:var(--text3);font-size:10px;">${dTxt}</div></span>
+    <span class="c-hide">${estadoCargaDots(row)}</span>
+  </div>`;
+}
+
+function renderCargasGrupos(rows){
+  const grupos = window._fcGrupos || {};
+  const etiqueta = window._fcEtiqueta || {};
+  const hechos = new Set();
+  let n = 0, cuerpo = '';
+  for(let i = 0; i < rows.length && n < cargasLimite; i++){
+    const row = rows[i];
+    const k = grupoKeyFC(row);
+    const miembros = grupos[k] || [i];
+    if(miembros.length > 1){
+      if(hechos.has(k)) continue;
+      hechos.add(k);
+      const cerrado = cargasGruposCerrados.has(k);
+      const tnsG = miembros.reduce((a, j) => { const t = parseSheetNum(rows[j][COL.TNS]); return a + (isNaN(t)?0:t); }, 0);
+      const p0 = rows[miembros[0]];
+      const manual = esGrupoManual(k);
+      const kEsc = k.replace(/\\/g,'\\\\').replace(/'/g,"\\'");
+      const todos = miembros.every(j => window._fcSelectedRows.has(j));
+      cuerpo += `<div class="grp-head" onclick="toggleGrupoCargas('${kEsc}')">
+        <span style="color:var(--text3);width:10px;">${cerrado?'▸':'▾'}</span>
+        <input type="checkbox" ${todos?'checked':''} onclick="event.stopPropagation();seleccionarGrupoFC('${kEsc}')" title="Seleccionar todo el embarque" style="accent-color:var(--accent);cursor:pointer;">
+        <span class="grp-tit">${p0[COL.CUSTOMER]||'—'}</span>
+        <span class="grp-sub">${(p0[COL.VESSEL]||'—')} · ETD ${fmtDate(p0[COL.ETD])} · ${(p0[COL.PORT]||'—')}</span>
+        ${manual?'<span title="Armado a mano al pedir la FC" style="font-size:10px;padding:1px 7px;border-radius:8px;background:rgba(247,148,29,.15);color:var(--warn);">✋ armado a mano</span>':''}
+        <span style="flex:1;"></span>
+        <span class="grp-sub">${miembros.length} cargas · ${tnsG.toLocaleString('es-AR',{maximumFractionDigits:2})} tn</span>
+      </div>`;
+      if(!cerrado) miembros.forEach(j => { cuerpo += filaCargaGrupos(rows[j], j, true, false); n++; });
+    } else {
+      cuerpo += filaCargaGrupos(row, i, false, true); n++;
+    }
+  }
+  const quedan = rows.length - n - [...hechos].reduce((a,k) => a + (cargasGruposCerrados.has(k) ? (grupos[k]||[]).length : 0), 0);
+  return `<div id="cargas-toolbar" class="cargas-toolbar"></div>
+  <div class="table-wrap">
+    <div style="display:grid;grid-template-columns:26px 120px minmax(120px,1.4fr) minmax(90px,1fr) 70px 64px 92px;gap:10px;padding:8px 14px;font-size:10px;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:.4px;">
+      <span></span><span>Lote</span><span>Producto</span><span class="c-hide">Contenedor</span><span style="text-align:right;">Tns</span><span class="c-hide">ETA</span><span class="c-hide" title="Docs · Aviso cliente · TELEX · Pagaré">Estado</span>
+    </div>
+    ${cuerpo || '<div class="empty" style="padding:30px;">Ninguna carga con esos filtros.</div>'}
+    ${quedan > 0 ? `<div style="padding:12px;text-align:center;border-top:1px solid var(--border);"><span onclick="cargasLimite+=80;renderCargas();" style="font-size:12px;color:var(--accent);cursor:pointer;">Mostrar ${Math.min(80,quedan)} más (quedan ${quedan})</span></div>` : ''}
+  </div>
+  <div id="panel-carga" class="panel-carga"></div>`;
+}
+
+function toggleGrupoCargas(k){
+  if(cargasGruposCerrados.has(k)) cargasGruposCerrados.delete(k); else cargasGruposCerrados.add(k);
+  renderCargas();
+}
+
+// La barra de arriba: siempre visible, dice que esta seleccionado y ofrece las
+// acciones. Editar y Detalle aparecen solo con una carga, porque son de a una.
+function actualizarToolbarCargas(){
+  const tb = document.getElementById('cargas-toolbar');
+  if(!tb) return;
+  const n = window._fcSelectedRows ? window._fcSelectedRows.size : 0;
+  if(!n){
+    tb.innerHTML = '<span style="font-size:12px;color:var(--text3);">Tildá cargas o un embarque entero para actuar sobre ellos · Tocá una fila para ver su detalle</span>';
+    return;
+  }
+  const sel = window._selFCaGlobal ? window._selFCaGlobal() : [];
+  const r = resumenFC(sel);
+  const res = r.bloqueo
+    ? '<span style="font-size:12px;color:var(--danger);">⚠ ' + r.bloqueo + '</span>'
+    : '<span style="font-size:12px;"><b>' + n + ' seleccionada' + (n===1?'':'s') + '</b> <span style="color:var(--text3);">· ' + r.customer +
+      (r.tns ? ' · ' + r.tns.toLocaleString('es-AR',{maximumFractionDigits:2}) + ' tn' : '') +
+      (r.puertos.length ? ' · ' + r.puertos.join(', ') : '') + '</span>' +
+      (r.avisos.length ? ' <span title="' + r.avisos.join(' | ').replace(/"/g,'&quot;') + '" style="color:var(--warn);">⚠ ' + r.avisos.length + '</span>' : '') + '</span>';
+  const dis = r.bloqueo ? ' disabled' : '';
+  const uno = sel.length === 1 ? sel[0] : null;
+  tb.innerHTML = res + '<span style="flex:1;"></span>' +
+    '<button class="tb-btn prim"' + dis + ' onclick="requestBulkFC()">📄 FC</button>' +
+    '<button class="tb-btn"' + dis + ' onclick="bulkAvisoCliente()">📦 Aviso cliente</button>' +
+    '<button class="tb-btn"' + dis + ' onclick="bulkLiberacion()">🚢 Liberación</button>' +
+    '<button class="tb-btn" onclick="openBulkMailModal(window._selFCaGlobal(),\'reclamo_pago\')">✉ Cobro</button>' +
+    (uno !== null ? '<button class="tb-btn" onclick="renderEditCarga(' + uno + ')">✎ Editar</button>' +
+                    '<button class="tb-btn" onclick="abrirPanelCarga(' + uno + ')">Detalle</button>' : '') +
+    '<button class="tb-btn" onclick="limpiarSelFC()">Limpiar</button>';
+}
+
+// Ficha de una carga a la derecha, con todo lo importante y todas sus acciones.
+function abrirPanelCarga(idx){
+  const row = allRows[idx];
+  const p = document.getElementById('panel-carga');
+  if(!row || !p) return;
+  const nc = getNegocioConfig();
+  const v = c => (c >= 0 ? (row[c]||'').toString().trim() : '') || '—';
+  const usd = c => { const x = parseSheetNum(row[c]); return isNaN(x) ? '—' : 'USD ' + x.toLocaleString('es-AR',{maximumFractionDigits:0}); };
+  const fila = (k, val) => `<div class="pc-row"><span>${k}</span><span class="mono" style="text-align:right;">${val}</span></div>`;
+  const est = nc.sinPagares ? null : estadoPagare(row);
+  p.innerHTML = `
+    <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;margin-bottom:12px;">
+      <div>
+        <div style="font-size:15px;font-weight:700;color:var(--accent);font-family:var(--mono);">${v(COL.LOTS)}</div>
+        <div style="font-size:13px;font-weight:600;margin-top:2px;">${v(COL.CUSTOMER)}</div>
+        <div style="font-size:11px;color:var(--text3);margin-top:2px;">${v(COL.PRODUCT)} · ${v(COL.TNS)} tn</div>
+      </div>
+      <button onclick="cerrarPanelCarga()" aria-label="Cerrar" style="border:none;background:none;font-size:20px;cursor:pointer;color:var(--text3);">×</button>
+    </div>
+    <div style="font-size:10px;font-weight:600;color:var(--text3);text-transform:uppercase;margin:10px 0 4px;">Embarque</div>
+    ${fila('Buque', v(COL.VESSEL))}${fila('Naviera', v(COL.SHIPPING))}${fila('Booking', v(COL.BOOKING))}
+    ${fila('BL', v(COL.BL))}${fila('Contenedor', v(COL.CONTAINERS))}
+    ${fila('ETD', fmtDate(row[COL.ETD]))}${fila('ETA', fmtDate(row[COL.ETA]))}${fila('Puerto', v(COL.PORT))}
+    <div style="font-size:10px;font-weight:600;color:var(--text3);text-transform:uppercase;margin:12px 0 4px;">Estado</div>
+    ${fila('Docs', v(COL.DOCUMENTOS))}${fila('Aviso cliente', v(COL.CLIENTE_ENV))}${fila('TELEX', v(COL.TELEX))}
+    ${est ? fila('Pagaré', est.label) : ''}
+    <div style="font-size:10px;font-weight:600;color:var(--text3);text-transform:uppercase;margin:12px 0 4px;">Facturación</div>
+    ${fila('Contrato', v(COL.CONTRACT_CLIENTE))}${fila('Invoice FC1', v(COL.INVOICE_CLIENTE))}${fila('Invoice FC2', v(COL.INVOICE_FC_SERV))}
+    ${fila('Total', usd(COL.TOTAL_CFR))}${fila('Cobro estimado', fmtDate(row[getCobroCol()]))}
+    <div class="pc-acc">
+      <button style="background:var(--accent);color:#fff;border-color:var(--accent);" onclick="solicitarFC(${idx})">📄 Solicitud FC</button>
+      <button onclick="avisoClienteBulk([${idx}])">📦 Aviso cliente</button>
+      <button onclick="solicitarLiberacionViaAppScript(${idx})">🚢 Liberación</button>
+      <button onclick="openMailModal(${idx},'reclamo_pago')">✉ Reclamo cobro</button>
+      <button onclick="renderEditCarga(${idx})">✎ Editar carga</button>
+      <button onclick="triggerDriveUpload(${idx})">📎 Subir docs</button>
+      <button onclick="driveOpenFolder(${idx})">📁 Carpeta Drive</button>
+      <button onclick="openTasksModal(${idx})">📋 Tasks</button>
+    </div>`;
+  p.classList.add('open');
+}
+function cerrarPanelCarga(){
+  const p = document.getElementById('panel-carga');
+  if(p) p.classList.remove('open');
+}
 
 function renderCargasMobileCards(rows, pagedRows){
   let html = '';
