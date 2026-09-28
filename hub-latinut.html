@@ -45,7 +45,8 @@ button{font-family:var(--font);cursor:pointer;border:none;background:none;}
 /* LAYOUT */
 .shell{display:flex;min-height:100vh;}
 .sidebar{width:240px;min-height:100vh;background:rgba(255,255,255,.85);backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);border-right:1px solid var(--border);display:flex;flex-direction:column;position:fixed;top:0;left:0;z-index:10;}
-.main{margin-left:240px;flex:1;display:flex;flex-direction:column;min-height:100vh;}
+/* min-width:0: sin esto, una tabla ancha estira .main (item flex) y toda la pagina scrollea de costado */
+.main{margin-left:240px;flex:1;display:flex;flex-direction:column;min-height:100vh;min-width:0;}
 
 /* BARRA DE ACCIONES SOBRE LA SELECCION
    Iba con position:sticky + left:50% + translateX(-50%). Dos problemas: sticky no
@@ -199,6 +200,78 @@ button{font-family:var(--font);cursor:pointer;border:none;background:none;}
 .crow:hover{background:var(--bg3);}
 .crow.en-grupo{padding-left:30px;}
 .st-dot{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:4px;}
+/* CARGAS · VISTA TABLA TIPO GOOGLE SHEETS
+   El scroll vive en .t-scroll (NO dentro de .table-wrap, que tiene overflow:hidden
+   y mata el sticky). Encabezado, numero de fila, tilde y columnas A-C quedan fijos. */
+/* overflow:hidden hace que la grilla ancha no estire la pagina: el scroll horizontal queda solo en .t-scroll */
+.tabla-cargas{display:flex;flex-direction:column;gap:8px;min-width:0;overflow:hidden;}
+.tabla-cargas .cargas-toolbar{position:static;margin-bottom:0;}
+.tabla-cargas.full{position:fixed;inset:0;z-index:50;background:var(--bg);padding:12px 14px;}
+.tabla-cargas.full .t-scroll{max-height:none;flex:1;}
+body.tabla-full-on{overflow:hidden;}
+.t-sub{display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-size:12px;color:var(--text2);}
+.t-ayuda{font-size:11px;color:var(--text3);}
+.t-chip{font-size:11px;padding:3px 9px;border-radius:12px;background:var(--accent-light);color:var(--accent);cursor:pointer;font-family:var(--mono);}
+.t-full{padding:7px 12px;border-radius:8px;border:1px solid var(--border2);background:var(--bg2);font-size:12px;font-weight:500;color:var(--text);}
+.t-pend{display:flex;align-items:center;gap:8px;padding:8px 12px;border-radius:10px;background:var(--warn-light);border:1px solid var(--warn);font-size:12px;color:#8a4b00;}
+.t-pend button{padding:7px 14px;border-radius:8px;border:1px solid var(--border2);background:var(--bg2);font-size:12px;font-weight:500;}
+.t-pend button.prim{background:var(--accent);border-color:var(--accent);color:#fff;}
+.t-scroll{overflow:auto;max-height:calc(100vh - 250px);min-height:260px;background:var(--bg2);border:1px solid var(--border2);border-radius:10px;}
+.t-scroll::-webkit-scrollbar{width:14px;height:14px;}
+.t-scroll::-webkit-scrollbar-thumb{background:var(--border2);border-radius:8px;border:3px solid var(--bg2);}
+.t-scroll::-webkit-scrollbar-track{background:var(--bg3);}
+.t-grid{border-collapse:separate;border-spacing:0;font-size:12px;font-family:var(--font);}
+.t-grid th,.t-grid td{border-right:1px solid #dadce0;border-bottom:1px solid #dadce0;padding:0 7px;height:26px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;background:var(--bg2);}
+.t-grid thead th{position:sticky;top:0;z-index:4;background:#f1f3f4;font-weight:600;color:var(--text2);height:auto;padding:3px 4px 4px 7px;text-align:left;vertical-align:bottom;}
+.t-grid thead th.col-cur{background:#d3e3fd;color:#0b57d0;}
+.t-grid .th-in{display:flex;align-items:flex-end;gap:4px;}
+.t-grid .th-letra{display:none;}
+.t-grid .th-nom{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:normal;line-height:1.25;max-height:32px;}
+.t-grid .th-fil{width:22px;height:22px;border-radius:5px;color:var(--text3);font-size:12px;flex-shrink:0;}
+.t-grid .th-fil:hover{background:var(--bg4);}
+.t-grid .th-fil.on{background:#c2e7ff;color:#0b57d0;}
+.t-grid th.formula,.t-grid td.formula{color:var(--text3);}
+.t-grid td.formula{background:#fafafa;font-style:italic;}
+.t-grid tbody tr:nth-child(even) td{background:#fafbfc;}
+.t-grid tbody tr:hover td{background:#f1f6fe;}
+.t-grid tbody tr.row-cur td{background:#e8f0fe;}
+.t-grid tbody tr.sel td{background:#dde9fb;}
+.t-grid td.cur{outline:2px solid #1a73e8;outline-offset:-2px;}
+.t-grid td.chg,.t-grid tbody tr td.chg{background:#fff2cc;color:#7a4b00;font-weight:500;}
+.t-grid td.editando{padding:0;overflow:visible;}
+.t-grid .t-edit{width:100%;min-width:140px;height:26px;border:2px solid #1a73e8;padding:0 6px;font-size:12px;font-family:var(--font);outline:none;box-shadow:0 2px 8px rgba(0,0,0,.2);}
+.t-grid .fija{position:sticky;z-index:2;}
+.t-grid thead th.fija{z-index:5;}
+.t-grid .fija-ult{box-shadow:3px 0 4px -2px rgba(0,0,0,.15);}
+.t-grid .t-num{position:sticky;left:0;z-index:2;width:46px;min-width:46px;max-width:46px;text-align:center;color:var(--text3);background:#f1f3f4!important;font-family:var(--mono);font-size:11px;}
+.t-grid .t-cb{position:sticky;left:46px;z-index:2;width:58px;min-width:58px;max-width:58px;padding:0 4px;}
+.t-grid thead .t-num,.t-grid thead .t-cb{z-index:6;}
+.t-grid tr.row-cur .t-num{background:#d3e3fd!important;color:#0b57d0;font-weight:600;}
+.t-grid .t-cb input{accent-color:var(--accent);cursor:pointer;vertical-align:middle;}
+.t-grp{margin-left:4px;font-size:9px;font-family:var(--mono);padding:2px 5px;border-radius:9px;background:rgba(0,113,227,.1);color:var(--accent);cursor:pointer;}
+.t-grp.man{background:rgba(247,148,29,.15);color:var(--warn);}
+.t-nota{font-size:10px;color:var(--text3);font-style:italic;}
+.t-grid .col-acciones{position:sticky;right:0;z-index:3;padding:0 4px;box-shadow:-4px 0 6px -3px rgba(0,0,0,.18);}
+.t-grid thead th.col-acciones{z-index:6;}
+.t-acc{height:24px;min-width:30px;padding:0 8px;margin:1px 2px;border-radius:6px;border:1px solid var(--border2);background:var(--bg2);font-size:12px;font-weight:500;color:var(--text);}
+.t-acc:hover{border-color:var(--accent);color:var(--accent);}
+.t-mas{text-align:center;padding:6px;}
+.t-mas span{font-size:12px;color:var(--accent);cursor:pointer;}
+.tabla-filtro-pop{position:fixed;z-index:90;width:280px;background:var(--bg2);border:1px solid var(--border2);border-radius:10px;box-shadow:0 8px 28px rgba(0,0,0,.18);padding:10px;font-size:12px;}
+.tfp-tit{font-weight:600;margin-bottom:6px;}
+.tfp-ord{display:flex;flex-direction:column;border-bottom:1px solid var(--border);padding-bottom:6px;margin-bottom:6px;}
+.tfp-ord button{text-align:left;padding:5px 6px;border-radius:6px;font-size:12px;}
+.tfp-ord button:hover{background:var(--bg3);}
+.tfp-buscar{width:100%;padding:6px 8px;border:1px solid var(--border2);border-radius:6px;font-size:12px;margin-bottom:4px;}
+.tfp-acc{font-size:11px;color:var(--accent);margin-bottom:4px;}
+.tfp-acc span{cursor:pointer;}
+.tfp-lista{max-height:220px;overflow-y:auto;border:1px solid var(--border);border-radius:6px;padding:4px;}
+.tfp-lista label{display:flex;align-items:center;gap:6px;padding:3px 4px;cursor:pointer;border-radius:4px;}
+.tfp-lista label:hover{background:var(--bg3);}
+.tfp-lista label span{margin-left:auto;color:var(--text3);font-size:10px;}
+.tfp-pie{display:flex;justify-content:flex-end;gap:6px;margin-top:8px;}
+.tfp-pie button{padding:6px 12px;border-radius:7px;border:1px solid var(--border2);background:var(--bg2);font-size:12px;}
+.tfp-pie button.prim{background:var(--accent);border-color:var(--accent);color:#fff;}
 .panel-carga{position:fixed;top:0;right:0;bottom:0;width:400px;max-width:94vw;background:var(--bg2);border-left:1px solid var(--border);box-shadow:var(--shadow-lg);z-index:60;transform:translateX(105%);transition:transform .2s ease;overflow-y:auto;padding:18px 20px;}
 .panel-carga.open{transform:none;}
 .panel-carga .pc-row{display:flex;justify-content:space-between;gap:10px;padding:5px 0;border-bottom:1px solid var(--border);font-size:12px;}
@@ -754,6 +827,9 @@ function setNegocio(n){
   _alertsCache = null;
   localStorage.setItem('hub_negocio', n);
   cargasPage = 0;
+  // La tabla es de un negocio: al cambiar se limpian sus filtros, lo pendiente
+  // y las columnas con formula (son de otra planilla).
+  cargasColFiltros = {}; cargasColSort = null; cargasPend = {}; _formulaCols = null; _tablaSel = null;
   logVerTodos = false;
   cfFiltros = [];
   cfFiltroEntidades = new Set();
@@ -1974,6 +2050,8 @@ const COLS_OPCIONALES = new Set([
 ]);
 
 function mapearColumnasPorNombre(headerRow){
+  // La vista tabla muestra las columnas tal cual la hoja: se guarda el encabezado crudo.
+  window._hdrCargas = (headerRow || []).map(x => (x === undefined || x === null) ? '' : x.toString().trim());
   const H = headerRow.map(normalizarHdr);
   // Coincidencia EXACTA sobre el encabezado normalizado (ignora mayúsculas/acentos/espacios).
   // Cada campo busca su nombre exacto. Robusto y sin ambigüedades.
@@ -2621,7 +2699,8 @@ function avisosFactura(esp, total, proveedor, porFcl){
 }
 
 function abrirFacturaForwarder(idxs){
-  idxs = (idxs || []).filter(i => allRows[i]);
+  // Siempre en el orden de la planilla, no en el orden en que se tildaron.
+  idxs = (idxs || []).filter(i => allRows[i]).sort((a, b) => (allRows[a]._sheetRow||0) - (allRows[b]._sheetRow||0));
   if(!idxs.length) return;
   const nc = getNegocioConfig();
   if(nc.PAGO_FC_FLETE === null || nc.PAGO_MONTO === null){
@@ -2644,19 +2723,22 @@ function abrirFacturaForwarder(idxs){
   }
   const proveedores = [...new Set(tarifas.map(t => (t.forwarder||'').trim()).filter(Boolean)
     .concat(allRows.map(r => (r[COL.PROVEEDOR_FLETE]||'').toString().trim()).filter(Boolean)))].sort();
-  const filasHtml = esp.filas.map(f => `<tr>
-      <td>${f.row._sheetRow} · ${(f.row[COL.BL]||f.row[COL.BOOKING]||'—')}<div style="font-size:10px;color:var(--text3);">${f.row[COL.PORT]||'—'} · ${f.cnt} cnt</div></td>
+  const filasHtml = esp.filas.map(f => `<tr style="border-top:1px solid var(--border);">
+      <td style="padding:6px 4px;"><b class="mono">Fila ${f.row._sheetRow}</b> · <span class="mono">${(f.row[COL.LOTS]||'—')}</span>
+        <div style="font-size:11px;">BL <span class="mono">${(f.row[COL.BL]||'—')}</span> · BKG <span class="mono">${(f.row[COL.BOOKING]||'—')}</span></div>
+        <div style="font-size:11px;color:var(--text2);">${f.row[COL.VESSEL]||'—'} → ${f.row[COL.PORT]||'—'} · <b>${f.cnt} cnt</b></div>
+        <div style="font-size:11px;color:var(--text2);">ETD <b>${fmtDate(f.row[COL.ETD])||'—'}</b> · ETA <b>${fmtDate(f.row[COL.ETA])||'—'}</b></div></td>
       <td style="font-size:11px;">${f.tarifa ? (f.tarifa.carrier||'') + ' · ' + (f.tarifa.forwarder||'') + ' · ' + mesLegible(f.tarifa.mes) + '<br>USD ' + fmtUsd2(f.ref) + ' x cnt' : '<span style="color:var(--warn);">sin tarifa</span>'}</td>
       <td class="mono" style="text-align:right;">${f.tarifa ? 'USD ' + fmtUsd2(f.esperado) : '—'}</td>
       <td class="mono" style="text-align:right;" id="fwd-fac-${f.idx}">—</td>
     </tr>`).join('');
-  m.innerHTML = `<div class="modal" style="width:640px;">
+  m.innerHTML = `<div class="modal" style="width:720px;max-width:96vw;">
     <div class="modal-header">
       <div><span class="modal-title">🧾 Factura de forwarder</span>
       <div style="font-size:11px;color:var(--text3);margin-top:2px;">${(r0[COL.CUSTOMER]||'—')} · ${idxs.length} carga${idxs.length>1?'s':''} · ${esp.cnt} contenedor${esp.cnt>1?'es':''}</div></div>
       <span class="modal-close" onclick="cerrarFacturaForwarder()">×</span>
     </div>
-    <div class="modal-body">
+    <div class="modal-body" style="max-height:72vh;overflow-y:auto;">
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
         <div class="mail-field"><div class="mail-label">N° de factura</div>
           <input class="config-input" id="fwd-nro" placeholder="FF-5520"></div>
@@ -2829,7 +2911,7 @@ async function guardarFacturaForwarder(){
   }
   cerrarFacturaForwarder();
   _dataVersion++;
-  showToast(todoOk ? '✓ Factura ' + d.nro + ' cargada en ' + idxs.length + ' fila' + (idxs.length > 1 ? 's' : '') : 'Factura cargada con errores', todoOk ? undefined : 'error');
+  showToast(todoOk ? '✓ Factura ' + d.nro + ' cargada en ' + idxs.length + ' fila' + (idxs.length > 1 ? 's' : '') : 'Factura cargada con errores', todoOk ? undefined : 'err');
   if(typeof renderView === 'function') renderView(currentView);
 }
 
@@ -3794,8 +3876,12 @@ function renderCargas(showAll, sort){
     ${cargasSearch?`<span onclick="cargasSearch='';cargasPage=0;renderCargas();" style="position:absolute;right:8px;cursor:pointer;font-size:12px;color:var(--text3);">×</span>`:''}
   </div>`;
 
-  // FC bulk selection
-  window._fcSelectedRows = new Set();
+  // FC bulk selection. Lo tildado sobrevive a los re-dibujos (editar una celda,
+  // filtrar, pantalla completa): se recuerda por carga, no por posicion. Si las
+  // cargas se recargaron de la planilla son objetos nuevos y la seleccion se limpia.
+  const _selPrevia = (window._fcSelectedRows && window._fcAllRows)
+    ? [...window._fcSelectedRows].map(i => window._fcAllRows[i]).filter(Boolean) : [];
+  window._fcSelectedRows = new Set(_selPrevia.map(r => rows.indexOf(r)).filter(i => i >= 0));
   window._fcAllRows = rows;
 
   // Grupos de embarque: mismo cliente, buque, ETD y puerto. Se calculan sobre
@@ -3814,11 +3900,14 @@ function renderCargas(showAll, sort){
     const cb = document.getElementById('fc-cb-'+i);
     const tr = document.getElementById('fc-tr-'+i);
     if(cb) cb.checked = window._fcSelectedRows.has(i);
-    if(tr) tr.style.background = window._fcSelectedRows.has(i)?'rgba(0,113,227,.05)':'';
+    if(tr){
+      if(tr.classList) tr.classList.toggle('sel', window._fcSelectedRows.has(i));
+      if(cargasVista !== 'tabla') tr.style.background = window._fcSelectedRows.has(i)?'rgba(0,113,227,.05)':'';
+    }
   };
 
   window.actualizarBarraFC = function(){
-    if(cargasVista === 'grupos' && currentView === 'cargas' && document.getElementById('cargas-toolbar')){ actualizarToolbarCargas(); return; }
+    if(currentView === 'cargas' && document.getElementById('cargas-toolbar')){ actualizarToolbarCargas(); return; }
     const bar = document.getElementById('fc-bulk-bar');
     if(!bar) return;
     const n = window._fcSelectedRows.size;
@@ -3908,7 +3997,7 @@ function renderCargas(showAll, sort){
         <span style="font-size:13px;font-weight:600;color:var(--text);">${rows.length} cargas</span>
         <div style="display:flex;gap:6px;align-items:center;">
           ${viewChip('Por embarque', cargasVista==='grupos', "cargasVista='grupos';renderCargas()")}
-          ${viewChip('Tabla', cargasVista==='tabla', "cargasVista='tabla';renderCargas()")}
+          ${viewChip('Tabla', cargasVista==='tabla', "cargasVista='tabla';cargasTablaIrAlFinal=true;renderCargas()")}
           <span style="width:1px;height:18px;background:var(--border);margin:0 4px;"></span>
           ${viewChip('Activas', !cargasShowAll, "renderCargas(false)")}
           ${viewChip('Todas', cargasShowAll, "renderCargas(true)")}
@@ -3917,7 +4006,7 @@ function renderCargas(showAll, sort){
       </div>
       <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
         ${searchHtml}
-        ${sortSel}
+        ${cargasVista === 'tabla' ? '' : sortSel}
         ${sel('cliente', cargasDropFilters.cliente, 'Cliente', uniqueClientes.map(c=>({val:c,label:c})))}
         ${pagareDropHtml}
         ${sel('docs', cargasDropFilters.docs, 'Docs', [{val:'pendientes',label:'Pendientes'},{val:'completos',label:'Completos'}])}
@@ -3967,84 +4056,424 @@ function renderCargas(showAll, sort){
     return;
   }
 
-  const ncC = getNegocioConfig();
-  // localIdx tiene que ser la posicion en la lista COMPLETA (rows), no en la pagina:
-  // la seleccion y las acciones en lote lo buscan en window._fcAllRows = rows.
-  // Antes era el indice dentro de la pagina, y en la pagina 2 tildar una carga
-  // seleccionaba la que ocupaba ese lugar en la pagina 1.
-  pagedRows.forEach((row) => {
+  // Vista tabla: replica de la planilla (ver renderCargasTabla).
+  const corteT = html.indexOf('<div id="fc-bulk-bar"');
+  const filtrosT = (corteT >= 0 ? html.slice(0, corteT) : html) + '</div>';
+  const scPrev = document.getElementById('t-scroll');
+  const pos = scPrev && scPrev.scrollHeight ? { t: scPrev.scrollTop, l: scPrev.scrollLeft } : null;
+  document.getElementById('content').innerHTML = filtrosT + renderCargasTabla(rows);
+  window.actualizarBarraFC();
+  // Al re-dibujar (editar, filtrar) se conserva donde estabas; la primera vez va al final.
+  const sc = document.getElementById('t-scroll');
+  if(sc && sc.scrollHeight){
+    if(pos && !cargasTablaIrAlFinal){ sc.scrollTop = pos.t; sc.scrollLeft = pos.l; }
+    else sc.scrollTop = sc.scrollHeight;
+    cargasTablaIrAlFinal = false;
+  }
+}
+
+// ─── CARGAS: VISTA TABLA TIPO GOOGLE SHEETS ──────────────────────────────────
+// Replica de la hoja: mismas columnas y en el mismo orden (salen del encabezado
+// de la fila 2), numero de fila real a la izquierda, filtro por columna como el
+// de Sheets y edicion con doble clic.
+//
+// Los cambios NO se escriben al toque: quedan pintados y se juntan en la barra
+// de "cambios sin guardar". Al guardar se muestra el antes/despues, se relee la
+// planilla y se aborta la celda si alguien la cambio mientras tanto. Las
+// columnas con formula no se pueden editar.
+let cargasColFiltros = {};     // { indiceColumna: Set(valores permitidos) }
+let cargasColSort = null;      // { col, dir: 1 | -1 } — pisa al orden de arriba
+let cargasTablaLimite = 200;
+let cargasTablaFull = false;
+let cargasTablaIrAlFinal = true;  // la proxima vez que se dibuja, bajar hasta la ultima fila
+let cargasPend = {};           // { sheetRow: { col: { antes, despues } } }
+let _tablaSel = null;          // { r: posicion en _tablaRows, c: indice de columna }
+let _tablaRows = [];           // filas visibles, en orden
+let _tablaCols = [];           // indices de columna visibles, en orden
+let _formulaCols = null;       // Set de columnas con formula (de la ultima fila)
+let _formulaColsClave = '';
+let _filtroAbierto = false;    // el menu de filtro de una columna esta abierto
+const TABLA_FIJAS = 3;         // columnas de la hoja congeladas a la izquierda (A-C)
+
+// Encabezados reales de la hoja, guardados por mapearColumnasPorNombre.
+function encabezadosCargas(){ return window._hdrCargas || []; }
+
+const valorCelda = (row, c) => (row[c] === undefined || row[c] === null) ? '' : row[c].toString();
+const clavePend = row => row._sheetRow;
+function pendDe(row, c){ const p = cargasPend[clavePend(row)]; return p ? p[c] : undefined; }
+// Lo que se ve: el valor pendiente si hay uno, si no el de la planilla.
+function valorVisible(row, c){ const p = pendDe(row, c); return p ? String(p.despues) : valorCelda(row, c); }
+
+// Las columnas con formula se detectan mirando la ultima fila con datos, igual
+// que en Contratos. Se hace una vez por negocio y se cachea.
+async function detectarFormulasCargas(){
+  const nc = getNegocioConfig();
+  const clave = (nc.sheetId || cfg.sheetId) + '|' + (nc.sheetName || cfg.sheetName);
+  if(_formulaCols && _formulaColsClave === clave) return _formulaCols;
+  if(!accessToken || !allRows.length) return null;
+  const ult = Math.max.apply(null, allRows.map(r => r._sheetRow || 0));
+  try{
+    const f = await releerFilasCarga([ult]);
+    _formulaCols = new Set();
+    (f[ult].formulas || []).forEach((v, i) => { if(esFormulaCelda(v)) _formulaCols.add(i); });
+    _formulaColsClave = clave;
+    if(currentView === 'cargas' && cargasVista === 'tabla') renderCargas();
+  }catch(e){ console.warn('formulas cargas:', e); }
+  return _formulaCols;
+}
+function esColFormula(c){ return !!(_formulaCols && _formulaCols.has(c)); }
+
+// ── Filtro y orden por columna ──
+function aplicarFiltrosColumna(rows){
+  Object.keys(cargasColFiltros).forEach(k => {
+    const c = parseInt(k), ok = cargasColFiltros[k];
+    rows = rows.filter(r => ok.has(valorCelda(r, c).trim()));
+  });
+  if(cargasColSort){
+    const { col, dir } = cargasColSort;
+    const clave = r => {
+      const v = valorCelda(r, col).trim();
+      const d = /\d{1,2}\/\d{1,2}\/\d{2,4}/.test(v) ? parseDate(v) : null;
+      if(d) return { t: 0, v: d.getTime() };
+      const n = parseSheetNum(v);
+      if(!isNaN(n) && v !== '') return { t: 0, v: n };
+      return { t: v === '' ? 2 : 1, v: v.toLowerCase() };
+    };
+    rows = rows.slice().sort((a, b) => {
+      const x = clave(a), y = clave(b);
+      if(x.t !== y.t) return x.t - y.t;          // vacias siempre al final
+      if(x.v < y.v) return -dir; if(x.v > y.v) return dir; return 0;
+    });
+  }
+  return rows;
+}
+
+function htmlFiltroColumna(c){
+  const base = window._tablaBaseRows || allRows;
+  const cuenta = {};
+  base.forEach(r => { const v = valorCelda(r, c).trim(); cuenta[v] = (cuenta[v] || 0) + 1; });
+  const valores = Object.keys(cuenta).sort((a, b) => a === '' ? 1 : b === '' ? -1 : a.localeCompare(b, 'es', { numeric: true }));
+  const activos = cargasColFiltros[c];
+  const esc = s => String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/"/g,'&quot;');
+  return `
+    <div class="tfp-tit">${esc(encabezadosCargas()[c] || colIndexToLetter(c))}</div>
+    <div class="tfp-ord"><button onclick="ordenarColumna(${c},1)">Ordenar A → Z</button><button onclick="ordenarColumna(${c},-1)">Ordenar Z → A</button></div>
+    <input class="tfp-buscar" id="tfp-buscar" placeholder="Buscar valor" oninput="filtrarListaFiltro(this.value)">
+    <div class="tfp-acc"><span onclick="marcarTodosFiltro(true)">Seleccionar todo</span> · <span onclick="marcarTodosFiltro(false)">Borrar</span></div>
+    <div class="tfp-lista" id="tfp-lista">${valores.map(v => `<label data-v="${esc(v.toLowerCase())}"><input type="checkbox" value="${esc(v)}" ${!activos || activos.has(v) ? 'checked' : ''}> ${v === '' ? '<i>(vacías)</i>' : esc(v)} <span>${cuenta[v]}</span></label>`).join('')}</div>
+    <div class="tfp-pie"><button onclick="cerrarFiltroColumna()">Cancelar</button><button class="prim" onclick="aplicarFiltroColumna(${c})">Aceptar</button></div>`;
+}
+
+function abrirFiltroColumna(c, ev){
+  if(ev) ev.stopPropagation();
+  cerrarFiltroColumna();
+  const pop = document.createElement('div');
+  pop.id = 'tabla-filtro-pop';
+  pop.className = 'tabla-filtro-pop';
+  pop.onclick = e => e.stopPropagation();
+  pop.innerHTML = htmlFiltroColumna(c);
+  document.body.appendChild(pop);
+  _filtroAbierto = true;
+  const btn = ev && ev.currentTarget && ev.currentTarget.getBoundingClientRect ? ev.currentTarget.getBoundingClientRect() : null;
+  if(btn){
+    pop.style.top = Math.min(btn.bottom + 4, window.innerHeight - 380) + 'px';
+    pop.style.left = Math.max(8, Math.min(btn.left - 200, window.innerWidth - 290)) + 'px';
+  }
+  const b = document.getElementById('tfp-buscar'); if(b && b.focus) b.focus();
+}
+function cerrarFiltroColumna(){ _filtroAbierto = false; const p = document.getElementById('tabla-filtro-pop'); if(p && p.parentNode) p.parentNode.removeChild(p); }
+function filtrarListaFiltro(q){
+  q = (q || '').toLowerCase();
+  document.querySelectorAll('#tfp-lista label').forEach(l => { l.style.display = l.getAttribute('data-v').includes(q) ? '' : 'none'; });
+}
+function marcarTodosFiltro(v){ document.querySelectorAll('#tfp-lista input').forEach(i => { if(i.parentNode.style.display !== 'none') i.checked = v; }); }
+function aplicarFiltroColumna(c){
+  const inputs = [...document.querySelectorAll('#tfp-lista input')];
+  const ok = new Set(inputs.filter(i => i.checked).map(i => i.value));
+  if(ok.size === inputs.length) delete cargasColFiltros[c]; else cargasColFiltros[c] = ok;
+  cerrarFiltroColumna();
+  renderCargas();
+}
+function ordenarColumna(c, dir){ cargasColSort = { col: c, dir }; cerrarFiltroColumna(); renderCargas(); }
+function quitarFiltroColumna(c){ delete cargasColFiltros[c]; renderCargas(); }
+function quitarOrdenColumna(){ cargasColSort = null; renderCargas(); }
+
+// ── Dibujo ──
+function anchoColumna(c, rows){
+  const h = (encabezadosCargas()[c] || '').length;
+  let m = h;
+  for(let i = 0; i < rows.length && i < 60; i++){ const l = valorCelda(rows[i], c).length; if(l > m) m = l; }
+  return Math.max(70, Math.min(260, Math.round(m * 7.2) + 26));
+}
+
+function renderCargasTabla(rows){
+  const hdr = encabezadosCargas();
+  // Replica de la hoja: mismo orden que la planilla (el selector de orden de
+  // arriba es de la vista por embarque). Se muestran las ULTIMAS filas, como
+  // cuando se abre Sheets, y "mostrar mas" trae las anteriores.
+  rows = rows.slice().sort((a, b) => (a._sheetRow || 0) - (b._sheetRow || 0));
+  window._tablaBaseRows = rows;
+  rows = aplicarFiltrosColumna(rows);
+  const visibles = cargasColSort ? rows.slice(0, cargasTablaLimite) : rows.slice(Math.max(0, rows.length - cargasTablaLimite));
+  _tablaRows = visibles;
+  // La tabla reordena y filtra: la seleccion y los grupos de embarque se vuelven
+  // a calcular sobre ESTA lista, si no el chip de un grupo tildaba otras cargas.
+  const selObj = [...(window._fcSelectedRows || [])].map(i => (window._fcAllRows || [])[i]).filter(Boolean);
+  window._fcAllRows = rows;
+  window._fcSelectedRows = new Set(selObj.map(x => rows.indexOf(x)).filter(i => i >= 0));
+  window._fcGrupos = {};
+  rows.forEach((r, i) => { const k = grupoKeyFC(r); (window._fcGrupos[k] = window._fcGrupos[k] || []).push(i); });
+  window._fcEtiqueta = {};
+  Object.keys(window._fcGrupos).filter(k => window._fcGrupos[k].length > 1).sort()
+    .forEach((k, i) => { window._fcEtiqueta[k] = String.fromCharCode(65 + (i % 26)); });
+  _tablaCols = hdr.map((h, i) => h ? i : -1).filter(i => i >= 0);
+  if(_formulaCols === null) detectarFormulasCargas();
+  const nc = getNegocioConfig();
+  const esc = s => String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/"/g,'&quot;');
+  const anchos = {}; _tablaCols.forEach(c => { anchos[c] = anchoColumna(c, visibles); });
+  // Posicion "left" de las columnas congeladas: numero de fila (46) + tilde (58).
+  let izq = 104; const left = {};
+  _tablaCols.slice(0, TABLA_FIJAS).forEach(c => { left[c] = izq; izq += anchos[c]; });
+
+  const th = _tablaCols.map((c, k) => {
+    const fil = !!cargasColFiltros[c];
+    const ord = cargasColSort && cargasColSort.col === c ? (cargasColSort.dir > 0 ? ' ↑' : ' ↓') : '';
+    const fija = k < TABLA_FIJAS;
+    return `<th data-c="${c}" class="${fija ? 'fija' : ''}${k === TABLA_FIJAS - 1 ? ' fija-ult' : ''}${esColFormula(c) ? ' formula' : ''}" style="min-width:${anchos[c]}px;max-width:${anchos[c]}px;${fija ? 'left:' + left[c] + 'px;' : ''}" title="${esc(hdr[c])} · columna ${colIndexToLetter(c)}${esColFormula(c) ? ' · tiene fórmula, no se edita desde el hub' : ''}">
+      <div class="th-in"><span class="th-letra">${colIndexToLetter(c)}</span><span class="th-nom">${esc(hdr[c])}${ord}</span>
+      <button class="th-fil${fil ? ' on' : ''}" onclick="abrirFiltroColumna(${c},event)" aria-label="Filtrar ${esc(hdr[c])}">${fil ? '⏷' : '▾'}</button></div></th>`;
+  }).join('');
+
+  const cuerpo = visibles.map((row, r) => {
     const localIdx = rows.indexOf(row);
     const idx = allRows.indexOf(row);
-    const pagEnv = (row[COL.PAGARE_ENVIADO]||'').trim().toUpperCase();
-    const pagFirm = (row[COL.PAGARE_FIRMADO]||'').trim().toUpperCase();
-    let pagLabel, pagColor;
-    const motivoPag = motivoSinPagare(row);
-    if(motivoPag){ pagLabel = motivoPag === 'BL Original' ? 'N/A · BL Orig' : 'N/A'; pagColor='var(--text3)'; }
-    else if(pagFirm === 'SI'){ pagLabel='Firmado'; pagColor='var(--ok)'; }
-    else if(pagEnv === 'SI'){ pagLabel='En Docusign'; pagColor='var(--info)'; }
-    else if(pagEnv === 'AXT'){ pagLabel='En AXT'; pagColor='var(--warn)'; }
-    else { pagLabel='Sin enviar'; pagColor='var(--danger)'; }
-
-    const docs = (row[COL.DOCUMENTOS]||'').trim();
-    const docsOk = docs.toUpperCase() === 'SI';
-    const telex = (row[COL.TELEX]||'').trim();
-    const telexOk = telex.toUpperCase() === 'SI';
-
-    // FC columns - cada total sale de SU columna, resueltas por nombre de encabezado:
-    //   FC1   = "Total CFR"
-    //   FC2   = "Price serv"  (solo si hay Invoice Serv cargada)
-    //   Total = "TOTAL FINAL" (AXT) / "VALOR TOTAL" (Buzaram), que ya viene sumado.
-    // Antes las tres leian la misma celda y el Total salia al doble.
-    const inv1 = (row[COL.INVOICE_CLIENTE]||'').trim();
-    const inv2raw2 = (row[COL.INVOICE_FC_SERV]||'').trim();
-    const inv2 = (inv2raw2==='-'||inv2raw2==='--')?'':inv2raw2;
-    const total1Raw = parseSheetNum(row[ncC.COL_TOTAL_FC1]);
-    const total1 = isNaN(total1Raw) ? '' : total1Raw.toLocaleString('es-AR',{maximumFractionDigits:0});
-    const total2Raw = inv2 ? parseSheetNum(row[ncC.COL_TOTAL_FC2]) : NaN;
-    const total2 = isNaN(total2Raw) ? '' : total2Raw.toLocaleString('es-AR',{maximumFractionDigits:0});
-    const totalCargaRaw = totalCargaDe(row, total1Raw, total2Raw);
-    const totalCarga = isNaN(totalCargaRaw) ? '—' : totalCargaRaw.toLocaleString('es-AR',{maximumFractionDigits:0});
-
-    html += `<tr id="fc-tr-${localIdx}" style="cursor:pointer" onclick="toggleFCSelection(${localIdx})">
-      <td onclick="event.stopPropagation()" style="white-space:nowrap;">
-        <input type="checkbox" id="fc-cb-${localIdx}" onclick="toggleFCSelection(${localIdx})" style="accent-color:var(--accent);cursor:pointer;">
-        ${window._fcEtiqueta[grupoKeyFC(row)]?`<span onclick="seleccionarGrupoFC('${grupoKeyFC(row).replace(/'/g,"\\'")}')" title="${esGrupoManual(grupoKeyFC(row))?'Estas cargas se pidieron juntas en una solicitud de FC anterior':'Salieron juntas: mismo cliente, buque, ETD y puerto. Un toque las selecciona a todas.'}" style="cursor:pointer;margin-left:5px;font-size:9px;font-family:var(--mono);padding:2px 6px;border-radius:9px;background:${esGrupoManual(grupoKeyFC(row))?'rgba(247,148,29,.15)':'rgba(0,113,227,.1)'};color:${esGrupoManual(grupoKeyFC(row))?'var(--warn)':'var(--accent)'};">${esGrupoManual(grupoKeyFC(row))?'\u270b':''}${window._fcEtiqueta[grupoKeyFC(row)]}\u00b7${window._fcGrupos[grupoKeyFC(row)].length}</span>`:''}
-      </td>
-      <td class="mono" style="text-align:right;white-space:nowrap;">${(function(){const t=parseSheetNum(row[COL.TNS]);return isNaN(t)?'—':t.toLocaleString('es-AR',{maximumFractionDigits:2});})()}</td>
-      <td style="font-size:11px">${(row[COL.PRODUCT]||'—').substring(0,22)}</td>
-      <td class="mono" style="color:var(--accent);font-size:11px">${(row[COL.LOTS]||'—').substring(0,18)}</td>
-      <td class="mono" style="font-size:11px">${(row[COL.CONTAINERS]||'—').substring(0,22)}</td>
-      <td class="mono" style="font-size:11px">${(row[COL.BOOKING]||'—').substring(0,14)}${(row[COL.SHIPPING]||'').trim()?` <span style="color:var(--text3);">(${(row[COL.SHIPPING]||'').trim().substring(0,12)})</span>`:''}</td>
-      <td class="mono">${(row[COL.BL]||'—').substring(0,20)}</td>
-      <td style="color:var(--text3);font-size:11px">${(row[COL.VESSEL]||'—').substring(0,16)}</td>
-      <td class="mono">${fmtDate(row[COL.ETA])}</td>
-      <td><div class="doc-status"><div class="doc-dot ${docsOk?'green':'red'}"></div><span class="doc-text" title="${docs||'Pendiente'}">${docsOk?'OK':docs||'—'}</span></div></td>
-      <td><span style="color:${(row[COL.CLIENTE_ENV]||'').trim().toUpperCase()==='SI'?'var(--ok)':'var(--text3)'};font-family:var(--mono);font-size:10px">${(row[COL.CLIENTE_ENV]||'—').trim()}</span></td>
-      <td><span style="color:${telexOk?'var(--ok)':telex?'var(--info)':'var(--text3)'};font-family:var(--mono);font-size:10px">${telex||'—'}</span></td>
-      ${getNegocioConfig().sinPagares?'<td>—</td>':`<td><span style="color:${pagColor};font-size:11px;font-family:var(--mono)">${pagLabel}</span></td>`}
-      <td style="font-weight:500">${row[COL.CUSTOMER]||'—'}</td>
-      <td class="mono" style="color:var(--accent)">${inv1||'—'}</td>
-      <td class="mono">${total1?'USD '+total1:'—'}</td>
-      <td class="mono" style="color:var(--accent)">${inv2||'—'}</td>
-      <td class="mono">${total2?'USD '+total2:'—'}</td>
-      <td class="mono" style="font-weight:600;color:var(--text)">${totalCarga!=='—'?'USD '+totalCarga:'—'}</td>
-      <td class="mono" style="color:var(--text3)">${fmtDate(row[getCobroCol()])}</td>
-      <td class="col-acciones" onclick="event.stopPropagation()" style="white-space:nowrap;">
-        <button class="row-action" onclick="solicitarFC(${idx})" title="Solicitud de FC a AXT" style="color:var(--accent);border-color:var(--accent);">📄 FC</button>
-        <button class="row-action" onclick="avisoClienteBulk([${idx}])" title="Aviso de embarque al cliente" style="margin-left:4px;">📦 Cliente</button>
-        <button class="row-action" onclick="openMailModal(${idx},'reclamo_pago')" title="Reclamo de pago" style="margin-left:4px;">✉ Cobro</button>
-        <button class="row-action" onclick="renderEditCarga(${idx})" title="Editar la carga" style="margin-left:4px;">✎</button>
-        <button class="row-action" onclick="triggerDriveUpload(${idx})" title="Subir documentos al Drive" style="color:#4285f4;border-color:#4285f4;margin-left:4px;">📎</button>
-        <button class="row-action" onclick="driveOpenFolder(${idx})" title="Abrir carpeta en Drive" style="margin-left:4px;">📁</button>
-        <button class="row-action" onclick="openTasksModal(${idx})" title="Tasks" style="margin-left:4px;">📋</button>
-      </td>
+    const sel = window._fcSelectedRows && window._fcSelectedRows.has(localIdx);
+    const k = grupoKeyFC(row), et = window._fcEtiqueta[k], man = esGrupoManual(k);
+    const chip = et ? `<span class="t-grp${man ? ' man' : ''}" onclick="event.stopPropagation();seleccionarGrupoFC('${k.replace(/\\/g,'\\\\').replace(/'/g,"\\'")}')" title="${man ? 'Estas cargas se pidieron juntas en una solicitud de FC anterior' : 'Salieron juntas: mismo cliente, buque, ETD y puerto. Un toque las selecciona a todas.'}">${man ? '✋' : ''}${et}·${window._fcGrupos[k].length}</span>` : '';
+    const celdas = _tablaCols.map((c, kk) => {
+      const p = pendDe(row, c);
+      let v = valorVisible(row, c);
+      let extra = '';
+      // En la columna de pagare enviado se aclara por que esta vacia cuando la
+      // carga viaja con BL Original (no lleva pagare). No se escribe nada.
+      if(!v && c === COL.PAGARE_ENVIADO && !nc.sinPagares && motivoSinPagare(row) === 'BL Original'){ extra = '<span class="t-nota">N/A · BL Orig</span>'; }
+      const fija = kk < TABLA_FIJAS;
+      return `<td data-r="${r}" data-c="${c}" class="${fija ? 'fija' : ''}${kk === TABLA_FIJAS - 1 ? ' fija-ult' : ''}${p ? ' chg' : ''}${esColFormula(c) ? ' formula' : ''}" style="${fija ? 'left:' + left[c] + 'px;' : ''}max-width:${anchos[c]}px;" title="${esc(v)}${p ? ' · antes: ' + esc(p.antes || '(vacío)') : ''}">${esc(v)}${extra}</td>`;
+    }).join('');
+    return `<tr id="fc-tr-${localIdx}" class="${sel ? 'sel' : ''}">
+      <td class="t-num">${row._sheetRow || ''}</td>
+      <td class="t-cb"><input type="checkbox" id="fc-cb-${localIdx}" ${sel ? 'checked' : ''} onclick="toggleFCSelection(${localIdx})">${chip}</td>
+      ${celdas}
+      <td class="col-acciones"><button class="t-acc" onclick="abrirPanelCarga(${idx})" title="Ver la ficha con todas las acciones">Abrir</button><button class="t-acc" onclick="abrirFacturaForwarder([${idx}])" title="Factura de forwarder">🧾</button><button class="t-acc" onclick="solicitarFC(${idx})" title="Solicitud de FC a AXT">📄</button></td>
     </tr>`;
-  });
+  }).join('');
 
-  html += `</tbody></table></div>
-  ${buildPagination(totalRows, cargasPage, 'setCargasPage')}
-  </div>`;
-  document.getElementById('content').innerHTML = html;
+  const chips = Object.keys(cargasColFiltros).map(c => `<span class="t-chip" onclick="quitarFiltroColumna(${c})" title="Quitar filtro">${esc(hdr[c] || colIndexToLetter(c))}: ${cargasColFiltros[c].size} valor${cargasColFiltros[c].size === 1 ? '' : 'es'} ×</span>`).join('') +
+    (cargasColSort ? `<span class="t-chip" onclick="quitarOrdenColumna()" title="Quitar orden">Orden: ${esc(hdr[cargasColSort.col] || '')} ${cargasColSort.dir > 0 ? 'A→Z' : 'Z→A'} ×</span>` : '');
+  const nPend = Object.values(cargasPend).reduce((a, o) => a + Object.keys(o).length, 0);
+  const quedan = rows.length - visibles.length;
+
+  return `<div id="tabla-cargas" class="tabla-cargas${cargasTablaFull ? ' full' : ''}">
+    <div class="t-top">
+      <div id="cargas-toolbar" class="cargas-toolbar"></div>
+      <div class="t-sub">
+        <span>${rows.length} fila${rows.length === 1 ? '' : 's'}${quedan > 0 ? ' · mostrando ' + visibles.length : ''}</span>
+        ${chips}
+        <span style="flex:1;"></span>
+        <span class="t-ayuda">Doble clic o Enter para editar · flechas para moverte · Esc cancela</span>
+        <button class="t-full" onclick="toggleTablaFull()">${cargasTablaFull ? '✕ Salir de pantalla completa' : '⛶ Pantalla completa'}</button>
+      </div>
+      <div id="tabla-pend" class="t-pend" style="${nPend ? '' : 'display:none;'}">
+        <span>✎ <b>${nPend} cambio${nPend === 1 ? '' : 's'} sin guardar</b></span><span style="flex:1;"></span>
+        <button onclick="descartarCambiosTabla()">Descartar</button><button class="prim" onclick="guardarCambiosTabla()">Revisar y guardar</button>
+      </div>
+    </div>
+    ${quedan > 0 ? `<div class="t-mas"><span onclick="cargasTablaLimite+=200;renderCargas();">${cargasColSort ? 'Mostrar ' + Math.min(200, quedan) + ' más' : '↑ Mostrar ' + Math.min(200, quedan) + ' filas anteriores'} (quedan ${quedan})</span></div>` : ''}
+    <div class="t-scroll" id="t-scroll">
+      <table class="t-grid" id="t-grid" ondblclick="tablaDblClick(event)" onclick="tablaClick(event)">
+        <thead><tr><th class="t-num">#</th><th class="t-cb"></th>${th}<th class="col-acciones">Acciones</th></tr></thead>
+        <tbody>${cuerpo || `<tr><td colspan="${_tablaCols.length + 3}" style="padding:30px;text-align:center;color:var(--text3);">Ninguna carga con esos filtros.</td></tr>`}</tbody>
+      </table>
+    </div>
+  </div>
+  <div id="panel-carga" class="panel-carga"></div>`;
+}
+
+// ── Seleccion de celda, teclado y edicion ──
+function celdaTd(r, c){ return document.querySelector('#t-grid td[data-r="' + r + '"][data-c="' + c + '"]'); }
+function marcarCelda(r, c){
+  document.querySelectorAll('#t-grid .cur').forEach(x => x.classList.remove('cur'));
+  document.querySelectorAll('#t-grid .row-cur').forEach(x => x.classList.remove('row-cur'));
+  document.querySelectorAll('#t-grid th.col-cur').forEach(x => x.classList.remove('col-cur'));
+  _tablaSel = { r, c };
+  const td = celdaTd(r, c);
+  if(!td) return;
+  td.classList.add('cur');
+  if(td.parentNode) td.parentNode.classList.add('row-cur');
+  const th = document.querySelector('#t-grid th[data-c="' + c + '"]');
+  if(th) th.classList.add('col-cur');
+  if(td.scrollIntoView) td.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+}
+function tablaClick(ev){
+  const td = ev.target.closest ? ev.target.closest('td[data-c]') : null;
+  if(!td || td.querySelector('input')) return;
+  marcarCelda(parseInt(td.getAttribute('data-r')), parseInt(td.getAttribute('data-c')));
+}
+function tablaDblClick(ev){
+  const td = ev.target.closest ? ev.target.closest('td[data-c]') : null;
+  if(!td) return;
+  editarCelda(parseInt(td.getAttribute('data-r')), parseInt(td.getAttribute('data-c')));
+}
+
+function editarCelda(r, c, inicial){
+  const row = _tablaRows[r];
+  if(!row) return;
+  if(esColFormula(c)){ showToast('Esa columna tiene fórmula: se calcula sola en la planilla', 'info'); return; }
+  marcarCelda(r, c);
+  const td = celdaTd(r, c);
+  if(!td) return;
+  const actual = valorVisible(row, c);
+  td.classList.add('editando');
+  td.innerHTML = '<input class="t-edit" id="t-edit">';
+  const inp = document.getElementById('t-edit');
+  inp.value = inicial !== undefined ? inicial : actual;
+  let terminado = false;
+  const fin = (guardar, mover) => {
+    if(terminado) return; terminado = true;
+    if(guardar) anotarCambioTabla(row, c, inp.value);
+    renderCargas();
+    if(mover) moverSel(mover[0], mover[1]); else marcarCelda(r, c);
+  };
+  inp.onkeydown = e => {
+    if(e.key === 'Enter'){ e.preventDefault(); fin(true, [1, 0]); }
+    else if(e.key === 'Tab'){ e.preventDefault(); fin(true, [0, e.shiftKey ? -1 : 1]); }
+    else if(e.key === 'Escape'){ e.preventDefault(); e.stopPropagation(); fin(false); }
+  };
+  inp.onblur = () => fin(true);
+  if(inp.focus){ inp.focus(); if(inicial === undefined && inp.select) inp.select(); }
+}
+
+function anotarCambioTabla(row, c, nuevo){
+  nuevo = (nuevo === undefined || nuevo === null) ? '' : String(nuevo).trim();
+  const orig = valorCelda(row, c).trim();
+  const k = clavePend(row);
+  if(nuevo === orig){
+    if(cargasPend[k]){ delete cargasPend[k][c]; if(!Object.keys(cargasPend[k]).length) delete cargasPend[k]; }
+    return;
+  }
+  (cargasPend[k] = cargasPend[k] || {})[c] = { antes: orig, despues: nuevo, row };
+}
+
+function moverSel(dr, dc){
+  if(!_tablaSel) return marcarCelda(0, _tablaCols[0]);
+  const r = Math.max(0, Math.min(_tablaRows.length - 1, _tablaSel.r + dr));
+  const k = _tablaCols.indexOf(_tablaSel.c);
+  const c = _tablaCols[Math.max(0, Math.min(_tablaCols.length - 1, k + dc))];
+  marcarCelda(r, c);
+}
+
+// Teclado de la grilla: flechas, Enter/F2 para editar, tipear arranca a editar,
+// Supr/Backspace vacia la celda (queda como cambio pendiente, como todo).
+function tablaTeclado(e){
+  if(currentView !== 'cargas' || cargasVista !== 'tabla' || !_tablaSel) return false;
+  const t = e.target;
+  if(t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT')) return false;
+  if(_filtroAbierto) return false;
+  const m = { ArrowUp: [-1, 0], ArrowDown: [1, 0], ArrowLeft: [0, -1], ArrowRight: [0, 1] }[e.key];
+  if(m){ e.preventDefault(); moverSel(m[0], m[1]); return true; }
+  if(e.key === 'Enter' || e.key === 'F2'){ e.preventDefault(); editarCelda(_tablaSel.r, _tablaSel.c); return true; }
+  if(e.key === 'Delete' || e.key === 'Backspace'){
+    e.preventDefault();
+    if(esColFormula(_tablaSel.c)) return true;
+    anotarCambioTabla(_tablaRows[_tablaSel.r], _tablaSel.c, '');
+    const s = _tablaSel; renderCargas(); marcarCelda(s.r, s.c); return true;
+  }
+  if(e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey){ e.preventDefault(); editarCelda(_tablaSel.r, _tablaSel.c, e.key); return true; }
+  return false;
+}
+
+function toggleTablaFull(){
+  cargasTablaFull = !cargasTablaFull;
+  if(document.body.classList) document.body.classList.toggle('tabla-full-on', cargasTablaFull);
+  renderCargas();
+}
+
+async function descartarCambiosTabla(){
+  const n = Object.values(cargasPend).reduce((a, o) => a + Object.keys(o).length, 0);
+  if(!n) return;
+  const ok = await showConfirm('Descartar cambios', 'Se pierden ' + n + ' cambio' + (n === 1 ? '' : 's') + ' que todavía no se guardaron en la planilla.', { icono: '🗑', okLabel: 'Descartar', peligro: true });
+  if(!ok) return;
+  cargasPend = {};
+  renderCargas();
+}
+
+// Guarda todos los cambios pendientes. Relee la planilla: si una celda cambio
+// desde que se sincronizo, esa NO se escribe y se avisa. Las de formula tampoco.
+async function guardarCambiosTabla(){
+  if(!accessToken){ alert('Conectate con Google primero para escribir en la planilla.'); return; }
+  const lista = [];
+  Object.keys(cargasPend).forEach(f => Object.keys(cargasPend[f]).forEach(c => {
+    const p = cargasPend[f][c];
+    lista.push({ sheetRow: parseInt(f), col: parseInt(c), antes: p.antes, despues: p.despues, row: p.row });
+  }));
+  if(!lista.length) return;
+  const hdr = encabezadosCargas();
+  let fresco;
+  try{ fresco = await releerFilasCarga([...new Set(lista.map(x => x.sheetRow))]); }
+  catch(e){ alert(e.message); return; }
+  const aEscribir = [], conflictos = [], formulas = [];
+  lista.forEach(x => {
+    const fr = fresco[x.sheetRow];
+    if(esFormulaCelda(fr.formulas[x.col])){ formulas.push(x); return; }
+    if((fr.valores[x.col] || '').toString().trim() !== x.antes){ x.ahora = (fr.valores[x.col] || '').toString().trim(); conflictos.push(x); return; }
+    aEscribir.push(x);
+  });
+  const esc = s => String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;');
+  const nom = x => esc(hdr[x.col] || colIndexToLetter(x.col));
+  const cli = x => esc((x.row[COL.CUSTOMER] || '').trim());
+  const detalle =
+    aEscribir.map(x => `<div>Fila ${x.sheetRow} · ${cli(x)} · <b>${nom(x)}</b>: <span style="color:var(--text3);">${esc(x.antes || '(vacío)')}</span> → <b>${esc(x.despues || '(vacío)')}</b></div>`).join('') +
+    (conflictos.length ? '<div style="margin-top:8px;color:var(--danger);"><b>No se guardan</b> porque cambiaron en la planilla mientras tanto:</div>' +
+      conflictos.map(x => `<div style="color:var(--danger);">Fila ${x.sheetRow} · ${nom(x)}: ahora dice "${esc(x.ahora || '(vacío)')}"</div>`).join('') : '') +
+    (formulas.length ? '<div style="margin-top:8px;color:var(--text3);">No se guardan (tienen fórmula): ' + formulas.map(x => 'fila ' + x.sheetRow + ' · ' + nom(x)).join(', ') + '</div>' : '');
+  if(!aEscribir.length){
+    await showConfirm('No hay nada para guardar', 'Ninguno de los cambios se puede escribir.', { icono: '⚠️', okLabel: 'Entendido', detalle });
+    return;
+  }
+  const ok = await showConfirm('Guardar ' + aEscribir.length + ' cambio' + (aEscribir.length === 1 ? '' : 's') + ' en la planilla',
+    'Revisá el antes y el después de cada celda.', { icono: '✎', okLabel: 'Guardar', detalle });
+  if(!ok) return;
+
+  const nc = getNegocioConfig();
+  const hoja = nc.sheetName || cfg.sheetName;
+  const data = aEscribir.map(x => {
+    let v = x.despues;
+    // Tns como numero, para que Sheets no lo lea como fecha (igual que writeRow).
+    if(x.col === COL.TNS && v !== ''){ const n = parseFloat(String(v).replace(',', '.')); if(!isNaN(n)) v = n; }
+    return { range: hoja + '!' + colIndexToLetter(x.col) + x.sheetRow, values: [[v]] };
+  });
+  const r = await fetch('https://sheets.googleapis.com/v4/spreadsheets/' + (nc.sheetId || cfg.sheetId) + '/values:batchUpdate', {
+    method: 'POST',
+    headers: { 'Authorization': 'Bearer ' + accessToken, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ valueInputOption: 'USER_ENTERED', data })
+  });
+  if(!r.ok){ alert('No se pudo guardar (HTTP ' + r.status + '). Los cambios siguen pendientes.'); return; }
+  aEscribir.forEach(x => {
+    x.row[x.col] = x.despues;
+    if(cargasPend[x.sheetRow]){ delete cargasPend[x.sheetRow][x.col]; if(!Object.keys(cargasPend[x.sheetRow]).length) delete cargasPend[x.sheetRow]; }
+  });
+  // Una linea de LOG por fila, con todos sus cambios.
+  const porFila = {};
+  aEscribir.forEach(x => { (porFila[x.sheetRow] = porFila[x.sheetRow] || []).push(x); });
+  for(const f of Object.keys(porFila)){
+    const xs = porFila[f], row = xs[0].row;
+    await appendLog({ fc: (row[COL.INVOICE_CLIENTE] || '').trim(), bl: (row[COL.BL] || '').trim(), customer: (row[COL.CUSTOMER] || '').trim(),
+      accion: 'edición en tabla', detalle: 'fila ' + f + ' · ' + xs.map(x => (hdr[x.col] || colIndexToLetter(x.col)) + ': ' + (x.antes || '(vacío)') + ' → ' + (x.despues || '(vacío)')).join(' | ') });
+  }
+  _dataVersion++;
+  showToast('✓ ' + aEscribir.length + ' cambio' + (aEscribir.length === 1 ? '' : 's') + ' guardado' + (aEscribir.length === 1 ? '' : 's') +
+            (conflictos.length ? ' · ' + conflictos.length + ' quedaron pendientes' : ''));
+  renderCargas();
 }
 
 
@@ -10266,7 +10695,11 @@ function triggerDriveUpload(rowIdx){
 }
 
 // ─── KEYBOARD SHORTCUTS ──────────────────────────────────────────────────────
+document.addEventListener('click', () => cerrarFiltroColumna());
 document.addEventListener('keydown', e => {
+  if(tablaTeclado(e)) return;
+  if(e.key === 'Escape' && _filtroAbierto){ cerrarFiltroColumna(); return; }
+  if(e.key === 'Escape' && cargasTablaFull && document.getElementById('confirm-overlay').classList.contains('hidden')){ toggleTablaFull(); return; }
   // Cmd+K or Ctrl+K → focus search
   if((e.metaKey||e.ctrlKey) && e.key==='k'){
     e.preventDefault();
