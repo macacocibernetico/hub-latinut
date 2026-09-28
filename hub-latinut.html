@@ -2542,9 +2542,295 @@ function compararFlete(row){
   });
   // La lectura que mejor cierra es la que decide el semaforo.
   const mejor = lecturas.slice().sort((a,b) => Math.abs(a.pct) - Math.abs(b.pct))[0];
+  // Cualquier diferencia de un centavo o mas se avisa (pedido explicito: la
+  // tarifa se paga exacta). Rojo sigue siendo a partir del 10%.
   const abs = Math.abs(mejor.pct);
-  const estado = abs < 0.5 ? 'ok' : (abs >= TOL_ROJO_FLETE ? 'bad' : 'warn');
+  const estado = Math.abs(mejor.dif) < 0.005 ? 'ok' : (abs >= TOL_ROJO_FLETE ? 'bad' : 'warn');
   return { estado, importe, tarifa, ref, campoRef, lecturas, mejor, contenedores: n };
+}
+
+function fmtUsd2(n){
+  return (Math.round(n * 100) / 100).toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
+// ─── FACTURA DE FORWARDER ────────────────────────────────────────────────────
+// Se le asigna una factura del forwarder a una o varias cargas. El forwarder
+// cobra por contenedor: "importe usd/fcl" es el precio de UN contenedor y
+// "total flete" (solo AXT) es importe x contenedores de esa fila.
+// Se carga el total de la factura y el hub lo reparte parejo por contenedor.
+// Antes de escribir compara contra el tarifario y avisa cualquier diferencia,
+// aunque sea de un centavo, y si el proveedor no es el forwarder de la tarifa.
+let _fwd = null;   // { idxs:[indices de allRows], filas:[...], ... }
+
+function refTarifa(t){
+  if(!t) return NaN;
+  return (!isNaN(t.allIn) && t.allIn) ? t.allIn : t.flete;
+}
+
+// Lo esperado por carga segun el tarifario. Una carga sin tarifa no suma al
+// esperado y se informa aparte: no se puede inventar un precio.
+function esperadoFactura(idxs){
+  const filas = idxs.map(i => {
+    const row = allRows[i];
+    const cnt = cantidadContenedores(row);
+    const t = tarifaPara(row);
+    const ref = refTarifa(t);
+    return { idx: i, row, cnt, tarifa: (t && !isNaN(ref) && ref) ? t : null,
+             ref: (t && !isNaN(ref) && ref) ? ref : NaN,
+             esperado: (t && !isNaN(ref) && ref) ? redondear2(ref * cnt) : NaN };
+  });
+  const cnt = filas.reduce((a, f) => a + f.cnt, 0);
+  const conTarifa = filas.filter(f => f.tarifa);
+  return { filas, cnt,
+           total: redondear2(conTarifa.reduce((a, f) => a + f.esperado, 0)),
+           sinTarifa: filas.filter(f => !f.tarifa) };
+}
+
+// Diferencias entre lo cargado y el tarifario. Devuelve una lista de textos;
+// vacia = todo coincide.
+function avisosFactura(esp, total, proveedor, porFcl){
+  const av = [];
+  if(esp.sinTarifa.length){
+    av.push('Sin tarifa para comparar: fila' + (esp.sinTarifa.length > 1 ? 's ' : ' ') +
+            esp.sinTarifa.map(f => f.row._sheetRow).join(', '));
+  }
+  if(esp.sinTarifa.length < esp.filas.length){
+    // Se compara el total de la factura tal cual (no el reparto redondeado:
+    // 4650,01 / 3 contenedores redondea a 1550 y se comia el centavo). Si hay
+    // cargas sin tarifa, se compara solo la parte de contenedores que si tiene.
+    const cntConTarifa = esp.filas.filter(f => f.tarifa).reduce((a, f) => a + f.cnt, 0);
+    const facturadoComparable = redondear2(total * cntConTarifa / esp.cnt);
+    const dif = redondear2(facturadoComparable - esp.total);
+    if(Math.abs(dif) >= 0.005){
+      av.push('La factura difiere del tarifario en USD ' + (dif > 0 ? '+' : '−') + fmtUsd2(Math.abs(dif)) +
+              ' (' + (dif > 0 ? '+' : '−') + fmtUsd2(Math.abs(dif / esp.total * 100)) + '%)');
+    }
+    esp.filas.filter(f => f.tarifa).forEach(f => {
+      const d = redondear2(porFcl(f) - f.ref);
+      if(Math.abs(d) >= 0.005 && esp.filas.length > 1){
+        av.push('Fila ' + f.row._sheetRow + ': USD ' + fmtUsd2(porFcl(f)) + ' por contenedor contra tarifa ' + fmtUsd2(f.ref));
+      }
+    });
+  }
+  const prov = claveForwarder(proveedor);
+  const fwds = [...new Set(esp.filas.filter(f => f.tarifa && f.tarifa.forwarder).map(f => f.tarifa.forwarder))];
+  if(prov && fwds.length && !fwds.some(fw => claveForwarder(fw) === prov)){
+    av.push('La tarifa de ese mes es de ' + fwds.join(' / ') + ', no de ' + proveedor);
+  }
+  return av;
+}
+
+function abrirFacturaForwarder(idxs){
+  idxs = (idxs || []).filter(i => allRows[i]);
+  if(!idxs.length) return;
+  const nc = getNegocioConfig();
+  if(nc.PAGO_FC_FLETE === null || nc.PAGO_MONTO === null){
+    alert('No encontré las columnas de factura de flete en la planilla (FC Flete / importe usd/fcl).');
+    return;
+  }
+  const esp = esperadoFactura(idxs);
+  const r0 = allRows[idxs[0]];
+  // Si todas las filas ya tienen la misma factura/proveedor, se precargan.
+  const unico = c => { const v = [...new Set(idxs.map(i => (allRows[i][c]||'').toString().trim()))]; return v.length === 1 ? v[0] : ''; };
+  const fwdTarifa = [...new Set(esp.filas.filter(f => f.tarifa && f.tarifa.forwarder).map(f => f.tarifa.forwarder))];
+  _fwd = { idxs, esp };
+
+  let m = document.getElementById('fwd-modal');
+  if(!m){
+    m = document.createElement('div');
+    m.id = 'fwd-modal';
+    m.className = 'modal-overlay hidden';
+    document.body.appendChild(m);
+  }
+  const proveedores = [...new Set(tarifas.map(t => (t.forwarder||'').trim()).filter(Boolean)
+    .concat(allRows.map(r => (r[COL.PROVEEDOR_FLETE]||'').toString().trim()).filter(Boolean)))].sort();
+  const filasHtml = esp.filas.map(f => `<tr>
+      <td>${f.row._sheetRow} · ${(f.row[COL.BL]||f.row[COL.BOOKING]||'—')}<div style="font-size:10px;color:var(--text3);">${f.row[COL.PORT]||'—'} · ${f.cnt} cnt</div></td>
+      <td style="font-size:11px;">${f.tarifa ? (f.tarifa.carrier||'') + ' · ' + (f.tarifa.forwarder||'') + ' · ' + mesLegible(f.tarifa.mes) + '<br>USD ' + fmtUsd2(f.ref) + ' x cnt' : '<span style="color:var(--warn);">sin tarifa</span>'}</td>
+      <td class="mono" style="text-align:right;">${f.tarifa ? 'USD ' + fmtUsd2(f.esperado) : '—'}</td>
+      <td class="mono" style="text-align:right;" id="fwd-fac-${f.idx}">—</td>
+    </tr>`).join('');
+  m.innerHTML = `<div class="modal" style="width:640px;">
+    <div class="modal-header">
+      <div><span class="modal-title">🧾 Factura de forwarder</span>
+      <div style="font-size:11px;color:var(--text3);margin-top:2px;">${(r0[COL.CUSTOMER]||'—')} · ${idxs.length} carga${idxs.length>1?'s':''} · ${esp.cnt} contenedor${esp.cnt>1?'es':''}</div></div>
+      <span class="modal-close" onclick="cerrarFacturaForwarder()">×</span>
+    </div>
+    <div class="modal-body">
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
+        <div class="mail-field"><div class="mail-label">N° de factura</div>
+          <input class="config-input" id="fwd-nro" placeholder="FF-5520"></div>
+        <div class="mail-field"><div class="mail-label">Proveedor</div>
+          <input class="config-input" id="fwd-prov" list="fwd-prov-list" oninput="actualizarFacturaForwarder()" placeholder="Done Deal">
+          <datalist id="fwd-prov-list">${proveedores.map(p => '<option value="' + p.replace(/"/g,'&quot;') + '">').join('')}</datalist></div>
+      </div>
+      <table style="width:100%;font-size:12px;margin:12px 0;border-collapse:collapse;">
+        <tr style="color:var(--text3);font-size:10px;text-transform:uppercase;"><td>Fila · BL</td><td>Tarifa</td><td style="text-align:right;">Esperado</td><td style="text-align:right;">Facturado</td></tr>
+        ${filasHtml}
+        <tr style="font-weight:700;border-top:1px solid var(--border);"><td colspan="2">Total según tarifario</td>
+          <td class="mono" style="text-align:right;">${esp.sinTarifa.length === esp.filas.length ? '—' : 'USD ' + fmtUsd2(esp.total)}</td>
+          <td class="mono" style="text-align:right;" id="fwd-fac-total">—</td></tr>
+      </table>
+      <div class="mail-field"><div class="mail-label">Total de la factura (USD)</div>
+        <input class="config-input" id="fwd-total" inputmode="decimal" oninput="actualizarFacturaForwarder()" placeholder="4.650,00"></div>
+      <div id="fwd-msg" style="margin-top:10px;padding:9px 12px;border-radius:8px;font-size:12px;"></div>
+      <div style="font-size:11px;color:var(--text3);margin-top:8px;">Se reparte parejo por contenedor. Se escribe FC Flete, proveedor e importe usd/fcl${nc.PAGO_TOTAL !== null && nc.PAGO_TOTAL !== nc.PAGO_MONTO ? ' y total flete' : ''} en ${idxs.length > 1 ? 'las ' + idxs.length + ' filas' : 'la fila'}.</div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn" onclick="cerrarFacturaForwarder()">Cancelar</button>
+      <button class="btn primary" onclick="guardarFacturaForwarder()">Revisar y guardar</button>
+    </div>
+  </div>`;
+  document.getElementById('fwd-nro').value = unico(COL.FC_FLETE);
+  document.getElementById('fwd-prov').value = unico(COL.PROVEEDOR_FLETE) || (fwdTarifa.length === 1 ? fwdTarifa[0] : '');
+  document.getElementById('fwd-total').value = esp.sinTarifa.length ? '' : String(esp.total).replace('.', ',');
+  m.classList.remove('hidden');
+  actualizarFacturaForwarder();
+}
+
+function cerrarFacturaForwarder(){
+  const m = document.getElementById('fwd-modal');
+  if(m) m.classList.add('hidden');
+  _fwd = null;
+}
+
+// Lee el formulario y calcula el reparto. null si el total no es un numero.
+function leerFacturaForwarder(){
+  if(!_fwd) return null;
+  const total = parseSheetNum(document.getElementById('fwd-total').value);
+  const proveedor = document.getElementById('fwd-prov').value.trim();
+  const nro = document.getElementById('fwd-nro').value.trim();
+  if(isNaN(total) || total <= 0) return { total: NaN, proveedor, nro };
+  const porCnt = redondear2(total / _fwd.esp.cnt);
+  const porFcl = () => porCnt;
+  return { total: redondear2(total), proveedor, nro, porCnt, porFcl,
+           avisos: avisosFactura(_fwd.esp, total, proveedor, porFcl),
+           // Si el total no se divide exacto, el redondeo por contenedor no suma
+           // lo mismo que la factura. Se avisa: no se esconde un centavo.
+           redondeo: redondear2(porCnt * _fwd.esp.cnt - total) };
+}
+
+function actualizarFacturaForwarder(){
+  const d = leerFacturaForwarder();
+  const msg = document.getElementById('fwd-msg');
+  if(!d || !msg) return;
+  _fwd.esp.filas.forEach(f => {
+    const c = document.getElementById('fwd-fac-' + f.idx);
+    if(c) c.textContent = isNaN(d.total) ? '—' : 'USD ' + fmtUsd2(d.porCnt * f.cnt);
+  });
+  const tt = document.getElementById('fwd-fac-total');
+  if(tt) tt.textContent = isNaN(d.total) ? '—' : 'USD ' + fmtUsd2(d.total);
+  const pinta = (bg, fg, txt) => { msg.style.background = bg; msg.style.color = fg; msg.innerHTML = txt; };
+  if(isNaN(d.total)) return pinta('rgba(0,0,0,.04)', 'var(--text3)', 'Ingresá el total de la factura.');
+  const av = d.avisos.slice();
+  if(Math.abs(d.redondeo) >= 0.005) av.push('Repartido por contenedor da USD ' + fmtUsd2(d.porCnt) + ' c/u, que suma ' + (d.redondeo > 0 ? '+' : '−') + 'USD ' + fmtUsd2(Math.abs(d.redondeo)) + ' contra la factura por redondeo');
+  if(!av.length) return pinta('rgba(46,125,50,.1)', 'var(--ok)', '✓ Coincide exacto con el tarifario.');
+  pinta('rgba(247,148,29,.12)', 'var(--warn)', '⚠ ' + av.join('<br>⚠ ') + '<div style="margin-top:4px;color:var(--text2);">Podés guardar igual: queda registrado en el LOG.</div>');
+}
+
+// Relee de la planilla las filas que se van a tocar. Sirve para dos cosas:
+// abortar si alguien cambio la fila mientras tanto (otro BL en esa fila), y
+// no pisar celdas que tienen formula.
+async function releerFilasCarga(sheetRows){
+  const nc = getNegocioConfig();
+  const sid = nc.sheetId || cfg.sheetId;
+  const hoja = nc.sheetName || cfg.sheetName;
+  const ranges = sheetRows.map(f => 'ranges=' + encodeURIComponent(hoja + '!A' + f + ':BT' + f)).join('&');
+  const base = 'https://sheets.googleapis.com/v4/spreadsheets/' + sid + '/values:batchGet?' + ranges;
+  const h = { headers: { Authorization: 'Bearer ' + accessToken } };
+  const [rv, rf] = await Promise.all([fetch(base, h), fetch(base + '&valueRenderOption=FORMULA', h)]);
+  if(!rv.ok || !rf.ok) throw new Error('No pude releer la planilla (HTTP ' + (rv.ok ? rf.status : rv.status) + ')');
+  const dv = await rv.json(), df = await rf.json();
+  const out = {};
+  sheetRows.forEach((f, k) => {
+    out[f] = { valores: ((dv.valueRanges||[])[k]||{}).values ? dv.valueRanges[k].values[0] || [] : [],
+               formulas: ((df.valueRanges||[])[k]||{}).values ? df.valueRanges[k].values[0] || [] : [] };
+  });
+  return out;
+}
+const esFormulaCelda = v => typeof v === 'string' && v.charAt(0) === '=';
+
+async function guardarFacturaForwarder(){
+  const d = leerFacturaForwarder();
+  if(!d) return;
+  if(!accessToken){ alert('Conectate con Google primero para escribir en la planilla.'); return; }
+  if(!d.nro){ alert('Falta el número de factura.'); return; }
+  if(isNaN(d.total)){ alert('Falta el total de la factura.'); return; }
+  const nc = getNegocioConfig();
+  const esp = _fwd.esp;
+  const idxs = _fwd.idxs.slice();
+  const sheetRows = esp.filas.map(f => f.row._sheetRow);
+
+  let fresco;
+  try{ fresco = await releerFilasCarga(sheetRows); }
+  catch(e){ alert(e.message); return; }
+
+  // Que se escribe en cada fila. Una celda con formula no se toca.
+  const cols = [
+    { c: nc.PAGO_FC_FLETE,   n: 'FC Flete',        v: () => d.nro },
+    { c: nc.PAGO_PROVEEDOR,  n: 'proveedor',       v: () => d.proveedor },
+    { c: nc.PAGO_MONTO,      n: 'importe usd/fcl', v: () => d.porCnt },
+  ];
+  if(nc.PAGO_TOTAL !== null && nc.PAGO_TOTAL !== nc.PAGO_MONTO){
+    cols.push({ c: nc.PAGO_TOTAL, n: 'total flete', v: f => redondear2(d.porCnt * f.cnt) });
+  }
+  const cambios = [], saltadas = [], conflictos = [];
+  esp.filas.forEach(f => {
+    const fr = fresco[f.row._sheetRow];
+    const blHub = (f.row[COL.BL]||'').toString().trim(), blHoja = (fr.valores[COL.BL]||'').toString().trim();
+    const bkHub = (f.row[COL.BOOKING]||'').toString().trim(), bkHoja = (fr.valores[COL.BOOKING]||'').toString().trim();
+    if(blHub !== blHoja || bkHub !== bkHoja){ conflictos.push(f.row._sheetRow); return; }
+    cols.forEach(k => {
+      if(k.c === null || k.c < 0) return;
+      if(esFormulaCelda(fr.formulas[k.c])){ saltadas.push('fila ' + f.row._sheetRow + ' · ' + k.n); return; }
+      const antes = (fr.valores[k.c]||'').toString().trim();
+      const despues = k.v(f);
+      cambios.push({ f, col: k.c, nombre: k.n, antes, despues });
+    });
+  });
+  if(conflictos.length){
+    alert('La planilla cambió mientras tanto: la fila ' + conflictos.join(', ') +
+          ' ya no tiene el mismo BL/booking. Sincronizá y volvé a cargar la factura.');
+    return;
+  }
+
+  const pisa = cambios.filter(c => c.antes && String(c.antes) !== String(c.despues));
+  const avisos = d.avisos.slice();
+  const esc = s => String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;');
+  const detalle = '<div style="margin-bottom:6px;"><b>Factura ' + esc(d.nro) + '</b> · ' + esc(d.proveedor || 'sin proveedor') +
+    ' · USD ' + fmtUsd2(d.total) + '</div>' +
+    cambios.map(c => '<div>Fila ' + c.f.row._sheetRow + ' · ' + c.nombre + ': <span style="color:var(--text3);">' +
+      esc(c.antes || '(vacío)') + '</span> → <b>' + esc(typeof c.despues === 'number' ? fmtUsd2(c.despues) : c.despues) + '</b>' +
+      (c.antes && String(c.antes) !== String(c.despues) ? ' <span style="color:var(--warn);">(pisa)</span>' : '') + '</div>').join('') +
+    (saltadas.length ? '<div style="margin-top:6px;color:var(--text3);">No se tocan (tienen fórmula): ' + saltadas.join(', ') + '</div>' : '') +
+    (avisos.length ? '<div style="margin-top:6px;color:var(--warn);">⚠ ' + avisos.map(esc).join('<br>⚠ ') + '</div>' : '');
+  const ok = await showConfirm(
+    avisos.length ? 'La factura no coincide con el tarifario' : 'Guardar factura de forwarder',
+    avisos.length ? '¿Guardar igual? Queda registrado en el LOG con la diferencia.'
+                  : 'Se escribe en ' + idxs.length + ' fila' + (idxs.length > 1 ? 's' : '') + ' de la planilla' + (pisa.length ? ', pisando valores que ya había.' : '.'),
+    { icono: avisos.length ? '⚠️' : '🧾', okLabel: avisos.length ? 'Guardar igual' : 'Guardar', detalle });
+  if(!ok) return;
+
+  const porFila = {};
+  cambios.forEach(c => { (porFila[c.f.row._sheetRow] = porFila[c.f.row._sheetRow] || {})[c.col] = c.despues; });
+  let todoOk = true;
+  for(const f of Object.keys(porFila)){
+    if(!(await writeRow(porFila[f], parseInt(f)))) todoOk = false;
+  }
+  if(!todoOk){ alert('Alguna fila no se pudo escribir. Sincronizá y revisá la planilla.'); }
+  // Se refleja en memoria para no esperar la proxima sincronizacion.
+  cambios.forEach(c => { c.f.row[c.col] = typeof c.despues === 'number' ? String(c.despues).replace('.', ',') : c.despues; });
+  for(const f of esp.filas){
+    await appendLog({ fc: d.nro, bl: (f.row[COL.BL]||'').trim(), customer: (f.row[COL.CUSTOMER]||'').trim(),
+      accion: 'factura forwarder',
+      detalle: (d.proveedor || 'sin proveedor') + ' · USD ' + fmtUsd2(d.porCnt) + ' x ' + f.cnt + ' cnt' +
+               (f.tarifa ? ' · tarifa ' + fmtUsd2(f.ref) : ' · sin tarifa') +
+               (avisos.length ? ' · DIFERENCIA: ' + avisos.join(' | ') : ' · coincide') });
+  }
+  cerrarFacturaForwarder();
+  _dataVersion++;
+  showToast(todoOk ? '✓ Factura ' + d.nro + ' cargada en ' + idxs.length + ' fila' + (idxs.length > 1 ? 's' : '') : 'Factura cargada con errores', todoOk ? undefined : 'error');
+  if(typeof renderView === 'function') renderView(currentView);
 }
 
 const COLOR_FLETE = { ok:'var(--ok)', warn:'var(--warn)', bad:'var(--danger)', sin_tarifa:'var(--text3)', sin_importe:'var(--text3)' };
@@ -2560,8 +2846,8 @@ function textoComparacionFlete(cmp){
   const base = 'Tarifa ' + cmp.campoRef + ' ' + mesLegible(cmp.tarifa.mes) + ': USD ' +
                Math.round(cmp.ref).toLocaleString('es-AR');
   if(cmp.estado === 'ok') return base + ' · coincide' + (cmp.mejor.modo === 'total' ? ' leyendo el importe como ' + cmp.mejor.etiqueta : '');
-  return base + ' · ' + signo + 'USD ' + Math.round(Math.abs(cmp.mejor.dif)).toLocaleString('es-AR') +
-         ' (' + signo + Math.abs(cmp.mejor.pct).toFixed(1) + '%)' +
+  return base + ' · ' + signo + 'USD ' + fmtUsd2(Math.abs(cmp.mejor.dif)) +
+         ' (' + signo + fmtUsd2(Math.abs(cmp.mejor.pct)) + '%)' +
          (cmp.mejor.modo === 'total' ? ' leyendo el importe como ' + cmp.mejor.etiqueta : '');
 }
 
@@ -7488,6 +7774,7 @@ function actualizarToolbarCargas(){
     '<button class="tb-btn"' + dis + ' onclick="bulkAvisoCliente()">📦 Aviso cliente</button>' +
     '<button class="tb-btn"' + dis + ' onclick="bulkLiberacion()">🚢 Liberación</button>' +
     '<button class="tb-btn" onclick="openBulkMailModal(window._selFCaGlobal(),\'reclamo_pago\')">✉ Cobro</button>' +
+    '<button class="tb-btn" onclick="abrirFacturaForwarder(window._selFCaGlobal())">🧾 Factura fwd</button>' +
     (uno !== null ? '<button class="tb-btn" onclick="renderEditCarga(' + uno + ')">✎ Editar</button>' +
                     '<button class="tb-btn" onclick="abrirPanelCarga(' + uno + ')">Detalle</button>' : '') +
     '<button class="tb-btn" onclick="limpiarSelFC()">Limpiar</button>';
@@ -7528,6 +7815,7 @@ function abrirPanelCarga(idx){
       <button onclick="solicitarLiberacionViaAppScript(${idx})">🚢 Liberación</button>
       <button onclick="openMailModal(${idx},'reclamo_pago')">✉ Reclamo cobro</button>
       <button onclick="renderEditCarga(${idx})">✎ Editar carga</button>
+      <button onclick="abrirFacturaForwarder([${idx}])">🧾 Factura forwarder</button>
       <button onclick="triggerDriveUpload(${idx})">📎 Subir docs</button>
       <button onclick="driveOpenFolder(${idx})">📁 Carpeta Drive</button>
       <button onclick="openTasksModal(${idx})">📋 Tasks</button>
