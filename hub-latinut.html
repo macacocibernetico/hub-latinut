@@ -238,6 +238,7 @@ body.tabla-full-on{overflow:hidden;}
 .t-grid tbody tr.sel td{background:#dde9fb;}
 .t-grid td.cur{outline:2px solid #1a73e8;outline-offset:-2px;}
 .t-grid td.chg,.t-grid tbody tr td.chg{background:#fff2cc;color:#7a4b00;font-weight:500;}
+.t-grid td.t-marca,.t-grid tbody tr td.t-marca{background:#ffb347;color:#3d2400;font-weight:700;}
 .t-grid td.editando{padding:0;overflow:visible;}
 .t-grid .t-edit{width:100%;min-width:140px;height:26px;border:2px solid #1a73e8;padding:0 6px;font-size:12px;font-family:var(--font);outline:none;box-shadow:0 2px 8px rgba(0,0,0,.2);}
 .t-grid .fija{position:sticky;z-index:2;}
@@ -906,10 +907,23 @@ let contacts = []; // Cache de contactos del HUB sheet
 let logRows = []; // Cache del LOG del HUB sheet
 
 // ─── CONTACTS ────────────────────────────────────────────────────────────────
+// La pestaña puede llamarse "CONTACTOS", "Contactos"… se busca como esta escrita.
+async function nombreHojaContactos(){
+  try{
+    if(!accessToken || !cfg.hubSheetId) return 'CONTACTOS';
+    const r = await fetch('https://sheets.googleapis.com/v4/spreadsheets/' + cfg.hubSheetId + '?fields=sheets.properties.title',
+      { headers:{ Authorization:'Bearer ' + accessToken } });
+    if(!r || !r.ok) return 'CONTACTOS';
+    const j = await r.json();
+    const h = ((j && j.sheets) || []).map(x => ((x.properties || {}).title || '')).find(t => t.trim().toLowerCase() === 'contactos');
+    return h ? "'" + h.replace(/'/g, "''") + "'" : 'CONTACTOS';
+  }catch(e){ return 'CONTACTOS'; }
+}
+
 async function loadContacts(){
   if(!cfg.hubSheetId) return;
   try{
-    const range=encodeURIComponent('CONTACTOS!A2:I');
+    const range=encodeURIComponent(await nombreHojaContactos() + '!A2:I');
     // Use OAuth if available (required for private sheets), fallback to API key
     let url, headers={};
     if(accessToken){
@@ -929,7 +943,10 @@ async function loadContacts(){
     //   F Contraparte · G Solicitud_FC · H CC_Aviso · I CC_Liberacion
     // Las cuatro ultimas reemplazan lo que antes estaba escrito en el codigo.
     // Asi cambiar un destinatario es editar la hoja, no volver a subir el HTML.
-    const siNo = v => (v||'').toString().trim().toUpperCase() === 'SI';
+    // "Sí", "si", "SI", "Si " valen todos: antes "Sí" con tilde no se reconocia y
+    // esa persona quedaba fuera de la solicitud de FC y de las copias.
+    const siNo = v => ['SI','S','YES','X','TRUE','1'].indexOf(
+      (v||'').toString().normalize('NFD').replace(/[̀-ͯ]/g,'').trim().toUpperCase()) >= 0;
     contacts=(data.values||[]).map(row=>({
       empresa:(row[0]||'').trim(),
       contacto:(row[1]||'').trim(),
@@ -1370,9 +1387,9 @@ function esGrupoManual(key){ return typeof key === 'string' && key.indexOf('G|')
 function resumenFC(rowIndices){
   // El AppScript lee las filas en orden de planilla y arma el asunto y los datos
   // con la primera. Ordenamos igual para que lo que se ve sea lo que va a salir.
-  const idx = (rowIndices||[]).filter(i => allRows[i])
-    .sort((a,b) => (allRows[a]._sheetRow||a) - (allRows[b]._sheetRow||b));
-  const filas = idx.map(i => allRows[i]);
+  const idx = (rowIndices||[]).filter(i => filaPorIdx(i))
+    .sort((a,b) => (filaPorIdx(a)._sheetRow||a) - (filaPorIdx(b)._sheetRow||b));
+  const filas = idx.map(i => filaPorIdx(i));
   const r = { n:filas.length, idx:idx, filas:filas, sheetRows:sheetRowsDe(idx),
               clientes:[], customer:'', productos:[], puertos:[], buques:[], etds:[],
               lotes:[], tns:0, yaPedidas:[], sinPrecio:0, avisos:[], bloqueo:null };
@@ -1637,7 +1654,7 @@ async function avisoClienteBulk(rowIndices){
   await registrarGrupoEmbarque(r.filas);
   // La marca en la planilla la hace el hub, porque el mail ya no pasa por el AppScript.
   for(const i of r.idx){
-    const row = allRows[i]; if(!row) continue;
+    const row = filaPorIdx(i); if(!row) continue;
     await writeCell(i, COL.CLIENTE_ENV, 'SI');
     await appendLog({
       fc:(row[COL.INVOICE_CLIENTE]||'').trim(), fcServ:'',
@@ -1653,7 +1670,7 @@ async function avisoClienteBulk(rowIndices){
 
 async function solicitarFCBulk(rowIndices){
   if(!rowIndices.length) return;
-  const rows = rowIndices.map(i => allRows[i]);
+  const rows = rowIndices.map(i => filaPorIdx(i));
   const sheetRows = rows.map(r => r._sheetRow).filter(Boolean).sort((a,b)=>a-b);
   if(sheetRows.length !== rowIndices.length){ alert('No se pudieron determinar todas las filas.'); return; }
 
@@ -1693,7 +1710,7 @@ async function solicitarFCBulk(rowIndices){
   // estas mismas cargas, sin importar lo que digan buque y fecha.
   await registrarGrupoEmbarque(r.filas);
   for(const i of r.idx){
-    const row = allRows[i]; if(!row) continue;
+    const row = filaPorIdx(i); if(!row) continue;
     await writeCell(i, COL.LOMBARD, 'SI');
     await appendLog({
       fc:(row[COL.INVOICE_CLIENTE]||'').trim(), fcServ:'',
@@ -2026,6 +2043,7 @@ async function loadData(){
     document.getElementById('last-sync').textContent='Sync '+new Date().toLocaleTimeString('es-AR',{hour:'2-digit',minute:'2-digit'});
     _avisoColsCerrado = false;
     updateBadges();renderView(currentView);
+    cargarFondos().then(() => { if(currentView === 'cargas') renderCargas(); }).catch(e => console.warn('fondos:', e));
   }catch(e){setSheetStatus('err','Error de conexión');console.error(e);}
 }
 
@@ -2702,7 +2720,7 @@ function refTarifa(t){
 // esperado y se informa aparte: no se puede inventar un precio.
 function esperadoFactura(idxs){
   const filas = idxs.map(i => {
-    const row = allRows[i];
+    const row = filaPorIdx(i);
     const cnt = cantidadContenedores(row);
     const t = tarifaPara(row);
     const ref = refTarifa(t);
@@ -2772,7 +2790,7 @@ function avisosFactura(esp, total, proveedor, porFcl){
 
 function abrirFacturaForwarder(idxs){
   // Siempre en el orden de la planilla, no en el orden en que se tildaron.
-  idxs = (idxs || []).filter(i => allRows[i]).sort((a, b) => (allRows[a]._sheetRow||0) - (allRows[b]._sheetRow||0));
+  idxs = (idxs || []).filter(i => filaPorIdx(i)).sort((a, b) => (filaPorIdx(a)._sheetRow||0) - (filaPorIdx(b)._sheetRow||0));
   if(!idxs.length) return;
   const nc = getNegocioConfig();
   if(nc.PAGO_FC_FLETE === null || nc.PAGO_MONTO === null){
@@ -2782,7 +2800,7 @@ function abrirFacturaForwarder(idxs){
   const esp = esperadoFactura(idxs);
   const r0 = allRows[idxs[0]];
   // Si todas las filas ya tienen la misma factura/proveedor, se precargan.
-  const unico = c => { const v = [...new Set(idxs.map(i => (allRows[i][c]||'').toString().trim()))]; return v.length === 1 ? v[0] : ''; };
+  const unico = c => { const v = [...new Set(idxs.map(i => (filaPorIdx(i)[c]||'').toString().trim()))]; return v.length === 1 ? v[0] : ''; };
   const fwdTarifa = [...new Set(esp.filas.filter(f => f.tarifa && f.tarifa.forwarder).map(f => f.tarifa.forwarder))];
   _fwd = { idxs, esp };
 
@@ -3106,15 +3124,96 @@ async function pintarCeldas(sheetRows, colIdx, bg, fg){
       body: JSON.stringify({ requests: requests })
     });
     if(!r.ok) console.warn('pintarCeldas: HTTP ' + r.status);
+    if(r.ok) recordarFondos(sheetRows, colIdx, bg);
+    if(r.ok && bg === COLOR_NARANJA){
+      const nf = sheetRows.filter(Boolean);
+      setTimeout(() => showToast('🟧 ' + (nf.length > 1 ? 'Filas ' : 'Fila ') + nf.join(', ') + ' marcada' + (nf.length > 1 ? 's' : '') + ' en naranja en la planilla. Cuando la revises, pasala a blanco con "Marcar como visto".', 'info'), 600);
+    }
     return r.ok;
   }catch(e){ console.warn('pintarCeldas:', e); return false; }
+}
+
+// Marcas de color de la planilla, para verlas tambien en la tabla del hub.
+// Se leen solo las columnas donde el hub pinta (solicitud de FC, aviso al cliente,
+// TELEX y pagare): son pocas y la respuesta es chica.
+let _fondos = {};   // { fila de la planilla: Set(columnas pintadas de naranja) }
+function colsMarcables(){
+  return [COL.LOMBARD, COL.CLIENTE_ENV, COL.TELEX, COL.PAGARE_ENVIADO, COL.PAGARE_FIRMADO]
+    .filter((c, i, a) => c >= 0 && a.indexOf(c) === i);
+}
+function esNaranjaFondo(c){
+  return !!c && (c.red || 0) > 0.9 && (c.green || 0) > 0.5 && (c.green || 0) < 0.75 && (c.blue || 0) < 0.15;
+}
+function recordarFondos(sheetRows, col, bg){
+  (sheetRows || []).filter(Boolean).forEach(f => {
+    if(esNaranjaFondo(bg)){ (_fondos[f] = _fondos[f] || new Set()).add(col); }
+    else if(_fondos[f]){ _fondos[f].delete(col); }
+  });
+}
+async function cargarFondos(){
+  if(!accessToken) return;
+  const nc = getNegocioConfig();
+  const cols = colsMarcables();
+  if(!cols.length) return;
+  const ranges = cols.map(c => 'ranges=' + encodeURIComponent(nc.sheetName + '!' + colIndexToLetter(c) + '4:' + colIndexToLetter(c))).join('&');
+  const url = 'https://sheets.googleapis.com/v4/spreadsheets/' + nc.sheetId + '?includeGridData=true&' + ranges +
+    '&fields=' + encodeURIComponent('sheets.data(startRow,rowData.values.effectiveFormat.backgroundColor)');
+  const r = await fetch(url, { headers:{ Authorization:'Bearer ' + accessToken } });
+  if(!r || !r.ok) return;
+  const j = await r.json();
+  const data = ((j.sheets || [])[0] || {}).data || [];
+  const nuevo = {};
+  data.forEach((bloque, k) => {
+    (bloque.rowData || []).forEach((rd, i) => {
+      const bg = (((rd.values || [])[0] || {}).effectiveFormat || {}).backgroundColor;
+      if(esNaranjaFondo(bg)){
+        const fila = (bloque.startRow || 3) + i + 1;
+        (nuevo[fila] = nuevo[fila] || new Set()).add(cols[k]);
+      }
+    });
+  });
+  _fondos = nuevo;
+}
+function celdaMarcada(row, col){
+  const f = _fondos[row._sheetRow];
+  return !!(f && f.has(col));
+}
+function marcasEnVista(){
+  const filas = (window._fcSelectedRows && window._fcSelectedRows.size)
+    ? [...window._fcSelectedRows].map(i => (window._fcAllRows || [])[i]).filter(Boolean)
+    : (window._tablaBaseRows || []);
+  const porCol = {};
+  filas.forEach(r => colsMarcables().forEach(c => { if(celdaMarcada(r, c)) (porCol[c] = porCol[c] || []).push(r._sheetRow); }));
+  return porCol;
+}
+// Las marcas naranjas avisan "esto se hizo y falta revisarlo": una vez visto, vuelve a blanco.
+async function marcarComoVisto(){
+  const porCol = marcasEnVista();
+  const cols = Object.keys(porCol).map(Number);
+  if(!cols.length){ showToast('No hay celdas marcadas en naranja', 'info'); return; }
+  const hdr = encabezadosCargas();
+  const total = cols.reduce((a, c) => a + porCol[c].length, 0);
+  const detalle = cols.map(c => '<div>• ' + (hdr[c] || colIndexToLetter(c)) + ': filas ' + porCol[c].join(', ') + '</div>').join('');
+  const ok = await showConfirm('Marcar como visto', 'Se pintan de blanco ' + total + ' celda' + (total > 1 ? 's' : '') + ' de la planilla (solo el color, no cambia ningun dato).',
+    { icono:'✓', okLabel:'Pasar a blanco', detalle });
+  if(!ok) return;
+  for(const c of cols) await pintarCeldas(porCol[c], c, COLOR_BLANCO);
+  showToast('✓ ' + total + ' celda' + (total > 1 ? 's' : '') + ' en blanco', 'ok');
+  if(currentView === 'cargas') renderCargas();
 }
 
 // Filas de la planilla correspondientes a unos indices de allRows
 // Las cargas con fecha de cobro cargada salen de allRows (se consideran cerradas),
 // pero si todavia les falta la liberacion tienen que verse en Liberaciones. Sus
 // indices siguen a los de allRows, asi las acciones pueden tratarlas igual.
-function filasCerradas(){ return allRowsAll.filter(r => allRows.indexOf(r) < 0); }
+let _cerradasCache = null;
+function filasCerradas(){
+  if(!_cerradasCache || _cerradasCache.a !== allRows || _cerradasCache.b !== allRowsAll || _cerradasCache.n !== allRowsAll.length){
+    const abiertas = new Set(allRows);
+    _cerradasCache = { a: allRows, b: allRowsAll, n: allRowsAll.length, lista: allRowsAll.filter(r => !abiertas.has(r)) };
+  }
+  return _cerradasCache.lista;
+}
 function filaPorIdx(i){ return i < allRows.length ? allRows[i] : filasCerradas()[i - allRows.length]; }
 function idxDeFila(r){
   const i = allRows.indexOf(r);
@@ -3718,8 +3817,8 @@ function renderAlertas(){
         return `<button class="action-btn ${cls}" onclick="openMailModal(${a.rowIdx},'${act.mailType}')">${act.label}</button>`;
       }).join('');
       const dN=a.dETA!==undefined?a.dETA:null;
-      const cobroFecha = fmtDate(a.detail?.cobro || getCobroFecha(allRows[a.rowIdx]));
-      const cobroD = a.rowIdx !== undefined ? daysFrom(getCobroFecha(allRows[a.rowIdx])) : null;
+      const cobroFecha = fmtDate(a.detail?.cobro || getCobroFecha(filaPorIdx(a.rowIdx)));
+      const cobroD = a.rowIdx !== undefined ? daysFrom(getCobroFecha(filaPorIdx(a.rowIdx))) : null;
       const cobroHtml = cobroFecha && cobroFecha !== '—' ? `<div style="margin-top:6px;padding-top:6px;border-top:1px solid var(--border);"><div style="font-size:13px;font-weight:600;color:var(--warn);font-family:var(--mono);">${cobroD!==null?cobroD+'d':'—'}</div><div style="font-size:9px;color:var(--text3);text-transform:uppercase;letter-spacing:1px;margin-top:1px;">cobro est.</div><div style="font-size:9px;color:var(--text3);margin-top:1px;">${cobroFecha}</div></div>` : '';
       const rightHtml=dN!==null?`<div class="alert-right"><div class="days-badge ${daysClass(dN)}">${dN<0?'+'+Math.abs(dN):dN}</div><div class="days-label">días ETA</div>${cobroHtml}</div>`:(cobroHtml?`<div class="alert-right">${cobroHtml}</div>`:'');
       const l=a.logistics||{};
@@ -3812,7 +3911,10 @@ function renderCargas(showAll, sort){
   }
 
   // Base filter
-  let rows = cargasShowAll
+  // La tabla es la replica de la planilla: trae TODAS las filas, tambien las ya cobradas.
+  let rows = cargasVista === 'tabla'
+    ? allRowsAll
+    : cargasShowAll
     ? allRows
     : allRows.filter(r => (r[COL.FECHA_COBRO]||'').trim() === '');
 
@@ -4002,7 +4104,7 @@ function renderCargas(showAll, sort){
     const n = window._fcSelectedRows.size;
     bar.style.display = n>0?'flex':'none';
     if(!n) return;
-    const sel = [...window._fcSelectedRows].map(i => allRows.indexOf(window._fcAllRows[i])).filter(i => i >= 0);
+    const sel = [...window._fcSelectedRows].map(i => idxDeFila(window._fcAllRows[i])).filter(i => i >= 0);
     const r = resumenFC(sel);
     // El resumen sale de la misma cuenta que despues valida el envio, asi que lo
     // que se lee aca es exactamente lo que va a ir en el mail.
@@ -4059,7 +4161,7 @@ function renderCargas(showAll, sort){
 
   // Los tres botones de la barra trabajan sobre la misma seleccion.
   window._selFCaGlobal = function(){
-    return [...window._fcSelectedRows].map(i => allRows.indexOf(window._fcAllRows[i])).filter(i => i >= 0);
+    return [...window._fcSelectedRows].map(i => idxDeFila(window._fcAllRows[i])).filter(i => i >= 0);
   };
   window.requestBulkFC = function(){
     if(!window._fcSelectedRows.size) return;
@@ -4335,7 +4437,7 @@ function renderCargasTabla(rows){
 
   const cuerpo = visibles.map((row, r) => {
     const localIdx = rows.indexOf(row);
-    const idx = allRows.indexOf(row);
+    const idx = idxDeFila(row);
     const sel = window._fcSelectedRows && window._fcSelectedRows.has(localIdx);
     const k = grupoKeyFC(row), et = window._fcEtiqueta[k], man = esGrupoManual(k);
     const chip = et ? `<span class="t-grp${man ? ' man' : ''}" onclick="event.stopPropagation();seleccionarGrupoFC('${k.replace(/\\/g,'\\\\').replace(/'/g,"\\'")}')" title="${man ? 'Estas cargas se pidieron juntas en una solicitud de FC anterior' : 'Salieron juntas: mismo cliente, buque, ETD y puerto. Un toque las selecciona a todas.'}">${man ? '✋' : ''}${et}·${window._fcGrupos[k].length}</span>` : '';
@@ -4347,7 +4449,7 @@ function renderCargasTabla(rows){
       // carga viaja con BL Original (no lleva pagare). No se escribe nada.
       if(!v && c === COL.PAGARE_ENVIADO && !nc.sinPagares && motivoSinPagare(row) === 'BL Original'){ extra = '<span class="t-nota">N/A · BL Orig</span>'; }
       const fija = kk < TABLA_FIJAS;
-      return `<td data-r="${r}" data-c="${c}" class="${fija ? 'fija' : ''}${kk === TABLA_FIJAS - 1 ? ' fija-ult' : ''}${p ? ' chg' : ''}${esColFormula(c) ? ' formula' : ''}" style="${fija ? 'left:' + left[c] + 'px;' : ''}max-width:${anchos[c]}px;" title="${esc(v)}${p ? ' · antes: ' + esc(p.antes || '(vacío)') : ''}">${esc(v)}${extra}</td>`;
+      return `<td data-r="${r}" data-c="${c}" class="${fija ? 'fija' : ''}${kk === TABLA_FIJAS - 1 ? ' fija-ult' : ''}${p ? ' chg' : ''}${esColFormula(c) ? ' formula' : ''}${celdaMarcada(row, c) ? ' t-marca' : ''}" style="${fija ? 'left:' + left[c] + 'px;' : ''}max-width:${anchos[c]}px;" title="${esc(v)}${p ? ' · antes: ' + esc(p.antes || '(vacío)') : ''}">${esc(v)}${extra}</td>`;
     }).join('');
     return `<tr id="fc-tr-${localIdx}" class="${sel ? 'sel' : ''}">
       <td class="t-num">${row._sheetRow || ''}</td>
@@ -4734,7 +4836,7 @@ async function submitNuevaCarga(){
 async function submitEditCarga(rowIdx){
   const d = getFormValues('ec');
   if(!d.product || !d.eta || !d.customer){ alert('Product, ETA y Customer son obligatorios.'); return; }
-  const row = allRows[rowIdx];
+  const row = filaPorIdx(rowIdx);
   const sheetRow = row._sheetRow;
   if(!sheetRow){ alert('Error: no se pudo determinar la fila.'); return; }
   const ok0 = await confirmarAccion(
@@ -5133,7 +5235,7 @@ function renderNuevaCarga(){
 
 function renderEditCarga(rowIdx){
   if(!accessToken){ alert('Conectate con Google primero.'); return; }
-  const row = allRows[rowIdx];
+  const row = filaPorIdx(rowIdx);
   if(!row) return;
   // Todo por COL.* : si se mueve una columna en la planilla, el form la sigue.
   // Antes estaba con indices fijos y leia pagares y fechas de cobro de la columna
@@ -5457,7 +5559,7 @@ let archivedBLs = JSON.parse(localStorage.getItem('hub_archived_bls')||'[]');
 function saveArchivedBLs(){ localStorage.setItem('hub_archived_bls', JSON.stringify(archivedBLs)); }
 
 function openArchiveModal(rowIdx){
-  const row = allRows[rowIdx];
+  const row = filaPorIdx(rowIdx);
   if(!row) return;
   const bl = (row[COL.BL]||'').trim();
   const customer = (row[COL.CUSTOMER]||'').trim();
@@ -5569,7 +5671,7 @@ function renderCobranzaMobile(rows){
 
 async function reclamarCobranzaBulk(rowIndices){
   if(!rowIndices.length) return;
-  const rows=rowIndices.map(i=>allRows[i]);
+  const rows=rowIndices.map(i=>filaPorIdx(i));
   const customer=(rows[0][COL.CUSTOMER]||'').trim();
   const contactInfo=getContactsForEmpresa(customer);
   const ccSiempre=contacts.filter(c=>c.ccSiempre).map(c=>c.email);
@@ -5870,9 +5972,9 @@ const usdPagare = n => 'USD ' + (Number(n)||0).toLocaleString('es-AR',{maximumFr
 function resumenPagare(rowIndices){
   // El AppScript lee las filas en orden de planilla y toma fechas/template de la
   // primera. Ordenamos igual para que lo que se muestra sea lo que va a salir.
-  const idx = (rowIndices||[]).filter(i => allRows[i])
-    .sort((a,b) => (allRows[a]._sheetRow||a) - (allRows[b]._sheetRow||b));
-  const filas = idx.map(i => allRows[i]);
+  const idx = (rowIndices||[]).filter(i => filaPorIdx(i))
+    .sort((a,b) => (filaPorIdx(a)._sheetRow||a) - (filaPorIdx(b)._sheetRow||b));
+  const filas = idx.map(i => filaPorIdx(i));
   const r = { n:filas.length, idx:idx, filas:filas, sheetRows:sheetRowsDe(idx),
               clientes:[], customer:'', facturas:[], sinFactura:0, total:0,
               etd:'', vencimientos:[], avisos:[], bloqueo:null };
@@ -5972,7 +6074,7 @@ async function generarPagareSel(){
   _ultimoPagare = { nombre: data.nombre || ('Promissory Note - ' + r.customer),
                     url: data.url || '', cargas: r.n, facturas: r.facturas.slice(), total: r.total };
   for(const i of r.idx){
-    const row = allRows[i]; if(!row) continue;
+    const row = filaPorIdx(i); if(!row) continue;
     await appendLog({ fc:(row[COL.INVOICE_CLIENTE]||'').trim(), fcServ:(row[COL.INVOICE_FC_SERV]||'').trim(),
       bl:(row[COL.BL]||'').trim(), customer:r.customer, accion:'pagare generado',
       detalle:'Grupo de ' + r.n + ' carga' + (r.n>1?'s':'') + ' · facturas: ' + (r.facturas.join(', ')||'—') + ' · total ' + usdPagare(r.total) });
@@ -6040,9 +6142,9 @@ async function marcarPagareBulk(estadoKey){
     return;
   }
   if(!accessToken){ alert('Conectate con Google primero para escribir en la planilla.'); return; }
-  const idx = [...(window._pagSel||[])].filter(i => allRows[i]);
+  const idx = [...(window._pagSel||[])].filter(i => filaPorIdx(i));
   if(!idx.length) return;
-  const rowsSel = idx.map(i => allRows[i]);
+  const rowsSel = idx.map(i => filaPorIdx(i));
 
   const nombreValor = v => v === '' ? 'vacio' : '"' + v + '"';
   const cambios = [ est.env  !== null ? 'Enviado = ' + nombreValor(est.env)  : '',
@@ -6056,7 +6158,7 @@ async function marcarPagareBulk(estadoKey){
 
   showToast('Actualizando...');
   for(const i of idx){
-    const row = allRows[i];
+    const row = filaPorIdx(i);
     if(est.env  !== null) await writeCell(i, COL.PAGARE_ENVIADO, est.env);
     if(est.firm !== null) await writeCell(i, COL.PAGARE_FIRMADO, est.firm);
     await appendLog({ fc:(row[COL.INVOICE_CLIENTE]||'').trim(), fcServ:(row[COL.INVOICE_FC_SERV]||'').trim(),
@@ -6170,7 +6272,7 @@ function renderPagares(){
   }
 
   // ── Barra de acciones sobre la seleccion ──
-  const sel = [...window._pagSel].filter(i => allRows[i]);
+  const sel = [...window._pagSel].filter(i => filaPorIdx(i));
   if(sel.length){
     const r = resumenPagare(sel);
     const btn = 'padding:7px 14px;border-radius:7px;border:none;font-size:12px;font-weight:600;cursor:pointer;';
@@ -7302,7 +7404,7 @@ function avisoContactosFaltantes(faltantes){
 
 function openBulkMailModal(rowIndices, mailType){
   if(!rowIndices.length) return;
-  const rows=rowIndices.map(i=>allRows[i]);
+  const rows=rowIndices.map(i=>filaPorIdx(i));
   
   // Get exporter from first row (col S=18)
   const exporter=(rows[0][COL.EXPORTER]||'').trim();
@@ -7342,7 +7444,7 @@ function openBulkMailModal(rowIndices, mailType){
 
 
 function openMailModal(rowIdx, mailType){
-  const row=allRows[rowIdx];
+  const row=filaPorIdx(rowIdx);
   if(!row) return;
   const d={
     negocio:(row[COL.NEGOCIO]||'').trim(),
@@ -7454,7 +7556,7 @@ async function sendDraft(){
     // Bulk liberation
     for(let i=0;i<rowIndices.length;i++){
       const ri=rowIndices[i];
-      const row=allRows[ri];
+      const row=filaPorIdx(ri);
       const bl=(row[COL.BL]||'').trim();
       const inv1=(row[COL.INVOICE_CLIENTE]||'').trim();
       const inv2=(row[COL.INVOICE_FC_SERV]||'').trim();
@@ -8050,7 +8152,7 @@ function fillImportData(data){
 
 async function quickAction(rowIdx, field, value, label, btnId){
   if(!accessToken){ alert('Conectate con Google primero.'); return; }
-  const fila = allRows[rowIdx];
+  const fila = filaPorIdx(rowIdx);
   const COLUMNAS = {
     'pagare_enviado':'Pagaré enviado', 'pagare_firmado':'Pagaré firmado',
     'documentos':'Documentos', 'telex':'TELEX'
@@ -8076,7 +8178,7 @@ async function quickAction(rowIdx, field, value, label, btnId){
 
   const ok = await writeCell(rowIdx, col, value);
   if(ok){
-    const row = allRows[rowIdx];
+    const row = filaPorIdx(rowIdx);
     const bl = (row[COL.BL]||'').trim();
     const customer = (row[COL.CUSTOMER]||'').trim();
     await appendLog({
@@ -8094,7 +8196,7 @@ async function quickAction(rowIdx, field, value, label, btnId){
 
 // Build quick action buttons for an alert card
 function buildQuickActions(rowIdx){
-  const row = allRows[rowIdx];
+  const row = filaPorIdx(rowIdx);
   if(!row) return '';
   const pagEnv = (row[COL.PAGARE_ENVIADO]||'').trim().toUpperCase();
   const pagFirm = (row[COL.PAGARE_FIRMADO]||'').trim().toUpperCase();
@@ -8273,8 +8375,10 @@ function actualizarToolbarCargas(){
   const tb = document.getElementById('cargas-toolbar');
   if(!tb) return;
   const n = window._fcSelectedRows ? window._fcSelectedRows.size : 0;
+  const nMarcas = Object.keys(marcasEnVista()).reduce((a, c) => a + marcasEnVista()[c].length, 0);
+  const btnVisto = nMarcas ? '<button class="tb-btn" onclick="marcarComoVisto()" title="Pasa a blanco las celdas naranjas (de las cargas tildadas, o de todas las de la tabla)">✓ Marcar como visto (' + nMarcas + ')</button>' : '';
   if(!n){
-    tb.innerHTML = '<span style="font-size:12px;color:var(--text3);">Tildá cargas o un embarque entero para actuar sobre ellos · Tocá una fila para ver su detalle</span>';
+    tb.innerHTML = '<span style="font-size:12px;color:var(--text3);">Tildá cargas o un embarque entero para actuar sobre ellos · Tocá una fila para ver su detalle</span><span style="flex:1;"></span>' + btnVisto;
     return;
   }
   const sel = window._selFCaGlobal ? window._selFCaGlobal() : [];
@@ -8295,12 +8399,13 @@ function actualizarToolbarCargas(){
     '<button class="tb-btn" onclick="abrirFacturaForwarder(window._selFCaGlobal())">🧾 Factura fwd</button>' +
     (uno !== null ? '<button class="tb-btn" onclick="renderEditCarga(' + uno + ')">✎ Editar</button>' +
                     '<button class="tb-btn" onclick="abrirPanelCarga(' + uno + ')">Detalle</button>' : '') +
+    btnVisto +
     '<button class="tb-btn" onclick="limpiarSelFC()">Limpiar</button>';
 }
 
 // Ficha de una carga a la derecha, con todo lo importante y todas sus acciones.
 function abrirPanelCarga(idx){
-  const row = allRows[idx];
+  const row = filaPorIdx(idx);
   const p = document.getElementById('panel-carga');
   if(!row || !p) return;
   const nc = getNegocioConfig();
@@ -10246,7 +10351,7 @@ let tasksPendientes = [];
 async function openTasksModal(rowIdx){
   if(!accessToken){ alert('Conectate con Google primero'); return; }
   tasksModalRowIdx = rowIdx;
-  const row = allRows[rowIdx];
+  const row = filaPorIdx(rowIdx);
   if(!row) return;
   showToast('Cargando tareas...', 'info');
   const listas = await tasksGetLists();
@@ -10280,7 +10385,7 @@ async function openTasksModal(rowIdx){
 }
 
 async function tasksGenerarTexto(){
-  const row = allRows[tasksModalRowIdx];
+  const row = filaPorIdx(tasksModalRowIdx);
   if(!row) return;
   const miRespuesta = document.getElementById('tasks-respuesta').value.trim();
   if(!miRespuesta){ alert('Pega tu respuesta de mail primero'); return; }
@@ -10727,7 +10832,7 @@ async function driveUploadFile(file, folderId){
 }
 
 async function driveOpenFolder(rowIdx){
-  const row = allRows[rowIdx];
+  const row = filaPorIdx(rowIdx);
   if(!row){ alert('Carga no encontrada'); return; }
   if(!accessToken){ alert('Conectate con Google primero'); return; }
   showToast('Buscando carpeta en Drive...', 'info');
@@ -10748,7 +10853,7 @@ async function driveOpenFolder(rowIdx){
 }
 
 async function driveUploadForRow(rowIdx, files){
-  const row = allRows[rowIdx];
+  const row = filaPorIdx(rowIdx);
   if(!row || !files.length) return;
   if(!accessToken){ alert('Conectate con Google primero'); return; }
   const okUp = await confirmarAccion(
