@@ -3016,7 +3016,8 @@ async function writeCell(row, col, value){
   // allRows filtra por isClosed, entonces necesitamos encontrar la fila real
   // La API devuelve datos desde A4, entonces allRows[0] = fila 4, allRows[1] = fila 5, etc.
   // Use stored _sheetRow if available (accounts for filtered rows)
-  const sheetRow = allRows[row]&&allRows[row]._sheetRow ? allRows[row]._sheetRow : row + 4;
+  const fila = filaPorIdx(row);
+  const sheetRow = fila&&fila._sheetRow ? fila._sheetRow : row + 4;
   if(col === undefined || col === null || col < 0){
     console.error('writeCell: columna invalida', col);
     alert('No se pudo determinar la columna a escribir. Revisa los encabezados de la planilla.');
@@ -3110,9 +3111,21 @@ async function pintarCeldas(sheetRows, colIdx, bg, fg){
 }
 
 // Filas de la planilla correspondientes a unos indices de allRows
+// Las cargas con fecha de cobro cargada salen de allRows (se consideran cerradas),
+// pero si todavia les falta la liberacion tienen que verse en Liberaciones. Sus
+// indices siguen a los de allRows, asi las acciones pueden tratarlas igual.
+function filasCerradas(){ return allRowsAll.filter(r => allRows.indexOf(r) < 0); }
+function filaPorIdx(i){ return i < allRows.length ? allRows[i] : filasCerradas()[i - allRows.length]; }
+function idxDeFila(r){
+  const i = allRows.indexOf(r);
+  if(i >= 0) return i;
+  const j = filasCerradas().indexOf(r);
+  return j >= 0 ? allRows.length + j : -1;
+}
+
 function sheetRowsDe(rowIndices){
   return rowIndices.map(function(i){
-    const r = allRows[i];
+    const r = filaPorIdx(i);
     return r && r._sheetRow ? r._sheetRow : null;
   }).filter(Boolean);
 }
@@ -3536,7 +3549,7 @@ function updateBadges(){
   const cobros=allRows.filter(r=>{const d=daysFrom(r[getCobroCol()]);return d!==null&&d<=14;}).length;
   const bC=document.getElementById('badge-cobranza');
   bC.textContent=cobros||'';bC.style.display=cobros?'':'none';
-  const libs=allRows.filter(r=>{const d=daysFrom(r[COL.ETA]);const t=(r[COL.TELEX]||'').trim().toLowerCase();return d!==null&&d>=0&&d<=7&&t!=='si'&&!t.includes('bl orig');}).length;
+  const libs=allRows.concat(filasCerradas()).filter(r=>{const d=daysFrom(r[COL.ETA]);const t=(r[COL.TELEX]||'').trim().toLowerCase();return d!==null&&d>=0&&d<=7&&t!=='si'&&!t.includes('bl orig');}).length;
   const bL=document.getElementById('badge-liberaciones');
   if(bL){bL.textContent=libs||'';bL.style.display=libs?'':'none';}
 }
@@ -5186,7 +5199,7 @@ async function solicitarLiberacionViaAppScript(rowIdx){
 
 async function solicitarLiberacionBulkViaAppScript(rowIndices){
   if(!rowIndices.length) return;
-  const rows=rowIndices.map(i=>allRows[i]);
+  const rows=rowIndices.map(i=>filaPorIdx(i));
   const sheetRows=rows.map(r=>r._sheetRow).filter(Boolean);
   if(sheetRows.length!==rowIndices.length){alert('No se pudieron determinar todas las filas.');return;}
   const customer=(rows[0][COL.CUSTOMER]||'').trim();
@@ -5276,7 +5289,7 @@ async function marcarPedroOkBulk(rowIndices){
   if(!accessToken){alert('Conectate con Google primero.');return;}
   const label=getNegocioConfig().label;
   const n=rowIndices.length;
-  const rowsSel=rowIndices.map(function(i){ return allRows[i]; }).filter(Boolean);
+  const rowsSel=rowIndices.map(function(i){ return filaPorIdx(i); }).filter(Boolean);
   const confirmed=await showConfirm(label+' dio el OK',
     'Se marca TELEX = "recibir" en '+n+' carga'+(n>1?'s':'')+' de la planilla.',
     { icono:'👍', okLabel:'Confirmar',
@@ -5284,7 +5297,7 @@ async function marcarPedroOkBulk(rowIndices){
   if(!confirmed) return;
   showToast('Actualizando...');
   for(const rowIdx of rowIndices){
-    const row=allRows[rowIdx];if(!row)continue;
+    const row=filaPorIdx(rowIdx);if(!row)continue;
     await writeCell(rowIdx,COL.TELEX,'recibir');
     await appendLog({fc:(row[COL.INVOICE_CLIENTE]||'').trim(),fcServ:'',bl:(row[COL.BL]||'').trim(),customer:(row[COL.CUSTOMER]||'').trim(),accion:'ok liberacion - a recibir',detalle:''});
   }
@@ -5297,7 +5310,7 @@ async function marcarPedroOkBulk(rowIndices){
 async function marcarLiberadoBulk(rowIndices){
   if(!accessToken){alert('Conectate con Google primero.');return;}
   const n=rowIndices.length;
-  const rowsSel=rowIndices.map(function(i){ return allRows[i]; }).filter(Boolean);
+  const rowsSel=rowIndices.map(function(i){ return filaPorIdx(i); }).filter(Boolean);
   const confirmed=await showConfirm('Confirmar liberación recibida',
     'Se marca TELEX = SI en '+n+' carga'+(n>1?'s':'')+' de la planilla.',
     { icono:'✅', okLabel:'Confirmar',
@@ -5306,7 +5319,7 @@ async function marcarLiberadoBulk(rowIndices){
   showToast('Actualizando...');
   const label=getNegocioConfig().label;
   for(const rowIdx of rowIndices){
-    const row=allRows[rowIdx];if(!row)continue;
+    const row=filaPorIdx(rowIdx);if(!row)continue;
     await writeCell(rowIdx,COL.TELEX,'SI');
     await appendLog({fc:(row[COL.INVOICE_CLIENTE]||'').trim(),fcServ:'',bl:(row[COL.BL]||'').trim(),customer:(row[COL.CUSTOMER]||'').trim(),accion:'liberacion recibida',detalle:''});
   }
@@ -5321,7 +5334,7 @@ async function marcarPedroOk(rowIdx){ await marcarPedroOkBulk([rowIdx]); }
 async function marcarLiberado(rowIdx){ await marcarLiberadoBulk([rowIdx]); }
 
 function renderLiberaciones(){
-  const rows=allRows.filter(r=>{
+  const rows=allRows.concat(filasCerradas()).filter(r=>{
     const d=daysFrom(r[COL.ETA]);
     if(d===null||d<0||d>7) return false;
     const t=(r[COL.TELEX]||'').trim().toLowerCase();
@@ -5365,15 +5378,15 @@ function renderLiberaciones(){
     if(n===0){bar.style.display='none';return;}
     bar.style.display='flex';
     const selRows=[...window._libSelectedRows].map(i=>window._libRows[i]);
-    const selOrigIdx=[...window._libSelectedRows].map(i=>allRows.indexOf(window._libRows[i]));
+    const selOrigIdx=[...window._libSelectedRows].map(i=>idxDeFila(window._libRows[i]));
     const allSolic=selRows.every(r=>(r[COL.TELEX]||'').toLowerCase().includes('solicitado'));
     const allRecib=selRows.every(r=>(r[COL.TELEX]||'').toLowerCase().includes('recibir'));
     const anyVacio=selRows.some(r=>(r[COL.TELEX]||'').trim()==='');
     const btnStyle='padding:8px 18px;border-radius:20px;font-weight:600;font-size:12px;cursor:pointer;border:none;font-family:var(--font);';
     let btns=`<span style="font-size:12px;font-weight:600;color:var(--text2);">${n} seleccionada${n>1?'s':''}</span>`;
-    if(anyVacio) btns+=`<button onclick="solicitarLiberacionBulkViaAppScript([...window._libSelectedRows].map(i=>allRows.indexOf(window._libRows[i])))" style="${btnStyle}background:var(--accent);color:#fff;">🚢 Solicitar (${n})</button>`;
-    if(allSolic) btns+=`<button onclick="marcarPedroOkBulk([...window._libSelectedRows].map(i=>allRows.indexOf(window._libRows[i])))" style="${btnStyle}background:#f97316;color:#fff;">👍 ${label} OK (${n})</button>`;
-    if(allRecib) btns+=`<button onclick="marcarLiberadoBulk([...window._libSelectedRows].map(i=>allRows.indexOf(window._libRows[i])))" style="${btnStyle}background:var(--ok);color:#fff;">✅ Recibidas (${n})</button>`;
+    if(anyVacio) btns+=`<button onclick="solicitarLiberacionBulkViaAppScript([...window._libSelectedRows].map(i=>idxDeFila(window._libRows[i])))" style="${btnStyle}background:var(--accent);color:#fff;">🚢 Solicitar (${n})</button>`;
+    if(allSolic) btns+=`<button onclick="marcarPedroOkBulk([...window._libSelectedRows].map(i=>idxDeFila(window._libRows[i])))" style="${btnStyle}background:#f97316;color:#fff;">👍 ${label} OK (${n})</button>`;
+    if(allRecib) btns+=`<button onclick="marcarLiberadoBulk([...window._libSelectedRows].map(i=>idxDeFila(window._libRows[i])))" style="${btnStyle}background:var(--ok);color:#fff;">✅ Recibidas (${n})</button>`;
     bar.innerHTML=btns;
   }
   window.updateLibBulkBar=updateLibBulkBar;
@@ -5382,7 +5395,7 @@ function renderLiberaciones(){
   <div class="alert-list">`;
 
   rows.forEach((row,localIdx)=>{
-    const origIdx=allRows.indexOf(row);
+    const origIdx=idxDeFila(row);
     const d=daysFrom(row[COL.ETA]);
     const dc=daysClass(d);
     const telex=(row[COL.TELEX]||'').trim();
