@@ -2573,11 +2573,32 @@ function tarifaPara(row){
   const meses = mesesDeCarga(row);
   if(!meses.length) return null;         // sin fechas no hay mes al que referirse
   // Se prueba primero el mes del ETD y despues el de la consolidacion.
+  // Dentro del mes, la de referencia es la que sale de Buenos Aires (o sin POL):
+  // las cargas no dicen por donde salen y lo normal es BUE.
   for(const m of meses){
     const delMes = candidatas.filter(t => t.mes === m);
-    if(delMes.length) return delMes[0];
+    if(delMes.length) return delMes.find(esPolBase) || delMes[0];
   }
   return null;
+}
+
+// POL de referencia: Buenos Aires o vacio. Cualquier otro (CHILE, por ejemplo)
+// es una salida alternativa, que suele tener otro precio.
+function esPolBase(t){
+  const p = normTar(t && t.pol);
+  return !p || p.indexOf('BUE') === 0 || p.indexOf('BS AS') === 0 || p.indexOf('BSAS') === 0 || p.indexOf('ARG') === 0;
+}
+
+// Las otras tarifas del mismo destino, naviera y mes que salen por otro puerto
+// (ej. CHILE). No se sabe por la carga si salio por ahi: se usan para reconocer
+// el caso cuando el monto facturado coincide exacto con alguna de ellas.
+function tarifasAlternativas(row){
+  const base = tarifaPara(row);
+  if(!base) return [];
+  return tarifas.filter(t => t !== base && t.mes === base.mes && !esPolBase(t) &&
+    coincideTexto(t.destino, row[COL.PORT]) && coincideTexto(t.carrier, row[COL.SHIPPING]))
+    .map(t => ({ tarifa: t, pol: t.pol, ref: refTarifa(t) }))
+    .filter(a => !isNaN(a.ref) && a.ref);
 }
 
 // Cuantos contenedores tiene la carga. La celda suele traer varios separados por
@@ -2623,8 +2644,17 @@ function compararFlete(row){
   // Cualquier diferencia de un centavo o mas se avisa (pedido explicito: la
   // tarifa se paga exacta). Rojo sigue siendo a partir del 10%.
   const abs = Math.abs(mejor.pct);
-  const estado = Math.abs(mejor.dif) < 0.005 ? 'ok' : (abs >= TOL_ROJO_FLETE ? 'bad' : 'warn');
-  return { estado, importe, tarifa, ref, campoRef, lecturas, mejor, contenedores: n };
+  let estado = Math.abs(mejor.dif) < 0.005 ? 'ok' : (abs >= TOL_ROJO_FLETE ? 'bad' : 'warn');
+  // Coincide exacto con la tarifa saliendo por otro puerto (CHILE): amarillo,
+  // con la pregunta, en vez de marcarlo como diferencia.
+  let porPol = null;
+  if(estado !== 'ok'){
+    for(const a of tarifasAlternativas(row)){
+      const l = lecturas.find(x => Math.abs(x.valor - a.ref) < 0.005);
+      if(l){ porPol = { pol: a.pol, ref: a.ref, tarifa: a.tarifa, lectura: l }; estado = 'warn'; break; }
+    }
+  }
+  return { estado, importe, tarifa, ref, campoRef, lecturas, mejor, contenedores: n, porPol };
 }
 
 function fmtUsd2(n){
@@ -2653,7 +2683,7 @@ function esperadoFactura(idxs){
     const cnt = cantidadContenedores(row);
     const t = tarifaPara(row);
     const ref = refTarifa(t);
-    return { idx: i, row, cnt, tarifa: (t && !isNaN(ref) && ref) ? t : null,
+    return { idx: i, row, cnt, alts: tarifasAlternativas(row), tarifa: (t && !isNaN(ref) && ref) ? t : null,
              ref: (t && !isNaN(ref) && ref) ? ref : NaN,
              esperado: (t && !isNaN(ref) && ref) ? redondear2(ref * cnt) : NaN };
   });
@@ -2662,6 +2692,20 @@ function esperadoFactura(idxs){
   return { filas, cnt,
            total: redondear2(conTarifa.reduce((a, f) => a + f.esperado, 0)),
            sinTarifa: filas.filter(f => !f.tarifa) };
+}
+
+// Si el total no cierra con BUE, prueba cada salida alternativa: cada carga que
+// tenga tarifa por ese puerto la usa, las demas siguen con la de BUE.
+function salidaQueCoincide(esp, facturado){
+  const pols = [...new Set(esp.filas.flatMap(f => (f.alts || []).map(a => a.pol)))];
+  for(const p of pols){
+    const total = redondear2(esp.filas.filter(f => f.tarifa).reduce((a, f) => {
+      const alt = (f.alts || []).find(x => x.pol === p);
+      return a + (alt ? alt.ref : f.ref) * f.cnt;
+    }, 0));
+    if(Math.abs(total - facturado) < 0.005) return { pol: p, total };
+  }
+  return null;
 }
 
 // Diferencias entre lo cargado y el tarifario. Devuelve una lista de textos;
@@ -2679,14 +2723,19 @@ function avisosFactura(esp, total, proveedor, porFcl){
     const cntConTarifa = esp.filas.filter(f => f.tarifa).reduce((a, f) => a + f.cnt, 0);
     const facturadoComparable = redondear2(total * cntConTarifa / esp.cnt);
     const dif = redondear2(facturadoComparable - esp.total);
-    if(Math.abs(dif) >= 0.005){
+    const pol = Math.abs(dif) >= 0.005 ? salidaQueCoincide(esp, facturadoComparable) : null;
+    if(pol){
+      av.push('Coincide con la tarifa saliendo por ' + pol.pol + ' (USD ' + fmtUsd2(pol.total) + '). ¿Salió por ' + pol.pol + '?');
+      av.porPol = pol.pol;
+    } else if(Math.abs(dif) >= 0.005){
       av.push('La factura difiere del tarifario en USD ' + (dif > 0 ? '+' : '−') + fmtUsd2(Math.abs(dif)) +
               ' (' + (dif > 0 ? '+' : '−') + fmtUsd2(Math.abs(dif / esp.total * 100)) + '%)');
     }
     esp.filas.filter(f => f.tarifa).forEach(f => {
-      const d = redondear2(porFcl(f) - f.ref);
+      const refF = av.porPol ? ((f.alts.find(a => a.pol === av.porPol) || {}).ref || f.ref) : f.ref;
+      const d = redondear2(porFcl(f) - refF);
       if(Math.abs(d) >= 0.005 && esp.filas.length > 1){
-        av.push('Fila ' + f.row._sheetRow + ': USD ' + fmtUsd2(porFcl(f)) + ' por contenedor contra tarifa ' + fmtUsd2(f.ref));
+        av.push('Fila ' + f.row._sheetRow + ': USD ' + fmtUsd2(porFcl(f)) + ' por contenedor contra tarifa ' + fmtUsd2(refF));
       }
     });
   }
@@ -2728,7 +2777,7 @@ function abrirFacturaForwarder(idxs){
         <div style="font-size:11px;">BL <span class="mono">${(f.row[COL.BL]||'—')}</span> · BKG <span class="mono">${(f.row[COL.BOOKING]||'—')}</span></div>
         <div style="font-size:11px;color:var(--text2);">${f.row[COL.VESSEL]||'—'} → ${f.row[COL.PORT]||'—'} · <b>${f.cnt} cnt</b></div>
         <div style="font-size:11px;color:var(--text2);">ETD <b>${fmtDate(f.row[COL.ETD])||'—'}</b> · ETA <b>${fmtDate(f.row[COL.ETA])||'—'}</b></div></td>
-      <td style="font-size:11px;">${f.tarifa ? (f.tarifa.carrier||'') + ' · ' + (f.tarifa.forwarder||'') + ' · ' + mesLegible(f.tarifa.mes) + '<br>USD ' + fmtUsd2(f.ref) + ' x cnt' : '<span style="color:var(--warn);">sin tarifa</span>'}</td>
+      <td style="font-size:11px;">${f.tarifa ? (f.tarifa.carrier||'') + ' · ' + (f.tarifa.forwarder||'') + ' · ' + mesLegible(f.tarifa.mes) + '<br>USD ' + fmtUsd2(f.ref) + ' x cnt' + (f.tarifa.pol ? ' <span style="color:var(--text3);">(' + f.tarifa.pol + ')</span>' : '') + f.alts.map(a => '<br><span style="color:var(--text3);">por ' + a.pol + ': USD ' + fmtUsd2(a.ref) + ' x cnt</span>').join('') : '<span style="color:var(--warn);">sin tarifa</span>'}</td>
       <td class="mono" style="text-align:right;">${f.tarifa ? 'USD ' + fmtUsd2(f.esperado) : '—'}</td>
       <td class="mono" style="text-align:right;" id="fwd-fac-${f.idx}">—</td>
     </tr>`).join('');
@@ -2878,6 +2927,7 @@ async function guardarFacturaForwarder(){
 
   const pisa = cambios.filter(c => c.antes && String(c.antes) !== String(c.despues));
   const avisos = d.avisos.slice();
+  avisos.porPol = d.avisos.porPol;
   const esc = s => String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;');
   const detalle = '<div style="margin-bottom:6px;"><b>Factura ' + esc(d.nro) + '</b> · ' + esc(d.proveedor || 'sin proveedor') +
     ' · USD ' + fmtUsd2(d.total) + '</div>' +
@@ -2907,6 +2957,7 @@ async function guardarFacturaForwarder(){
       accion: 'factura forwarder',
       detalle: (d.proveedor || 'sin proveedor') + ' · USD ' + fmtUsd2(d.porCnt) + ' x ' + f.cnt + ' cnt' +
                (f.tarifa ? ' · tarifa ' + fmtUsd2(f.ref) : ' · sin tarifa') +
+               (avisos.porPol ? ' · salió por ' + avisos.porPol : '') +
                (avisos.length ? ' · DIFERENCIA: ' + avisos.join(' | ') : ' · coincide') });
   }
   cerrarFacturaForwarder();
@@ -2928,6 +2979,7 @@ function textoComparacionFlete(cmp){
   const base = 'Tarifa ' + cmp.campoRef + ' ' + mesLegible(cmp.tarifa.mes) + ': USD ' +
                Math.round(cmp.ref).toLocaleString('es-AR');
   if(cmp.estado === 'ok') return base + ' · coincide' + (cmp.mejor.modo === 'total' ? ' leyendo el importe como ' + cmp.mejor.etiqueta : '');
+  if(cmp.porPol) return 'Coincide con la tarifa saliendo por ' + cmp.porPol.pol + ' (USD ' + fmtUsd2(cmp.porPol.ref) + '). ¿Salió por ' + cmp.porPol.pol + '?';
   return base + ' · ' + signo + 'USD ' + fmtUsd2(Math.abs(cmp.mejor.dif)) +
          ' (' + signo + fmtUsd2(Math.abs(cmp.mejor.pct)) + '%)' +
          (cmp.mejor.modo === 'total' ? ' leyendo el importe como ' + cmp.mejor.etiqueta : '');
