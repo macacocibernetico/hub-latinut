@@ -1235,6 +1235,7 @@ const COL_DEFAULTS = {
   // Columnas mapeadas por nombre pero que el hub todavia no usa. Arrancan en -1
   // ("no existe") y se llenan solas si el encabezado aparece en la planilla.
   STENN:-1, PAGO_90:-1, PAGO_SALDO:-1, COSTO_STENN:-1,
+  POL:-1,   // puerto de origen; opcional: si no esta en la hoja, nadie lo lee
   CONSOL_ETD:-1, COM_EUROPA:-1, MES_CONSOL:-1, FEC_EST_O_REAL_COBRO:-1, ANIO_ETD:-1
 };
 // COL: cada propiedad es un getter que devuelve el índice detectado por nombre
@@ -2084,6 +2085,8 @@ function mapearColumnasPorNombre(headerRow){
 
   // ── COLUMNAS COMUNES (mismo nombre en AXT y Buzaram) ──
   map.NEGOCIO      = col('Negocio');
+  // POL (puerto de origen): columna opcional. Si esta cargada, define que tarifa corresponde.
+  map.POL          = col('POL');
   map.TNS          = col('Tns');
   map.PRODUCT      = col('Product');
   map.PACKING      = col('Packing');
@@ -2575,11 +2578,25 @@ function tarifaPara(row){
   // Se prueba primero el mes del ETD y despues el de la consolidacion.
   // Dentro del mes, la de referencia es la que sale de Buenos Aires (o sin POL):
   // las cargas no dicen por donde salen y lo normal es BUE.
+  // Si la carga tiene POL cargado, se usa la tarifa de ESE puerto. Si no, la de
+  // referencia (Buenos Aires).
+  const pol = polDeCarga(row);
   for(const m of meses){
-    const delMes = candidatas.filter(t => t.mes === m);
-    if(delMes.length) return delMes.find(esPolBase) || delMes[0];
+    const delMes = candidatas.filter(t => t.mes === m && (!pol || polIgual(t.pol, pol)));
+    if(delMes.length) return pol ? delMes[0] : (delMes.find(esPolBase) || delMes[0]);
   }
   return null;
+}
+
+// POL de la carga (columna opcional "POL"). Vacio = no se sabe.
+function polDeCarga(row){
+  return (COL.POL !== undefined && COL.POL >= 0 && row[COL.POL] !== undefined && row[COL.POL] !== null) ? row[COL.POL].toString().trim() : '';
+}
+// BUE, BS AS, ARG y vacio son el mismo puerto base; el resto se compara por nombre.
+function polIgual(a, b){
+  if(esPolBase({ pol: a }) && esPolBase({ pol: b })) return true;
+  if(esPolBase({ pol: a }) || esPolBase({ pol: b })) return false;
+  return normTar(a) === normTar(b) || coincideTexto(a, b);
 }
 
 // POL de referencia: Buenos Aires o vacio. Cualquier otro (CHILE, por ejemplo)
@@ -2593,6 +2610,7 @@ function esPolBase(t){
 // (ej. CHILE). No se sabe por la carga si salio por ahi: se usan para reconocer
 // el caso cuando el monto facturado coincide exacto con alguna de ellas.
 function tarifasAlternativas(row){
+  if(polDeCarga(row)) return [];     // con POL cargado ya se sabe cual es: no se adivina
   const base = tarifaPara(row);
   if(!base) return [];
   return tarifas.filter(t => t !== base && t.mes === base.mes && !esPolBase(t) &&
@@ -2624,8 +2642,13 @@ function compararFlete(row){
     // cargamos ese destino" que "falta el tarifario de este mes".
     const meses = mesesDeCarga(row);
     const hayDestino = tarifas.some(t => coincideTexto(t.destino, row[COL.PORT]) && coincideTexto(t.carrier, row[COL.SHIPPING]));
+    // Con POL cargado: hay tarifa de ese destino y mes, pero no saliendo por ese puerto
+    const pol = polDeCarga(row);
+    const hayMesOtroPol = !!pol && meses.length > 0 && tarifas.some(t => coincideTexto(t.destino, row[COL.PORT]) &&
+      coincideTexto(t.carrier, row[COL.SHIPPING]) && meses.indexOf(t.mes) >= 0);
     return { estado:'sin_tarifa', importe: importe,
-             faltaMes: hayDestino && meses.length ? meses[0] : null };
+             faltaPol: hayMesOtroPol ? pol : null,
+             faltaMes: hayDestino && meses.length && !hayMesOtroPol ? meses[0] : null };
   }
 
   const ref = !isNaN(tarifa.allIn) && tarifa.allIn ? tarifa.allIn : tarifa.flete;
@@ -2971,6 +2994,7 @@ function textoComparacionFlete(cmp){
   if(!cmp) return '';
   if(cmp.estado === 'sin_importe') return 'Sin importe cargado';
   if(cmp.estado === 'sin_tarifa'){
+    if(cmp.faltaPol) return 'Hay tarifa de ese destino y mes, pero no saliendo por ' + cmp.faltaPol;
     return cmp.faltaMes
       ? 'No hay tarifa de ' + mesLegible(cmp.faltaMes) + ' para ese destino y naviera, así que no hay con qué comparar'
       : 'Sin tarifa cargada para ese destino y naviera';
