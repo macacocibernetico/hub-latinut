@@ -781,6 +781,7 @@ function getBuzaramCfg(){
     // Las copias fijas del pedido de liberacion tambien salen de la hoja,
     // columna CC_Liberacion.
     sinPagares: true,
+    hojaContratos: 'Contratos',
     // Pagos forwarder Buzaram
     PAGO_FC_FLETE:      c('FC_FLETE'),          // "FC flete"
     PAGO_PROVEEDOR:     c('PROVEEDOR_FLETE'),   // "proveedor"
@@ -812,6 +813,7 @@ function getNegocioConfig(){
     // Contraparte: ver la hoja CONTACTOS, columna Contraparte.
     // Copias fijas del pedido: hoja CONTACTOS, columna CC_Liberacion.
     sinPagares: false,
+    hojaContratos: 'Contratos abiertos',
     // Pagos forwarder AXT
     PAGO_FC_FLETE:      c('FC_FLETE'),
     PAGO_FC_COURIER:    c('FC_COURIER'),
@@ -866,9 +868,9 @@ function updateNegocioPill(){
   // Hide pagarés for Buzaram
   const pagNav = document.getElementById('nav-pagares');
   if(pagNav) pagNav.style.display = isBuz?'none':'';
-  // Contratos: por ahora solo AXT
+  // Contratos: cada negocio tiene su propia hoja
   const conNav = document.getElementById('nav-contratos');
-  if(conNav) conNav.style.display = isBuz?'none':'';
+  if(conNav) conNav.style.display = '';
   // Update sidebar subtitle
   const label = document.getElementById('negocio-label');
   if(label) label.textContent = isBuz?'Buzaram':'AXT Solutions';
@@ -2061,11 +2063,11 @@ function normalizarHdr(s){
 // Si en el futuro alguna empieza a usarse, hay que sacarla de esta lista para que
 // vuelva a estar vigilada.
 const COLS_OPCIONALES = new Set([
-  'ANIO_ETD','COMISION_BROKER','COM_EUROPA','CONSOL_ETD','CONTRACT_PROVEEDOR',
+  'ANIO_ETD','COMISION_BROKER','COM_EUROPA','CONSOL_ETD',
   'COSTO_STENN','C_NUTRIN','DIAS_PAGAR_LT','FECHA_LT','FECHA_PAGO_LT',
   'FEC_EST_O_REAL_COBRO','FEC_FACT_CLIENTE','FEC_FACT_PLANTA','FEC_PAGO_EFECTIVO',
-  'INVOICE_PROVEEDOR','MES_CONSOL','MONTO_LT','NUM_FC_LT','OV','PAGO_90',
-  'PAGO_SALDO','PRECIO_FINAL_TN','STENN','TOTAL_FCA'
+  'MES_CONSOL','MONTO_LT','NUM_FC_LT','OV','PAGO_90',
+  'PAGO_SALDO','PRECIO_FINAL_TN','STENN'
 ]);
 
 function mapearColumnasPorNombre(headerRow){
@@ -2252,6 +2254,8 @@ function setSheetStatus(state,text){
 // cliente + producto + puerto y completa esa parte sola, en vez de tener que ir a
 // buscar el contrato a mano y copiar seis numeros.
 const HOJA_CONTRATOS = 'Contratos abiertos';
+// Cada negocio tiene la suya: AXT "Contratos abiertos", Buzaram "Contratos".
+function hojaContratos(){ return getNegocioConfig().hojaContratos || HOJA_CONTRATOS; }
 let contratos = [];
 let _contratosError = null;
 let _contratosHeaders = [];     // encabezados tal cual estan en la hoja
@@ -2261,12 +2265,12 @@ let _contratosHeaderFila = 1;
 
 async function loadContratos(){
   contratos = []; _contratosError = null;
+  _contratosHeaders = []; _contratosFilas = []; _contratosFormulas = [];   // nada del negocio anterior
   const nc = getNegocioConfig();
-  if(nc.sinPagares) return;                 // solo AXT tiene esta hoja
   const sid = nc.sheetId || cfg.sheetId;
   if(!sid) return;
   try{
-    const range = encodeURIComponent(HOJA_CONTRATOS + '!A1:Z400');
+    const range = encodeURIComponent(hojaContratos() + '!A1:Z400');
     let url, opts = {};
     if(accessToken){
       url = 'https://sheets.googleapis.com/v4/spreadsheets/' + sid + '/values/' + range;
@@ -2302,7 +2306,7 @@ async function loadContratos(){
       try{
         const ult = _contratosFilas[_contratosFilas.length - 1]._fila;
         const rf = await fetch('https://sheets.googleapis.com/v4/spreadsheets/' + sid + '/values/' +
-          encodeURIComponent(HOJA_CONTRATOS + '!A' + ult + ':Z' + ult) + '?valueRenderOption=FORMULA',
+          encodeURIComponent(hojaContratos() + '!A' + ult + ':Z' + ult) + '?valueRenderOption=FORMULA',
           { headers:{ Authorization:'Bearer ' + accessToken } });
         if(rf.ok){
           const df = await rf.json();
@@ -2324,8 +2328,8 @@ async function loadContratos(){
       importador: col('Importador','Importer','Cliente','Customer'),
       producto:   col('Producto','Product'),
       puerto:     col('Puerto','Port','Puertos','Destino'),
-      price:      col('Price Cliente','Precio Cliente','Price','Precio'),
-      flete:      col('Flete','Freight'),
+      price:      col('Price Cliente','Precio Cliente','Precio/tn','Price','Precio'),
+      flete:      col('Flete','Freight','Flete/tn'),
       incoterm:   col('INCOTERM','Incoterm'),
       fcServ:     col('FC Servicios','FC Servicio','Fc Serv','Servicios')
     };
@@ -2334,7 +2338,7 @@ async function loadContratos(){
     if(c.producto   < 0) faltan.push('Producto');
     if(c.puerto     < 0) faltan.push('Puerto');
     if(faltan.length){
-      _contratosError = 'A la hoja ' + HOJA_CONTRATOS + ' le faltan las columnas: ' + faltan.join(', ');
+      _contratosError = 'A la hoja ' + hojaContratos() + ' le faltan las columnas: ' + faltan.join(', ');
       return;
     }
     const g = (fila, i) => i >= 0 ? (fila[i]||'').toString().trim() : '';
@@ -4746,7 +4750,7 @@ function colIndexToLetter(idx){
 function getFormValues(prefix){
   const dateFields = ['consol','etd','eta','fechaEstCobro','fechaCobro'];
   const fields = [
-    'negocio','tns','product','packing','lots','pricefob','containers','booking','bl','shipping',
+    'negocio','tns','product','packing','lots','pricefob','invoiceProv','contractProv','totalProv','containers','booking','bl','shipping',
     'vessel','consol','etd','eta','port','exporter','customer',
     'documentos','lombard','clienteEnv','telex',
     'invoiceCliente','contractCliente','priceCFR','flete','totalCFR','incoterm',
@@ -4776,6 +4780,9 @@ function formToRowData(d){
   set(COL.PRODUCT, d.product);
   set(COL.PACKING, d.packing);
   if(d.pricefob) set(COL.PRICE_FCA, d.pricefob); // Price FCA (antes Price FOB)
+  set(COL.INVOICE_PROVEEDOR, d.invoiceProv);
+  set(COL.CONTRACT_PROVEEDOR, d.contractProv);
+  set(COL.TOTAL_FCA, d.totalProv);
   set(COL.LOTS, d.lots);
   set(COL.CONTAINERS, d.containers);
   set(COL.BOOKING, d.booking);
@@ -5035,7 +5042,7 @@ function buscarContratos(prefix){
     return;
   }
   if(!contratos.length){
-    caja.innerHTML = '<span style="color:var(--text3);">No pude leer la hoja “' + HOJA_CONTRATOS + '” o está vacía.</span>';
+    caja.innerHTML = '<span style="color:var(--text3);">No pude leer la hoja “' + hojaContratos() + '” o está vacía.</span>';
     return;
   }
   if(!customer || !producto){
@@ -5109,6 +5116,14 @@ function aplicarContrato(prefix, i){
   }
 }
 
+// Total Proveedor = Price FCA x Tns. Solo se calcula si hay las dos cosas.
+function recalcularTotalProveedor(prefix){
+  const n = parseSheetNum(valForm(prefix, 'tns'));
+  const p = parseSheetNum(valForm(prefix, 'pricefob'));
+  if(isNaN(n) || n <= 0 || isNaN(p)) return;
+  setForm(prefix, 'totalProv', redondear2(p * n));
+}
+
 // Recalcula los totales con lo que haya escrito, sin volver al contrato. Sirve
 // cuando corregis las toneladas o el precio a mano despues de traer el contrato.
 function recalcularTotales(prefix){
@@ -5133,6 +5148,7 @@ function buildCargaForm(prefix, d={}, fullEdit=false){
     const ev = [];
     if(AFECTAN_FLETE.indexOf(id) >= 0) ev.push("actualizarComparadorFlete('" + prefix + "')");
     if(AFECTAN_TOTALES.indexOf(id) >= 0) ev.push("recalcularTotales('" + prefix + "')");
+    if(['tns','pricefob'].indexOf(id) >= 0) ev.push("recalcularTotalProveedor('" + prefix + "')");
     if(['customer','product','port'].indexOf(id) >= 0) ev.push("buscarContratos('" + prefix + "')");
     return ev.length ? ' oninput="' + ev.join(';') + '"' : '';
   };
@@ -5149,7 +5165,10 @@ function buildCargaForm(prefix, d={}, fullEdit=false){
     ${field('tns','Tns',d.tns||'','text','ej: 22,32')}
     ${smartField(prefix,'packing','Packing',d.packing||'','ej: big bags', COL.PACKING)}
     ${field('lots','Lots',d.lots||'','text','ej: BL38-250022-AP')}
-    ${field('pricefob','Precio FOB',d.pricefob||'','text','ej: 1180')}
+    ${field('invoiceProv','Invoice Proveedor',d.invoiceProv||'','text','ej: 0001-00001234')}
+    ${field('contractProv','Contract Proveedor',d.contractProv||'','text','ej: 2026-PROV-01')}
+    ${field('pricefob','Price FCA',d.pricefob||'','text','ej: 1180')}
+    ${field('totalProv','Total Proveedor',d.totalProv||'','text','Price FCA × Tns')}
     ${field('containers','Containers',d.containers||'','text','ej: FFAU3862300')}
     ${field('booking','Booking',d.booking||'','text','ej: EBKG15971228')}
     ${field('bl','BL',d.bl||'','text','ej: TRANSHBL00048410')}
@@ -5169,8 +5188,8 @@ function buildCargaForm(prefix, d={}, fullEdit=false){
     <div style="grid-column:1/-1;margin-top:20px;padding:12px 14px;border-radius:10px;background:var(--accent-light);border:1px solid var(--accent);">
       <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;">
         <div>
-          <div style="font-size:12px;font-weight:700;color:var(--accent);letter-spacing:.3px;">AXT → CLIENTE</div>
-          <div style="font-size:11px;color:var(--text3);margin-top:2px;">Se completa con el contrato de la hoja “${HOJA_CONTRATOS}”, cruzando cliente, producto y puerto.</div>
+          <div style="font-size:12px;font-weight:700;color:var(--accent);letter-spacing:.3px;">${empresaDelNegocio() === 'AXT' ? 'AXT → CLIENTE' : 'BUZARAM → CLIENTE FINAL'}</div>
+          <div style="font-size:11px;color:var(--text3);margin-top:2px;">Se completa con el contrato de la hoja “${hojaContratos()}”, cruzando cliente, producto y puerto.</div>
         </div>
         <button type="button" class="btn" style="font-size:11px;padding:5px 12px;" onclick="buscarContratos('${prefix}')">🔎 Buscar contrato</button>
       </div>
@@ -5185,7 +5204,12 @@ function buildCargaForm(prefix, d={}, fullEdit=false){
     ${field('totalFinal','TOTAL FINAL',d.totalFinal||'','text','Total CFR + Price serv')}
     ${field('precioFinalTn','Precio final x tn',d.precioFinalTn||'','text','TOTAL FINAL ÷ Tns')}`;
 
-  if(!fullEdit) return `<div style="display:grid;grid-template-columns:1fr 1fr;gap:0 16px;">${basicFields}${seccionContrato}</div>`;
+  // Buzaram: las dos fechas de cobro forman parte de esta segunda parte.
+  const fechasBuzaram = empresaDelNegocio() === 'AXT' ? '' : `
+    ${dateField(prefix,'fechaEstCobro','Fecha estimada',d.fechaEstCobro||'')}
+    ${dateField(prefix,'fechaCobro','Cobranza CLIENTE',d.fechaCobro||'')}`;
+
+  if(!fullEdit) return `<div style="display:grid;grid-template-columns:1fr 1fr;gap:0 16px;">${basicFields}${seccionContrato}${fechasBuzaram}</div>`;
 
   const extraFields = `
     ${section('Documentos')}
@@ -5220,7 +5244,7 @@ function renderNuevaCarga(){
   document.getElementById('content').innerHTML=`
   <div class="config-section">
     <div class="config-title">Nueva Carga</div>
-    <div class="config-desc">Completá los campos para agregar una nueva fila a la planilla AXT.</div>
+    <div class="config-desc">Completá los campos para agregar una nueva fila a la planilla ${getNegocioConfig().label}.</div>
     <div style="margin-bottom:16px;">
       <button class="import-btn" onclick="triggerImportPlanilla()">📎 Importar planilla despachante (.xlsx)</button>
       <span style="font-size:10px;color:var(--text3);margin-left:10px;">Pre-completa los campos automáticamente</span>
@@ -5261,6 +5285,10 @@ function renderEditCarga(rowIdx){
     clienteEnv: g('CLIENTE_ENV'),
     telex:      g('TELEX'),
     exporter:   g('EXPORTER'),
+    invoiceProv:      g('INVOICE_PROVEEDOR'),
+    contractProv:     g('CONTRACT_PROVEEDOR'),
+    pricefob:         g('PRICE_FCA'),
+    totalProv:        g('TOTAL_FCA'),
     invoiceCliente:   g('INVOICE_CLIENTE'),
     contractCliente:  g('CONTRACT_CLIENTE'),
     priceCFR:         g('PRICE_CLIENTE'),
@@ -5283,7 +5311,7 @@ function renderEditCarga(rowIdx){
   document.getElementById('content').innerHTML=`
   <div class="config-section" style="max-width:100%;">
     <div class="config-title">Editar Carga — ${d.customer} / ${d.product}</div>
-    <div class="config-desc">Los cambios se guardarán directamente en la planilla AXT. Dejá en blanco los campos que no querés modificar.</div>
+    <div class="config-desc">Los cambios se guardarán directamente en la planilla ${getNegocioConfig().label}. Dejá en blanco los campos que no querés modificar.</div>
     ${buildCargaForm('ec', d, true)}
     <div class="config-save" style="margin-top:16px;gap:8px;display:flex;justify-content:flex-end;">
       <button class="btn" onclick="showView('cargas')">Cancelar</button>
@@ -6608,12 +6636,22 @@ function esObligatorioContrato(h){
   return ['CONTRATO','CONTRACT','IMPORTADOR','IMPORTER','PRODUCTO','PRODUCT'].indexOf(n) >= 0;
 }
 
+// "AXT" en AXT; en Buzaram se copia el que ya usan los contratos de la hoja (2026-XX-CLIENTE.01).
+function prefijoContrato(){
+  if(empresaDelNegocio() === 'AXT') return 'AXT';
+  const cuenta = {};
+  contratos.forEach(k => { const m = (k.contrato||'').toUpperCase().match(/^\d{4}-([A-Z]+)-/); if(m) cuenta[m[1]] = (cuenta[m[1]]||0) + 1; });
+  return Object.keys(cuenta).sort((a, b) => cuenta[b] - cuenta[a])[0] || '';   // sin antecedentes, no se inventa nada
+}
+
 // Proximo numero de contrato para un importador: 2026-AXT-PIDCO.01, .02, ...
 function proximoNumeroContrato(importador){
   const anio = new Date().getFullYear();
   const cli = (importador||'').toString().trim().toUpperCase().replace(/\s+/g,'');
   if(!cli) return '';
-  const base = anio + '-AXT-' + cli + '.';
+  const pref = prefijoContrato();
+  if(!pref) return '';
+  const base = anio + '-' + pref + '-' + cli + '.';
   let max = 0;
   contratos.forEach(k => {
     const c = (k.contrato||'').toUpperCase().replace(/\s+/g,'');
@@ -6626,13 +6664,9 @@ let contratosVerTodo = false;
 
 function renderContratos(){
   const cont = document.getElementById('content');
-  if(getNegocioConfig().sinPagares){
-    cont.innerHTML = '<div class="empty"><div class="empty-icon">📑</div>Por ahora los contratos se manejan solo en AXT.</div>';
-    return;
-  }
   if(!_contratosHeaders.length){
     cont.innerHTML = `<div class="empty"><div class="empty-icon">📑</div>
-      <div style="margin-bottom:12px;">${_contratosError || 'No pude leer la hoja “' + HOJA_CONTRATOS + '”.'}</div>
+      <div style="margin-bottom:12px;">${_contratosError || 'No pude leer la hoja “' + hojaContratos() + '”.'}</div>
       <button class="btn primary" onclick="recargarContratos()">Volver a leer</button></div>`;
     return;
   }
@@ -6648,8 +6682,8 @@ function renderContratos(){
     puerto:   ix('Puerto','Port','Puertos','Destino'),
     tns:      ix('Tns','Toneladas','TN'),
     saldo:    ix('Saldo','Saldo Tns','Pendiente'),
-    price:    ix('Price Cliente','Precio Cliente','Price','Precio'),
-    flete:    ix('Flete','Freight'),
+    price:    ix('Price Cliente','Precio Cliente','Precio/tn','Price','Precio'),
+    flete:    ix('Flete','Freight','Flete/tn'),
     inco:     ix('INCOTERM','Incoterm'),
     serv:     ix('FC Servicios','FC Servicio','Fc Serv','Servicios'),
     fecha:    ix('Fecha','Fecha contrato','Date'),
@@ -6761,7 +6795,7 @@ function inputAFecha(v){
 
 function abrirFormContrato(idxEditar){
   if(!accessToken){ alert('Conectate con Google primero para escribir en la planilla.'); return; }
-  if(!_contratosHeaders.length){ alert('No pude leer los encabezados de ' + HOJA_CONTRATOS + '.'); return; }
+  if(!_contratosHeaders.length){ alert('No pude leer los encabezados de ' + hojaContratos() + '.'); return; }
   const editando = (idxEditar !== undefined && idxEditar !== null && _contratosFilas[idxEditar]);
   _contratoEditando = editando ? idxEditar : null;
   const orig = editando ? _contratosFilas[idxEditar] : [];
@@ -6796,10 +6830,10 @@ function abrirFormContrato(idxEditar){
 
   document.getElementById('content').innerHTML = `
   <div class="config-section" style="max-width:860px;">
-    <div class="config-title">${editando ? 'Editar contrato ' + esc(valOrig(idxHeaderContrato('Contrato','Contract'))) : 'Nuevo contrato AXT → Cliente'}</div>
+    <div class="config-title">${editando ? 'Editar contrato ' + esc(valOrig(idxHeaderContrato('Contrato','Contract'))) : 'Nuevo contrato ' + (empresaDelNegocio() === 'AXT' ? 'AXT → Cliente' : 'Buzaram → Cliente final')}</div>
     <div class="config-desc">${editando
-      ? 'Se modifica la fila ' + orig._fila + ' de la hoja “' + HOJA_CONTRATOS + '”. Solo se escriben los campos que cambies; antes de guardar te muestro cada cambio para que lo revises.'
-      : 'Se agrega una fila al final de la hoja “' + HOJA_CONTRATOS + '”. Los campos son los mismos encabezados de la hoja.'}
+      ? 'Se modifica la fila ' + orig._fila + ' de la hoja “' + hojaContratos() + '”. Solo se escriben los campos que cambies; antes de guardar te muestro cada cambio para que lo revises.'
+      : 'Se agrega una fila al final de la hoja “' + hojaContratos() + '”. Los campos son los mismos encabezados de la hoja.'}
       En Puertos podés poner dos separados por coma. ${_contratosFormulas.length?'Las columnas con fórmula no se tocan.':''}</div>
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:0 16px;">${campos}</div>
     <div class="config-save">
@@ -6853,7 +6887,7 @@ async function guardarContrato(){
   }
 
   const resumen = _contratosHeaders.map((h,i) => (h && fila[i]) ? '<div><span style="color:var(--text3);">' + h + ':</span> <b>' + fila[i] + '</b></div>' : '').join('');
-  const ok = await showConfirm('Agregar contrato ' + (numero||''), 'Se agrega una fila nueva al final de la hoja ' + HOJA_CONTRATOS + '.',
+  const ok = await showConfirm('Agregar contrato ' + (numero||''), 'Se agrega una fila nueva al final de la hoja ' + hojaContratos() + '.',
     { icono:'📑', okLabel:'Guardar', detalle: resumen });
   if(!ok) return;
 
@@ -6862,7 +6896,7 @@ async function guardarContrato(){
   showToast('Guardando...');
   try{
     const r = await fetch('https://sheets.googleapis.com/v4/spreadsheets/' + sid + '/values/' +
-      encodeURIComponent(HOJA_CONTRATOS + '!A:Z') + ':append?valueInputOption=USER_ENTERED&insertDataOption=INSERT_ROWS', {
+      encodeURIComponent(hojaContratos() + '!A:Z') + ':append?valueInputOption=USER_ENTERED&insertDataOption=INSERT_ROWS', {
       method:'POST', headers:{ Authorization:'Bearer ' + accessToken, 'Content-Type':'application/json' },
       body: JSON.stringify({ values:[fila] })
     });
@@ -6935,7 +6969,7 @@ async function guardarEdicionContrato(){
     detalle += '<div style="color:var(--warn);margin-top:8px;">⚠ Estás cambiando el número de contrato. Las cargas que ya tienen cargado “' +
       numeroOrig + '” en Contract Cliente no se actualizan solas.</div>';
   }
-  const ok = await showConfirm('Revisá los cambios', 'Se van a modificar ' + cambios.length + ' campo' + (cambios.length>1?'s':'') + ' en la hoja ' + HOJA_CONTRATOS + '.',
+  const ok = await showConfirm('Revisá los cambios', 'Se van a modificar ' + cambios.length + ' campo' + (cambios.length>1?'s':'') + ' en la hoja ' + hojaContratos() + '.',
     { icono:'📑', okLabel:'Confirmar cambios', peligro: !!cambioNumero, detalle: detalle });
   if(!ok) return;
 
@@ -6946,7 +6980,7 @@ async function guardarEdicionContrato(){
     // ── Doble check 2: releer la fila tal como esta AHORA en la planilla ──
     const ultCol = colIndexToLetter(Math.max(_contratosHeaders.length - 1, 0));
     const rr = await fetch('https://sheets.googleapis.com/v4/spreadsheets/' + sid + '/values/' +
-      encodeURIComponent(HOJA_CONTRATOS + '!A' + orig._fila + ':' + ultCol + orig._fila),
+      encodeURIComponent(hojaContratos() + '!A' + orig._fila + ':' + ultCol + orig._fila),
       { headers:{ Authorization:'Bearer ' + accessToken } });
     if(!rr.ok){ alert('No pude verificar la fila antes de guardar (HTTP ' + rr.status + '). No se escribió nada.'); return; }
     const actual = (((await rr.json()).values||[])[0]||[]).map(x => (x||'').toString().trim());
@@ -6965,7 +6999,7 @@ async function guardarEdicionContrato(){
 
     // Escribir solo las celdas que cambiaron, en una sola llamada
     const data = cambios.map(c => ({
-      range: HOJA_CONTRATOS + '!' + colIndexToLetter(c.col) + orig._fila,
+      range: hojaContratos() + '!' + colIndexToLetter(c.col) + orig._fila,
       values: [[c.nuevo]]
     }));
     const rw = await fetch('https://sheets.googleapis.com/v4/spreadsheets/' + sid + '/values:batchUpdate', {
@@ -6992,7 +7026,7 @@ async function copiarFormulasContrato(sid, filaNueva){
       { headers:{ Authorization:'Bearer ' + accessToken } });
     if(!rm.ok) return;
     const meta = await rm.json();
-    const hoja = (meta.sheets||[]).find(h => ((h.properties||{}).title||'').toLowerCase() === HOJA_CONTRATOS.toLowerCase());
+    const hoja = (meta.sheets||[]).find(h => ((h.properties||{}).title||'').toLowerCase() === hojaContratos().toLowerCase());
     if(!hoja) return;
     const gid = hoja.properties.sheetId;
     const requests = _contratosFormulas.map(c => ({ copyPaste: {
