@@ -236,6 +236,15 @@ body.tabla-full-on{overflow:hidden;}
 .t-grid tbody tr:hover td{background:#f1f6fe;}
 .t-grid tbody tr.row-cur td{background:#e8f0fe;}
 .t-grid tbody tr.sel td{background:#dde9fb;}
+.t-grid tbody tr.vista td{background:#dcf2d8;}
+.t-grid tr.vista .t-num{background:#a8dca1!important;color:#14521a;font-weight:700;}
+.t-grid tr.vista .t-num::before{content:'\2713 ';}
+.t-grid .t-num{cursor:pointer;}
+.t-grid tbody tr td.rango{background:#cfe0fc!important;}
+.t-grid tbody tr td.rango.cur{background:#fff!important;}
+.t-stats{display:flex;align-items:center;gap:14px;flex-wrap:wrap;padding:6px 12px;border-radius:8px;background:var(--bg3);font-size:12px;color:var(--text2);font-family:var(--mono);min-height:30px;}
+.t-stats b{color:var(--text);}
+.t-stats .t-stats-h{font-family:var(--font);color:var(--text3);}
 .t-grid td.cur{outline:2px solid #1a73e8;outline-offset:-2px;}
 .t-grid td.chg,.t-grid tbody tr td.chg{background:#fff2cc;color:#7a4b00;font-weight:500;}
 .t-grid td.t-marca,.t-grid tbody tr td.t-marca{background:#ffb347;color:#3d2400;font-weight:700;}
@@ -1576,7 +1585,7 @@ function armarSolicitudFC(filas){
       + 'Les adjunto la FC de ' + exporter + ' por las ' + tns + ' tns de ' + product + ' a ' + port + '.\n\n'
       + 'Factura 1 – Mercadería + Flete\n'
       + 'En la factura de la mercadería se debe detallar por separado el precio por tonelada de la mercadería y el precio del flete por tonelada.\n\n'
-      + 'Tomar como referencia la información detallada en la factura de ' + exporter + ' para confeccionar las de AXT a ' + customer + '\n\n'
+      + 'Tomar como referencia la información detallada en la factura de ' + exporter + ' para confeccionar las de ' + (empresaDelNegocio() === 'AXT' ? 'AXT' : 'Buzaram') + ' a ' + customer + '\n\n'
       + 'Detallo información adicional para la confección de la 1era FC:\n'
       + 'Descripcion: ' + product + '\nPacking: ' + packing + '\nProducer: ' + exporter + '\nOrigin: Argentina\n'
       + 'Incoterm: ' + incoterm + '\nPrecio por tonelada sin flete: ' + precioSinFlete + '\nPrecio del flete: ' + fleteStr + '\n\n'
@@ -1587,7 +1596,7 @@ function armarSolicitudFC(filas){
       + 'Les adjunto la FC de ' + exporter + ' por las ' + tns + ' tns de ' + product + ' a ' + port + '.<br><br>'
       + '<u><b>Factura 1 – Mercadería + Flete</b></u><br>'
       + 'En la factura de la mercadería se debe detallar por separado el precio por tonelada de la mercadería y el precio del flete por tonelada.<br><br>'
-      + 'Tomar como referencia la información detallada en la factura de ' + exporter + ' para confeccionar las de AXT a ' + customer + '<br><br>'
+      + 'Tomar como referencia la información detallada en la factura de ' + exporter + ' para confeccionar las de ' + (empresaDelNegocio() === 'AXT' ? 'AXT' : 'Buzaram') + ' a ' + customer + '<br><br>'
       + 'Detallo información adicional para la confección de la 1era FC:<br>'
       + 'Descripcion: ' + product + '<br>Packing: ' + packing + '<br>Producer: ' + exporter + '<br>Origin: Argentina<br>'
       + 'Incoterm: ' + incoterm + '<br>Precio por tonelada sin flete: ' + precioSinFlete + '<br>Precio del flete: ' + fleteStr + '<br><br>'
@@ -1601,7 +1610,7 @@ function armarSolicitudFC(filas){
       : 'PRECIO ' + precioStr;
     texto = 'Buenos días!\n\n'
       + 'Les adjunto la FC de ' + exporter + ' por las ' + tns + ' tns de ' + product + ' a ' + port + '.\n'
-      + 'Por favor, tomar como referencia la información detallada en la factura de ' + exporter + ' para confeccionar las de AXT a ' + customer + '\n'
+      + 'Por favor, tomar como referencia la información detallada en la factura de ' + exporter + ' para confeccionar las de ' + (empresaDelNegocio() === 'AXT' ? 'AXT' : 'Buzaram') + ' a ' + customer + '\n'
       + 'Descripcion: ' + product + '\nPacking: ' + packing + '\nExporter: ' + exporter + '\nOrigin: Argentina\n'
       + 'Incoterm: ' + incoterm + '\n\n' + precioBloque;
     html = texto.replace(/\n/g, '<br>');
@@ -4455,11 +4464,11 @@ function renderCargasTabla(rows){
       const fija = kk < TABLA_FIJAS;
       return `<td data-r="${r}" data-c="${c}" class="${fija ? 'fija' : ''}${kk === TABLA_FIJAS - 1 ? ' fija-ult' : ''}${p ? ' chg' : ''}${esColFormula(c) ? ' formula' : ''}${celdaMarcada(row, c) ? ' t-marca' : ''}" style="${fija ? 'left:' + left[c] + 'px;' : ''}max-width:${anchos[c]}px;" title="${esc(v)}${p ? ' · antes: ' + esc(p.antes || '(vacío)') : ''}">${esc(v)}${extra}</td>`;
     }).join('');
-    return `<tr id="fc-tr-${localIdx}" class="${sel ? 'sel' : ''}">
-      <td class="t-num">${row._sheetRow || ''}</td>
+    return `<tr id="fc-tr-${localIdx}" class="${sel ? 'sel' : ''}${filaVista(row) ? ' vista' : ''}">
+      <td class="t-num" title="Clic para marcar / desmarcar la fila como vista" onclick="toggleFilaVista(${localIdx},event)">${row._sheetRow || ''}</td>
       <td class="t-cb"><input type="checkbox" id="fc-cb-${localIdx}" ${sel ? 'checked' : ''} onclick="toggleFCSelection(${localIdx})">${chip}</td>
       ${celdas}
-      <td class="col-acciones"><button class="t-acc" onclick="abrirPanelCarga(${idx})" title="Ver la ficha con todas las acciones">Abrir</button><button class="t-acc" onclick="abrirFacturaForwarder([${idx}])" title="Factura de forwarder">🧾</button><button class="t-acc" onclick="solicitarFC(${idx})" title="Solicitud de FC a AXT">📄</button></td>
+      <td class="col-acciones"><button class="t-acc" onclick="abrirPanelCarga(${idx})" title="Ver la ficha con todas las acciones">Abrir</button><button class="t-acc" onclick="abrirFacturaForwarder([${idx}])" title="Factura de forwarder">🧾</button><button class="t-acc" onclick="solicitarFC(${idx})" title="Solicitud de FC a ${empresaDelNegocio() === 'AXT' ? 'AXT' : 'Buzaram'}">📄</button></td>
     </tr>`;
   }).join('');
 
@@ -4485,21 +4494,42 @@ function renderCargasTabla(rows){
     </div>
     ${quedan > 0 ? `<div class="t-mas"><span onclick="cargasTablaLimite+=200;renderCargas();">${cargasColSort ? 'Mostrar ' + Math.min(200, quedan) + ' más' : '↑ Mostrar ' + Math.min(200, quedan) + ' filas anteriores'} (quedan ${quedan})</span></div>` : ''}
     <div class="t-scroll" id="t-scroll">
-      <table class="t-grid" id="t-grid" ondblclick="tablaDblClick(event)" onclick="tablaClick(event)">
+      <table class="t-grid" id="t-grid" ondblclick="tablaDblClick(event)" onmousedown="tablaMouseDown(event)" onmouseover="tablaMouseOver(event)">
         <thead><tr><th class="t-num">#</th><th class="t-cb"></th>${th}<th class="col-acciones">Acciones</th></tr></thead>
         <tbody>${cuerpo || `<tr><td colspan="${_tablaCols.length + 3}" style="padding:30px;text-align:center;color:var(--text3);">Ninguna carga con esos filtros.</td></tr>`}</tbody>
       </table>
     </div>
+    <div id="t-stats" class="t-stats"><span class="t-stats-h">Seleccioná varias celdas (arrastrá o Shift + clic) para ver suma, promedio y más</span></div>
   </div>
   <div id="panel-carga" class="panel-carga"></div>`;
 }
 
+// ── Filas "vistas": marca verde que queda guardada en este navegador ──
+function claveVista(row){ return (row._sheetRow || '') + '|' + (row[COL.BL] || '').toString().trim(); }
+function filasVistas(){
+  try{ return new Set(JSON.parse(localStorage.getItem('hub_filas_vistas_' + negocioActivo) || '[]')); }
+  catch(e){ return new Set(); }
+}
+function filaVista(row){ return filasVistas().has(claveVista(row)); }
+function toggleFilaVista(localIdx, ev){
+  if(ev && ev.stopPropagation) ev.stopPropagation();
+  const row = _tablaRows[localIdx] || (window._fcAllRows || [])[localIdx];
+  if(!row) return;
+  const set = filasVistas(), k = claveVista(row);
+  if(set.has(k)) set.delete(k); else set.add(k);
+  try{ localStorage.setItem('hub_filas_vistas_' + negocioActivo, JSON.stringify([...set])); }catch(e){}
+  const tr = document.getElementById('fc-tr-' + localIdx);
+  if(tr && tr.classList) tr.classList.toggle('vista', set.has(k));
+}
+
 // ── Seleccion de celda, teclado y edicion ──
 function celdaTd(r, c){ return document.querySelector('#t-grid td[data-r="' + r + '"][data-c="' + c + '"]'); }
-function marcarCelda(r, c){
+let _tablaAncla = null, _tablaArrastra = false;
+function marcarCelda(r, c, extender){
   document.querySelectorAll('#t-grid .cur').forEach(x => x.classList.remove('cur'));
   document.querySelectorAll('#t-grid .row-cur').forEach(x => x.classList.remove('row-cur'));
   document.querySelectorAll('#t-grid th.col-cur').forEach(x => x.classList.remove('col-cur'));
+  if(!(extender && _tablaAncla)) _tablaAncla = { r, c };
   _tablaSel = { r, c };
   const td = celdaTd(r, c);
   if(!td) return;
@@ -4508,11 +4538,76 @@ function marcarCelda(r, c){
   const th = document.querySelector('#t-grid th[data-c="' + c + '"]');
   if(th) th.classList.add('col-cur');
   if(td.scrollIntoView) td.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+  pintarRango();
 }
-function tablaClick(ev){
-  const td = ev.target.closest ? ev.target.closest('td[data-c]') : null;
+
+// Rango entre el ancla y la celda activa: { r1, r2, k1, k2 } (k = posicion de columna).
+function rangoTabla(){
+  if(!_tablaSel || !_tablaAncla) return null;
+  const ka = _tablaCols.indexOf(_tablaAncla.c), kb = _tablaCols.indexOf(_tablaSel.c);
+  if(ka < 0 || kb < 0) return null;
+  return { r1: Math.min(_tablaAncla.r, _tablaSel.r), r2: Math.max(_tablaAncla.r, _tablaSel.r),
+           k1: Math.min(ka, kb), k2: Math.max(ka, kb) };
+}
+// Lo mismo que muestra Sheets abajo a la derecha: suma, promedio, minimo, maximo y cuantas.
+// Como Sheets: solo cuenta como numero lo que ES un numero entero. "15/09/2026" o
+// "24 tns" no suman (parseSheetNum los leeria como 15 y 24).
+function numeroCelda(v){
+  const t = String(v).trim().replace(/^usd\s*/i, '').replace(/[$\s]/g, '');
+  if(!/^-?(\d+([.,]\d+)?|\d{1,3}(\.\d{3})+(,\d+)?|\d{1,3}(,\d{3})+(\.\d+)?)$/.test(t)) return NaN;
+  return parseSheetNum(t);
+}
+function estadisticasRango(){
+  const g = rangoTabla();
+  if(!g || (g.r1 === g.r2 && g.k1 === g.k2)) return null;
+  let llenas = 0; const nums = [];
+  for(let r = g.r1; r <= g.r2; r++){
+    const row = _tablaRows[r]; if(!row) continue;
+    for(let k = g.k1; k <= g.k2; k++){
+      const v = valorVisible(row, _tablaCols[k]);
+      if(v === undefined || v === null || String(v).trim() === '') continue;
+      llenas++;
+      const n = numeroCelda(v);
+      if(!isNaN(n)) nums.push(n);
+    }
+  }
+  const suma = nums.reduce((a, x) => a + x, 0);
+  return { celdas: (g.r2 - g.r1 + 1) * (g.k2 - g.k1 + 1), llenas, cuantosNum: nums.length, suma,
+           promedio: nums.length ? suma / nums.length : NaN,
+           min: nums.length ? Math.min.apply(null, nums) : NaN,
+           max: nums.length ? Math.max.apply(null, nums) : NaN };
+}
+function pintarRango(){
+  document.querySelectorAll('#t-grid td.rango').forEach(x => x.classList.remove('rango'));
+  const bar = document.getElementById('t-stats');
+  const st = estadisticasRango();
+  if(!st){
+    if(bar) bar.innerHTML = '<span class="t-stats-h">Seleccioná varias celdas (arrastrá o Shift + clic) para ver suma, promedio y más</span>';
+    return;
+  }
+  const g = rangoTabla();
+  for(let r = g.r1; r <= g.r2; r++) for(let k = g.k1; k <= g.k2; k++){
+    const td = celdaTd(r, _tablaCols[k]); if(td) td.classList.add('rango');
+  }
+  const f = x => isNaN(x) ? '—' : x.toLocaleString('es-AR', { maximumFractionDigits: 2 });
+  if(bar) bar.innerHTML = '<span class="t-stats-h">' + st.celdas + ' celdas · ' + st.llenas + ' con datos</span>' +
+    (st.cuantosNum ? '<span>Suma: <b>' + f(st.suma) + '</b></span><span>Promedio: <b>' + f(st.promedio) + '</b></span>' +
+      '<span>Mín: <b>' + f(st.min) + '</b></span><span>Máx: <b>' + f(st.max) + '</b></span><span>Números: <b>' + st.cuantosNum + '</b></span>'
+      : '<span class="t-stats-h">Sin números en la selección</span>');
+}
+function tdDeEvento(ev){ return ev.target && ev.target.closest ? ev.target.closest('td[data-c]') : null; }
+function tablaMouseDown(ev){
+  const td = tdDeEvento(ev);
+  if(!td || td.querySelector('input') || ev.button > 0) return;
+  marcarCelda(parseInt(td.getAttribute('data-r')), parseInt(td.getAttribute('data-c')), !!ev.shiftKey);
+  _tablaArrastra = true;
+  if(typeof document.addEventListener === 'function') document.addEventListener('mouseup', () => { _tablaArrastra = false; }, { once: true });
+}
+function tablaMouseOver(ev){
+  if(!_tablaArrastra) return;
+  const td = tdDeEvento(ev);
   if(!td || td.querySelector('input')) return;
-  marcarCelda(parseInt(td.getAttribute('data-r')), parseInt(td.getAttribute('data-c')));
+  marcarCelda(parseInt(td.getAttribute('data-r')), parseInt(td.getAttribute('data-c')), true);
 }
 function tablaDblClick(ev){
   const td = ev.target.closest ? ev.target.closest('td[data-c]') : null;
@@ -4559,12 +4654,12 @@ function anotarCambioTabla(row, c, nuevo){
   (cargasPend[k] = cargasPend[k] || {})[c] = { antes: orig, despues: nuevo, row };
 }
 
-function moverSel(dr, dc){
+function moverSel(dr, dc, extender){
   if(!_tablaSel) return marcarCelda(0, _tablaCols[0]);
   const r = Math.max(0, Math.min(_tablaRows.length - 1, _tablaSel.r + dr));
   const k = _tablaCols.indexOf(_tablaSel.c);
   const c = _tablaCols[Math.max(0, Math.min(_tablaCols.length - 1, k + dc))];
-  marcarCelda(r, c);
+  marcarCelda(r, c, !!extender);
 }
 
 // Teclado de la grilla: flechas, Enter/F2 para editar, tipear arranca a editar,
@@ -4575,7 +4670,7 @@ function tablaTeclado(e){
   if(t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT')) return false;
   if(_filtroAbierto) return false;
   const m = { ArrowUp: [-1, 0], ArrowDown: [1, 0], ArrowLeft: [0, -1], ArrowRight: [0, 1] }[e.key];
-  if(m){ e.preventDefault(); moverSel(m[0], m[1]); return true; }
+  if(m){ e.preventDefault(); moverSel(m[0], m[1], e.shiftKey); return true; }
   if(e.key === 'Enter' || e.key === 'F2'){ e.preventDefault(); editarCelda(_tablaSel.r, _tablaSel.c); return true; }
   if(e.key === 'Delete' || e.key === 'Backspace'){
     e.preventDefault();
