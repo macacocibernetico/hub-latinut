@@ -3536,7 +3536,7 @@ function updateBadges(){
   const cobros=allRows.filter(r=>{const d=daysFrom(r[getCobroCol()]);return d!==null&&d<=14;}).length;
   const bC=document.getElementById('badge-cobranza');
   bC.textContent=cobros||'';bC.style.display=cobros?'':'none';
-  const libs=allRows.filter(r=>{const d=daysFrom(r[COL.ETA]);const t=(r[COL.TELEX]||'').trim().toLowerCase();return d!==null&&d>=0&&d<=7&&t!=='si'&&!t.includes('bl orig');}).length;
+  const libs=allRows.filter(pendienteLiberacion).length;
   const bL=document.getElementById('badge-liberaciones');
   if(bL){bL.textContent=libs||'';bL.style.display=libs?'':'none';}
 }
@@ -5320,15 +5320,17 @@ async function marcarLiberadoBulk(rowIndices){
 async function marcarPedroOk(rowIdx){ await marcarPedroOkBulk([rowIdx]); }
 async function marcarLiberado(rowIdx){ await marcarLiberadoBulk([rowIdx]); }
 
+function pendienteLiberacion(r){
+  if(!(r[COL.BL]||r[COL.BOOKING]||r[COL.CUSTOMER]||'').toString().trim()) return false;
+  const t=(r[COL.TELEX]||'').trim().toLowerCase();
+  return t!=='si' && !t.includes('bl orig');
+}
+
 function renderLiberaciones(){
-  const rows=allRows.filter(r=>{
-    const d=daysFrom(r[COL.ETA]);
-    if(d===null||d<0||d>7) return false;
-    const t=(r[COL.TELEX]||'').trim().toLowerCase();
-    if(t.includes('bl orig')) return false;
-    if(t==='si') return false;
-    return true;
-  }).sort((a,b)=>(daysFrom(a[COL.ETA])||999)-(daysFrom(b[COL.ETA])||999));
+  // Todas las que no dicen "BL original" ni "SI", sin importar la ETA
+  // (antes solo entraban las de ETA a 7 dias y se perdian las de destinos lejanos).
+  const rows=allRows.filter(pendienteLiberacion)
+    .sort((a,b)=>{const da=daysFrom(a[COL.ETA]),db=daysFrom(b[COL.ETA]);return (da===null?99999:da)-(db===null?99999:db);});
 
   const nc=getNegocioConfig();
   const label=nc.label;
@@ -5337,7 +5339,7 @@ function renderLiberaciones(){
   const liberado=allRows.filter(r=>(r[COL.TELEX]||'').trim().toUpperCase()==='SI').length;
 
   let html=`<div class="stats-row">
-    <div class="stat-card"><div class="stat-label">Cargas próximas</div><div class="stat-value">${rows.length}</div><div class="stat-sub">ETA ≤ 7 días</div></div>
+    <div class="stat-card"><div class="stat-label">Cargas a liberar</div><div class="stat-value">${rows.length}</div><div class="stat-sub">Sin SI ni BL original</div></div>
     <div class="stat-card alert-card"><div class="stat-label">Sin liberación</div><div class="stat-value" style="color:var(--danger)">${sinLib}</div><div class="stat-sub">TELEX vacío</div></div>
     <div class="stat-card warn-card"><div class="stat-label">En proceso</div><div class="stat-value" style="color:var(--warn)">${enProceso}</div><div class="stat-sub">Solicitado / pendiente</div></div>
     <div class="stat-card"><div class="stat-label">Liberado</div><div class="stat-value" style="color:var(--ok)">${liberado}</div><div class="stat-sub">TELEX = SI</div></div>
@@ -5393,7 +5395,7 @@ function renderLiberaciones(){
     const esRecib=telexLow.includes('recibir');
     const pagNA=!!motivoSinPagare(row, nc);
     const pagFirm=(row[COL.PAGARE_FIRMADO]||'').trim().toUpperCase();
-    const level=esBLOrig?'info':d<=3?'critical':'warning';
+    const level=esBLOrig?'info':(d!==null&&d<=3)?'critical':'warning';
     const inv1=(row[COL.INVOICE_CLIENTE]||'').trim();
     const inv2r=(row[COL.INVOICE_FC_SERV]||'').trim();
     const inv2=(inv2r==='-'||inv2r==='--')?'':inv2r;
