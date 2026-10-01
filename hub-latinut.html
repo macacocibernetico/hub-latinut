@@ -444,24 +444,30 @@ tr:hover .col-acciones{background:var(--bg3);}
 .search-result-badge.critical{background:var(--danger-light);color:var(--danger);}
 .search-result-badge.carga{background:var(--accent-light);color:var(--accent);}
 .search-result-badge.cobro{background:var(--warn-light);color:var(--warn);}
-/* CHAT PANEL */
-.chat-toggle{position:fixed;bottom:24px;right:24px;width:48px;height:48px;border-radius:50%;background:var(--accent);color:#fff;border:none;font-size:20px;cursor:pointer;box-shadow:var(--shadow-lg);z-index:50;display:flex;align-items:center;justify-content:center;transition:all .2s;}
-.chat-toggle:hover{background:var(--accent-dim);transform:scale(1.05);}
-.chat-panel{position:fixed;bottom:84px;right:24px;width:380px;max-width:calc(100vw - 48px);height:520px;max-height:calc(100vh - 120px);background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius-xl);box-shadow:var(--shadow-lg);display:flex;flex-direction:column;z-index:50;overflow:hidden;transition:all .2s;}
-.chat-panel.hidden{display:none;}
-.chat-header{padding:12px 16px;border-bottom:1px solid var(--border);background:var(--bg3);display:flex;align-items:center;justify-content:space-between;flex-shrink:0;}
-.chat-header-title{font-size:13px;font-weight:600;color:var(--text);display:flex;align-items:center;gap:6px;}
-.chat-messages{flex:1;overflow-y:auto;padding:12px;display:flex;flex-direction:column;gap:8px;}
-.chat-msg{max-width:85%;padding:8px 12px;border-radius:12px;font-size:12px;line-height:1.5;}
-.chat-msg.user{background:var(--accent);color:#fff;align-self:flex-end;border-bottom-right-radius:4px;}
-.chat-msg.assistant{background:var(--bg3);color:var(--text);align-self:flex-start;border-bottom-left-radius:4px;border:1px solid var(--border);}
-.chat-msg.thinking{color:var(--text3);font-style:italic;}
-.chat-input-row{padding:10px 12px;border-top:1px solid var(--border);display:flex;gap:6px;flex-shrink:0;}
-.chat-input{flex:1;background:var(--bg3);border:1px solid var(--border);border-radius:8px;color:var(--text);font-family:var(--font);font-size:12px;padding:7px 10px;resize:none;outline:none;transition:border-color .15s;}
-.chat-input:focus{border-color:var(--accent);}
-.chat-send{background:var(--accent);color:#fff;border:none;border-radius:8px;padding:7px 12px;cursor:pointer;font-size:13px;font-weight:600;transition:all .15s;}
-.chat-send:hover{background:var(--accent-dim);}
-.chat-send:disabled{opacity:.5;cursor:not-allowed;}
+/* COMENTARIOS EN CELDAS */
+.t-grid td.t-com:not(.fija){position:relative;}
+.t-grid td.t-com::after{content:'';position:absolute;top:0;right:0;border-style:solid;border-width:0 10px 10px 0;border-color:transparent #f4b400 transparent transparent;pointer-events:none;}
+.com-globo{display:none;position:fixed;z-index:80;width:330px;max-height:min(70vh,520px);overflow:auto;background:var(--bg2);border:1px solid var(--border2);border-radius:12px;box-shadow:0 10px 32px rgba(0,0,0,.22);font-size:12px;}
+.com-cab{display:flex;align-items:center;gap:6px;padding:9px 12px;border-bottom:1px solid var(--border);font-weight:600;color:var(--text);position:sticky;top:0;background:var(--bg2);}
+.com-x{font-size:18px;line-height:1;color:var(--text3);padding:0 4px;}
+.com-hilo{padding:10px 12px;border-bottom:1px solid var(--border);}
+.com-msg{display:flex;gap:8px;margin-bottom:8px;}
+.com-av{width:26px;height:26px;border-radius:50%;background:var(--accent-light);color:var(--accent);font-weight:600;display:flex;align-items:center;justify-content:center;flex-shrink:0;}
+.com-cuerpo{flex:1;min-width:0;}
+.com-meta{color:var(--text3);font-size:11px;}
+.com-meta b{color:var(--text);}
+.com-del{margin-left:8px;color:var(--danger);cursor:pointer;}
+.com-texto{color:var(--text);margin-top:1px;word-wrap:break-word;}
+.com-hilo textarea{width:100%;box-sizing:border-box;border:1px solid var(--border2);border-radius:8px;padding:7px 9px;font-family:var(--font);font-size:12px;background:var(--bg2);color:var(--text);resize:vertical;}
+.com-acc{display:flex;gap:6px;margin-top:6px;}
+.com-acc button{height:26px;padding:0 11px;border-radius:7px;border:1px solid var(--border2);background:var(--bg2);font-size:12px;color:var(--text);cursor:pointer;}
+.com-acc button.prim{background:var(--accent);border-color:var(--accent);color:#fff;}
+.com-hecho{opacity:.7;}
+.com-res{padding:8px 12px;color:var(--text3);}
+.com-res summary{cursor:pointer;}
+.com-mas{padding:8px 12px;}
+.com-mas a{color:var(--accent);cursor:pointer;}
+.t-com-btn{margin-left:6px;}
 /* MOBILE */
 .mobile-toggle{display:none;align-items:center;justify-content:center;width:34px;height:34px;border-radius:8px;background:var(--bg3);border:1px solid var(--border);cursor:pointer;font-size:15px;color:var(--text2);}
 .overlay-close{display:none;position:fixed;inset:0;z-index:9;background:rgba(0,0,0,.3);}
@@ -519,7 +525,6 @@ tr:hover .col-acciones{background:var(--bg3);}
   .content{padding:16px 18px;}
   .table-wrap thead th{font-size:10px;padding:8px 10px;}
   .table-wrap td{padding:9px 10px;font-size:11px;}
-  .chat-panel{width:320px;}
   .search-bar{width:180px;}
 }
 
@@ -2102,6 +2107,7 @@ async function loadData(){
     // En Nueva Carga no se redibuja: se borraria lo que estas escribiendo.
     if(currentView !== 'nueva_carga') renderView(currentView);
     cargarFondos().then(() => { if(currentView === 'cargas') renderCargas(); }).catch(e => console.warn('fondos:', e));
+    cargarComentarios().then(() => { if(currentView === 'cargas' && cargasVista === 'tabla') comPintar(); }).catch(e => console.warn('comentarios:', e));
   }catch(e){setSheetStatus('err','Error de conexión');console.error(e);}
 }
 
@@ -4518,7 +4524,7 @@ function renderCargasTabla(rows){
       // carga viaja con BL Original (no lleva pagare). No se escribe nada.
       if(!v && c === COL.PAGARE_ENVIADO && !nc.sinPagares && motivoSinPagare(row) === 'BL Original'){ extra = '<span class="t-nota">N/A · BL Orig</span>'; }
       const fija = kk < TABLA_FIJAS;
-      return `<td data-r="${r}" data-c="${c}" class="${fija ? 'fija' : ''}${kk === TABLA_FIJAS - 1 ? ' fija-ult' : ''}${p ? ' chg' : ''}${esColFormula(c) ? ' formula' : ''}${celdaMarcada(row, c) ? ' t-marca' : ''}${(c === COL.PRODUCT && enDudaNOP(row)) ? ' t-duda' : ''}" style="${fija ? 'left:' + left[c] + 'px;' : ''}max-width:${anchos[c]}px;" title="${esc(v)}${p ? ' · antes: ' + esc(p.antes || '(vacío)') : ''}">${esc(v)}${extra}</td>`;
+      return `<td data-r="${r}" data-c="${c}" class="${fija ? 'fija' : ''}${kk === TABLA_FIJAS - 1 ? ' fija-ult' : ''}${p ? ' chg' : ''}${esColFormula(c) ? ' formula' : ''}${celdaMarcada(row, c) ? ' t-marca' : ''}${(c === COL.PRODUCT && enDudaNOP(row)) ? ' t-duda' : ''}${comAbiertosCelda(row, c).length ? ' t-com' : ''}" style="${fija ? 'left:' + left[c] + 'px;' : ''}max-width:${anchos[c]}px;" title="${esc(v)}${p ? ' · antes: ' + esc(p.antes || '(vacío)') : ''}">${esc(v)}${extra}</td>`;
     }).join('');
     return `<tr id="fc-tr-${localIdx}" class="${sel ? 'sel' : ''}${filaVista(row) ? ' vista' : ''}">
       <td class="t-num" title="Clic para marcar / desmarcar la fila como vista" onclick="toggleFilaVista(${localIdx},event)">${row._sheetRow || ''}</td>
@@ -4659,13 +4665,16 @@ function pintarRango(){
   const bar = document.getElementById('t-stats');
   const st = estadisticasRango();
   const filasP = filasProductoSeleccionadas();
-  const botones = filasP.length
+  const celCom = comCelda();
+  const nCom = celCom ? comAbiertosCelda(celCom.row, celCom.c).length : 0;
+  const botonCom = celCom ? '<button class="t-com-btn" onclick="abrirComentarios()" title="Comentarios de la celda (Ctrl + Alt + M)">💬 ' + (nCom ? 'Comentarios (' + nCom + ')' : 'Comentar') + '</button>' : '';
+  const botones = botonCom + (filasP.length
     ? '<span class="t-nop-acc"><span class="t-stats-h">Producto' + (filasP.length > 1 ? 's' : '') + ' (' + filasP.length + '):</span>' +
       '<button onclick="accionNOPSeleccion(\'duda\')" title="Deja el Producto en violeta hasta saber si es NOP o convencional">❓ En duda</button>' +
       '<button onclick="accionNOPSeleccion(\'nop\')" title="Es NOP: cambia producto, contrato y precios">✓ Es NOP</button>' +
       '<button onclick="accionNOPSeleccion(\'comun\')" title="Es convencional: cambia producto, contrato y precios">✓ Es convencional</button>' +
       '<button onclick="accionNOPSeleccion(\'quitar\')" title="Saca el violeta sin cambiar nada más">Quitar duda</button></span>'
-    : '';
+    : '');
   if(!st){
     if(bar) bar.innerHTML = '<span class="t-stats-h">Seleccioná varias celdas (arrastrá o Shift + clic) para ver suma, promedio y más</span>' + botones;
     return;
@@ -4688,7 +4697,10 @@ function tdDeEvento(ev){ return ev.target && ev.target.closest ? ev.target.close
 function tablaMouseDown(ev){
   const td = tdDeEvento(ev);
   if(!td || td.querySelector('input') || ev.button > 0) return;
-  marcarCelda(parseInt(td.getAttribute('data-r')), parseInt(td.getAttribute('data-c')), !!ev.shiftKey);
+  const rr = parseInt(td.getAttribute('data-r')), cc = parseInt(td.getAttribute('data-c'));
+  marcarCelda(rr, cc, !!ev.shiftKey);
+  if(!ev.shiftKey && comAbiertosCelda(_tablaRows[rr], cc).length) abrirComentarios(rr, cc);
+  else if(_comPop) cerrarComentarios();
   _tablaArrastra = true;
   if(typeof document.addEventListener === 'function') document.addEventListener('mouseup', () => { _tablaArrastra = false; }, { once: true });
 }
@@ -4792,6 +4804,7 @@ function tablaTeclado(e){
   if(_filtroAbierto) return false;
   const m = { ArrowUp: [-1, 0], ArrowDown: [1, 0], ArrowLeft: [0, -1], ArrowRight: [0, 1] }[e.key];
   if(m){ e.preventDefault(); moverSel(m[0], m[1], e.shiftKey); return true; }
+  if(e.ctrlKey && e.altKey && (e.key === 'm' || e.key === 'M')){ e.preventDefault(); abrirComentarios(); return true; }
   if(e.key === 'Enter' || e.key === 'F2'){ e.preventDefault(); editarCelda(_tablaSel.r, _tablaSel.c); return true; }
   if(e.key === 'Delete' || e.key === 'Backspace'){
     e.preventDefault();
@@ -7550,7 +7563,6 @@ function renderConfig(){
       <div class="config-field"><div class="config-label">ID Planilla Buzaram</div><input class="config-input" id="cfg-buzaramSheetId" value="${cfg.buzaramSheetId||'1vQaNeo595C3aK1KAF75UsOkbA5LNUMm16WoEpP9Z69w'}" placeholder="1vQaNeo595..."></div>
       <div class="config-field"><div class="config-label">URL AppScript Buzaram</div><input class="config-input" id="cfg-buzaramAppsScriptUrl" value="${cfg.buzaramAppsScriptUrl||''}" placeholder="https://script.google.com/a/macros/..."></div>
     </div>
-    <div class="config-field"><div class="config-label">Groq API Key (chat IA — gratis)</div><input class="config-input" id="cfg-claudeApiKey" type="password" value="${cfg.claudeApiKey||''}" placeholder="gsk_..."><div style="font-size:10px;color:var(--text3);margin-top:4px;">Gratis en console.groq.com — solo necesitás cuenta Google. Sin tarjeta.</div></div>
     <div class="config-field">
       <div class="config-label">Anthropic API Key (IA avanzada — análisis de mails)</div>
       <input class="config-input" id="cfg-anthropicKey" type="password" value="${cfg.anthropicKey||''}" placeholder="sk-ant-...">
@@ -7579,7 +7591,6 @@ function saveConfig(){
   cfg.hubSheetId=document.getElementById('cfg-hubSheetId')?.value?.trim()||cfg.hubSheetId;
   cfg.appsScriptUrl=document.getElementById('cfg-appsScriptUrl')?.value?.trim()||cfg.appsScriptUrl;
   const rsu=document.getElementById('cfg-resumenScriptUrl')?.value?.trim(); if(rsu!==undefined) cfg.resumenScriptUrl=rsu;
-  const ck=document.getElementById('cfg-claudeApiKey')?.value?.trim();if(ck) cfg.claudeApiKey=ck;
   const ak=document.getElementById('cfg-anthropicKey')?.value?.trim();if(ak) cfg.anthropicKey=ak;
   const gk=document.getElementById('cfg-geminiKey')?.value?.trim();if(gk) cfg.geminiKey=gk;
   const bsid=document.getElementById('cfg-buzaramSheetId')?.value?.trim();if(bsid) cfg.buzaramSheetId=bsid;
@@ -8021,201 +8032,289 @@ async function resumenOperativo(enviar){
   }
 }
 
-// ─── RESUMEN IA ───────────────────────────────────────────────────────────────
-async function generarResumenDia(){
-  if(!cfg.claudeApiKey){
-    addChatMsg('assistant','⚠️ Configurá la Groq API Key en Configuración para usar el resumen IA.');
-    document.getElementById('chat-panel').classList.remove('hidden');
-    return;
-  }
+// ─── COMENTARIOS EN CELDAS ───────────────────────────────────────────────────
+// Como los de Google Sheets, pero compartidos por todo el equipo desde el hub: se comenta
+// una celda de la tabla, se ve quien lo escribio y cuando, se responde, se resuelve o se
+// elimina. Se guardan en la pestaña COMENTARIOS de la planilla HUB LATINUT (la misma del LOG).
+// Cada comentario recuerda la fila y la columna (por nombre de encabezado) y un "ancla"
+// (BL, booking o lote) para seguir a la carga aunque cambie de fila.
+const HOJA_COMENTARIOS = 'COMENTARIOS';
+const COM_ENCABEZADOS = ['ID','Fecha','Autor','Negocio','Fila','Columna','Ancla','Texto','Hilo','Estado','Resuelto por'];
+let _comentarios = [];     // registros leidos de la hoja
+let _comListo = false;     // la pestaña existe
+let _comVer = 0;           // cambia con cada modificacion: invalida el indice
+let _comIdx = null;
+let _comPop = null;        // { r, c } celda del globo abierto
 
-  // Open chat panel
-  document.getElementById('chat-panel').classList.remove('hidden');
-  const thinking = addChatMsg('assistant', '⏳ Generando resumen del día...', true);
-
-  const alerts = getAlerts();
-  const crit = alerts.filter(a=>a.level==='critical');
-  const warn = alerts.filter(a=>a.level==='warning');
-  const cobrosUrgentes = allRows.filter(r=>{const d=daysFrom(r[getCobroCol()]);return d!==null&&d<=5;});
-  const libPendientes = allRows.filter(r=>{
-    const d=daysFrom(r[COL.ETA]);
-    const t=(r[COL.TELEX]||'').trim().toLowerCase();
-    return d!==null&&d>=0&&d<=7&&t===''&&!t.includes('bl orig');
-  });
-  const pagPendientes = allRows.filter(r=>{
-    const env=(r[COL.PAGARE_ENVIADO]||'').trim();
-    const d=daysFrom(r[COL.ETA]);
-    return env!=='SI'&&env!=='-'&&d!==null&&d<=21&&d>=0;
-  });
-
-  const prompt = `Generá un resumen ejecutivo MUY BREVE del día operativo para LATINUT S.A. Usá máximo 5 líneas con bullets. Sé directo y accionable.
-
-DATOS DE HOY (${new Date().toLocaleDateString('es-AR')}):
-- Alertas críticas: ${crit.length} (${crit.filter(a=>a.subtype==='liberacion_urgente').length} liberaciones urgentes, ${crit.filter(a=>a.subtype==='cobro_urgente').length} cobros urgentes)
-- Advertencias: ${warn.length}
-- Liberaciones pendientes ETA ≤7d: ${libPendientes.length} cargas sin TELEX
-- Cobros urgentes (≤5 días): ${cobrosUrgentes.map(r=>`${r[COL.CUSTOMER]||''} vence ${fmtDate(r[getCobroCol()])}`).join(', ')||'ninguno'}
-- Pagarés pendientes de envío (ETA ≤21d): ${pagPendientes.length}
-- Cargas activas totales: ${allRows.length}
-
-Formato: bullets cortos, accionables, en español. Sin intro ni conclusión.`;
-
-  try{
-    const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
-      method: 'POST',
-      headers: {'Content-Type':'application/json','Authorization':`Bearer ${cfg.claudeApiKey}`},
-      body: JSON.stringify({
-        model: 'llama-3.3-70b-versatile',
-        max_tokens: 300,
-        messages: [{role:'user', content: prompt}]
-      })
-    });
-    const data = await response.json();
-    if(data.error){
-      thinking.textContent = '⚠️ Error: ' + (data.error.message||'desconocido');
-    } else {
-      thinking.textContent = '📋 Resumen del día:\n\n' + data.choices[0].message.content;
-    }
-    thinking.classList.remove('thinking');
-  } catch(e){
-    thinking.textContent = '⚠️ Error al conectar con la API.';
-    thinking.classList.remove('thinking');
-  }
+const comNegocio = () => empresaDelNegocio() === 'AXT' ? 'AXT' : 'BUZARAM';
+const comYo = () => getMiEmail() || 'sin-sesion';
+function comNombre(email){
+  const n = (email || '').split('@')[0].replace(/[._-]+/g, ' ').trim();
+  return n ? n.replace(/\b\w/g, ch => ch.toUpperCase()) : 'Alguien';
 }
-
-// ─── CHAT ────────────────────────────────────────────────────────────────────
-let chatHistory = [];
-
-function toggleChat(){
-  const panel = document.getElementById('chat-panel');
-  panel.classList.toggle('hidden');
-  if(!panel.classList.contains('hidden')){
-    document.getElementById('chat-input').focus();
-  }
+function comAncla(row){
+  return [row[COL.BL], row[COL.BOOKING], row[COL.LOTS]].map(v => (v || '').toString().trim()).filter(Boolean)[0] || '';
 }
+function comFecha(iso){
+  const m = String(iso || '').match(/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})/);
+  if(!m) return iso || '';
+  const hoy = new Date(), d = new Date(+m[1], +m[2] - 1, +m[3]);
+  const mismoDia = d.toDateString() === hoy.toDateString();
+  return (mismoDia ? 'hoy' : m[3] + '/' + m[2]) + ' ' + m[4] + ':' + m[5];
+}
+function comAhora(){
+  const d = new Date(), p = n => String(n).padStart(2, '0');
+  return d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate()) + 'T' + p(d.getHours()) + ':' + p(d.getMinutes()) + ':' + p(d.getSeconds());
+}
+function comNuevoId(){ return 'c' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6); }
+function comHdr(c){ return normalizarHdr((encabezadosCargas()[c] || '')); }
 
-function buildContext(){
-  // Build a concise summary of current data for Claude
-  const active = allRows.length;
-  const alerts = getAlerts();
-  const crit = alerts.filter(a=>a.level==='critical').length;
-  const warn = alerts.filter(a=>a.level==='warning').length;
-
-  // Liberaciones pendientes
-  const libPend = allRows.filter(r=>{
-    const d=daysFrom(r[COL.ETA]);
-    const t=(r[COL.TELEX]||'').trim().toLowerCase();
-    return d!==null&&d>=0&&d<=7&&t===''&&!t.includes('bl orig');
-  }).length;
-
-  // Cobros próximos
-  const cobrosPend = allRows.filter(r=>daysFrom(r[getCobroCol()])!==null).length;
-  const cobrosUrgentes = allRows.filter(r=>{const d=daysFrom(r[getCobroCol()]);return d!==null&&d<=5;}).length;
-
-  // Top 10 cargas activas con más detalle
-  const topCargas = allRows.slice(0,20).map(r=>({
-    negocio: r[COL.NEGOCIO]||'',
-    cliente: r[COL.CUSTOMER]||'',
-    bl: r[COL.BL]||'',
-    eta: r[COL.ETA]||'',
-    diasETA: daysFrom(r[COL.ETA]),
-    telex: r[COL.TELEX]||'',
-    pagaréEnv: r[COL.PAGARE_ENVIADO]||'',
-    pagaréFirm: r[COL.PAGARE_FIRMADO]||'',
-    fechaCobro: r[getCobroCol()]||'',
-    diasCobro: daysFrom(r[getCobroCol()]),
-    docs: r[COL.DOCUMENTOS]||'',
-    inv1: r[COL.INVOICE_CLIENTE]||'',
-    inv2: r[COL.INVOICE_FC_SERV]||'',
-    total: totalCargaDe(r)||''
+// Hilos (un comentario raiz + sus respuestas), sin los eliminados.
+function comHilos(){
+  const vivos = _comentarios.filter(x => x.estado !== 'eliminado');
+  const raices = vivos.filter(x => x.hilo === x.id);
+  return raices.map(r => ({
+    raiz: r,
+    respuestas: vivos.filter(x => x.hilo === r.id && x.id !== r.id).sort((a, b) => String(a.fecha).localeCompare(String(b.fecha))),
+    resuelto: r.estado === 'resuelto'
   }));
-
-  return `Sos el asistente operativo de LATINUT S.A., una empresa de trading de commodities agrícolas.
-
-RESUMEN DEL HUB (datos en tiempo real):
-- Cargas activas: ${active}
-- Alertas críticas: ${crit}
-- Advertencias: ${warn}
-- Liberaciones urgentes pendientes (ETA ≤7d sin TELEX): ${libPend}
-- Cobros pendientes: ${cobrosPend} (${cobrosUrgentes} urgentes en ≤5 días)
-
-MUESTRA DE CARGAS ACTIVAS (primeras 20):
-${JSON.stringify(topCargas, null, 1)}
-
-Fecha actual: ${new Date().toLocaleDateString('es-AR')}
-
-Respondé en español, de forma concisa y directa. Si te preguntan por datos específicos, buscalos en la muestra de cargas. Si necesitás más datos de los que tenés, indicalo.`;
 }
-
-async function sendChat(){
-  if(!cfg.claudeApiKey){
-    addChatMsg('assistant','⚠️ Configurá tu Groq API Key en Configuración. Obtené una gratis en console.groq.com — sin tarjeta.');
-    return;
+// Indice para no recorrer todo en cada celda de la tabla.
+function comIndice(){
+  if(_comIdx && _comIdx.ver === _comVer && _comIdx.filas === allRowsAll.length) return _comIdx;
+  const porFila = {}, porAncla = {}, anclas = {};
+  comHilos().forEach(h => {
+    if(h.raiz.negocio !== comNegocio()) return;
+    const hd = normalizarHdr(h.raiz.columna);
+    (porFila[hd + '|' + h.raiz.fila] = porFila[hd + '|' + h.raiz.fila] || []).push(h);
+    if(h.raiz.ancla) (porAncla[hd + '|' + h.raiz.ancla] = porAncla[hd + '|' + h.raiz.ancla] || []).push(h);
+  });
+  allRowsAll.forEach(r => { const a = comAncla(r); if(a) anclas[a] = (anclas[a] || 0) + 1; });
+  _comIdx = { ver: _comVer, filas: allRowsAll.length, porFila, porAncla, anclas };
+  return _comIdx;
+}
+// Hilos de una celda: por fila (si el ancla sigue siendo la misma) o, si la carga se
+// movio de fila, por ancla cuando es unica.
+function comHilosCelda(row, c){
+  if(!row || c === undefined || c < 0 || !_comentarios.length) return [];
+  const ix = comIndice(), hd = comHdr(c), ancla = comAncla(row);
+  const res = [];
+  (ix.porFila[hd + '|' + row._sheetRow] || []).forEach(h => { if(!h.raiz.ancla || h.raiz.ancla === ancla) res.push(h); });
+  if(ancla && ix.anclas[ancla] === 1){
+    (ix.porAncla[hd + '|' + ancla] || []).forEach(h => { if(res.indexOf(h) < 0) res.push(h); });
   }
-  const input = document.getElementById('chat-input');
-  const msg = input.value.trim();
-  if(!msg) return;
+  return res;
+}
+const comAbiertosCelda = (row, c) => comHilosCelda(row, c).filter(h => !h.resuelto);
 
-  input.value = '';
-  input.style.height = 'auto';
-  addChatMsg('user', msg);
-
-  const sendBtn = document.getElementById('chat-send');
-  sendBtn.disabled = true;
-
-  const thinking = addChatMsg('assistant', '...', true);
-
-  chatHistory.push({role:'user', content: msg});
-
+// ── La hoja ──
+async function cargarComentarios(){
+  if(!accessToken || !cfg.hubSheetId) return;
+  const r = await fetch('https://sheets.googleapis.com/v4/spreadsheets/' + cfg.hubSheetId + '/values/' + encodeURIComponent(HOJA_COMENTARIOS + '!A2:K'),
+    { headers: { Authorization: 'Bearer ' + accessToken } });
+  if(r.status === 400 || r.status === 404){ _comListo = false; _comentarios = []; _comVer++; return; }
+  if(!r.ok) return;
+  const j = await r.json();
+  _comListo = true;
+  _comentarios = (j.values || []).map((f, i) => ({
+    id: f[0] || '', fecha: f[1] || '', autor: (f[2] || '').toLowerCase(), negocio: f[3] || '', fila: String(f[4] || ''),
+    columna: f[5] || '', ancla: f[6] || '', texto: f[7] || '', hilo: f[8] || f[0] || '',
+    estado: (f[9] || 'abierto').toLowerCase(), resueltoPor: f[10] || '', _rn: i + 2
+  })).filter(x => x.id);
+  _comVer++;
+}
+// La primera vez crea la pestaña (pidiendo permiso): es una escritura en la planilla.
+async function comAsegurarHoja(){
+  if(_comListo) return true;
+  const hub = cfg.hubSheetId;
+  if(!accessToken || !hub){ alert('Conectate con Google primero.'); return false; }
+  const h = { headers: { Authorization: 'Bearer ' + accessToken } };
+  const meta = await fetch('https://sheets.googleapis.com/v4/spreadsheets/' + hub + '?fields=sheets.properties.title', h);
+  if(meta.ok){
+    const j = await meta.json();
+    if(((j.sheets || [])).some(x => ((x.properties || {}).title || '') === HOJA_COMENTARIOS)){ _comListo = true; return true; }
+  }
+  const ok = await showConfirm('Crear la hoja de comentarios',
+    'Los comentarios de las celdas se guardan en una pestaña nueva llamada ' + HOJA_COMENTARIOS + ' de la planilla HUB LATINUT (la misma del LOG), así los ve todo el equipo. Se crea una sola vez.',
+    { icono: '💬', okLabel: 'Crear la hoja' });
+  if(!ok) return false;
+  const base = 'https://sheets.googleapis.com/v4/spreadsheets/' + hub;
+  const hd = { Authorization: 'Bearer ' + accessToken, 'Content-Type': 'application/json' };
+  const r1 = await fetch(base + ':batchUpdate', { method: 'POST', headers: hd, body: JSON.stringify({ requests: [{ addSheet: { properties: { title: HOJA_COMENTARIOS } } }] }) });
+  if(!r1.ok){ alert('No pude crear la hoja ' + HOJA_COMENTARIOS + ' (HTTP ' + r1.status + ').'); return false; }
+  await fetch(base + '/values/' + encodeURIComponent(HOJA_COMENTARIOS + '!A1:K1') + '?valueInputOption=RAW',
+    { method: 'PUT', headers: hd, body: JSON.stringify({ values: [COM_ENCABEZADOS] }) });
+  _comListo = true;
+  return true;
+}
+async function comAgregar(rec){
+  if(!(await comAsegurarHoja())) return false;
+  const fila = [rec.id, rec.fecha, rec.autor, rec.negocio, rec.fila, rec.columna, rec.ancla, rec.texto, rec.hilo, rec.estado, rec.resueltoPor || ''];
+  const r = await fetch('https://sheets.googleapis.com/v4/spreadsheets/' + cfg.hubSheetId + '/values/' + encodeURIComponent(HOJA_COMENTARIOS + '!A:K') +
+    ':append?valueInputOption=RAW&insertDataOption=INSERT_ROWS',
+    { method: 'POST', headers: { Authorization: 'Bearer ' + accessToken, 'Content-Type': 'application/json' }, body: JSON.stringify({ values: [fila] }) });
+  if(!r.ok) return false;
   try{
-    const systemPrompt = buildContext();
-    const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${cfg.claudeApiKey}`
-      },
-      body: JSON.stringify({
-        model: 'llama-3.3-70b-versatile',
-        max_tokens: 1024,
-        messages: [
-          {role: 'system', content: systemPrompt},
-          ...chatHistory
-        ]
-      })
-    });
-
-    const data = await response.json();
-    if(data.error){
-      thinking.textContent = '⚠️ Error: ' + (data.error.message||'Error desconocido');
-      thinking.classList.remove('thinking');
-    } else {
-      const reply = data.choices[0].message.content;
-      thinking.textContent = reply;
-      thinking.classList.remove('thinking');
-      chatHistory.push({role:'assistant', content: reply});
-      if(chatHistory.length > 20) chatHistory = chatHistory.slice(-20);
-    }
-  } catch(e){
-    thinking.textContent = '⚠️ Error de conexión con la API.';
-    thinking.classList.remove('thinking');
-    console.error('Chat error:', e);
+    const j = await r.json();
+    const m = ((j.updates || {}).updatedRange || '').match(/!A(\d+)/);
+    rec._rn = m ? parseInt(m[1]) : 0;
+  }catch(e){ rec._rn = 0; }
+  _comentarios.push(rec); _comVer++;
+  return true;
+}
+// Cambia estado (y quien resolvio). Antes verifica que la fila siga siendo ese comentario.
+async function comActualizar(rec, estado, resueltoPor){
+  const hub = cfg.hubSheetId, h = { headers: { Authorization: 'Bearer ' + accessToken } };
+  let rn = rec._rn;
+  if(rn){
+    const chk = await fetch('https://sheets.googleapis.com/v4/spreadsheets/' + hub + '/values/' + encodeURIComponent(HOJA_COMENTARIOS + '!A' + rn), h);
+    const v = chk.ok ? (((await chk.json()).values || [[]])[0] || [])[0] : null;
+    if(v !== rec.id) rn = 0;
   }
-
-  sendBtn.disabled = false;
-  document.getElementById('chat-messages').scrollTop = 999999;
+  if(!rn){
+    await cargarComentarios();
+    const nuevo = _comentarios.find(x => x.id === rec.id);
+    rn = nuevo ? nuevo._rn : 0;
+  }
+  if(!rn) return false;
+  const r = await fetch('https://sheets.googleapis.com/v4/spreadsheets/' + hub + '/values:batchUpdate',
+    { method: 'POST', headers: { Authorization: 'Bearer ' + accessToken, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ valueInputOption: 'RAW', data: [
+        { range: HOJA_COMENTARIOS + '!J' + rn, values: [[estado]] },
+        { range: HOJA_COMENTARIOS + '!K' + rn, values: [[resueltoPor || '']] } ] }) });
+  if(!r.ok) return false;
+  rec._rn = rn; rec.estado = estado; rec.resueltoPor = resueltoPor || ''; _comVer++;
+  return true;
 }
 
-function addChatMsg(role, text, isThinking=false){
-  const msgs = document.getElementById('chat-messages');
-  const div = document.createElement('div');
-  div.className = `chat-msg ${role}${isThinking?' thinking':''}`;
-  div.textContent = text;
-  msgs.appendChild(div);
-  msgs.scrollTop = msgs.scrollHeight;
-  return div;
+// ── Acciones ──
+function comCelda(){
+  if(!_tablaSel) return null;
+  const row = _tablaRows[_tablaSel.r];
+  return row ? { r: _tablaSel.r, c: _tablaSel.c, row } : null;
+}
+async function comEnviarNuevo(){
+  const cel = _comPop && _tablaRows[_comPop.r] ? { row: _tablaRows[_comPop.r], c: _comPop.c } : null;
+  const ta = document.getElementById('com-txt-nuevo');
+  const texto = ta ? (ta.value || '').trim() : '';
+  if(!cel || !texto){ showToast('Escribí el comentario primero', 'info'); return; }
+  const id = comNuevoId();
+  const ok = await comAgregar({ id, fecha: comAhora(), autor: comYo(), negocio: comNegocio(), fila: String(cel.row._sheetRow),
+    columna: (encabezadosCargas()[cel.c] || '').toString().trim(), ancla: comAncla(cel.row), texto, hilo: id, estado: 'abierto', resueltoPor: '' });
+  if(!ok){ showToast('No pude guardar el comentario', 'err'); return; }
+  showToast('💬 Comentario guardado', 'ok');
+  comRefrescar();
+}
+async function comResponder(idHilo){
+  const ta = document.getElementById('com-txt-' + idHilo);
+  const texto = ta ? (ta.value || '').trim() : '';
+  const raiz = _comentarios.find(x => x.id === idHilo);
+  if(!raiz || !texto){ showToast('Escribí la respuesta primero', 'info'); return; }
+  const ok = await comAgregar({ id: comNuevoId(), fecha: comAhora(), autor: comYo(), negocio: raiz.negocio, fila: raiz.fila,
+    columna: raiz.columna, ancla: raiz.ancla, texto, hilo: idHilo, estado: 'abierto', resueltoPor: '' });
+  if(!ok){ showToast('No pude guardar la respuesta', 'err'); return; }
+  comRefrescar();
+}
+async function comResolver(idHilo, reabrir){
+  const raiz = _comentarios.find(x => x.id === idHilo);
+  if(!raiz) return;
+  const ok = await comActualizar(raiz, reabrir ? 'abierto' : 'resuelto', reabrir ? '' : comYo());
+  if(!ok){ showToast('No pude actualizar el comentario', 'err'); return; }
+  showToast(reabrir ? '💬 Comentario reabierto' : '✓ Comentario resuelto', 'ok');
+  comRefrescar();
+}
+async function comEliminar(id){
+  const rec = _comentarios.find(x => x.id === id);
+  if(!rec || rec.autor !== comYo()){ showToast('Solo podés eliminar tus propios comentarios', 'info'); return; }
+  const esRaiz = rec.hilo === rec.id;
+  const ok0 = await showConfirm(esRaiz ? 'Eliminar el comentario y sus respuestas' : 'Eliminar la respuesta',
+    esRaiz ? 'Se elimina el hilo completo, también para el resto del equipo.' : 'Se elimina tu respuesta, también para el resto del equipo.',
+    { icono: '🗑', okLabel: 'Eliminar', peligro: true });
+  if(!ok0) return;
+  const ok = await comActualizar(rec, 'eliminado', '');
+  if(!ok){ showToast('No pude eliminar', 'err'); return; }
+  comRefrescar();
 }
 
+// ── Pantalla: marca en la celda y globo ──
+function comRefrescar(){
+  comPintar();
+  if(_comPop) comDibujarGlobo();
+}
+// Triangulo naranja en las celdas con comentarios abiertos (sin redibujar la tabla).
+function comPintar(){
+  document.querySelectorAll('#t-grid td.t-com').forEach(x => x.classList.remove('t-com'));
+  if(currentView !== 'cargas' || cargasVista !== 'tabla') return;
+  (_tablaRows || []).forEach((row, r) => {
+    _tablaCols.forEach(c => {
+      if(!comAbiertosCelda(row, c).length) return;
+      const td = celdaTd(r, c);
+      if(td && td.classList) td.classList.add('t-com');
+    });
+  });
+}
+function abrirComentarios(r, c){
+  const cel = (r === undefined) ? comCelda() : { r, c, row: _tablaRows[r] };
+  if(!cel || !cel.row){ showToast('Elegí primero una celda de la tabla', 'info'); return; }
+  _comPop = { r: cel.r, c: cel.c };
+  comDibujarGlobo();
+  setTimeout(() => { const t = document.getElementById('com-txt-nuevo') || document.querySelector('#com-globo textarea'); if(t && t.focus) t.focus(); }, 0);
+}
+function cerrarComentarios(){
+  _comPop = null;
+  const g = document.getElementById('com-globo');
+  if(g){ g.style.display = 'none'; g.innerHTML = ''; }
+}
+function comDibujarGlobo(){
+  if(!_comPop) return;
+  const row = _tablaRows[_comPop.r];
+  if(!row){ cerrarComentarios(); return; }
+  let g = document.getElementById('com-globo');
+  if(!g){ g = document.createElement('div'); g.id = 'com-globo'; g.className = 'com-globo'; document.body.appendChild(g); }
+  const yo = comYo();
+  const hilos = comHilosCelda(row, _comPop.c).sort((a, b) => String(a.raiz.fecha).localeCompare(String(b.raiz.fecha)));
+  const abiertos = hilos.filter(h => !h.resuelto), resueltos = hilos.filter(h => h.resuelto);
+  const msg = (m, hiloId) => `<div class="com-msg">
+      <div class="com-av">${escH((comNombre(m.autor)[0] || '?').toUpperCase())}</div>
+      <div class="com-cuerpo"><div class="com-meta"><b>${escH(comNombre(m.autor))}</b>${m.autor === yo ? ' (vos)' : ''} · ${escH(comFecha(m.fecha))}
+        ${m.autor === yo ? `<a class="com-del" onclick="comEliminar('${m.id}')">Eliminar</a>` : ''}</div>
+        <div class="com-texto">${escH(m.texto).replace(/\n/g, '<br>')}</div></div></div>`;
+  const hiloHtml = h => `<div class="com-hilo">
+      ${msg(h.raiz)}${h.respuestas.map(m => msg(m)).join('')}
+      <textarea id="com-txt-${h.raiz.id}" rows="2" placeholder="Responder…" onkeydown="if(event.key==='Enter'&&(event.ctrlKey||event.metaKey)){event.preventDefault();comResponder('${h.raiz.id}')}"></textarea>
+      <div class="com-acc"><button class="prim" onclick="comResponder('${h.raiz.id}')">Responder</button>
+        <button onclick="comResolver('${h.raiz.id}')">✓ Resolver</button><button onclick="cerrarComentarios()">Cancelar</button></div></div>`;
+  const nuevo = `<div class="com-hilo com-nuevo">
+      <textarea id="com-txt-nuevo" rows="3" placeholder="Escribí un comentario…" onkeydown="if(event.key==='Enter'&&(event.ctrlKey||event.metaKey)){event.preventDefault();comEnviarNuevo()}"></textarea>
+      <div class="com-acc"><button class="prim" onclick="comEnviarNuevo()">Comentar</button><button onclick="cerrarComentarios()">Cancelar</button></div></div>`;
+  const resHtml = resueltos.length ? `<details class="com-res"><summary>Resueltos (${resueltos.length})</summary>${resueltos.map(h =>
+      `<div class="com-hilo com-hecho">${msg(h.raiz)}${h.respuestas.map(m => msg(m)).join('')}
+       <div class="com-meta">Resuelto por ${escH(comNombre(h.raiz.resueltoPor))}</div>
+       <div class="com-acc"><button onclick="comResolver('${h.raiz.id}', true)">Reabrir</button></div></div>`).join('')}</details>` : '';
+  const titulo = 'Fila ' + row._sheetRow + ' · ' + escH((encabezadosCargas()[_comPop.c] || '').toString().trim());
+  g.innerHTML = `<div class="com-cab"><span>💬 ${titulo}</span><span style="flex:1"></span><button class="com-x" onclick="cerrarComentarios()" aria-label="Cerrar">×</button></div>
+    ${abiertos.map(hiloHtml).join('')}${abiertos.length ? '' : nuevo}${resHtml}
+    ${abiertos.length ? '<div class="com-mas"><a onclick="comOtroNuevo()">＋ Otro comentario en esta celda</a></div>' : ''}`;
+  g.style.display = 'block';
+  const td = celdaTd(_comPop.r, _comPop.c);
+  if(td && td.getBoundingClientRect && window.innerWidth){
+    const b = td.getBoundingClientRect();
+    g.style.left = Math.max(8, Math.min(b.right + 6, window.innerWidth - 350)) + 'px';
+    g.style.top = Math.max(8, Math.min(b.top, window.innerHeight - 330)) + 'px';
+  }
+}
+function comOtroNuevo(){
+  const g = document.getElementById('com-globo');
+  if(!g || document.getElementById('com-txt-nuevo')) return;
+  const mas = g.querySelector('.com-mas');
+  if(mas) mas.outerHTML = `<div class="com-hilo com-nuevo"><textarea id="com-txt-nuevo" rows="3" placeholder="Escribí un comentario…"></textarea>
+    <div class="com-acc"><button class="prim" onclick="comEnviarNuevo()">Comentar</button><button onclick="cerrarComentarios()">Cancelar</button></div></div>`;
+}
+// Cada tanto se vuelven a leer, para ver lo que escribieron los demas (sin tocar lo que estas haciendo).
+setInterval(() => {
+  if(!accessToken || document.hidden || currentView !== 'cargas' || _comPop || document.getElementById('t-edit')) return;
+  cargarComentarios().then(comPintar).catch(() => {});
+}, 90000);
 
 // ─── IMPORTAR PLANILLA DESPACHANTE ───────────────────────────────────────────
 
@@ -11542,8 +11641,13 @@ function triggerDriveUpload(rowIdx){
 
 // ─── KEYBOARD SHORTCUTS ──────────────────────────────────────────────────────
 document.addEventListener('click', () => cerrarFiltroColumna());
+document.addEventListener('mousedown', e => {
+  if(!_comPop || !e.target || !e.target.closest) return;
+  if(!e.target.closest('#com-globo') && !e.target.closest('#t-grid') && !e.target.closest('.t-com-btn')) cerrarComentarios();
+});
 document.addEventListener('keydown', e => {
   if(tablaTeclado(e)) return;
+  if(e.key === 'Escape' && _comPop){ cerrarComentarios(); return; }
   if(e.key === 'Escape' && _filtroAbierto){ cerrarFiltroColumna(); return; }
   if(e.key === 'Escape' && cargasTablaFull && document.getElementById('confirm-overlay').classList.contains('hidden')){ toggleTablaFull(); return; }
   // Cmd+K or Ctrl+K → focus search
@@ -11625,28 +11729,8 @@ window.onload=()=>{
       <span class="bnav-label">Libera.</span>
       <span class="bottom-nav-badge" id="bnav-badge-liberaciones" style="display:none"></span>
     </div>
-    <div class="bottom-nav-item" id="bnav-chat" onclick="toggleChat()">
-      <span class="bnav-icon">🤖</span>
-      <span class="bnav-label">Chat IA</span>
-    </div>
   </div>
 </nav>
-
-<!-- CHAT -->
-<button class="chat-toggle" id="chat-toggle" onclick="toggleChat()" title="Chat con IA">💬</button>
-<div class="chat-panel hidden" id="chat-panel">
-  <div class="chat-header">
-    <div class="chat-header-title">🤖 Asistente LATINUT</div>
-    <span style="cursor:pointer;color:var(--text3);font-size:16px;" onclick="toggleChat()">×</span>
-  </div>
-  <div class="chat-messages" id="chat-messages">
-    <div class="chat-msg assistant">Hola! Soy tu asistente. Puedo responder preguntas sobre tus cargas, cobros, liberaciones y alertas. ¿En qué te ayudo?</div>
-  </div>
-  <div class="chat-input-row">
-    <textarea class="chat-input" id="chat-input" rows="1" placeholder="Preguntá algo..." onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();sendChat();}"></textarea>
-    <button class="chat-send" id="chat-send" onclick="sendChat()">↑</button>
-  </div>
-</div>
 
 <!-- DAY DETAIL MODAL -->
 <div class="cf-detail-overlay hidden" id="cf-detail-overlay" onclick="if(event.target===this)closeDayDetail()">
