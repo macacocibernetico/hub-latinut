@@ -8271,6 +8271,14 @@ async function comResolver(idHilo, reabrir){
   if(!(await comSeQuienSoy())) return;
   const raiz = _comentarios.find(x => x.id === idHilo);
   if(!raiz) return;
+  if(!reabrir){
+    // Al resolver desaparece la marca de la celda: se pide confirmacion.
+    const conf = await showConfirm('Resolver el comentario',
+      'El hilo deja de verse en la celda para todo el equipo. Queda guardado en "Resueltos" y se puede reabrir.',
+      { icono: '✓', okLabel: 'Resolver',
+        detalle: '<div style="max-width:420px;">' + escH(comNombre(raiz.autor)) + ': ' + escH(raiz.texto.length > 140 ? raiz.texto.slice(0, 140) + '…' : raiz.texto) + '</div>' });
+    if(!conf) return;
+  }
   const ok = await comActualizar(raiz, reabrir ? 'abierto' : 'resuelto', reabrir ? '' : comYo());
   if(!ok){ showToast('No pude actualizar el comentario', 'err'); return; }
   showToast(reabrir ? '💬 Comentario reabierto' : '✓ Comentario resuelto', 'ok');
