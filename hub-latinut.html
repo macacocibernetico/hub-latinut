@@ -247,6 +247,9 @@ body.tabla-full-on{overflow:hidden;}
 .t-grid tbody tr td.rango.cur{background:#fff!important;}
 .t-stats{display:flex;align-items:center;gap:14px;flex-wrap:wrap;padding:6px 12px;border-radius:8px;background:var(--bg3);font-size:12px;color:var(--text2);font-family:var(--mono);min-height:30px;}
 .t-stats b{color:var(--text);}
+.t-nop-acc{display:inline-flex;align-items:center;gap:6px;margin-left:auto;flex-wrap:wrap;}
+.t-nop-acc button{height:24px;padding:0 9px;border-radius:7px;border:1px solid var(--border2);background:var(--bg2);font-size:11px;font-family:var(--font);color:var(--text);cursor:pointer;}
+.t-nop-acc button:first-of-type{background:#d9c9f7;border-color:#b79ee8;color:#3b1f78;font-weight:600;}
 .t-stats .t-stats-h{font-family:var(--font);color:var(--text3);}
 .t-grid td.cur{outline:2px solid #1a73e8;outline-offset:-2px;}
 .t-grid td.chg,.t-grid tbody tr td.chg{background:#fff2cc;color:#7a4b00;font-weight:500;}
@@ -3919,7 +3922,7 @@ let cargasShowAll = false;
 let cargasSort = 'cerca_hoy';
 // 'grupos' = cargas agrupadas por embarque con barra de acciones arriba.
 // 'tabla'  = la tabla ancha de siempre, con todas las columnas.
-let cargasVista = 'grupos';
+let cargasVista = 'tabla';   // la visual planilla es la de entrada; "Por embarque" queda a un clic
 let cargasGruposCerrados = new Set();   // claves de grupo plegadas
 let cargasLimite = 80;                  // cuantas filas dibuja la vista por embarque
 let cargasSearch = ''; // búsqueda libre
@@ -4631,12 +4634,40 @@ function estadisticasRango(){
            min: nums.length ? Math.min.apply(null, nums) : NaN,
            max: nums.length ? Math.max.apply(null, nums) : NaN };
 }
+// Filas (indices de allRows) de las celdas elegidas, si entre ellas esta la columna Producto.
+function filasProductoSeleccionadas(){
+  const g = rangoTabla();
+  if(!g) return [];
+  const kP = _tablaCols.indexOf(COL.PRODUCT);
+  if(kP < 0 || kP < g.k1 || kP > g.k2) return [];
+  const out = [];
+  for(let r = g.r1; r <= g.r2; r++){
+    const row = _tablaRows[r]; const i = row ? idxDeFila(row) : -1;
+    if(i >= 0) out.push(i);
+  }
+  return out;
+}
+function accionNOPSeleccion(que){
+  const idxs = filasProductoSeleccionadas();
+  if(!idxs.length) return;
+  if(que === 'duda') marcarDudaNOP(idxs, true);
+  else if(que === 'quitar') marcarDudaNOP(idxs, false);
+  else resolverNOP(idxs, que === 'nop');
+}
 function pintarRango(){
   document.querySelectorAll('#t-grid td.rango').forEach(x => x.classList.remove('rango'));
   const bar = document.getElementById('t-stats');
   const st = estadisticasRango();
+  const filasP = filasProductoSeleccionadas();
+  const botones = filasP.length
+    ? '<span class="t-nop-acc"><span class="t-stats-h">Producto' + (filasP.length > 1 ? 's' : '') + ' (' + filasP.length + '):</span>' +
+      '<button onclick="accionNOPSeleccion(\'duda\')" title="Deja el Producto en violeta hasta saber si es NOP o convencional">❓ En duda</button>' +
+      '<button onclick="accionNOPSeleccion(\'nop\')" title="Es NOP: cambia producto, contrato y precios">✓ Es NOP</button>' +
+      '<button onclick="accionNOPSeleccion(\'comun\')" title="Es convencional: cambia producto, contrato y precios">✓ Es convencional</button>' +
+      '<button onclick="accionNOPSeleccion(\'quitar\')" title="Saca el violeta sin cambiar nada más">Quitar duda</button></span>'
+    : '';
   if(!st){
-    if(bar) bar.innerHTML = '<span class="t-stats-h">Seleccioná varias celdas (arrastrá o Shift + clic) para ver suma, promedio y más</span>';
+    if(bar) bar.innerHTML = '<span class="t-stats-h">Seleccioná varias celdas (arrastrá o Shift + clic) para ver suma, promedio y más</span>' + botones;
     return;
   }
   // Con varias celdas elegidas no se resalta tambien la fila y la columna de la
@@ -4651,7 +4682,7 @@ function pintarRango(){
   if(bar) bar.innerHTML = '<span class="t-stats-h">' + st.celdas + ' celdas · ' + st.llenas + ' con datos</span>' +
     (st.cuantosNum ? '<span>Suma: <b>' + f(st.suma) + '</b></span><span>Promedio: <b>' + f(st.promedio) + '</b></span>' +
       '<span>Mín: <b>' + f(st.min) + '</b></span><span>Máx: <b>' + f(st.max) + '</b></span><span>Números: <b>' + st.cuantosNum + '</b></span>'
-      : '<span class="t-stats-h">Sin números en la selección</span>');
+      : '<span class="t-stats-h">Sin números en la selección</span>') + botones;
 }
 function tdDeEvento(ev){ return ev.target && ev.target.closest ? ev.target.closest('td[data-c]') : null; }
 function tablaMouseDown(ev){
