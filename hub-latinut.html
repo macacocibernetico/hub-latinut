@@ -336,6 +336,18 @@ body.tabla-full-on{overflow:hidden;}
 .config-title{font-size:13px;font-weight:600;margin-bottom:3px;color:var(--text);}
 .config-desc{font-size:11px;color:var(--text3);margin-bottom:14px;}
 .config-field{margin-bottom:10px;}
+.cf-sec{background:var(--bg2);border:1px solid var(--border);border-radius:12px;padding:14px 16px 6px;margin-bottom:12px;}
+.cf-tit{display:flex;align-items:center;gap:8px;font-size:14px;font-weight:600;color:var(--text);margin-bottom:12px;}
+.cf-n{width:22px;height:22px;border-radius:50%;background:var(--accent-light);color:var(--accent);font-size:12px;font-weight:600;display:inline-flex;align-items:center;justify-content:center;flex-shrink:0;}
+.cf-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:0 16px;}
+.cf-auto{background:var(--bg3);border-style:dashed;}
+.cf-auto .config-input{background:var(--bg2);}
+.cf-tag{font-size:11px;font-weight:500;padding:2px 9px;border-radius:10px;background:var(--ok-light,rgba(52,199,89,.14));color:var(--ok);}
+.cf-sub{font-size:12px;color:var(--text3);margin:-6px 0 10px;}
+.cf-box{font-size:12px;margin-bottom:10px;}
+.cf-box:empty{display:none;}
+.cf-barra{position:sticky;bottom:0;z-index:20;display:flex;align-items:center;gap:10px;padding:12px 16px;margin-top:4px;border:1px solid var(--border);border-radius:12px;background:var(--bg2);box-shadow:0 -4px 14px rgba(0,0,0,.06);}
+.cf-faltan{font-size:12px;font-weight:500;}
 .config-label{font-size:11px;color:var(--text3);margin-bottom:4px;font-weight:500;}
 .config-input{width:100%;background:var(--bg3);border:1px solid var(--border);border-radius:7px;color:var(--text);font-family:var(--mono);font-size:11px;padding:7px 10px;transition:border-color .15s;}
 .config-input:focus{outline:none;border-color:var(--accent);background:var(--bg2);}
@@ -4930,7 +4942,8 @@ function formToRowData(d){
 
 async function submitNuevaCarga(){
   const d = getFormValues('nc');
-  if(!d.product || !d.eta || !d.customer){ alert('Product, ETA y Customer son obligatorios.'); return; }
+  const falta = camposFaltantes('nc');
+  if(falta.length){ alert('Faltan datos obligatorios: ' + falta.join(', ') + '.'); return; }
   const ok0 = await showConfirm(
     'Agregar la carga a la planilla',
     'Se inserta una fila nueva al final de la planilla de ' + getNegocioConfig().label + '.',
@@ -4950,7 +4963,8 @@ async function submitNuevaCarga(){
 
 async function submitEditCarga(rowIdx){
   const d = getFormValues('ec');
-  if(!d.product || !d.eta || !d.customer){ alert('Product, ETA y Customer son obligatorios.'); return; }
+  const falta = camposFaltantes('ec');
+  if(falta.length){ alert('Faltan datos obligatorios: ' + falta.join(', ') + '.'); return; }
   const row = filaPorIdx(rowIdx);
   const sheetRow = row._sheetRow;
   if(!sheetRow){ alert('Error: no se pudo determinar la fila.'); return; }
@@ -5049,7 +5063,7 @@ function smartField(prefix, id, label, value='', placeholder='', colIdx=null){
       ${options.map(o=>`<option value="${o}" ${(normTar(value)===normTar(o)&&!isOther)?'selected':''}>${o}</option>`).join('')}
       <option value="__otro__" ${isOther?'selected':''}>✏ Escribir otro...</option>
     </select>
-    <input class="config-input" id="${inputId}" value="${value}" placeholder="${placeholder}" oninput="alCambiarCampoCarga('${prefix}','${id}')" style="display:${isOther||!value?'block':'none'};">
+    <input class="config-input" id="${inputId}" value="${value}" placeholder="${placeholder}" oninput="alCambiarCampoCarga('${prefix}','${id}')" style="display:${isOther?'block':'none'};">
   </div>`;
 }
 
@@ -5266,87 +5280,128 @@ function buildCargaForm(prefix, d={}, fullEdit=false){
   const field = (id, label, value='', type='text', placeholder='') =>
     `<div class="config-field"><div class="config-label">${label}</div><input class="config-input" id="${prefix}-${id}" type="${type}" value="${value}" placeholder="${placeholder}"${extraEventos(id)}></div>`;
 
-  const section = (title) =>
-    `<div style="grid-column:1/-1;margin-top:12px;padding-bottom:6px;border-bottom:1px solid var(--border);"><span style="font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.5px;color:var(--text3);">${title}</span></div>`;
+  // Campo donde se escribe libremente y tambien se puede abrir la lista. Mientras
+  // se escribe no se vuelve a dibujar nada ni se pisa el valor: solo se mira el flete.
+  const comboField = (id, label, value, placeholder, opciones) => {
+    const q = t => String(t).replace(/&/g,'&amp;').replace(/"/g,'&quot;');
+    return `<div class="config-field"><div class="config-label">${label}</div>
+      <input class="config-input" id="${prefix}-${id}" list="${prefix}-${id}-dl" autocomplete="off" value="${q(value||'')}" placeholder="${placeholder}" oninput="actualizarComparadorFlete('${prefix}')">
+      <datalist id="${prefix}-${id}-dl">${opciones.map(o => '<option value="' + q(o) + '">').join('')}</datalist></div>`;
+  };
+  const opcionesPol = () => {
+    const vistos = {}, lista = [];
+    getUnique(COL.POL).concat((tarifas || []).map(t => (t.pol || '').toString().trim())).forEach(v => {
+      const k = normTar(v); if(!v || vistos[k]) return; vistos[k] = 1; lista.push(v);
+    });
+    return lista.sort((a, b) => a.localeCompare(b));
+  };
 
-  const basicFields = `
-    ${field('negocio','Negocio',d.negocio||'','text','ej: ARG2-2')}
+  // Un bloque del formulario: numero, titulo y sus campos en columnas.
+  const bloque = (n, titulo, campos, extra = '') => `
+    <div class="cf-sec">
+      <div class="cf-tit"><span class="cf-n">${n}</span>${titulo}${extra}</div>
+      <div class="cf-grid">${campos}</div>
+    </div>`;
+
+  const bQue = bloque(1, 'Qué se carga', `
     ${smartField(prefix,'customer','Customer *',d.customer||'','ej: IDI', COL.CUSTOMER)}
     ${smartField(prefix,'product','Product *',d.product||'','ej: Blanched peanuts 38/42', COL.PRODUCT)}
     ${field('tns','Tns',d.tns||'','text','ej: 22,32')}
     ${smartField(prefix,'packing','Packing',d.packing||'','ej: big bags', COL.PACKING)}
     ${field('lots','Lots',d.lots||'','text','ej: BL38-250022-AP')}
-    ${field('invoiceProv','Invoice Proveedor',d.invoiceProv||'','text','ej: 0001-00001234')}
-    ${field('contractProv','Contract Proveedor',d.contractProv||'','text','ej: 2026-PROV-01')}
-    ${field('pricefob','Price FCA',d.pricefob||'','text','ej: 1180')}
-    ${field('totalProv','Total Proveedor',d.totalProv||'','text','Price FCA × Tns')}
+    ${field('negocio','Negocio',d.negocio||'','text','ej: ARG2-2')}`);
+
+  const bEmbarque = bloque(2, 'Embarque', `
     ${field('containers','Containers',d.containers||'','text','ej: FFAU3862300')}
     ${field('booking','Booking',d.booking||'','text','ej: EBKG15971228')}
     ${field('bl','BL',d.bl||'','text','ej: TRANSHBL00048410')}
     ${smartField(prefix,'shipping','Shipping Line',d.shipping||'','ej: MSC', COL.SHIPPING)}
     ${field('vessel','Vessel',d.vessel||'','text','ej: MSC URSULA VI')}
+    ${smartField(prefix,'exporter','Exporter',d.exporter||'','ej: Argen Peanuts', COL.EXPORTER)}
     ${dateField(prefix,'consol','Consolidación',d.consol||'')}
     ${dateField(prefix,'etd','ETD',d.etd||'')}
     ${dateField(prefix,'eta','ETA *',d.eta||'')}
     ${smartField(prefix,'port','Port *',d.port||'','ej: Norfolk', COL.PORT)}
-    ${COL.POL >= 0 ? smartField(prefix,'pol','POL (puerto de salida)',d.pol||'','ej: BUE o CHILE', COL.POL) : ''}
-    ${smartField(prefix,'exporter','Exporter',d.exporter||'','ej: Argen Peanuts', COL.EXPORTER)}`;
+    ${COL.POL >= 0 ? comboField('pol','POL (escribís o elegís de la lista)',d.pol||'','ej: BUE o CHILE', opcionesPol()) : ''}`);
 
-  // ── AXT → Cliente ──
-  // Lo de arriba es el embarque (Planta → AXT), que sale de la planilla del
-  // despachante. Esto es el acuerdo comercial con el cliente, que sale del
-  // contrato: por eso va aparte y se completa solo.
-  const seccionContrato = `
-    <div style="grid-column:1/-1;margin-top:20px;padding:12px 14px;border-radius:10px;background:var(--accent-light);border:1px solid var(--accent);">
-      <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;">
-        <div>
-          <div style="font-size:12px;font-weight:700;color:var(--accent);letter-spacing:.3px;">${empresaDelNegocio() === 'AXT' ? 'AXT → CLIENTE' : 'BUZARAM → CLIENTE FINAL'}</div>
-          <div style="font-size:11px;color:var(--text3);margin-top:2px;">Se completa con el contrato de la hoja “${hojaContratos()}”, cruzando cliente, producto y puerto.</div>
-        </div>
-        <button type="button" class="btn" style="font-size:11px;padding:5px 12px;" onclick="buscarContratos('${prefix}')">🔎 Buscar contrato</button>
-      </div>
-      <div id="${prefix}-contrato-box" style="margin-top:10px;font-size:11px;"></div>
-    </div>
-    ${field('contractCliente','Contract Cliente',d.contractCliente||'','text','se completa solo')}
-    ${field('priceCFR','Price Cliente',d.priceCFR||'','text','ej: 1130')}
-    ${field('flete','Flete',d.flete||'','text','ej: 270')}
-    ${field('totalCFR','Total CFR',d.totalCFR||'','text','(Price + Flete) × Tns')}
-    ${field('incoterm','INCOTERM',d.incoterm||'','text','ej: CFR Norfolk')}
-    ${field('priceFCServ','Price serv',d.priceFCServ||'','text','FC Servicios × Tns')}
-    ${field('totalFinal','TOTAL FINAL',d.totalFinal||'','text','Total CFR + Price serv')}
-    ${field('precioFinalTn','Precio final x tn',d.precioFinalTn||'','text','TOTAL FINAL ÷ Tns')}`;
+  const bProveedor = bloque(3, 'Proveedor', `
+    ${field('invoiceProv','Invoice Proveedor',d.invoiceProv||'','text','ej: 0001-00001234')}
+    ${field('contractProv','Contract Proveedor',d.contractProv||'','text','ej: 2026-PROV-01')}
+    ${field('pricefob','Price FCA',d.pricefob||'','text','ej: 1180')}`);
 
-  // Buzaram: las dos fechas de cobro forman parte de esta segunda parte.
-  const fechasBuzaram = empresaDelNegocio() === 'AXT' ? '' : `
+  // Lo que se calcula o sale del contrato va al final, aparte: no se carga, se revisa.
+  const esAXT = empresaDelNegocio() === 'AXT';
+  const fechasBuzaram = esAXT ? '' : `
     ${dateField(prefix,'fechaEstCobro','Fecha estimada',d.fechaEstCobro||'')}
     ${dateField(prefix,'fechaCobro','Cobranza CLIENTE',d.fechaCobro||'')}`;
+  const bAuto = `
+    <div class="cf-sec cf-auto">
+      <div class="cf-tit"><span class="cf-n">4</span>${esAXT ? 'AXT → CLIENTE' : 'BUZARAM → CLIENTE FINAL'}<span class="cf-tag">se completa solo</span>
+        <span style="flex:1;"></span>
+        <button type="button" class="btn" style="font-size:11px;padding:5px 12px;" onclick="buscarContratos('${prefix}')">🔎 Buscar contrato</button></div>
+      <div class="cf-sub">Sale del contrato de la hoja “${hojaContratos()}”, cruzando cliente, producto y puerto. Podés corregir cualquier valor a mano.</div>
+      <div id="${prefix}-contrato-box" class="cf-box"></div>
+      <div class="cf-grid">
+        ${field('totalProv','Total Proveedor',d.totalProv||'','text','Price FCA × Tns')}
+        ${field('contractCliente','Contract Cliente',d.contractCliente||'','text','se completa solo')}
+        ${field('priceCFR','Price Cliente',d.priceCFR||'','text','ej: 1130')}
+        ${field('flete','Flete',d.flete||'','text','ej: 270')}
+        ${field('totalCFR','Total CFR',d.totalCFR||'','text','(Price + Flete) × Tns')}
+        ${field('incoterm','INCOTERM',d.incoterm||'','text','ej: CFR Norfolk')}
+        ${field('priceFCServ','Price serv',d.priceFCServ||'','text','FC Servicios × Tns')}
+        ${field('totalFinal','TOTAL FINAL',d.totalFinal||'','text','Total CFR + Price serv')}
+        ${field('precioFinalTn','Precio final x tn',d.precioFinalTn||'','text','TOTAL FINAL ÷ Tns')}
+        ${fullEdit ? '' : fechasBuzaram}
+      </div>
+    </div>`;
 
-  if(!fullEdit) return `<div style="display:grid;grid-template-columns:1fr 1fr;gap:0 16px;">${basicFields}${seccionContrato}${fechasBuzaram}</div>`;
+  const envuelve = html => `<div class="cf-form" oninput="actualizarFaltantes('${prefix}')" onchange="actualizarFaltantes('${prefix}')">${html}</div>`;
+  if(!fullEdit) return envuelve(bQue + bEmbarque + bProveedor + bAuto);
 
-  const extraFields = `
-    ${section('Documentos')}
-    ${field('documentos','Documentos',d.documentos||'','text','ej: SI o detalle pendiente')}
-    ${field('lombard','Envío a Lombard',d.lombard||'','text','ej: SI')}
-    ${field('clienteEnv','Envío al Cliente',d.clienteEnv||'','text','ej: SI')}
-    ${field('telex','TELEX',d.telex||'','text','ej: solicitado, falta ok')}
-    ${section('Facturas')}
-    ${field('invoiceCliente','Invoice Cliente',d.invoiceCliente||'','text','ej: 13117')}
-    ${field('invoiceFCServ','Invoice Serv',d.invoiceFCServ||'','text','ej: 13118')}
-    ${section('Pagaré')}
-    ${field('pagareEnviado','Pagare enviado',d.pagareEnviado||'','text','ej: SI')}
-    ${field('pagareFirmado','Pagare firmado',d.pagareFirmado||'','text','ej: SI')}
-    ${section('Pago a forwarder')}
-    ${smartField(prefix,'proveedorFlete','Proveedor de flete',d.proveedorFlete||'','ej: Done Deal', COL.PROVEEDOR_FLETE)}
-    ${field('fcFlete','FC Flete',d.fcFlete||'','text','ej: 4521')}
-    ${field('montoFlete','Importe USD/FCL',d.montoFlete||'','text','ej: 3200')}
-    <div class="config-field" style="grid-column:1/-1;">
-      <div id="${prefix}-flete-cmp" style="font-size:11px;padding:8px 10px;border-radius:8px;background:var(--bg3);color:var(--text3);"></div>
-    </div>
-    ${section('Cobranza')}
-    ${dateField(prefix,'fechaEstCobro','Fecha estimada de cobro',d.fechaEstCobro||'')}
-    ${dateField(prefix,'fechaCobro','Fecha de cobro real',d.fechaCobro||'')}`;
+  const mas = (titulo, campos) => `<div class="cf-sec"><div class="cf-tit">${titulo}</div><div class="cf-grid">${campos}</div></div>`;
+  const extra =
+    mas('Documentos', `
+      ${field('documentos','Documentos',d.documentos||'','text','ej: SI o detalle pendiente')}
+      ${field('lombard','Envío a Lombard',d.lombard||'','text','ej: SI')}
+      ${field('clienteEnv','Envío al Cliente',d.clienteEnv||'','text','ej: SI')}
+      ${field('telex','TELEX',d.telex||'','text','ej: solicitado, falta ok')}`) +
+    mas('Facturas', `
+      ${field('invoiceCliente','Invoice Cliente',d.invoiceCliente||'','text','ej: 13117')}
+      ${field('invoiceFCServ','Invoice Serv',d.invoiceFCServ||'','text','ej: 13118')}`) +
+    mas('Pagaré', `
+      ${field('pagareEnviado','Pagare enviado',d.pagareEnviado||'','text','ej: SI')}
+      ${field('pagareFirmado','Pagare firmado',d.pagareFirmado||'','text','ej: SI')}`) +
+    mas('Pago a forwarder', `
+      ${smartField(prefix,'proveedorFlete','Proveedor de flete',d.proveedorFlete||'','ej: Done Deal', COL.PROVEEDOR_FLETE)}
+      ${field('fcFlete','FC Flete',d.fcFlete||'','text','ej: 4521')}
+      ${field('montoFlete','Importe USD/FCL',d.montoFlete||'','text','ej: 3200')}
+      <div class="config-field" style="grid-column:1/-1;">
+        <div id="${prefix}-flete-cmp" style="font-size:11px;padding:8px 10px;border-radius:8px;background:var(--bg3);color:var(--text3);"></div>
+      </div>`) +
+    mas('Cobranza', `
+      ${dateField(prefix,'fechaEstCobro','Fecha estimada de cobro',d.fechaEstCobro||'')}
+      ${dateField(prefix,'fechaCobro','Fecha de cobro real',d.fechaCobro||'')}`);
+  return envuelve(bQue + bEmbarque + bProveedor + bAuto + extra);
+}
 
-  return `<div style="display:grid;grid-template-columns:1fr 1fr;gap:0 16px;">${basicFields}${seccionContrato}${extraFields}</div>`;
+// Barra de abajo: dice que falta antes de guardar, en vez de enterarte con un cartel.
+const CAMPOS_OBLIGATORIOS = [['customer','Customer'], ['product','Product'], ['eta','ETA'], ['port','Port']];
+function camposFaltantes(prefix){
+  return CAMPOS_OBLIGATORIOS.filter(c => !valForm(prefix, c[0])).map(c => c[1]);
+}
+function actualizarFaltantes(prefix){
+  const el = document.getElementById(prefix + '-faltan');
+  if(!el) return;
+  const f = camposFaltantes(prefix);
+  el.textContent = f.length ? 'Faltan: ' + f.join(', ') : 'Todo listo para guardar';
+  el.style.color = f.length ? 'var(--warn)' : 'var(--ok)';
+}
+function barraFormulario(prefix, textoGuardar, onGuardar){
+  return `<div class="cf-barra">
+    <span id="${prefix}-faltan" class="cf-faltan"></span><span style="flex:1;"></span>
+    <button class="btn" onclick="showView('cargas')">Cancelar</button>
+    <button class="btn primary" id="${prefix}-submit" onclick="${onGuardar}">${textoGuardar}</button>
+  </div>`;
 }
 function renderNuevaCarga(){
   if(!accessToken){
@@ -5362,11 +5417,9 @@ function renderNuevaCarga(){
       <span style="font-size:10px;color:var(--text3);margin-left:10px;">Pre-completa los campos automáticamente</span>
     </div>
     ${buildCargaForm('nc')}
-    <div class="config-save">
-      <button class="btn" onclick="showView('cargas')" style="margin-right:8px;">Cancelar</button>
-      <button class="btn primary" id="nc-submit" onclick="submitNuevaCarga()">Guardar carga</button>
-    </div>
+    ${barraFormulario('nc', 'Guardar carga', 'submitNuevaCarga()')}
   </div>`;
+  actualizarFaltantes('nc');
 }
 
 function renderEditCarga(rowIdx){
@@ -5426,11 +5479,10 @@ function renderEditCarga(rowIdx){
     <div class="config-title">Editar Carga — ${d.customer} / ${d.product}</div>
     <div class="config-desc">Los cambios se guardarán directamente en la planilla ${getNegocioConfig().label}. Dejá en blanco los campos que no querés modificar.</div>
     ${buildCargaForm('ec', d, true)}
-    <div class="config-save" style="margin-top:16px;gap:8px;display:flex;justify-content:flex-end;">
-      <button class="btn" onclick="showView('cargas')">Cancelar</button>
-      <button class="btn primary" id="ec-submit" onclick="submitEditCarga(${rowIdx})">Guardar cambios</button>
-    </div>
+    ${barraFormulario('ec', 'Guardar cambios', 'submitEditCarga(' + rowIdx + ')')}
   </div>`;
+  actualizarFaltantes('ec');
+  actualizarComparadorFlete('ec');
 }
 
 
