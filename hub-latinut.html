@@ -1662,8 +1662,13 @@ function armarSolicitudFC(filas){
   texto += '\n\n' + AVISO_FACTURA_POR_CONTENEDOR;
   html  += '<br><br><b>' + AVISO_FACTURA_POR_CONTENEDOR + '</b>';
 
+  // En Buzaram el asunto termina con la OV (columna "OV BZ"). Si el pedido junta varias
+  // cargas con OV distintas, van todas separadas por coma.
+  const ovs = COL.OV >= 0 ? [...new Set(filas.map(r => t(r, COL.OV)).filter(Boolean))] : [];
+  const sufijoOV = (empresaDelNegocio() === 'BUZARAM' && ovs.length)
+    ? ' - ' + ovs.map(v => /^OV(?![A-Za-z])/i.test(v) ? v : 'OV ' + v).join(', ') : '';
   const asunto = 'AVISO DE EMBARQUE – ' + tns + ' tns ' + product + ' - ' + nc.label + ' – '
-               + exporter + ' - ETD ' + etd + ' - ETA ' + eta + ' - ' + port + ' - ' + customer;
+               + exporter + ' - ETD ' + etd + ' - ETA ' + eta + ' - ' + port + ' - ' + customer + sufijoOV;
   const htmlFinal = '<div style="font-family:Arial,sans-serif;font-size:13px;color:#000;">' + html + '</div>';
   // Quienes reciben la solicitud salen de la hoja CONTACTOS (columna Solicitud_FC).
   // En el Para va la contraparte del negocio (Pedro en AXT, Yael en Buzaram); el resto
