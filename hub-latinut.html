@@ -1624,10 +1624,16 @@ function armarSolicitudFC(filas){
                + exporter + ' - ETD ' + etd + ' - ETA ' + eta + ' - ' + port + ' - ' + customer;
   const htmlFinal = '<div style="font-family:Arial,sans-serif;font-size:13px;color:#000;">' + html + '</div>';
   // Quienes reciben la solicitud salen de la hoja CONTACTOS (columna Solicitud_FC).
-  const dest = destinatariosFCHoja();
-  const faltantes = dest.length ? []
+  // En el Para va la contraparte del negocio (Pedro en AXT, Yael en Buzaram); el resto
+  // de los que tienen Sí va en copia. Si la contraparte no esta entre ellos, van todos en el Para.
+  const todos = destinatariosFCHoja();
+  const cp = contraparteDeHoja();
+  const principal = cp && todos.filter(e => soloEmail(e) === soloEmail(cp.email))[0];
+  const dest = principal ? [principal] : todos;
+  const enCopia = principal ? todos.filter(e => e !== principal) : [];
+  const faltantes = todos.length ? []
     : ['Nadie de ' + empresaDelNegocio() + ' tiene "Sí" en la columna Solicitud_FC de la hoja CONTACTOS.'];
-  return { asunto, html: htmlFinal, texto, dest: dest.join(','), cc: CC_EQUIPO, es2FC, tns, faltantes };
+  return { asunto, html: htmlFinal, texto, dest: dest.join(','), cc: enCopia.concat([CC_EQUIPO]).join(', '), es2FC, tns, faltantes };
 }
 
 // Aviso de embarque al cliente. Es la otra punta del grupo: pediste la FC por un
@@ -2839,7 +2845,7 @@ function abrirFacturaForwarder(idxs){
     </tr>`).join('');
   m.innerHTML = `<div class="modal" style="width:720px;max-width:96vw;">
     <div class="modal-header">
-      <div><span class="modal-title">🧾 Factura de forwarder</span>
+      <div><span class="modal-title">🚚 Factura de forwarder</span>
       <div style="font-size:11px;color:var(--text3);margin-top:2px;">${(r0[COL.CUSTOMER]||'—')} · ${idxs.length} carga${idxs.length>1?'s':''} · ${esp.cnt} contenedor${esp.cnt>1?'es':''}</div></div>
       <span class="modal-close" onclick="cerrarFacturaForwarder()">×</span>
     </div>
@@ -2996,7 +3002,7 @@ async function guardarFacturaForwarder(){
     avisos.length ? 'La factura no coincide con el tarifario' : 'Guardar factura de forwarder',
     avisos.length ? '¿Guardar igual? Queda registrado en el LOG con la diferencia.'
                   : 'Se escribe en ' + idxs.length + ' fila' + (idxs.length > 1 ? 's' : '') + ' de la planilla' + (pisa.length ? ', pisando valores que ya había.' : '.'),
-    { icono: avisos.length ? '⚠️' : '🧾', okLabel: avisos.length ? 'Guardar igual' : 'Guardar', detalle });
+    { icono: avisos.length ? '⚠️' : '🚚', okLabel: avisos.length ? 'Guardar igual' : 'Guardar', detalle });
   if(!ok) return;
 
   const porFila = {};
@@ -4470,7 +4476,7 @@ function renderCargasTabla(rows){
       <td class="t-num" title="Clic para marcar / desmarcar la fila como vista" onclick="toggleFilaVista(${localIdx},event)">${row._sheetRow || ''}</td>
       <td class="t-cb"><input type="checkbox" id="fc-cb-${localIdx}" ${sel ? 'checked' : ''} onclick="toggleFCSelection(${localIdx})">${chip}</td>
       ${celdas}
-      <td class="col-acciones"><button class="t-acc" onclick="abrirPanelCarga(${idx})" title="Ver la ficha con todas las acciones">Abrir</button><button class="t-acc" onclick="abrirFacturaForwarder([${idx}])" title="Factura de forwarder">🧾</button><button class="t-acc" onclick="solicitarFC(${idx})" title="Solicitud de FC a ${empresaDelNegocio() === 'AXT' ? 'AXT' : 'Buzaram'}">📄</button></td>
+      <td class="col-acciones"><button class="t-acc" onclick="abrirPanelCarga(${idx})" title="Ver la ficha con todas las acciones">Abrir</button><button class="t-acc" onclick="abrirFacturaForwarder([${idx}])" title="Factura de forwarder">🚚</button><button class="t-acc" onclick="solicitarFC(${idx})" title="Solicitud de FC a ${empresaDelNegocio() === 'AXT' ? 'AXT' : 'Buzaram'}">📄</button></td>
     </tr>`;
   }).join('');
 
@@ -4851,7 +4857,7 @@ function colIndexToLetter(idx){
 function getFormValues(prefix){
   const dateFields = ['consol','etd','eta','fechaEstCobro','fechaCobro'];
   const fields = [
-    'negocio','tns','product','packing','lots','pricefob','invoiceProv','contractProv','totalProv','containers','booking','bl','shipping',
+    'negocio','tns','product','packing','lots','pol','pricefob','invoiceProv','contractProv','totalProv','containers','booking','bl','shipping',
     'vessel','consol','etd','eta','port','exporter','customer',
     'documentos','lombard','clienteEnv','telex',
     'invoiceCliente','contractCliente','priceCFR','flete','totalCFR','incoterm',
@@ -4894,6 +4900,7 @@ function formToRowData(d){
   set(COL.ETD, d.etd);
   set(COL.ETA, d.eta);
   set(COL.PORT, d.port);
+  set(COL.POL, d.pol);
   set(COL.EXPORTER, d.exporter);
   set(COL.CUSTOMER, d.customer);
   // Extra (edit only)
@@ -5011,6 +5018,7 @@ function productoSegunReglas(producto, customer, port){
 // cualquier desplegable (Packing, Naviera...), volveria a aplicar el contrato y
 // pisaria un precio que hayas corregido a mano.
 function alCambiarCampoCarga(prefix, id){
+  if(id && ['pol','shipping'].indexOf(id) >= 0){ actualizarComparadorFlete(prefix); return; }
   if(id && ['customer','product','port'].indexOf(id) < 0) return;
   const prod = valForm(prefix, 'product');
   const corregido = productoSegunReglas(prod, valForm(prefix, 'customer'), valForm(prefix, 'port'));
@@ -5098,6 +5106,8 @@ function actualizarComparadorFlete(prefix){
   fake[COL.ETD] = val('etd');
   fake[COL.CONTAINERS] = val('containers');
   fake[COL.MONTO_FLETE] = val('montoFlete');
+  fake[COL.CONSOLIDACION] = val('consol');
+  if(COL.POL >= 0) fake[COL.POL] = val('pol');
 
   if(!tarifas.length){
     caja.innerHTML = _tarifarioError
@@ -5242,7 +5252,7 @@ function recalcularTotales(prefix){
 
 function buildCargaForm(prefix, d={}, fullEdit=false){
   // Estos campos cambian el resultado de la comparacion contra el tarifario.
-  const AFECTAN_FLETE = ['montoFlete','containers','port','shipping','etd'];
+  const AFECTAN_FLETE = ['montoFlete','containers','port','shipping','etd','consol','pol'];
   // Y estos, los numeros del contrato.
   const AFECTAN_TOTALES = ['tns','priceCFR','flete','priceFCServ'];
   const extraEventos = (id) => {
@@ -5279,6 +5289,7 @@ function buildCargaForm(prefix, d={}, fullEdit=false){
     ${dateField(prefix,'etd','ETD',d.etd||'')}
     ${dateField(prefix,'eta','ETA *',d.eta||'')}
     ${smartField(prefix,'port','Port *',d.port||'','ej: Norfolk', COL.PORT)}
+    ${COL.POL >= 0 ? smartField(prefix,'pol','POL (puerto de salida)',d.pol||'','ej: BUE o CHILE', COL.POL) : ''}
     ${smartField(prefix,'exporter','Exporter',d.exporter||'','ej: Argen Peanuts', COL.EXPORTER)}`;
 
   // ── AXT → Cliente ──
@@ -5381,6 +5392,7 @@ function renderEditCarga(rowIdx){
     etd:        g('ETD'),
     eta:        g('ETA'),
     port:       g('PORT'),
+    pol:        g('POL'),
     documentos: g('DOCUMENTOS'),
     lombard:    g('LOMBARD'),
     clienteEnv: g('CLIENTE_ENV'),
@@ -8531,7 +8543,7 @@ function actualizarToolbarCargas(){
     '<button class="tb-btn"' + dis + ' onclick="bulkAvisoCliente()">📦 Aviso cliente</button>' +
     '<button class="tb-btn"' + dis + ' onclick="bulkLiberacion()">🚢 Liberación</button>' +
     '<button class="tb-btn" onclick="openBulkMailModal(window._selFCaGlobal(),\'reclamo_pago\')">✉ Cobro</button>' +
-    '<button class="tb-btn" onclick="abrirFacturaForwarder(window._selFCaGlobal())">🧾 Factura fwd</button>' +
+    '<button class="tb-btn" onclick="abrirFacturaForwarder(window._selFCaGlobal())">🚚 Factura fwd</button>' +
     (uno !== null ? '<button class="tb-btn" onclick="renderEditCarga(' + uno + ')">✎ Editar</button>' +
                     '<button class="tb-btn" onclick="abrirPanelCarga(' + uno + ')">Detalle</button>' : '') +
     btnVisto +
@@ -8573,7 +8585,7 @@ function abrirPanelCarga(idx){
       <button onclick="solicitarLiberacionViaAppScript(${idx})">🚢 Liberación</button>
       <button onclick="openMailModal(${idx},'reclamo_pago')">✉ Reclamo cobro</button>
       <button onclick="renderEditCarga(${idx})">✎ Editar carga</button>
-      <button onclick="abrirFacturaForwarder([${idx}])">🧾 Factura forwarder</button>
+      <button onclick="abrirFacturaForwarder([${idx}])">🚚 Factura forwarder</button>
       <button onclick="triggerDriveUpload(${idx})">📎 Subir docs</button>
       <button onclick="driveOpenFolder(${idx})">📁 Carpeta Drive</button>
       <button onclick="openTasksModal(${idx})">📋 Tasks</button>
