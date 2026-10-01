@@ -1991,6 +1991,27 @@ async function callAppScriptFilas(accion, sheetRows, extra){
 }
 
 // ─── GOOGLE AUTH ─────────────────────────────────────────────────────────────
+// Quien esta conectado. Si Google no devolvio el mail en el login (le pasa a algunas
+// cuentas, porque el hub no pide el permiso de "email"), se lo pregunta a Gmail, que
+// ya tiene permiso. Devuelve el mail o '' si no pudo saberlo.
+async function asegurarEmailUsuario(){
+  if(getMiEmail()) return getMiEmail();
+  if(!accessToken) return '';
+  try{
+    const r = await fetch('https://gmail.googleapis.com/gmail/v1/users/me/profile', { headers: { Authorization: 'Bearer ' + accessToken } });
+    if(r.ok){
+      const j = await r.json();
+      const e = (j.emailAddress || '').toLowerCase();
+      if(e){
+        window._userEmail = e;
+        const b = document.getElementById('auth-btn');
+        if(b && b.dataset) b.dataset.email = e;
+      }
+    }
+  }catch(e){ console.warn('email usuario:', e); }
+  return getMiEmail();
+}
+
 function initGoogleAuth(){
   if(!cfg.clientId) return;
   if(typeof google === 'undefined' || !google.accounts || !google.accounts.oauth2){
@@ -2012,7 +2033,8 @@ function initGoogleAuth(){
         // Update auth button with name for fallback detection
         const authBtn = document.getElementById('auth-btn');
         if(authBtn && info.email) authBtn.dataset.email = info.email.toLowerCase();
-      });
+        if(!window._userEmail) asegurarEmailUsuario();
+      }).catch(() => asegurarEmailUsuario());
       updateAuthUI(true);
       loadData();
     }
@@ -8045,9 +8067,30 @@ let _comListo = false;     // la pestaña existe
 let _comVer = 0;           // cambia con cada modificacion: invalida el indice
 let _comIdx = null;
 let _comPop = null;        // { r, c } celda del globo abierto
+let _comTitulo = null;     // nombre real de la pestaña (puede estar escrita "Comentarios", etc.)
+// Rango dentro de la pestaña, con el nombre tal cual esta en la planilla.
+function comRango(sufijo){
+  const t = _comTitulo || HOJA_COMENTARIOS;
+  return encodeURIComponent((/^\w+$/.test(t) ? t : "'" + t.replace(/'/g, "''") + "'") + '!' + sufijo);
+}
+// Busca la pestaña sin distinguir mayusculas. Devuelve su nombre o null si no existe.
+async function comBuscarPestana(){
+  const r = await fetch('https://sheets.googleapis.com/v4/spreadsheets/' + cfg.hubSheetId + '?fields=sheets.properties.title',
+    { headers: { Authorization: 'Bearer ' + accessToken } });
+  if(!r.ok) return undefined;                       // no se pudo saber
+  const j = await r.json();
+  const t = ((j.sheets || [])).map(x => ((x.properties || {}).title || '')).find(x => x.trim().toLowerCase() === HOJA_COMENTARIOS.toLowerCase());
+  return t || null;
+}
 
 const comNegocio = () => empresaDelNegocio() === 'AXT' ? 'AXT' : 'BUZARAM';
-const comYo = () => getMiEmail() || 'sin-sesion';
+const comYo = () => getMiEmail();
+// Antes de escribir se asegura de saber quien es: sin eso el comentario quedaria sin autor.
+async function comSeQuienSoy(){
+  if(await asegurarEmailUsuario()) return true;
+  alert('No pude saber con qué cuenta de Google estás conectado/a. Desconectate y volvé a conectarte con Google, y probá de nuevo.');
+  return false;
+}
 function comNombre(email){
   const n = (email || '').split('@')[0].replace(/[._-]+/g, ' ').trim();
   return n ? n.replace(/\b\w/g, ch => ch.toUpperCase()) : 'Alguien';
@@ -8110,7 +8153,13 @@ const comAbiertosCelda = (row, c) => comHilosCelda(row, c).filter(h => !h.resuel
 // ── La hoja ──
 async function cargarComentarios(){
   if(!accessToken || !cfg.hubSheetId) return;
-  const r = await fetch('https://sheets.googleapis.com/v4/spreadsheets/' + cfg.hubSheetId + '/values/' + encodeURIComponent(HOJA_COMENTARIOS + '!A2:K'),
+  if(!_comTitulo){
+    const t = await comBuscarPestana();
+    if(t === null){ _comListo = false; _comentarios = []; _comVer++; return; }
+    if(t === undefined) return;
+    _comTitulo = t;
+  }
+  const r = await fetch('https://sheets.googleapis.com/v4/spreadsheets/' + cfg.hubSheetId + '/values/' + comRango('A2:K'),
     { headers: { Authorization: 'Bearer ' + accessToken } });
   if(r.status === 400 || r.status === 404){ _comListo = false; _comentarios = []; _comVer++; return; }
   if(!r.ok) return;
@@ -8128,12 +8177,8 @@ async function comAsegurarHoja(){
   if(_comListo) return true;
   const hub = cfg.hubSheetId;
   if(!accessToken || !hub){ alert('Conectate con Google primero.'); return false; }
-  const h = { headers: { Authorization: 'Bearer ' + accessToken } };
-  const meta = await fetch('https://sheets.googleapis.com/v4/spreadsheets/' + hub + '?fields=sheets.properties.title', h);
-  if(meta.ok){
-    const j = await meta.json();
-    if(((j.sheets || [])).some(x => ((x.properties || {}).title || '') === HOJA_COMENTARIOS)){ _comListo = true; return true; }
-  }
+  const existente = await comBuscarPestana();
+  if(existente){ _comTitulo = existente; _comListo = true; return true; }
   const ok = await showConfirm('Crear la hoja de comentarios',
     'Los comentarios de las celdas se guardan en una pestaña nueva llamada ' + HOJA_COMENTARIOS + ' de la planilla HUB LATINUT (la misma del LOG), así los ve todo el equipo. Se crea una sola vez.',
     { icono: '💬', okLabel: 'Crear la hoja' });
@@ -8141,8 +8186,13 @@ async function comAsegurarHoja(){
   const base = 'https://sheets.googleapis.com/v4/spreadsheets/' + hub;
   const hd = { Authorization: 'Bearer ' + accessToken, 'Content-Type': 'application/json' };
   const r1 = await fetch(base + ':batchUpdate', { method: 'POST', headers: hd, body: JSON.stringify({ requests: [{ addSheet: { properties: { title: HOJA_COMENTARIOS } } }] }) });
-  if(!r1.ok){ alert('No pude crear la hoja ' + HOJA_COMENTARIOS + ' (HTTP ' + r1.status + ').'); return false; }
-  await fetch(base + '/values/' + encodeURIComponent(HOJA_COMENTARIOS + '!A1:K1') + '?valueInputOption=RAW',
+  if(!r1.ok){
+    alert('No pude crear la hoja ' + HOJA_COMENTARIOS + ' (HTTP ' + r1.status + ').\n\nCreala a mano: en la planilla HUB LATINUT agregá una pestaña llamada ' + HOJA_COMENTARIOS +
+          ' y escribí en la fila 1, de la A a la K:\n' + COM_ENCABEZADOS.join(' | ') + '\n\nDespués volvé a comentar.');
+    return false;
+  }
+  _comTitulo = HOJA_COMENTARIOS;
+  await fetch(base + '/values/' + comRango('A1:K1') + '?valueInputOption=RAW',
     { method: 'PUT', headers: hd, body: JSON.stringify({ values: [COM_ENCABEZADOS] }) });
   _comListo = true;
   return true;
@@ -8150,7 +8200,7 @@ async function comAsegurarHoja(){
 async function comAgregar(rec){
   if(!(await comAsegurarHoja())) return false;
   const fila = [rec.id, rec.fecha, rec.autor, rec.negocio, rec.fila, rec.columna, rec.ancla, rec.texto, rec.hilo, rec.estado, rec.resueltoPor || ''];
-  const r = await fetch('https://sheets.googleapis.com/v4/spreadsheets/' + cfg.hubSheetId + '/values/' + encodeURIComponent(HOJA_COMENTARIOS + '!A:K') +
+  const r = await fetch('https://sheets.googleapis.com/v4/spreadsheets/' + cfg.hubSheetId + '/values/' + comRango('A:K') +
     ':append?valueInputOption=RAW&insertDataOption=INSERT_ROWS',
     { method: 'POST', headers: { Authorization: 'Bearer ' + accessToken, 'Content-Type': 'application/json' }, body: JSON.stringify({ values: [fila] }) });
   if(!r.ok) return false;
@@ -8167,7 +8217,7 @@ async function comActualizar(rec, estado, resueltoPor){
   const hub = cfg.hubSheetId, h = { headers: { Authorization: 'Bearer ' + accessToken } };
   let rn = rec._rn;
   if(rn){
-    const chk = await fetch('https://sheets.googleapis.com/v4/spreadsheets/' + hub + '/values/' + encodeURIComponent(HOJA_COMENTARIOS + '!A' + rn), h);
+    const chk = await fetch('https://sheets.googleapis.com/v4/spreadsheets/' + hub + '/values/' + comRango('A' + rn), h);
     const v = chk.ok ? (((await chk.json()).values || [[]])[0] || [])[0] : null;
     if(v !== rec.id) rn = 0;
   }
@@ -8180,8 +8230,8 @@ async function comActualizar(rec, estado, resueltoPor){
   const r = await fetch('https://sheets.googleapis.com/v4/spreadsheets/' + hub + '/values:batchUpdate',
     { method: 'POST', headers: { Authorization: 'Bearer ' + accessToken, 'Content-Type': 'application/json' },
       body: JSON.stringify({ valueInputOption: 'RAW', data: [
-        { range: HOJA_COMENTARIOS + '!J' + rn, values: [[estado]] },
-        { range: HOJA_COMENTARIOS + '!K' + rn, values: [[resueltoPor || '']] } ] }) });
+        { range: decodeURIComponent(comRango('J' + rn)), values: [[estado]] },
+        { range: decodeURIComponent(comRango('K' + rn)), values: [[resueltoPor || '']] } ] }) });
   if(!r.ok) return false;
   rec._rn = rn; rec.estado = estado; rec.resueltoPor = resueltoPor || ''; _comVer++;
   return true;
@@ -8194,6 +8244,7 @@ function comCelda(){
   return row ? { r: _tablaSel.r, c: _tablaSel.c, row } : null;
 }
 async function comEnviarNuevo(){
+  if(!(await comSeQuienSoy())) return;
   const cel = _comPop && _tablaRows[_comPop.r] ? { row: _tablaRows[_comPop.r], c: _comPop.c } : null;
   const ta = document.getElementById('com-txt-nuevo');
   const texto = ta ? (ta.value || '').trim() : '';
@@ -8206,6 +8257,7 @@ async function comEnviarNuevo(){
   comRefrescar();
 }
 async function comResponder(idHilo){
+  if(!(await comSeQuienSoy())) return;
   const ta = document.getElementById('com-txt-' + idHilo);
   const texto = ta ? (ta.value || '').trim() : '';
   const raiz = _comentarios.find(x => x.id === idHilo);
@@ -8216,6 +8268,7 @@ async function comResponder(idHilo){
   comRefrescar();
 }
 async function comResolver(idHilo, reabrir){
+  if(!(await comSeQuienSoy())) return;
   const raiz = _comentarios.find(x => x.id === idHilo);
   if(!raiz) return;
   const ok = await comActualizar(raiz, reabrir ? 'abierto' : 'resuelto', reabrir ? '' : comYo());
@@ -8224,6 +8277,7 @@ async function comResolver(idHilo, reabrir){
   comRefrescar();
 }
 async function comEliminar(id){
+  if(!(await comSeQuienSoy())) return;
   const rec = _comentarios.find(x => x.id === id);
   if(!rec || rec.autor !== comYo()){ showToast('Solo podés eliminar tus propios comentarios', 'info'); return; }
   const esRaiz = rec.hilo === rec.id;
