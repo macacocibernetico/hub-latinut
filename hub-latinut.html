@@ -214,6 +214,7 @@ body.tabla-full-on{overflow:hidden;}
 .t-chip{font-size:11px;padding:3px 9px;border-radius:12px;background:var(--accent-light);color:var(--accent);cursor:pointer;font-family:var(--mono);}
 .t-full{padding:7px 12px;border-radius:8px;border:1px solid var(--border2);background:var(--bg2);font-size:12px;font-weight:500;color:var(--text);}
 .t-pend{display:flex;align-items:center;gap:8px;padding:8px 12px;border-radius:10px;background:var(--warn-light);border:1px solid var(--warn);font-size:12px;color:#8a4b00;}
+.t-pend-nota{display:block;font-size:11px;font-weight:500;margin-top:2px;color:#6b3d00;}
 .t-pend button{padding:7px 14px;border-radius:8px;border:1px solid var(--border2);background:var(--bg2);font-size:12px;font-weight:500;}
 .t-pend button.prim{background:var(--accent);border-color:var(--accent);color:#fff;}
 .t-scroll{overflow:auto;max-height:calc(100vh - 250px);min-height:260px;background:var(--bg2);border:1px solid var(--border2);border-radius:10px;}
@@ -3503,7 +3504,7 @@ async function createGmailDraft(to, cc, subject, body){
 }
 
 // type: 'ok' | 'err' | 'info'. Se venia pasando en varias llamadas pero se ignoraba.
-function showToast(msg, type){
+function showToast(msg, type, ms){
   let t=document.getElementById('toast');
   if(!t){
     t=document.createElement('div');
@@ -3513,13 +3514,14 @@ function showToast(msg, type){
   const colores = {
     ok:   {bg:'var(--ok)',     fg:'#0d2b14'},
     err:  {bg:'var(--danger)', fg:'#fff'},
-    info: {bg:'var(--text)',   fg:'#fff'}
+    info: {bg:'var(--text)',   fg:'#fff'},
+    warn: {bg:'#ffb347',        fg:'#3d2400'}
   };
   const c = colores[type] || colores.ok;
-  t.style.cssText = 'position:fixed;bottom:24px;right:24px;background:'+c.bg+';color:'+c.fg+';padding:10px 18px;border-radius:10px;font-weight:600;font-size:12px;z-index:999;transition:opacity .3s;max-width:min(420px,90vw);box-shadow:var(--shadow-lg);pointer-events:none;';
+  t.style.cssText = 'position:fixed;bottom:24px;right:24px;background:'+c.bg+';color:'+c.fg+';padding:10px 18px;border-radius:10px;font-weight:600;font-size:12px;z-index:999;transition:opacity .3s;max-width:min(460px,90vw);box-shadow:var(--shadow-lg);pointer-events:none;white-space:pre-line;line-height:1.45;';
   t.textContent=msg;t.style.opacity='1';
   if(t._timer) clearTimeout(t._timer);
-  t._timer = setTimeout(()=>t.style.opacity='0', type==='err'?5000:3000);
+  t._timer = setTimeout(()=>t.style.opacity='0', ms || (type==='err'?5000:3000));
 }
 
 // ─── ALERTS ──────────────────────────────────────────────────────────────────
@@ -4526,6 +4528,7 @@ function renderCargasTabla(rows){
   const chips = Object.keys(cargasColFiltros).map(c => `<span class="t-chip" onclick="quitarFiltroColumna(${c})" title="Quitar filtro">${esc(hdr[c] || colIndexToLetter(c))}: ${cargasColFiltros[c].size} valor${cargasColFiltros[c].size === 1 ? '' : 'es'} ×</span>`).join('') +
     (cargasColSort ? `<span class="t-chip" onclick="quitarOrdenColumna()" title="Quitar orden">Orden: ${esc(hdr[cargasColSort.col] || '')} ${cargasColSort.dir > 0 ? 'A→Z' : 'Z→A'} ×</span>` : '');
   const nPend = Object.values(cargasPend).reduce((a, o) => a + Object.keys(o).length, 0);
+  if(!nPend) _avisoTabla = '';
   const quedan = rows.length - visibles.length;
 
   return `<div id="tabla-cargas" class="tabla-cargas${cargasTablaFull ? ' full' : ''}">
@@ -4539,7 +4542,7 @@ function renderCargasTabla(rows){
         <button class="t-full" onclick="toggleTablaFull()">${cargasTablaFull ? '✕ Salir de pantalla completa' : '⛶ Pantalla completa'}</button>
       </div>
       <div id="tabla-pend" class="t-pend" style="${nPend ? '' : 'display:none;'}">
-        <span>✎ <b>${nPend} cambio${nPend === 1 ? '' : 's'} sin guardar</b></span><span style="flex:1;"></span>
+        <span>✎ <b>${nPend} cambio${nPend === 1 ? '' : 's'} sin guardar</b>${_avisoTabla && nPend ? '<span class="t-pend-nota">🔄 ' + esc(_avisoTabla) + '</span>' : ''}</span><span style="flex:1;"></span>
         <button onclick="descartarCambiosTabla()">Descartar</button><button class="prim" onclick="guardarCambiosTabla()">Revisar y guardar</button>
       </div>
     </div>
@@ -4685,7 +4688,10 @@ function editarCelda(r, c, inicial){
   let terminado = false;
   const fin = (guardar, mover) => {
     if(terminado) return; terminado = true;
-    if(guardar) anotarCambioTabla(row, c, inp.value);
+    if(guardar){
+      anotarCambioTabla(row, c, inp.value);
+      if(c === COL.PRODUCT) propagarProductoATabla(row, inp.value);
+    }
     renderCargas();
     if(mover) moverSel(mover[0], mover[1]); else marcarCelda(r, c);
   };
@@ -4696,6 +4702,35 @@ function editarCelda(r, c, inicial){
   };
   inp.onblur = () => fin(true);
   if(inp.focus){ inp.focus(); if(inicial === undefined && inp.select) inp.select(); }
+}
+
+// Al cambiar el Producto (por ejemplo de NOP a convencional) cambia el contrato que
+// corresponde: precio, flete, servicios y totales. Quedan como cambios pendientes, en
+// amarillo, para revisarlos antes de guardar. Las columnas con formula no se tocan.
+let _avisoTabla = '';
+function propagarProductoATabla(row, nuevoProd){
+  const nuevo = (nuevoProd || '').toString().trim();
+  if(!nuevo) return;
+  const plan = planCambioProducto(row, nuevo);
+  let tocadas = 0;
+  plan.valores.forEach(v => {
+    if(esColFormula(v.col)) return;
+    anotarCambioTabla(row, v.col, v.valor);
+    tocadas++;
+  });
+  const fila = 'Fila ' + row._sheetRow;
+  if(plan.contratos === 1){
+    const camb = plan.cambios.filter(c => c.col !== COL.PRODUCT && !esColFormula(c.col));
+    const lineas = camb.slice(0, 5).map(c => '• ' + c.nombre + ': ' + (c.antes || '(vacío)') + ' → ' + c.despues).join('\n');
+    const msg = camb.length
+      ? '🔄 ' + fila + ': el producto pasó a "' + plan.nuevo + '" y también cambiaron ' + camb.length + ' valor' + (camb.length > 1 ? 'es' : '') + ' del contrato:\n' + lineas + (camb.length > 5 ? '\n• y ' + (camb.length - 5) + ' más…' : '') + '\nQuedaron en amarillo: revisalos y guardá.'
+      : '🔄 ' + fila + ': el producto pasó a "' + plan.nuevo + '". El contrato da los mismos valores, no cambió nada más.';
+    _avisoTabla = camb.length ? fila + ': producto → ' + plan.nuevo + ' · ' + camb.length + ' valor' + (camb.length > 1 ? 'es' : '') + ' del contrato actualizados (en amarillo)' : '';
+    showToast(msg, 'warn', 10000);
+  } else if(plan.aviso){
+    _avisoTabla = fila + ': ' + plan.aviso;
+    showToast('⚠ ' + fila + ': ' + plan.aviso, 'warn', 10000);
+  }
 }
 
 function anotarCambioTabla(row, c, nuevo){
@@ -8441,10 +8476,16 @@ const CAMPOS_CONTRATO_NOP = [
 // Que cambiaria en una carga si pasa a NOP (aNOP=true) o a comun: el nombre del
 // producto y lo que dice el contrato de ese producto (precio, flete, servicios, totales).
 function planCambioNOP(row, aNOP){
+  const actual = (row[COL.PRODUCT] || '').toString().trim();
+  return planCambioProducto(row, aNOP ? productoConNOP(actual) : productoSinNOP(actual));
+}
+// Lo mismo para cualquier producto nuevo. `valores` trae todo lo que dice el contrato
+// (igual o distinto a lo actual); `cambios`, solo lo que realmente cambia.
+function planCambioProducto(row, nuevo){
   const t = c => (c >= 0 ? (row[c] || '') : '').toString().trim();
   const actual = t(COL.PRODUCT);
-  const nuevo = aNOP ? productoConNOP(actual) : productoSinNOP(actual);
-  const cambios = [];
+  nuevo = (nuevo || '').toString().trim();
+  const cambios = [], valores = [];
   if(normTar(nuevo) !== normTar(actual)) cambios.push({ col: COL.PRODUCT, nombre: 'Product', antes: actual, despues: nuevo });
   const encontrados = contratosPara(t(COL.CUSTOMER), nuevo, t(COL.PORT));
   let aviso = '';
@@ -8459,6 +8500,7 @@ function planCambioNOP(row, aNOP){
         return;
       }
       const ant = t(col);
+      valores.push({ col, nombre, valor: String(nv) });
       const igual = (!isNaN(numeroCelda(ant)) && !isNaN(numeroCelda(nv)) && Math.abs(numeroCelda(ant) - numeroCelda(nv)) < 0.005) ||
                     ant.toLowerCase() === String(nv).toLowerCase();
       if(!igual) cambios.push({ col, nombre, antes: ant, despues: String(nv) });
@@ -8468,7 +8510,7 @@ function planCambioNOP(row, aNOP){
   } else {
     aviso = 'Hay ' + encontrados.length + ' contratos de ' + t(COL.CUSTOMER) + ' para "' + nuevo + '": solo cambia el producto, elegí el contrato a mano.';
   }
-  return { actual, nuevo, cambios, aviso, contratos: encontrados.length };
+  return { actual, nuevo, cambios, valores, aviso, contratos: encontrados.length };
 }
 
 async function resolverNOP(idxs, aNOP){
