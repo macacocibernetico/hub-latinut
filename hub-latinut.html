@@ -270,6 +270,13 @@ body.tabla-full-on{overflow:hidden;}
 .t-grid td.editando{padding:0;overflow:visible;}
 .t-grid .t-edit{width:100%;min-width:140px;height:26px;border:2px solid #1a73e8;padding:0 6px;font-size:12px;font-family:var(--font);outline:none;box-shadow:0 2px 8px rgba(0,0,0,.2);}
 .t-grid .fija{position:sticky;z-index:2;}
+.t-grid th{position:relative;}
+.t-grid thead th.fija{position:sticky;}
+.th-res{position:absolute;top:0;right:-3px;width:8px;height:100%;cursor:col-resize;z-index:7;}
+.th-res:hover,body.t-redim .th-res{background:linear-gradient(to right,transparent 3px,#1a73e8 3px,#1a73e8 5px,transparent 5px);}
+body.t-redim{cursor:col-resize;user-select:none;}
+.t-fijas{display:inline-flex;align-items:center;gap:6px;font-size:12px;color:var(--text2);}
+.t-fijas select{font-size:12px;padding:3px 6px;border-radius:7px;border:1px solid var(--border2);background:var(--bg2);color:var(--text);}
 .t-grid thead th.fija{z-index:5;}
 .t-grid .fija-ult{box-shadow:3px 0 4px -2px rgba(0,0,0,.15);}
 .t-grid .t-num{position:sticky;left:0;z-index:2;width:46px;min-width:46px;max-width:46px;text-align:center;color:var(--text3);background:#f1f3f4!important;font-family:var(--mono);font-size:11px;}
@@ -4386,7 +4393,69 @@ let _tablaCols = [];           // indices de columna visibles, en orden
 let _formulaCols = null;       // Set de columnas con formula (de la ultima fila)
 let _formulaColsClave = '';
 let _filtroAbierto = false;    // el menu de filtro de una columna esta abierto
-const TABLA_FIJAS = 3;         // columnas de la hoja congeladas a la izquierda (A-C)
+// Columnas de la hoja que quedan quietas a la izquierda al desplazarse. Por defecto ninguna:
+// se elige arriba de la tabla y el navegador se acuerda. (# y el tilde siempre quedan fijos.)
+function cargarFijas(){
+  try{ const v = parseInt(localStorage.getItem('hub_tabla_fijas')); return isNaN(v) ? 0 : Math.max(0, Math.min(5, v)); }
+  catch(e){ return 0; }
+}
+let TABLA_FIJAS = cargarFijas();
+function cambiarFijas(n){
+  TABLA_FIJAS = Math.max(0, Math.min(5, n || 0));
+  try{ localStorage.setItem('hub_tabla_fijas', String(TABLA_FIJAS)); }catch(e){}
+  renderCargas();
+}
+
+// Anchos que pone el usuario arrastrando el borde del encabezado. Se guardan por negocio
+// y por NOMBRE de columna, asi sobreviven si se mueven las columnas de la planilla.
+function claveAncho(c){ return normalizarHdr((encabezadosCargas()[c] || '')); }
+function anchosUsuario(){
+  try{ return JSON.parse(localStorage.getItem('hub_tabla_anchos_' + negocioActivo) || '{}') || {}; }
+  catch(e){ return {}; }
+}
+function guardarAnchoUsuario(c, px){
+  const a = anchosUsuario(), k = claveAncho(c);
+  if(px === null || px === undefined) delete a[k]; else a[k] = px;
+  try{ localStorage.setItem('hub_tabla_anchos_' + negocioActivo, JSON.stringify(a)); }catch(e){}
+}
+let _resize = null;
+function iniciarResize(c, ev){
+  if(ev){ ev.preventDefault && ev.preventDefault(); ev.stopPropagation && ev.stopPropagation(); }
+  const th = document.querySelector('#t-grid th[data-c="' + c + '"]');
+  const w0 = th && th.getBoundingClientRect ? th.getBoundingClientRect().width : 120;
+  _resize = { c, x0: ev ? ev.clientX : 0, w0, w: w0 };
+  if(document.body.classList) document.body.classList.add('t-redim');
+}
+function aplicarAnchoVivo(c, w){
+  let st = document.getElementById('t-ancho-vivo');
+  if(!st || !st.parentNode){ st = document.createElement('style'); st.id = 't-ancho-vivo'; document.head.appendChild(st); }
+  st.textContent = '#t-grid [data-c="' + c + '"]{min-width:' + w + 'px!important;max-width:' + w + 'px!important;width:' + w + 'px!important}';
+}
+function terminarResize(){
+  if(!_resize) return;
+  const r = _resize; _resize = null;
+  if(document.body.classList) document.body.classList.remove('t-redim');
+  const st = document.getElementById('t-ancho-vivo'); if(st) st.textContent = '';
+  if(r.w !== r.w0) guardarAnchoUsuario(r.c, r.w);
+  renderCargas();
+}
+function resetAncho(c, ev){
+  if(ev && ev.stopPropagation) ev.stopPropagation();
+  guardarAnchoUsuario(c, null);
+  renderCargas();
+}
+function resetAnchos(){
+  try{ localStorage.removeItem('hub_tabla_anchos_' + negocioActivo); }catch(e){}
+  renderCargas();
+}
+if(typeof document.addEventListener === 'function'){
+  document.addEventListener('mousemove', e => {
+    if(!_resize) return;
+    _resize.w = Math.max(48, Math.min(700, Math.round(_resize.w0 + e.clientX - _resize.x0)));
+    aplicarAnchoVivo(_resize.c, _resize.w);
+  });
+  document.addEventListener('mouseup', terminarResize);
+}
 
 // Encabezados reales de la hoja, guardados por mapearColumnasPorNombre.
 function encabezadosCargas(){ return window._hdrCargas || []; }
@@ -4496,7 +4565,7 @@ function anchoColumna(c, rows){
   const h = (encabezadosCargas()[c] || '').length;
   let m = h;
   for(let i = 0; i < rows.length && i < 60; i++){ const l = valorCelda(rows[i], c).length; if(l > m) m = l; }
-  return Math.max(70, Math.min(260, Math.round(m * 7.2) + 26));
+  return Math.max(64, Math.min(170, Math.round(m * 6.4) + 22));
 }
 
 function renderCargasTabla(rows){
@@ -4523,7 +4592,8 @@ function renderCargasTabla(rows){
   if(_formulaCols === null) detectarFormulasCargas();
   const nc = getNegocioConfig();
   const esc = s => String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/"/g,'&quot;');
-  const anchos = {}; _tablaCols.forEach(c => { anchos[c] = anchoColumna(c, visibles); });
+  const anchosU = anchosUsuario();
+  const anchos = {}; _tablaCols.forEach(c => { anchos[c] = anchosU[claveAncho(c)] || anchoColumna(c, visibles); });
   // Posicion "left" de las columnas congeladas: numero de fila (46) + tilde (58).
   let izq = 104; const left = {};
   _tablaCols.slice(0, TABLA_FIJAS).forEach(c => { left[c] = izq; izq += anchos[c]; });
@@ -4534,7 +4604,7 @@ function renderCargasTabla(rows){
     const fija = k < TABLA_FIJAS;
     return `<th data-c="${c}" class="${fija ? 'fija' : ''}${k === TABLA_FIJAS - 1 ? ' fija-ult' : ''}${esColFormula(c) ? ' formula' : ''}" style="min-width:${anchos[c]}px;max-width:${anchos[c]}px;${fija ? 'left:' + left[c] + 'px;' : ''}" title="${esc(hdr[c])} · columna ${colIndexToLetter(c)}${esColFormula(c) ? ' · tiene fórmula, no se edita desde el hub' : ''}">
       <div class="th-in"><span class="th-letra">${colIndexToLetter(c)}</span><span class="th-nom">${esc(hdr[c])}${ord}</span>
-      <button class="th-fil${fil ? ' on' : ''}" onclick="abrirFiltroColumna(${c},event)" aria-label="Filtrar ${esc(hdr[c])}">${fil ? '⏷' : '▾'}</button></div></th>`;
+      <button class="th-fil${fil ? ' on' : ''}" onclick="abrirFiltroColumna(${c},event)" aria-label="Filtrar ${esc(hdr[c])}">${fil ? '⏷' : '▾'}</button></div><span class="th-res" onmousedown="iniciarResize(${c},event)" ondblclick="resetAncho(${c},event)" title="Arrastrá para cambiar el ancho · doble clic para volver al automático"></span></th>`;
   }).join('');
 
   const cuerpo = visibles.map((row, r) => {
@@ -4575,6 +4645,9 @@ function renderCargasTabla(rows){
         ${chips}
         <span style="flex:1;"></span>
         <span class="t-ayuda">Doble clic o Enter para editar · flechas para moverte · Esc cancela</span>
+        <label class="t-fijas" title="Columnas que quedan quietas a la izquierda al desplazarte">Columnas fijas
+          <select onchange="cambiarFijas(parseInt(this.value))">${[0,1,2,3].map(n => '<option value="' + n + '"' + (TABLA_FIJAS === n ? ' selected' : '') + '>' + (n === 0 ? 'Ninguna' : n) + '</option>').join('')}</select></label>
+        ${Object.keys(anchosU).length ? '<button class="t-full" onclick="resetAnchos()" title="Vuelve todos los anchos al automático">↔ Anchos automáticos</button>' : ''}
         <button class="t-full" onclick="toggleTablaFull()">${cargasTablaFull ? '✕ Salir de pantalla completa' : '⛶ Pantalla completa'}</button>
       </div>
       <div id="tabla-pend" class="t-pend" style="${nPend ? '' : 'display:none;'}">
