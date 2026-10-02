@@ -2033,9 +2033,13 @@ function initGoogleAuth(){
   tokenClient = google.accounts.oauth2.initTokenClient({
     client_id: cfg.clientId,
     scope: SCOPES,
+    error_callback: (err) => { console.warn('Google auth:', err); finRenovacion(false); },
     callback: (resp) => {
-      if(resp.error) { console.error(resp); return; }
+      if(resp.error) { console.error(resp); finRenovacion(false); return; }
       accessToken = resp.access_token;
+      _tokenExp = Date.now() + Math.max(60, (parseInt(resp.expires_in) || 3600) - 120) * 1000;
+      // Renovacion silenciosa del token: misma persona, no hace falta recargar nada.
+      if(_renovRes){ updateAuthUI(true); finRenovacion(true); return; }
       // Get user email to determine CC logic
       fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
         headers: {'Authorization': `Bearer ${accessToken}`}
@@ -2053,6 +2057,58 @@ function initGoogleAuth(){
   });
 }
 
+// El token de Google dura ~1 hora. Si dejaste el hub abierto, seguia diciendo "Conectado" con un
+// token muerto y todo fallaba hasta recargar. Ahora el hub lo renueva solo (antes de usarlo si ya
+// venció, o al recibir un 401) y, si Google no deja renovar sin que toques nada, avisa y pasa a
+// "Sin autenticar" para que se pueda reconectar con un clic.
+let _tokenExp = 0, _renovRes = null, _renovTimer = null, _renovProm = null;
+function tokenVencido(){ return !!accessToken && _tokenExp > 0 && Date.now() > _tokenExp; }
+function finRenovacion(ok){
+  if(_renovTimer){ clearTimeout(_renovTimer); _renovTimer = null; }
+  const r = _renovRes; _renovRes = null; _renovProm = null;
+  if(r) r(!!ok);
+}
+function renovarToken(){
+  if(_renovProm) return _renovProm;
+  if(!tokenClient) return Promise.resolve(false);
+  _renovProm = new Promise(res => {
+    _renovRes = res;
+    _renovTimer = setTimeout(() => finRenovacion(false), 20000);
+    try{ tokenClient.requestAccessToken({ prompt: '' }); }catch(e){ finRenovacion(false); }
+  });
+  return _renovProm;
+}
+function sesionVencida(){
+  accessToken = null; _tokenExp = 0;
+  updateAuthUI(false);
+  showToast('Se venció la sesión de Google. Tocá "Conectar con Google" para seguir (no hace falta recargar).', 'warn', 9000);
+}
+let _fetchReal = (typeof globalThis.fetch === 'function') ? globalThis.fetch.bind(globalThis) : null;
+async function fetchConToken(url, opts){
+  const u = typeof url === 'string' ? url : ((url && url.url) || '');
+  const h = opts && opts.headers;
+  const usaToken = !!accessToken && h && typeof h.Authorization === 'string' && /^Bearer /.test(h.Authorization) && /googleapis\.com/.test(u);
+  if(!usaToken) return _fetchReal(url, opts);
+  const con = () => _fetchReal(url, Object.assign({}, opts, { headers: Object.assign({}, h, { Authorization: 'Bearer ' + accessToken }) }));
+  if(tokenVencido()){
+    if(!(await renovarToken())){ sesionVencida(); return _fetchReal(url, opts); }
+  }
+  let r = await con();
+  if(r && r.status === 401){
+    if(await renovarToken()) r = await con(); else sesionVencida();
+  }
+  return r;
+}
+globalThis.fetch = fetchConToken;
+// Al volver a la pestaña tras un rato, si el token ya venció se renueva (o se avisa) enseguida.
+if(typeof document.addEventListener === 'function'){
+  document.addEventListener('visibilitychange', async () => {
+    if(document.visibilityState === 'visible' && tokenVencido()){
+      if(!(await renovarToken())) sesionVencida();
+    }
+  });
+}
+
 async function handleAuth(){
   if(accessToken){
     const ok0 = await showConfirm('Desconectar de Google',
@@ -2060,7 +2116,7 @@ async function handleAuth(){
       { icono:'🔌', okLabel:'Desconectar', peligro:true });
     if(!ok0) return;
     google.accounts.oauth2.revoke(accessToken, ()=>{
-      accessToken=null;
+      accessToken=null; _tokenExp = 0;
       updateAuthUI(false);
     });
   } else {
