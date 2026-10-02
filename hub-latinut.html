@@ -2194,9 +2194,9 @@ async function loadData(){
     document.getElementById('last-sync').textContent='Sync '+new Date().toLocaleTimeString('es-AR',{hour:'2-digit',minute:'2-digit'});
     _avisoColsCerrado = false;
     updateBadges();
-    // En Nueva Carga no se redibuja: se borraria lo que estas escribiendo.
-    if(currentView !== 'nueva_carga') renderView(currentView);
-    cargarFondos().then(() => { if(currentView === 'cargas') renderCargas(); }).catch(e => console.warn('fondos:', e));
+    // Con un formulario abierto (Nueva Carga o Editar Carga) no se redibuja: se borraria lo que estas escribiendo.
+    if(!formularioAbierto()) renderView(currentView);
+    cargarFondos().then(() => { if(currentView === 'cargas' && !formularioAbierto()) renderCargas(); }).catch(e => console.warn('fondos:', e));
     cargarComentarios().then(() => { if(currentView === 'cargas' && cargasVista === 'tabla') comPintar(); }).catch(e => console.warn('comentarios:', e));
   }catch(e){setSheetStatus('err','Error de conexión');console.error(e);}
 }
@@ -3822,7 +3822,7 @@ function showView(view){
   if(view === 'nueva_carga' && currentView !== 'nueva_carga') cargasGuardadasSesion = [];
   saveLastView(view);
   updateBottomNav(view);
-  currentView=view;
+  currentView=view; _editCargaAbierta = false;
   document.querySelectorAll('.nav-item').forEach(el=>el.classList.remove('active'));
   const titles=window._viewTitles||{alertas:'Alertas',cargas:'Cargas AXT',nueva_carga:'Nueva Carga',cobranza:'Cobranza',cashflow:'Calendario',liberaciones:'Liberaciones',pagares:'Pagarés',contratos:'Contratos abiertos',tarifario:'Tarifario de fletes',log:'Log de acciones',config:'Configuración'};
   document.getElementById('view-title').textContent=titles[view]||view;
@@ -4066,7 +4066,12 @@ function setCargasFilter(key, value){
   renderCargas();
 }
 
+// Editar una carga dibuja el formulario dentro de la vista "Cargas". Mientras esta abierto,
+// las recargas automaticas (al reconectar con Google, al leer colores) no lo deben pisar.
+let _editCargaAbierta = false;
+function formularioAbierto(){ return currentView === 'nueva_carga' || (currentView === 'cargas' && _editCargaAbierta); }
 function renderCargas(showAll, sort){
+  _editCargaAbierta = false;
   if(showAll !== undefined) cargasShowAll = showAll;
   if(sort !== undefined) cargasSort = sort;
 
@@ -5768,6 +5773,7 @@ function renderEditCarga(rowIdx){
     ${buildCargaForm('ec', d, true)}
     ${barraFormulario('ec', 'Guardar cambios', 'submitEditCarga(' + rowIdx + ')')}
   </div>`;
+  _editCargaAbierta = true;
   actualizarFaltantes('ec');
   actualizarComparadorFlete('ec');
 }
