@@ -4777,12 +4777,27 @@ function anchoColumna(c, rows){
   return Math.max(64, Math.min(170, Math.round(m * 6.4) + 22));
 }
 
+// Orden base de la tabla: por ETA (la mas proxima arriba, la mas lejana abajo) o tal cual la planilla.
+// Por defecto ETA: en la planilla las filas quedan mezcladas porque se cargan en el orden en que llegan.
+function ordenTablaActual(){
+  try{ return localStorage.getItem('hub_tabla_orden') === 'planilla' ? 'planilla' : 'eta'; }catch(e){ return 'eta'; }
+}
+function cambiarOrdenTabla(v){
+  try{ localStorage.setItem('hub_tabla_orden', v === 'planilla' ? 'planilla' : 'eta'); }catch(e){}
+  renderCargas();
+}
+// Sin ETA o con ETA ilegible van al final; a igual fecha, queda el orden de la planilla.
+function ordenarPorETA(rows){
+  const t = r => { const d = parseDate(((r[COL.ETA] || '') + '').trim()); return d ? d.getTime() : Infinity; };
+  return rows.map((r, i) => ({ r, i, t: t(r) })).sort((a, b) => (a.t === b.t ? a.i - b.i : (a.t < b.t ? -1 : 1))).map(x => x.r);
+}
 function renderCargasTabla(rows){
   const hdr = encabezadosCargas();
   // Replica de la hoja: mismo orden que la planilla (el selector de orden de
   // arriba es de la vista por embarque). Se muestran las ULTIMAS filas, como
   // cuando se abre Sheets, y "mostrar mas" trae las anteriores.
   rows = rows.slice().sort((a, b) => (a._sheetRow || 0) - (b._sheetRow || 0));
+  if(ordenTablaActual() === 'eta') rows = ordenarPorETA(rows);
   window._tablaBaseRows = rows;
   rows = aplicarFiltrosColumna(rows);
   const visibles = cargasColSort ? rows.slice(0, cargasTablaLimite) : rows.slice(Math.max(0, rows.length - cargasTablaLimite));
@@ -4854,6 +4869,8 @@ function renderCargasTabla(rows){
         ${chips}
         <span style="flex:1;"></span>
         <span class="t-ayuda">Doble clic o Enter para editar · flechas para moverte · Esc cancela</span>
+        <label class="t-fijas" title="Orden de las filas de la tabla">Orden
+          <select onchange="cambiarOrdenTabla(this.value)"><option value="eta"${ordenTablaActual() === 'eta' ? ' selected' : ''}>Por ETA (próxima arriba)</option><option value="planilla"${ordenTablaActual() === 'planilla' ? ' selected' : ''}>Como la planilla</option></select></label>
         <label class="t-fijas" title="Columnas que quedan quietas a la izquierda al desplazarte">Columnas fijas
           <select onchange="cambiarFijas(parseInt(this.value))">${[0,1,2,3].map(n => '<option value="' + n + '"' + (TABLA_FIJAS === n ? ' selected' : '') + '>' + (n === 0 ? 'Ninguna' : n) + '</option>').join('')}</select></label>
         ${Object.keys(anchosU).length ? '<button class="t-full" onclick="resetAnchos()" title="Vuelve todos los anchos al automático">↔ Anchos automáticos</button>' : ''}
