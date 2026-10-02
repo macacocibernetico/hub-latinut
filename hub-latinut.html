@@ -252,6 +252,12 @@ body.tabla-full-on{overflow:hidden;}
 .t-nop-acc button:first-of-type{background:#d9c9f7;border-color:#b79ee8;color:#3b1f78;font-weight:600;}
 .t-stats .t-stats-h{font-family:var(--font);color:var(--text3);}
 .t-grid td.cur{outline:2px solid #1a73e8;outline-offset:-2px;}
+.t-grid tbody tr td.t-pint{background:var(--pin);color:#1f2933;}
+.t-grid tbody tr td.rango.t-pint{background:var(--pin)!important;box-shadow:inset 0 0 0 100px rgba(26,115,232,.16);}
+.t-pal{display:inline-flex;align-items:center;gap:5px;}
+.t-pal .t-sw{width:18px;height:18px;border-radius:50%;border:1px solid rgba(0,0,0,.25);padding:0;cursor:pointer;}
+.t-pal .t-sw:hover{transform:scale(1.15);}
+.t-pal .t-sw-x{height:22px;padding:0 8px;border-radius:7px;border:1px solid var(--border2);background:var(--bg2);font-size:11px;font-family:var(--font);color:var(--text);cursor:pointer;}
 .t-grid td.chg,.t-grid tbody tr td.chg{background:#fff2cc;color:#7a4b00;font-weight:500;}
 .t-grid tbody tr td.t-duda{background:#d9c9f7;color:#3b1f78;font-weight:700;}
 .lt-wrap{overflow:auto;border:1px solid var(--border);border-radius:10px;margin-bottom:12px;}
@@ -424,6 +430,18 @@ tr:hover .col-acciones{background:var(--bg3);}
 .page-btn:disabled{opacity:.35;cursor:not-allowed;}
 
 /* CONFIRM DIALOG */
+.ayuda-btn{width:30px;height:30px;padding:0;justify-content:center;border-radius:50%;font-weight:700;font-size:14px;}
+.ayuda-overlay{position:fixed;inset:0;background:rgba(0,0,0,.35);z-index:190;display:flex;align-items:center;justify-content:center;backdrop-filter:blur(3px);}
+.ayuda-overlay.hidden{display:none;}
+.ayuda-box{background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius-xl);width:760px;max-width:94vw;max-height:88vh;display:flex;flex-direction:column;box-shadow:0 20px 60px rgba(0,0,0,.2);}
+.ayuda-head{display:flex;justify-content:space-between;align-items:center;padding:14px 18px;border-bottom:1px solid var(--border);font-size:15px;}
+.ayuda-body{overflow:auto;padding:6px 18px 16px;}
+.ayuda-body h4{margin:16px 0 6px;font-size:12px;text-transform:uppercase;letter-spacing:.06em;color:var(--text3);}
+.ayuda-tab{width:100%;border-collapse:collapse;font-size:13px;}
+.ayuda-tab td{padding:6px 8px;border-top:1px solid var(--border);vertical-align:top;}
+.ayuda-tab td:first-child{white-space:nowrap;width:1%;padding-right:18px;}
+.ayuda-tab kbd{display:inline-block;padding:1px 7px;border:1px solid var(--border2);border-bottom-width:2px;border-radius:6px;background:var(--bg3);font-family:var(--font);font-size:12px;margin-right:3px;}
+.ayuda-sw{display:inline-block;width:14px;height:14px;border-radius:4px;border:1px solid rgba(0,0,0,.25);vertical-align:-2px;margin-right:6px;}
 .confirm-overlay{position:fixed;inset:0;background:rgba(0,0,0,.35);z-index:200;display:flex;align-items:center;justify-content:center;backdrop-filter:blur(4px);}
 .confirm-overlay.hidden{display:none;}
 .confirm-box{background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius-xl);padding:28px 32px;width:340px;max-width:90vw;box-shadow:0 20px 60px rgba(0,0,0,.15);text-align:center;}
@@ -768,6 +786,7 @@ tr:hover .col-acciones{background:var(--bg3);}
         </div>
         <div class="search-results hidden" id="search-results"></div>
       </div>
+      <button class="btn ayuda-btn" id="ayuda-btn" onclick="abrirAyuda()" title="Atajos y cosas que se pueden hacer" aria-label="Ayuda: atajos y trucos">?</button>
       <button class="btn primary" onclick="loadData()">↻ Sincronizar</button>
     </div>
   </div>
@@ -2196,7 +2215,10 @@ async function loadData(){
     updateBadges();
     // Con un formulario abierto (Nueva Carga o Editar Carga) no se redibuja: se borraria lo que estas escribiendo.
     if(!formularioAbierto()) renderView(currentView);
-    cargarFondos().then(() => { if(currentView === 'cargas' && !formularioAbierto()) renderCargas(); }).catch(e => console.warn('fondos:', e));
+    Promise.all([
+      cargarFondos().catch(e => console.warn('fondos:', e)),
+      cargarColoresUsuario().catch(e => console.warn('colores:', e))
+    ]).then(() => { if(currentView === 'cargas' && !formularioAbierto()) renderCargas(); });
     cargarComentarios().then(() => { if(currentView === 'cargas' && cargasVista === 'tabla') comPintar(); }).catch(e => console.warn('comentarios:', e));
   }catch(e){setSheetStatus('err','Error de conexión');console.error(e);}
 }
@@ -3337,6 +3359,116 @@ async function cargarFondos(){
   _fondos = nuevo;
   _duda = dudas;
 }
+// ─── COLORES PARA MARCAR CELDAS ──────────────────────────────────────────────
+// El usuario pinta las celdas que quiera de la tabla con una paleta chica; el color se guarda
+// en la planilla (lo ve cualquiera que la abra) y se lee de vuelta. Naranja y violeta NO estan
+// en la paleta porque ya significan "enviado" y "producto en duda": esas celdas no se pisan.
+const PALETA_COLORES = [
+  { id:'amarillo', nombre:'amarillo',   rgb:{red:1,    green:0.95, blue:0.60} },
+  { id:'verde',    nombre:'verde',      rgb:{red:0.72, green:0.88, blue:0.72} },
+  { id:'celeste',  nombre:'celeste',    rgb:{red:0.70, green:0.84, blue:0.98} },
+  { id:'rosa',     nombre:'rosa',       rgb:{red:0.98, green:0.76, blue:0.86} },
+  { id:'gris',     nombre:'gris',       rgb:{red:0.82, green:0.82, blue:0.82} },
+  { id:'rojo',     nombre:'rojo suave', rgb:{red:0.96, green:0.62, blue:0.62} }
+];
+function hexColor(c){ return '#' + ['red','green','blue'].map(k => Math.round((c[k] || 0) * 255).toString(16).padStart(2, '0')).join(''); }
+function colorPaleta(id){ return PALETA_COLORES.find(p => p.id === id) || null; }
+function idColorDeFondo(bg){
+  if(!bg) return null;
+  const p = PALETA_COLORES.find(p => ['red','green','blue'].every(k => Math.abs((bg[k] || 0) - p.rgb[k]) < 0.03));
+  return p ? p.id : null;
+}
+let _colores = {};   // { 'fila|columna': id de color de la paleta }
+const claveColor = (fila, col) => fila + '|' + col;
+function colorDeCelda(row, col){ return row ? (_colores[claveColor(row._sheetRow, col)] || null) : null; }
+// Lee toda la tabla de una vez (solo el color propio de cada celda, que es liviano).
+async function cargarColoresUsuario(){
+  if(!accessToken) return;
+  const nc = getNegocioConfig();
+  const url = 'https://sheets.googleapis.com/v4/spreadsheets/' + (nc.sheetId || cfg.sheetId) + '?includeGridData=true&ranges=' +
+    encodeURIComponent(nc.sheetName + '!A4:BT') + '&fields=' + encodeURIComponent('sheets.data(startRow,rowData.values.userEnteredFormat.backgroundColor)');
+  const r = await fetch(url, { headers:{ Authorization:'Bearer ' + accessToken } });
+  if(!r || !r.ok) return;
+  const j = await r.json();
+  const bloque = (((j.sheets || [])[0] || {}).data || [])[0] || {};
+  const nuevo = {};
+  (bloque.rowData || []).forEach((rd, i) => {
+    (rd.values || []).forEach((cel, col) => {
+      const id = idColorDeFondo(((cel || {}).userEnteredFormat || {}).backgroundColor);
+      if(id) nuevo[claveColor((bloque.startRow || 3) + i + 1, col)] = id;
+    });
+  });
+  _colores = nuevo;
+}
+function aplicarColorTd(td, id){
+  if(!td) return;
+  const p = colorPaleta(id);
+  if(p){ td.classList.add('t-pint'); td.style.setProperty('--pin', hexColor(p.rgb)); }
+  else { td.classList.remove('t-pint'); td.style.removeProperty('--pin'); }
+}
+// Pinta (id) o saca el color (id = null) de las celdas elegidas en la tabla.
+async function aplicarColor(id){
+  const g = rangoTabla();
+  if(!g){ showToast('Elegí primero las celdas que querés pintar', 'info'); return; }
+  if(!accessToken){ alert('Conectate con Google primero para escribir en la planilla.'); return; }
+  const pal = id ? colorPaleta(id) : null;
+  if(id && !pal) return;
+  const celdas = []; let respetadas = 0;
+  for(let r = g.r1; r <= g.r2; r++) for(let k = g.k1; k <= g.k2; k++){
+    const row = _tablaRows[r], c = _tablaCols[k];
+    if(!row) continue;
+    if(celdaMarcada(row, c) || (c === COL.PRODUCT && enDudaNOP(row))){ respetadas++; continue; }
+    if(!pal && !colorDeCelda(row, c)) continue;   // sacar color: solo donde hay uno
+    celdas.push({ r, c, fila: row._sheetRow });
+  }
+  if(!celdas.length){
+    showToast(respetadas ? 'Esas celdas tienen una marca naranja o violeta del hub y no se pisan' : 'No hay nada para cambiar en esas celdas', 'info');
+    return;
+  }
+  const n = celdas.length;
+  const cuantas = n === 1 ? '1 celda' : n + ' celdas';
+  const ok = await showConfirm(pal ? 'Pintar de ' + pal.nombre : 'Sacar el color',
+    (pal ? 'Se pintan ' : 'Se saca el color de ') + cuantas + ' de la planilla (solo el color, no cambia ningún dato).' +
+      (respetadas ? ' Hay ' + respetadas + ' con marca naranja o violeta del hub que no se tocan.' : ''),
+    { icono: '🎨', okLabel: pal ? 'Pintar' : 'Sacar color' });
+  if(!ok) return;
+  const gid = await getGidHoja();
+  if(gid === null || gid === undefined){ showToast('No pude acceder a la hoja para pintar. Probá de nuevo.', 'err'); return; }
+  // Una orden por tramo de columnas seguidas de cada fila.
+  const porFila = {};
+  celdas.forEach(x => { (porFila[x.fila] = porFila[x.fila] || []).push(x.c); });
+  const requests = [];
+  Object.keys(porFila).forEach(f => {
+    const cs = porFila[f].sort((a, b) => a - b);
+    let ini = cs[0], prev = cs[0];
+    const cerrar = fin => requests.push({ repeatCell: {
+      range: { sheetId: gid, startRowIndex: f - 1, endRowIndex: f, startColumnIndex: ini, endColumnIndex: fin + 1 },
+      cell: { userEnteredFormat: pal ? { backgroundColor: pal.rgb } : {} },
+      fields: 'userEnteredFormat.backgroundColor' } });
+    for(let i = 1; i < cs.length; i++){ if(cs[i] !== prev + 1){ cerrar(prev); ini = cs[i]; } prev = cs[i]; }
+    cerrar(prev);
+  });
+  const nc = getNegocioConfig();
+  try{
+    const resp = await fetch('https://sheets.googleapis.com/v4/spreadsheets/' + (nc.sheetId || cfg.sheetId) + ':batchUpdate', {
+      method: 'POST',
+      headers: { 'Authorization': 'Bearer ' + accessToken, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ requests })
+    });
+    if(!resp.ok){ showToast('No se pudo pintar (error ' + resp.status + '). No se cambió nada.', 'err'); return; }
+  }catch(e){ showToast('No se pudo pintar: ' + e.message, 'err'); return; }
+  celdas.forEach(x => {
+    if(pal) _colores[claveColor(x.fila, x.c)] = pal.id; else delete _colores[claveColor(x.fila, x.c)];
+    aplicarColorTd(celdaTd(x.r, x.c), pal ? pal.id : null);
+  });
+  showToast(pal ? '🎨 ' + cuantas + ' en ' + pal.nombre : '✓ Color quitado de ' + cuantas, 'ok');
+}
+function paletaHTML(){
+  return '<span class="t-pal"><span class="t-stats-h">Pintar:</span>' +
+    PALETA_COLORES.map(p => '<button class="t-sw" style="background:' + hexColor(p.rgb) + '" title="Pintar de ' + p.nombre + ' en la planilla" aria-label="Pintar de ' + p.nombre + '" onclick="aplicarColor(\'' + p.id + '\')"></button>').join('') +
+    '<button class="t-sw-x" title="Sacar el color de las celdas elegidas" onclick="aplicarColor(null)">✕ Sin color</button></span>';
+}
+
 function celdaMarcada(row, col){
   const f = _fondos[row._sheetRow];
   return !!(f && f.has(col));
@@ -4682,7 +4814,7 @@ function renderCargasTabla(rows){
       // carga viaja con BL Original (no lleva pagare). No se escribe nada.
       if(!v && c === COL.PAGARE_ENVIADO && !nc.sinPagares && motivoSinPagare(row) === 'BL Original'){ extra = '<span class="t-nota">N/A · BL Orig</span>'; }
       const fija = kk < TABLA_FIJAS;
-      return `<td data-r="${r}" data-c="${c}" class="${fija ? 'fija' : ''}${kk === TABLA_FIJAS - 1 ? ' fija-ult' : ''}${p ? ' chg' : ''}${esColFormula(c) ? ' formula' : ''}${celdaMarcada(row, c) ? ' t-marca' : ''}${(c === COL.PRODUCT && enDudaNOP(row)) ? ' t-duda' : ''}${comAbiertosCelda(row, c).length ? ' t-com' : ''}" style="${fija ? 'left:' + left[c] + 'px;' : ''}max-width:${anchos[c]}px;" title="${esc(v)}${p ? ' · antes: ' + esc(p.antes || '(vacío)') : ''}">${esc(v)}${extra}</td>`;
+      return `<td data-r="${r}" data-c="${c}" class="${fija ? 'fija' : ''}${kk === TABLA_FIJAS - 1 ? ' fija-ult' : ''}${p ? ' chg' : ''}${esColFormula(c) ? ' formula' : ''}${celdaMarcada(row, c) ? ' t-marca' : ''}${(c === COL.PRODUCT && enDudaNOP(row)) ? ' t-duda' : ''}${comAbiertosCelda(row, c).length ? ' t-com' : ''}${colorDeCelda(row, c) ? ' t-pint' : ''}" style="${colorDeCelda(row, c) ? '--pin:' + hexColor(colorPaleta(colorDeCelda(row, c)).rgb) + ';' : ''}${fija ? 'left:' + left[c] + 'px;' : ''}max-width:${anchos[c]}px;" title="${esc(v)}${p ? ' · antes: ' + esc(p.antes || '(vacío)') : ''}">${esc(v)}${extra}</td>`;
     }).join('');
     return `<tr id="fc-tr-${localIdx}" class="${sel ? 'sel' : ''}${filaVista(row) ? ' vista' : ''}">
       <td class="t-num" title="Clic para marcar / desmarcar la fila como vista" onclick="toggleFilaVista(${localIdx},event)">${row._sheetRow || ''}</td>
@@ -4829,7 +4961,7 @@ function pintarRango(){
   const celCom = comCelda();
   const nCom = celCom ? comAbiertosCelda(celCom.row, celCom.c).length : 0;
   const botonCom = celCom ? '<button class="t-com-btn" onclick="abrirComentarios()" title="Comentarios de la celda (Ctrl + Alt + M)">💬 ' + (nCom ? 'Comentarios (' + nCom + ')' : 'Comentar') + '</button>' : '';
-  const botones = botonCom + (filasP.length
+  const botones = paletaHTML() + botonCom + (filasP.length
     ? '<span class="t-nop-acc"><span class="t-stats-h">Producto' + (filasP.length > 1 ? 's' : '') + ' (' + filasP.length + '):</span>' +
       '<button onclick="accionNOPSeleccion(\'duda\')" title="Deja el Producto en violeta hasta saber si es NOP o convencional">❓ En duda</button>' +
       '<button onclick="accionNOPSeleccion(\'nop\')" title="Es NOP: cambia producto, contrato y precios">✓ Es NOP</button>' +
@@ -4976,6 +5108,56 @@ function tablaTeclado(e){
   if(e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey){ e.preventDefault(); editarCelda(_tablaSel.r, _tablaSel.c, e.key); return true; }
   return false;
 }
+
+// ─── AYUDA: ATAJOS Y TRUCOS ──────────────────────────────────────────────────
+// Boton "?" de arriba. Si se agrega un atajo nuevo a la tabla, sumarlo aca.
+const AYUDA_SECCIONES = [
+  { titulo: 'Moverse y seleccionar (vista Tabla)', filas: [
+    [['↑', '↓', '←', '→'], 'Moverte de celda'],
+    [['Shift', '+ flechas'], 'Extender la selección a varias celdas'],
+    [['Arrastrar'], 'Seleccionar un grupo de celdas con el mouse (o <kbd>Shift</kbd> + clic en la última)'],
+    [['—'], 'Con varias celdas elegidas, abajo ves suma, promedio, mínimo y máximo (como en Sheets)'],
+    [['Clic en el N° de fila'], 'Marcar o desmarcar esa fila como “vista”'] ] },
+  { titulo: 'Editar', filas: [
+    [['Doble clic'], 'Editar la celda'],
+    [['Enter', 'F2'], 'Editar la celda elegida'],
+    [['Escribir'], 'Empezar a editar reemplazando lo que había'],
+    [['Enter'], 'Al editar: confirma y baja a la celda de abajo'],
+    [['Tab', 'Shift', '+ Tab'], 'Al editar: confirma y va a la derecha / izquierda'],
+    [['Esc'], 'Cancelar la edición'],
+    [['Supr', 'Retroceso'], 'Vaciar la celda elegida (una por vez)'],
+    [['—'], 'Lo editado queda en amarillo claro hasta que apretás Guardar: nada va a la planilla sin que confirmes'] ] },
+  { titulo: 'Colores y marcas', filas: [
+    [['Pintar:'], '<span class="ayuda-sw" style="background:#fff299"></span><span class="ayuda-sw" style="background:#b8e0b8"></span><span class="ayuda-sw" style="background:#b3d6fa"></span><span class="ayuda-sw" style="background:#fac2db"></span><span class="ayuda-sw" style="background:#d1d1d1"></span><span class="ayuda-sw" style="background:#f59e9e"></span>Elegís celdas y tocás un color: se pinta en la planilla. <b>✕ Sin color</b> lo saca'],
+    [['Naranja'], '<span class="ayuda-sw" style="background:#ffb347"></span>El hub ya envió algo (FC, aviso, telex). Cuando lo revisás: “Marcar como visto”'],
+    [['Violeta'], '<span class="ayuda-sw" style="background:#d9c9f7"></span>Producto en duda (¿es NOP?). Con celdas de Producto elegidas: En duda / Es NOP / Es convencional'],
+    [['—'], 'El naranja y el violeta no se pisan con la paleta de colores'] ] },
+  { titulo: 'Comentarios', filas: [
+    [['Ctrl', '+ Alt', '+ M'], 'Abrir los comentarios de la celda (o el botón 💬 de abajo)'],
+    [['Ctrl', '+ Enter'], 'Enviar el comentario que estás escribiendo'],
+    [['—'], 'Las celdas con comentarios abiertos tienen un triangulito; clic en ellas para verlos y responder'] ] },
+  { titulo: 'Columnas y pantalla', filas: [
+    [['▾ en el encabezado'], 'Filtrar y ordenar esa columna'],
+    [['Arrastrar el borde'], 'Cambiar el ancho de la columna (doble clic en el borde: vuelve al automático)'],
+    [['Columnas fijas'], 'Elegí cuántas columnas quedan quietas a la izquierda al desplazarte'],
+    [['Pantalla completa'], 'Agranda la tabla; <kbd>Esc</kbd> para salir'] ] },
+  { titulo: 'En todo el hub', filas: [
+    [['Ctrl', '+ K'], 'Ir al buscador de arriba (BL, cliente, invoice…)'],
+    [['S'], 'Sincronizar con la planilla (cuando no estás escribiendo ni con una celda de la tabla elegida)'],
+    [['Esc'], 'Cerrar ventanas y confirmaciones'] ] }
+];
+function ayudaHTML(){
+  const teclas = ks => ks.map(k => k === '—' ? '' : (k.charAt(0) === '+' ? k + ' ' : (k.length > 12 ? '<b>' + k + '</b>' : '<kbd>' + k + '</kbd>'))).join('');
+  return AYUDA_SECCIONES.map(sec => '<h4>' + sec.titulo + '</h4><table class="ayuda-tab">' +
+    sec.filas.map(f => '<tr><td>' + teclas(f[0]) + '</td><td>' + f[1] + '</td></tr>').join('') + '</table>').join('');
+}
+function abrirAyuda(){
+  const o = document.getElementById('ayuda-overlay'), b = document.getElementById('ayuda-body');
+  if(b) b.innerHTML = ayudaHTML();
+  if(o) o.classList.remove('hidden');
+}
+function cerrarAyuda(){ const o = document.getElementById('ayuda-overlay'); if(o) o.classList.add('hidden'); }
+function ayudaAbierta(){ const o = document.getElementById('ayuda-overlay'); return !!(o && o.classList && !o.classList.contains('hidden')); }
 
 function toggleTablaFull(){
   cargasTablaFull = !cargasTablaFull;
@@ -11848,6 +12030,7 @@ document.addEventListener('mousedown', e => {
   if(!e.target.closest('#com-globo') && !e.target.closest('#t-grid') && !e.target.closest('.t-com-btn')) cerrarComentarios();
 });
 document.addEventListener('keydown', e => {
+  if(ayudaAbierta()){ if(e.key === 'Escape') cerrarAyuda(); return; }
   if(tablaTeclado(e)) return;
   if(e.key === 'Escape' && _comPop){ cerrarComentarios(); return; }
   if(e.key === 'Escape' && _filtroAbierto){ cerrarFiltroColumna(); return; }
@@ -11890,6 +12073,12 @@ window.onload=()=>{
 <div class="progress-bar" id="progress-bar"></div>
 
 <!-- CONFIRM DIALOG -->
+<div class="ayuda-overlay hidden" id="ayuda-overlay" onclick="if(event.target===this)cerrarAyuda()">
+  <div class="ayuda-box" role="dialog" aria-label="Atajos y trucos">
+    <div class="ayuda-head"><b>Atajos y trucos del hub</b><button class="btn" onclick="cerrarAyuda()">Cerrar (Esc)</button></div>
+    <div class="ayuda-body" id="ayuda-body"></div>
+  </div>
+</div>
 <div class="confirm-overlay hidden" id="confirm-overlay">
   <div class="confirm-box">
     <div class="confirm-icon" id="confirm-icon">⚠️</div>
