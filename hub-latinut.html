@@ -4787,8 +4787,21 @@ function cambiarOrdenTabla(v){
   renderCargas();
 }
 // Sin ETA o con ETA ilegible van al final; a igual fecha, queda el orden de la planilla.
+// Despues de editar una ETA la fila cambia de lugar: la seleccion la sigue (o pasa a la que
+// estaba debajo, si se confirmo con Enter, para poder ir actualizando varias seguidas).
+function ordenPorETAActivo(){ return ordenTablaActual() === 'eta' && !cargasColSort; }
+function seguirFilaTras(row, c, filaDebajo, mover){
+  const pos = x => _tablaRows.indexOf(x);
+  if(mover && mover[0] === 1 && filaDebajo && pos(filaDebajo) >= 0){ marcarCelda(pos(filaDebajo), c); return; }
+  const p = pos(row);
+  if(p < 0) return;
+  if(mover && mover[1]){
+    const k = Math.max(0, Math.min(_tablaCols.length - 1, _tablaCols.indexOf(c) + mover[1]));
+    marcarCelda(p, _tablaCols[k]);
+  } else marcarCelda(p, c);
+}
 function ordenarPorETA(rows){
-  const t = r => { const d = parseDate(((r[COL.ETA] || '') + '').trim()); return d ? d.getTime() : Infinity; };
+  const t = r => { const d = parseDate((valorVisible(r, COL.ETA) + '').trim()); return d ? d.getTime() : Infinity; };
   return rows.map((r, i) => ({ r, i, t: t(r) })).sort((a, b) => (a.t === b.t ? a.i - b.i : (a.t < b.t ? -1 : 1))).map(x => x.r);
 }
 function renderCargasTabla(rows){
@@ -5061,8 +5074,10 @@ function editarCelda(r, c, inicial){
       anotarCambioTabla(row, c, inp.value);
       if(c === COL.PRODUCT) propagarProductoATabla(row, inp.value);
     }
+    const filaDebajo = _tablaRows[r + 1];
     renderCargas();
-    if(mover) moverSel(mover[0], mover[1]); else marcarCelda(r, c);
+    if(guardar && c === COL.ETA && ordenPorETAActivo()) seguirFilaTras(row, c, filaDebajo, mover);
+    else if(mover) moverSel(mover[0], mover[1]); else marcarCelda(r, c);
   };
   inp.onkeydown = e => {
     if(e.key === 'Enter'){ e.preventDefault(); fin(true, [1, 0]); }
@@ -5135,8 +5150,11 @@ function tablaTeclado(e){
   if(e.key === 'Delete' || e.key === 'Backspace'){
     e.preventDefault();
     if(esColFormula(_tablaSel.c)) return true;
-    anotarCambioTabla(_tablaRows[_tablaSel.r], _tablaSel.c, '');
-    const s = _tablaSel; renderCargas(); marcarCelda(s.r, s.c); return true;
+    const filaVaciada = _tablaRows[_tablaSel.r];
+    anotarCambioTabla(filaVaciada, _tablaSel.c, '');
+    const s = _tablaSel; renderCargas();
+    if(s.c === COL.ETA && ordenPorETAActivo()) seguirFilaTras(filaVaciada, s.c, null, null); else marcarCelda(s.r, s.c);
+    return true;
   }
   if(e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey){ e.preventDefault(); editarCelda(_tablaSel.r, _tablaSel.c, e.key); return true; }
   return false;
