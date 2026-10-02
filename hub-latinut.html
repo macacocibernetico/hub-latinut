@@ -99,6 +99,16 @@ button{font-family:var(--font);cursor:pointer;border:none;background:none;}
 .auth-btn{margin-top:8px;width:100%;padding:7px 12px;border-radius:var(--radius);font-size:12px;font-weight:500;border:1px solid var(--border2);background:var(--bg3);color:var(--text2);cursor:pointer;transition:all .15s;font-family:var(--font);}
 .auth-btn:hover{background:var(--bg4);color:var(--text);}
 .auth-btn.connected{border-color:var(--ok);color:var(--ok);background:var(--ok-light);}
+/* Sin conexion con Google: el boton llama la atencion con los colores de Google y un pulso. */
+.auth-llamar,.auth-llamar:hover{color:#fff!important;font-weight:700!important;border:0!important;
+  background:linear-gradient(110deg,#4285f4,#ea4335,#fbbc05,#34a853,#4285f4)!important;background-size:300% 100%!important;
+  text-shadow:0 1px 2px rgba(0,0,0,.45);animation:authColores 3s linear infinite,authPulso 1.6s ease-in-out infinite;}
+@keyframes authColores{to{background-position:-300% 0;}}
+@keyframes authPulso{0%,100%{box-shadow:0 0 0 0 rgba(66,133,244,.65),0 0 8px 1px rgba(251,188,5,.45);transform:scale(1);}
+  50%{box-shadow:0 0 0 7px rgba(66,133,244,0),0 0 18px 4px rgba(234,67,53,.55);transform:scale(1.03);}}
+@media (prefers-reduced-motion:reduce){.auth-llamar{animation:none;}}
+body.sin-google .mobile-toggle{position:relative;}
+body.sin-google .mobile-toggle::after{content:'';position:absolute;top:-3px;right:-5px;width:10px;height:10px;border-radius:50%;background:#ea4335;animation:authPulso 1.6s ease-in-out infinite;}
 
 /* TOPBAR */
 .topbar{display:flex;align-items:center;justify-content:space-between;padding:14px 24px;border-bottom:1px solid var(--border);background:rgba(255,255,255,.85);backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);position:sticky;top:0;z-index:5;}
@@ -760,7 +770,7 @@ tr:hover .col-acciones{background:var(--bg3);}
   </nav>
   <div class="sidebar-footer">
     <div style="margin-bottom:8px;">
-      <button id="auth-btn" class="btn" onclick="handleAuth()" style="width:100%;font-size:11px;">Conectar con Google</button>
+      <button id="auth-btn" class="btn auth-llamar" onclick="handleAuth()" style="width:100%;font-size:11px;">Conectar con Google</button>
     </div>
     <div style="font-size:10px;color:var(--text3);margin-bottom:6px;" id="auth-status-text"></div>
     <div class="sheet-status">
@@ -2056,6 +2066,7 @@ function initGoogleAuth(){
     callback: (resp) => {
       if(resp.error) { console.error(resp); finRenovacion(false); return; }
       accessToken = resp.access_token;
+      _tokenEmitido = Date.now();
       _tokenExp = Date.now() + Math.max(60, (parseInt(resp.expires_in) || 3600) - 120) * 1000;
       // Renovacion silenciosa del token: misma persona, no hace falta recargar nada.
       if(_renovRes){ updateAuthUI(true); finRenovacion(true); return; }
@@ -2080,7 +2091,7 @@ function initGoogleAuth(){
 // token muerto y todo fallaba hasta recargar. Ahora el hub lo renueva solo (antes de usarlo si ya
 // venció, o al recibir un 401) y, si Google no deja renovar sin que toques nada, avisa y pasa a
 // "Sin autenticar" para que se pueda reconectar con un clic.
-let _tokenExp = 0, _renovRes = null, _renovTimer = null, _renovProm = null;
+let _tokenExp = 0, _tokenEmitido = 0, _renovRes = null, _renovTimer = null, _renovProm = null;
 function tokenVencido(){ return !!accessToken && _tokenExp > 0 && Date.now() > _tokenExp; }
 function finRenovacion(ok){
   if(_renovTimer){ clearTimeout(_renovTimer); _renovTimer = null; }
@@ -2106,14 +2117,17 @@ let _fetchReal = (typeof globalThis.fetch === 'function') ? globalThis.fetch.bin
 async function fetchConToken(url, opts){
   const u = typeof url === 'string' ? url : ((url && url.url) || '');
   const h = opts && opts.headers;
-  const usaToken = !!accessToken && h && typeof h.Authorization === 'string' && /^Bearer /.test(h.Authorization) && /googleapis\.com/.test(u);
+  // userinfo se llama sin permiso de "email" y suele dar 401 aun con sesion valida: no es sesion vencida.
+  const usaToken = !!accessToken && h && typeof h.Authorization === 'string' && /^Bearer /.test(h.Authorization) && /googleapis\.com/.test(u) && !/oauth2\/v3\/userinfo/.test(u);
   if(!usaToken) return _fetchReal(url, opts);
   const con = () => _fetchReal(url, Object.assign({}, opts, { headers: Object.assign({}, h, { Authorization: 'Bearer ' + accessToken }) }));
   if(tokenVencido()){
     if(!(await renovarToken())){ sesionVencida(); return _fetchReal(url, opts); }
   }
   let r = await con();
-  if(r && r.status === 401){
+  // Un 401 con un token recien dado NO es vencimiento (puede ser falta de permiso de esa llamada):
+  // se devuelve tal cual y no se toca la sesion. Solo se renueva si el token ya tiene un rato.
+  if(r && r.status === 401 && (Date.now() - _tokenEmitido > 5 * 60 * 1000 || tokenVencido())){
     if(await renovarToken()) r = await con(); else sesionVencida();
   }
   return r;
@@ -2161,11 +2175,13 @@ function updateAuthUI(connected){
     txt.style.color='var(--ok)';
     btn.textContent='Desconectar';
     btn.className='auth-btn connected';
+    if(document.body.classList) document.body.classList.remove('sin-google');
   } else {
     txt.textContent='● Sin autenticar';
     txt.style.color='var(--muted)';
     btn.textContent='Conectar con Google';
-    btn.className='auth-btn';
+    btn.className='auth-btn auth-llamar';
+    if(document.body.classList) document.body.classList.add('sin-google');
   }
 }
 
@@ -12055,6 +12071,7 @@ document.addEventListener('keydown', e => {
 
 // ─── INIT ────────────────────────────────────────────────────────────────────
 window.onload=()=>{
+  if(!accessToken && document.body.classList) document.body.classList.add('sin-google');
   updateNegocioPill();
   // Restore last view
   const lastView = getLastView();
