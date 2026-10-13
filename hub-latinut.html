@@ -452,6 +452,18 @@ tr:hover .col-acciones{background:var(--bg3);}
 .ayuda-tab td:first-child{white-space:nowrap;width:1%;padding-right:18px;}
 .ayuda-tab kbd{display:inline-block;padding:1px 7px;border:1px solid var(--border2);border-bottom-width:2px;border-radius:6px;background:var(--bg3);font-family:var(--font);font-size:12px;margin-right:3px;}
 .ayuda-sw{display:inline-block;width:14px;height:14px;border-radius:4px;border:1px solid rgba(0,0,0,.25);vertical-align:-2px;margin-right:6px;}
+.visto-box{width:980px;}
+.visto-pie{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:12px 18px;border-top:1px solid var(--border);}
+.visto-pie .btn:disabled{opacity:.5;cursor:default;}
+.visto-tab{width:100%;border-collapse:collapse;font-size:13px;margin-top:8px;}
+.visto-tab th{text-align:left;font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--text3);padding:6px 8px;position:sticky;top:0;background:var(--bg2);}
+.visto-tab td{padding:7px 8px;border-top:1px solid var(--border);vertical-align:top;}
+.visto-tab a{color:var(--accent);font-weight:600;text-decoration:none;}
+.visto-tab .v-sub,.visto-pie .v-sub{font-size:11px;color:var(--text3);}
+.v-antes{color:var(--danger);text-decoration:line-through;}
+.v-ahora{color:var(--ok);}
+.v-sin{color:var(--text3);font-style:italic;font-size:12px;}
+.v-mas{font-size:11px;color:var(--text3);cursor:help;}
 .confirm-overlay{position:fixed;inset:0;background:rgba(0,0,0,.35);z-index:200;display:flex;align-items:center;justify-content:center;backdrop-filter:blur(4px);}
 .confirm-overlay.hidden{display:none;}
 .confirm-box{background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius-xl);padding:28px 32px;width:340px;max-width:90vw;box-shadow:0 20px 60px rgba(0,0,0,.15);text-align:center;}
@@ -3235,6 +3247,7 @@ async function writeCell(row, col, value){
     alert('No se pudo determinar la columna a escribir. Revisa los encabezados de la planilla.');
     return false;
   }
+  const antesCelda = valorPrevioCelda(fila, sheetRow, col);
   const nc = getNegocioConfig();
   // La hoja tiene que ser la del negocio activo: en Buzaram se llama "CARGAS",
   // no "Cargas". Antes tomaba el sheetId de Buzaram con el nombre de hoja de AXT.
@@ -3247,7 +3260,55 @@ async function writeCell(row, col, value){
     headers: {'Authorization':`Bearer ${accessToken}`,'Content-Type':'application/json'},
     body: JSON.stringify({values:[[value]]})
   });
+  if(r.ok) registrarCambioCelda(fila, sheetRow, col, antesCelda, value);
   return r.ok;
+}
+
+// ─── CAMBIOS DE CELDA (para revisarlos antes de pasar la marca a blanco) ─────
+// Cada vez que el hub escribe una celda de las que despues quedan marcadas en naranja, se
+// anota "antes -> despues" en el LOG. Asi, al revisar, se ve que cambio y no solo que cambio.
+const ACCION_CELDA = 'cambio de celda';
+let _cambiosCelda = {};   // 'fila|columna' -> ultimo valor escrito en esta sesion
+function valorPrevioCelda(fila, sheetRow, col){
+  const k = sheetRow + '|' + col;
+  if(Object.prototype.hasOwnProperty.call(_cambiosCelda, k)) return _cambiosCelda[k];
+  return fila && col >= 0 ? valorCelda(fila, col).trim() : '';
+}
+function registrarCambioCelda(fila, sheetRow, col, antes, despues){
+  try{
+    const k = sheetRow + '|' + col;
+    _cambiosCelda[k] = (despues === undefined || despues === null) ? '' : String(despues).trim();
+    if(!colsMarcables().includes(col)) return;
+    const hdr = (encabezadosCargas()[col] || colIndexToLetter(col)).toString().trim();
+    const q = v => '"' + String(v === undefined || v === null ? '' : v).replace(/"/g, "'") + '"';
+    Promise.resolve(appendLog({ fc: fila ? (fila[COL.INVOICE_CLIENTE] || '').trim() : '', bl: fila ? (fila[COL.BL] || '').trim() : '',
+      customer: fila ? (fila[COL.CUSTOMER] || '').trim() : '', accion: ACCION_CELDA,
+      detalle: 'fila ' + sheetRow + ' · ' + hdr + ': ' + q(antes) + ' → ' + q(_cambiosCelda[k]) })).catch(e => console.warn('log celda:', e));
+  }catch(e){ console.warn('registrarCambioCelda:', e); }
+}
+// Ultimos cambios anotados para una celda: [{antes, despues, cuando}], del mas nuevo al mas viejo.
+function cambiosDeCelda(sheetRow, col){
+  const hdr = (encabezadosCargas()[col] || colIndexToLetter(col)).toString().trim();
+  const fuente = normalizarFuente(getLogFuente());
+  const out = [];
+  for(let i = logRows.length - 1; i >= 0 && out.length < 4; i--){
+    const l = logRows[i];
+    if((l[7] || '') !== ACCION_CELDA || normalizarFuente(l[2]) !== fuente) continue;
+    const m = /^fila ([0-9]+) · (.*): "(.*)" → "(.*)"$/.exec((l[8] || '').toString());
+    if(m && parseInt(m[1]) === sheetRow && m[2].trim() === hdr) out.push({ antes: m[3], despues: m[4], cuando: (l[0] || '') + ' ' + (l[1] || '') });
+  }
+  return out;
+}
+// Ultima accion del hub sobre esa carga (por BL), distinta de los cambios de celda.
+function ultimaAccionDeCarga(row){
+  const bl = (row[COL.BL] || '').trim();
+  if(!bl) return null;
+  const fuente = normalizarFuente(getLogFuente());
+  for(let i = logRows.length - 1; i >= 0; i--){
+    const l = logRows[i];
+    if((l[5] || '').trim() === bl && (l[7] || '') !== ACCION_CELDA && normalizarFuente(l[2]) === fuente) return { accion: l[7] || '', cuando: (l[0] || '') + ' ' + (l[1] || ''), detalle: l[8] || '' };
+  }
+  return null;
 }
 
 // Codigo canonico del negocio para la columna Fuente del LOG.
@@ -3498,18 +3559,74 @@ function marcasEnVista(){
   return porCol;
 }
 // Las marcas naranjas avisan "esto se hizo y falta revisarlo": una vez visto, vuelve a blanco.
+// Lista de celdas naranjas de lo que se esta viendo (o de las cargas tildadas), con su fila.
+function celdasMarcadasEnVista(){
+  const filas = (window._fcSelectedRows && window._fcSelectedRows.size)
+    ? [...window._fcSelectedRows].map(i => (window._fcAllRows || [])[i]).filter(Boolean)
+    : (window._tablaBaseRows || []);
+  const out = [];
+  filas.forEach(r => colsMarcables().forEach(c => { if(celdaMarcada(r, c)) out.push({ row: r, col: c, fila: r._sheetRow }); }));
+  return out;
+}
+let _vistoLista = [];
 async function marcarComoVisto(){
-  const porCol = marcasEnVista();
-  const cols = Object.keys(porCol).map(Number);
-  if(!cols.length){ showToast('No hay celdas marcadas en naranja', 'info'); return; }
+  const celdas = celdasMarcadasEnVista();
+  if(!celdas.length){ showToast('No hay celdas marcadas en naranja', 'info'); return; }
+  _vistoLista = celdas;
+  const o = document.getElementById('visto-overlay');
+  if(!o) return;
+  document.getElementById('visto-body').innerHTML = '<div style="padding:24px;color:var(--text3);">Buscando qué cambió…</div>';
+  o.classList.remove('hidden');
+  try{ await loadLog(); }catch(e){}
+  dibujarRevisionVistos();
+}
+function dibujarRevisionVistos(){
   const hdr = encabezadosCargas();
-  const total = cols.reduce((a, c) => a + porCol[c].length, 0);
-  const detalle = cols.map(c => '<div>• ' + (hdr[c] || colIndexToLetter(c)) + ': filas ' + porCol[c].join(', ') + '</div>').join('');
-  const ok = await showConfirm('Marcar como visto', 'Se pintan de blanco ' + total + ' celda' + (total > 1 ? 's' : '') + ' de la planilla (solo el color, no cambia ningun dato).',
-    { icono:'✓', okLabel:'Pasar a blanco', detalle });
-  if(!ok) return;
-  for(const c of cols) await pintarCeldas(porCol[c], c, COLOR_BLANCO);
-  showToast('✓ ' + total + ' celda' + (total > 1 ? 's' : '') + ' en blanco', 'ok');
+  const esc = t => String(t === undefined || t === null ? '' : t).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
+  const filas = _vistoLista.map((x, i) => {
+    const ahora = valorCelda(x.row, x.col).trim();
+    const cambios = cambiosDeCelda(x.fila, x.col);
+    const ult = ultimaAccionDeCarga(x.row);
+    const antesAhora = cambios.length
+      ? '<span class="v-antes">' + (esc(cambios[0].antes) || '<i>(vacío)</i>') + '</span> → <b class="v-ahora">' + (esc(cambios[0].despues) || '<i>(vacío)</i>') + '</b>' +
+        (cambios.length > 1 ? '<div class="v-mas" title="' + esc(cambios.slice(1).map(c => c.cuando + ': ' + c.antes + ' → ' + c.despues).join(' | ')) + '">+ ' + (cambios.length - 1) + ' cambio(s) anterior(es)</div>' : '')
+      : '<span class="v-sin" title="Este cambio es anterior a que el hub empezara a anotar el valor previo. Los cambios nuevos sí quedan registrados.">sin registro del valor anterior</span> → <b class="v-ahora">' + (esc(ahora) || '<i>(vacío)</i>') + '</b>';
+    const cuando = cambios.length ? cambios[0].cuando : (ult ? ult.cuando : '');
+    const que = ult ? esc(ult.accion) + (ult.detalle ? ' · ' + esc(ult.detalle).slice(0, 70) : '') : '';
+    return '<tr><td><input type="checkbox" class="v-cb" data-i="' + i + '" checked onchange="actualizarBotonVisto()"></td>' +
+      '<td><a href="#" onclick="verCeldaMarcada(' + i + ');return false;" title="Ir a esa celda en la tabla">Fila ' + x.fila + '</a><div class="v-sub">' + esc((x.row[COL.CUSTOMER] || '').trim()) + ' · ' + esc((x.row[COL.BL] || '').trim()) + '</div></td>' +
+      '<td>' + esc((hdr[x.col] || colIndexToLetter(x.col)).toString().trim()) + '</td>' +
+      '<td>' + antesAhora + '</td>' +
+      '<td class="v-sub">' + esc(cuando) + (que ? '<div>' + que + '</div>' : '') + '</td></tr>';
+  }).join('');
+  document.getElementById('visto-body').innerHTML =
+    '<table class="visto-tab"><thead><tr><th><input type="checkbox" id="v-todas" checked onchange="vistoTodas(this.checked)" title="Tildar / destildar todas"></th><th>Carga</th><th>Celda</th><th>Antes → Ahora</th><th>Cuándo y qué lo hizo</th></tr></thead><tbody>' + filas + '</tbody></table>';
+  actualizarBotonVisto();
+}
+function vistoTodas(v){ document.querySelectorAll('#visto-body .v-cb').forEach(c => { c.checked = v; }); actualizarBotonVisto(); }
+function vistoElegidas(){ return [...document.querySelectorAll('#visto-body .v-cb')].filter(c => c.checked).map(c => _vistoLista[parseInt(c.getAttribute('data-i'))]).filter(Boolean); }
+function actualizarBotonVisto(){
+  const n = vistoElegidas().length;
+  const b = document.getElementById('visto-ok');
+  if(b){ b.textContent = n ? '✓ Dar el visto bueno a ' + n + ' (pasar a blanco)' : 'Tildá al menos una'; b.disabled = !n; }
+}
+function cerrarRevisionVistos(){ const o = document.getElementById('visto-overlay'); if(o) o.classList.add('hidden'); }
+function verCeldaMarcada(i){
+  const x = _vistoLista[i];
+  if(!x) return;
+  const r = (_tablaRows || []).indexOf(x.row);
+  if(r < 0){ showToast('Esa fila no está en las que se muestran ahora (probá "Mostrar filas anteriores")', 'info'); return; }
+  cerrarRevisionVistos();
+  marcarCelda(r, x.col);
+}
+async function confirmarVistoBueno(){
+  const elegidas = vistoElegidas();
+  if(!elegidas.length) return;
+  const porCol = {};
+  elegidas.forEach(x => { (porCol[x.col] = porCol[x.col] || []).push(x.fila); });
+  cerrarRevisionVistos();
+  for(const c of Object.keys(porCol).map(Number)) await pintarCeldas(porCol[c], c, COLOR_BLANCO);
+  showToast('✓ ' + elegidas.length + ' celda' + (elegidas.length > 1 ? 's' : '') + ' en blanco', 'ok');
   if(currentView === 'cargas') renderCargas();
 }
 
@@ -12082,6 +12199,8 @@ document.addEventListener('mousedown', e => {
 });
 document.addEventListener('keydown', e => {
   if(ayudaAbierta()){ if(e.key === 'Escape') cerrarAyuda(); return; }
+  const ov = document.getElementById('visto-overlay');
+  if(ov && ov.classList && !ov.classList.contains('hidden')){ if(e.key === 'Escape') cerrarRevisionVistos(); return; }
   if(tablaTeclado(e)) return;
   if(e.key === 'Escape' && _comPop){ cerrarComentarios(); return; }
   if(e.key === 'Escape' && _filtroAbierto){ cerrarFiltroColumna(); return; }
@@ -12129,6 +12248,13 @@ window.onload=()=>{
   <div class="ayuda-box" role="dialog" aria-label="Atajos y trucos">
     <div class="ayuda-head"><b>Atajos y trucos del hub</b><button class="btn" onclick="cerrarAyuda()">Cerrar (Esc)</button></div>
     <div class="ayuda-body" id="ayuda-body"></div>
+  </div>
+</div>
+<div class="ayuda-overlay hidden" id="visto-overlay" onclick="if(event.target===this)cerrarRevisionVistos()">
+  <div class="ayuda-box visto-box" role="dialog" aria-label="Revisar cambios marcados">
+    <div class="ayuda-head"><b>Revisar los cambios marcados en naranja</b><button class="btn" onclick="cerrarRevisionVistos()">Cerrar</button></div>
+    <div class="ayuda-body" id="visto-body"></div>
+    <div class="visto-pie"><span class="v-sub">Al dar el visto bueno solo se pasa el color a blanco: no se cambia ningún dato.</span><button class="btn primary" id="visto-ok" onclick="confirmarVistoBueno()">Dar el visto bueno</button></div>
   </div>
 </div>
 <div class="confirm-overlay hidden" id="confirm-overlay">
