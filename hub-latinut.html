@@ -2,7 +2,7 @@
 <html lang="es">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>LATINUT Hub</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E🌿%3C/text%3E%3C/svg%3E">
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🌿</text></svg>">
@@ -18,7 +18,7 @@
   --border2:#c7c7cc;
   --text:#1d1d1f;
   --text2:#424245;
-  --text3:#86868b;
+  --text3:#66666b;
   --accent:#0071e3;
   --accent-dim:#0077ed;
   --accent-light:#e8f2fd;
@@ -41,6 +41,11 @@
 *{box-sizing:border-box;margin:0;padding:0;}
 body{background:var(--bg);color:var(--text);font-family:var(--font);min-height:100vh;font-size:13px;line-height:1.5;-webkit-font-smoothing:antialiased;}
 button{font-family:var(--font);cursor:pointer;border:none;background:none;}
+/* Foco del teclado visible (antes los botones no mostraban nada al navegar con Tab). */
+button:focus-visible,a:focus-visible,select:focus-visible,summary:focus-visible,[tabindex]:focus-visible,input[type=checkbox]:focus-visible,input[type=radio]:focus-visible{outline:3px solid rgba(0,113,227,.6)!important;outline-offset:2px;}
+input:focus-visible,textarea:focus-visible{outline:2px solid rgba(0,113,227,.6);outline-offset:1px;}
+/* En celular, 16 px en los campos evita que el navegador haga zoom solo al tocarlos (ya se puede pellizcar para agrandar). */
+@media (max-width:768px){input:not([type=checkbox]):not([type=radio]),select,textarea{font-size:16px!important;}}
 
 /* LAYOUT */
 .shell{display:flex;min-height:100vh;}
@@ -220,7 +225,8 @@ body.sin-google .mobile-toggle::after{content:'';position:absolute;top:-3px;righ
 .tabla-cargas.full .t-scroll{max-height:none;flex:1;}
 body.tabla-full-on{overflow:hidden;}
 .t-sub{display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-size:12px;color:var(--text2);}
-.t-ayuda{font-size:11px;color:var(--text3);}
+.t-ayuda{font-size:12px;color:var(--text3);}
+@media (max-width:1500px){.t-ayuda{display:none;}}
 .t-chip{font-size:11px;padding:3px 9px;border-radius:12px;background:var(--accent-light);color:var(--accent);cursor:pointer;font-family:var(--mono);}
 .t-full{padding:7px 12px;border-radius:8px;border:1px solid var(--border2);background:var(--bg2);font-size:12px;font-weight:500;color:var(--text);}
 .t-pend{display:flex;align-items:center;gap:8px;padding:8px 12px;border-radius:10px;background:var(--warn-light);border:1px solid var(--warn);font-size:12px;color:#8a4b00;}
@@ -253,7 +259,7 @@ body.tabla-full-on{overflow:hidden;}
 .t-grid .t-num{cursor:pointer;}
 .t-grid{user-select:none;-webkit-user-select:none;}
 .t-grid .t-edit{user-select:text;-webkit-user-select:text;}
-.t-grid tbody tr td.rango{background:#e3edfd!important;}
+.t-grid tbody tr td.rango{background:rgba(0,113,227,.09)!important;box-shadow:inset 0 0 0 1px rgba(0,113,227,.45);}
 .t-grid tbody tr td.rango.cur{background:#fff!important;}
 .t-stats{display:flex;align-items:center;gap:14px;flex-wrap:wrap;padding:6px 12px;border-radius:8px;background:var(--bg3);font-size:12px;color:var(--text2);font-family:var(--mono);min-height:30px;}
 .t-stats b{color:var(--text);}
@@ -263,12 +269,13 @@ body.tabla-full-on{overflow:hidden;}
 .t-stats .t-stats-h{font-family:var(--font);color:var(--text3);}
 .t-grid td.cur{outline:2px solid #1a73e8;outline-offset:-2px;}
 .t-grid tbody tr td.t-pint{background:var(--pin);color:#1f2933;}
-.t-grid tbody tr td.rango.t-pint{background:var(--pin)!important;box-shadow:inset 0 0 0 100px rgba(26,115,232,.16);}
+.t-grid tbody tr td.rango.t-pint{background:var(--pin)!important;box-shadow:inset 0 0 0 1px rgba(0,113,227,.6),inset 0 0 0 100px rgba(0,113,227,.10);}
 .t-pal{display:inline-flex;align-items:center;gap:5px;}
 .t-pal .t-sw{width:18px;height:18px;border-radius:50%;border:1px solid rgba(0,0,0,.25);padding:0;cursor:pointer;}
 .t-pal .t-sw:hover{transform:scale(1.15);}
 .t-pal .t-sw-x{height:22px;padding:0 8px;border-radius:7px;border:1px solid var(--border2);background:var(--bg2);font-size:11px;font-family:var(--font);color:var(--text);cursor:pointer;}
-.t-grid td.chg,.t-grid tbody tr td.chg{background:#fff2cc;color:#7a4b00;font-weight:500;}
+.t-grid td.chg,.t-grid tbody tr td.chg{box-shadow:inset 0 0 0 2px #d98e00;color:#7a4b00;font-weight:500;position:relative;}
+.t-grid td.chg::after{content:'';position:absolute;right:3px;top:3px;width:6px;height:6px;border-radius:50%;background:#d98e00;}
 .t-grid tbody tr td.t-duda{background:#d9c9f7;color:#3b1f78;font-weight:700;}
 .lt-wrap{overflow:auto;border:1px solid var(--border);border-radius:10px;margin-bottom:12px;}
 .lt-tab{border-collapse:collapse;font-size:12px;width:100%;}
@@ -283,13 +290,15 @@ body.tabla-full-on{overflow:hidden;}
 .lt-sin{color:var(--text3);}
 .lt-duda{display:inline-flex;gap:4px;align-items:center;white-space:nowrap;}
 .t-grid td.t-marca,.t-grid tbody tr td.t-marca{background:#ffb347;color:#3d2400;font-weight:700;}
+.t-grid td.t-marca::before{content:'\2709';font-size:11px;margin-right:4px;}
+.t-grid tbody tr td.t-duda::before{content:'?';display:inline-block;width:14px;height:14px;border-radius:50%;background:#3b1f78;color:#fff;font-size:10px;line-height:14px;text-align:center;margin-right:5px;font-weight:700;}
 .t-grid td.editando{padding:0;overflow:visible;}
 .t-grid .t-edit{width:100%;min-width:140px;height:26px;border:2px solid #1a73e8;padding:0 6px;font-size:12px;font-family:var(--font);outline:none;box-shadow:0 2px 8px rgba(0,0,0,.2);}
 .t-grid .fija{position:sticky;z-index:2;}
 .t-grid th{position:relative;}
 .t-grid thead th.fija{position:sticky;}
-.th-res{position:absolute;top:0;right:-3px;width:8px;height:100%;cursor:col-resize;z-index:7;}
-.th-res:hover,body.t-redim .th-res{background:linear-gradient(to right,transparent 3px,#1a73e8 3px,#1a73e8 5px,transparent 5px);}
+.th-res{position:absolute;top:0;right:-5px;width:12px;height:100%;cursor:col-resize;z-index:7;}
+.th-res:hover,body.t-redim .th-res{background:linear-gradient(to right,transparent 5px,#1a73e8 5px,#1a73e8 7px,transparent 7px);}
 body.t-redim{cursor:col-resize;user-select:none;}
 .t-fijas{display:inline-flex;align-items:center;gap:6px;font-size:12px;color:var(--text2);}
 .t-fijas select{font-size:12px;padding:3px 6px;border-radius:7px;border:1px solid var(--border2);background:var(--bg2);color:var(--text);}
@@ -305,6 +314,10 @@ body.t-redim{cursor:col-resize;user-select:none;}
 .t-nota{font-size:10px;color:var(--text3);font-style:italic;}
 .t-grid .col-acciones{position:sticky;right:0;z-index:3;padding:0 4px;box-shadow:-4px 0 6px -3px rgba(0,0,0,.18);}
 .t-grid thead th.col-acciones{z-index:6;}
+.tabla-cargas.dens-comoda .t-grid{font-size:13px;}
+.tabla-cargas.dens-comoda .t-grid th,.tabla-cargas.dens-comoda .t-grid thead th{font-size:12px;}
+.tabla-cargas.dens-comoda .t-grid td{height:30px;}
+.tabla-cargas.dens-comoda .t-acc{height:26px;min-width:36px;font-size:13px;}
 .t-acc{height:24px;min-width:30px;padding:0 8px;margin:1px 2px;border-radius:6px;border:1px solid var(--border2);background:var(--bg2);font-size:12px;font-weight:500;color:var(--text);}
 .t-acc:hover{border-color:var(--accent);color:var(--accent);}
 .t-mas{text-align:center;padding:6px;}
@@ -3441,9 +3454,9 @@ async function cargarFondos(){
 // en la planilla (lo ve cualquiera que la abra) y se lee de vuelta. Naranja y violeta NO estan
 // en la paleta porque ya significan "enviado" y "producto en duda": esas celdas no se pisan.
 const PALETA_COLORES = [
-  { id:'amarillo', nombre:'amarillo',   rgb:{red:1,    green:0.95, blue:0.60} },
+  { id:'amarillo', nombre:'amarillo',   rgb:{red:1,    green:0.88, blue:0.30}, viejo:{red:1, green:0.95, blue:0.60} },
   { id:'verde',    nombre:'verde',      rgb:{red:0.72, green:0.88, blue:0.72} },
-  { id:'celeste',  nombre:'celeste',    rgb:{red:0.70, green:0.84, blue:0.98} },
+  { id:'turquesa', nombre:'turquesa',   rgb:{red:0.62, green:0.89, blue:0.92}, viejo:{red:0.70, green:0.84, blue:0.98} },
   { id:'rosa',     nombre:'rosa',       rgb:{red:0.98, green:0.76, blue:0.86} },
   { id:'gris',     nombre:'gris',       rgb:{red:0.82, green:0.82, blue:0.82} },
   { id:'rojo',     nombre:'rojo suave', rgb:{red:0.96, green:0.62, blue:0.62} }
@@ -3452,7 +3465,9 @@ function hexColor(c){ return '#' + ['red','green','blue'].map(k => Math.round((c
 function colorPaleta(id){ return PALETA_COLORES.find(p => p.id === id) || null; }
 function idColorDeFondo(bg){
   if(!bg) return null;
-  const p = PALETA_COLORES.find(p => ['red','green','blue'].every(k => Math.abs((bg[k] || 0) - p.rgb[k]) < 0.03));
+  const casi = (a, b) => ['red','green','blue'].every(k => Math.abs((a[k] || 0) - b[k]) < 0.03);
+  // Tambien se reconocen los colores anteriores de la paleta, para no perder lo ya pintado.
+  const p = PALETA_COLORES.find(p => casi(bg, p.rgb) || (p.viejo && casi(bg, p.viejo)));
   return p ? p.id : null;
 }
 let _colores = {};   // { 'fila|columna': id de color de la paleta }
@@ -4891,7 +4906,15 @@ function anchoColumna(c, rows){
   const h = (encabezadosCargas()[c] || '').length;
   let m = h;
   for(let i = 0; i < rows.length && i < 60; i++){ const l = valorCelda(rows[i], c).length; if(l > m) m = l; }
-  return Math.max(64, Math.min(170, Math.round(m * 6.4) + 22));
+  return Math.max(64, Math.min(170, Math.round(m * (densidadTabla() === 'comoda' ? 6.9 : 6.4)) + 22));
+}
+// Densidad de la tabla: Comoda (texto de 13 px, por defecto) o Compacta (12 px, mas filas a la vista).
+function densidadTabla(){
+  try{ return localStorage.getItem('hub_tabla_densidad') === 'compacta' ? 'compacta' : 'comoda'; }catch(e){ return 'comoda'; }
+}
+function cambiarDensidad(v){
+  try{ localStorage.setItem('hub_tabla_densidad', v === 'compacta' ? 'compacta' : 'comoda'); }catch(e){}
+  renderCargas();
 }
 
 // Orden base de la tabla: por ETA (la mas proxima arriba, la mas lejana abajo) o tal cual la planilla.
@@ -4978,10 +5001,10 @@ function renderCargasTabla(rows){
       return `<td data-r="${r}" data-c="${c}" class="${fija ? 'fija' : ''}${kk === TABLA_FIJAS - 1 ? ' fija-ult' : ''}${p ? ' chg' : ''}${esColFormula(c) ? ' formula' : ''}${celdaMarcada(row, c) ? ' t-marca' : ''}${(c === COL.PRODUCT && enDudaNOP(row)) ? ' t-duda' : ''}${comAbiertosCelda(row, c).length ? ' t-com' : ''}${colorDeCelda(row, c) ? ' t-pint' : ''}" style="${colorDeCelda(row, c) ? '--pin:' + hexColor(colorPaleta(colorDeCelda(row, c)).rgb) + ';' : ''}${fija ? 'left:' + left[c] + 'px;' : ''}max-width:${anchos[c]}px;" title="${esc(v)}${p ? ' · antes: ' + esc(p.antes || '(vacío)') : ''}">${esc(v)}${extra}</td>`;
     }).join('');
     return `<tr id="fc-tr-${localIdx}" class="${sel ? 'sel' : ''}${filaVista(row) ? ' vista' : ''}">
-      <td class="t-num" title="Clic para marcar / desmarcar la fila como vista" onclick="toggleFilaVista(${localIdx},event)">${row._sheetRow || ''}</td>
-      <td class="t-cb"><input type="checkbox" id="fc-cb-${localIdx}" ${sel ? 'checked' : ''} onclick="toggleFCSelection(${localIdx})">${chip}</td>
+      <td class="t-num" role="button" aria-label="Marcar o desmarcar la fila ${row._sheetRow || ''} como vista" title="Clic para marcar / desmarcar la fila como vista" onclick="toggleFilaVista(${localIdx},event)">${row._sheetRow || ''}</td>
+      <td class="t-cb"><input type="checkbox" id="fc-cb-${localIdx}" aria-label="Tildar la carga de la fila ${row._sheetRow || ''}" ${sel ? 'checked' : ''} onclick="toggleFCSelection(${localIdx})">${chip}</td>
       ${celdas}
-      <td class="col-acciones"><button class="t-acc" onclick="abrirPanelCarga(${idx})" title="Ver la ficha con todas las acciones">Abrir</button><button class="t-acc" onclick="abrirFacturaForwarder([${idx}])" title="Factura de forwarder">🚚</button><button class="t-acc" onclick="solicitarFC(${idx})" title="Solicitud de FC a ${empresaDelNegocio() === 'AXT' ? 'AXT' : 'Buzaram'}">📄</button></td>
+      <td class="col-acciones"><button class="t-acc" onclick="abrirPanelCarga(${idx})" aria-label="Abrir la ficha de la fila ${row._sheetRow || ''}" title="Ver la ficha con todas las acciones">Abrir</button><button class="t-acc" onclick="abrirFacturaForwarder([${idx}])" aria-label="Factura de forwarder, fila ${row._sheetRow || ''}" title="Factura de forwarder">🚚</button><button class="t-acc" onclick="solicitarFC(${idx})" aria-label="Solicitud de FC, fila ${row._sheetRow || ''}" title="Solicitud de FC a ${empresaDelNegocio() === 'AXT' ? 'AXT' : 'Buzaram'}">📄</button></td>
     </tr>`;
   }).join('');
 
@@ -4991,7 +5014,7 @@ function renderCargasTabla(rows){
   if(!nPend) _avisoTabla = '';
   const quedan = rows.length - visibles.length;
 
-  return `<div id="tabla-cargas" class="tabla-cargas${cargasTablaFull ? ' full' : ''}">
+  return `<div id="tabla-cargas" class="tabla-cargas dens-${densidadTabla()}${cargasTablaFull ? ' full' : ''}">
     <div class="t-top">
       <div id="cargas-toolbar" class="cargas-toolbar"></div>
       <div class="t-sub">
@@ -5001,6 +5024,8 @@ function renderCargasTabla(rows){
         <span class="t-ayuda">Doble clic o Enter para editar · flechas para moverte · Esc cancela</span>
         <label class="t-fijas" title="Orden de las filas de la tabla">Orden
           <select onchange="cambiarOrdenTabla(this.value)"><option value="eta"${ordenTablaActual() === 'eta' ? ' selected' : ''}>Por ETA (próxima arriba)</option><option value="planilla"${ordenTablaActual() === 'planilla' ? ' selected' : ''}>Como la planilla</option></select></label>
+        <label class="t-fijas" title="Tamaño del texto de la tabla">Densidad
+          <select onchange="cambiarDensidad(this.value)"><option value="comoda"${densidadTabla() === 'comoda' ? ' selected' : ''}>Cómoda</option><option value="compacta"${densidadTabla() === 'compacta' ? ' selected' : ''}>Compacta</option></select></label>
         <label class="t-fijas" title="Columnas que quedan quietas a la izquierda al desplazarte">Columnas fijas
           <select onchange="cambiarFijas(parseInt(this.value))">${[0,1,2,3].map(n => '<option value="' + n + '"' + (TABLA_FIJAS === n ? ' selected' : '') + '>' + (n === 0 ? 'Ninguna' : n) + '</option>').join('')}</select></label>
         ${Object.keys(anchosU).length ? '<button class="t-full" onclick="resetAnchos()" title="Vuelve todos los anchos al automático">↔ Anchos automáticos</button>' : ''}
@@ -5294,11 +5319,11 @@ const AYUDA_SECCIONES = [
     [['Tab', 'Shift', '+ Tab'], 'Al editar: confirma y va a la derecha / izquierda'],
     [['Esc'], 'Cancelar la edición'],
     [['Supr', 'Retroceso'], 'Vaciar la celda elegida (una por vez)'],
-    [['—'], 'Lo editado queda en amarillo claro hasta que apretás Guardar: nada va a la planilla sin que confirmes'] ] },
+    [['—'], 'Lo editado queda con un borde ámbar y un puntito hasta que apretás Guardar: nada va a la planilla sin que confirmes'] ] },
   { titulo: 'Colores y marcas', filas: [
-    [['Pintar:'], '<span class="ayuda-sw" style="background:#fff299"></span><span class="ayuda-sw" style="background:#b8e0b8"></span><span class="ayuda-sw" style="background:#b3d6fa"></span><span class="ayuda-sw" style="background:#fac2db"></span><span class="ayuda-sw" style="background:#d1d1d1"></span><span class="ayuda-sw" style="background:#f59e9e"></span>Elegís celdas y tocás un color: se pinta en la planilla. <b>✕ Sin color</b> lo saca'],
-    [['Naranja'], '<span class="ayuda-sw" style="background:#ffb347"></span>El hub ya envió algo (FC, aviso, telex). Cuando lo revisás: “Marcar como visto”'],
-    [['Violeta'], '<span class="ayuda-sw" style="background:#d9c9f7"></span>Producto en duda (¿es NOP?). Con celdas de Producto elegidas: En duda / Es NOP / Es convencional'],
+    [['Pintar:'], '<span class="ayuda-sw" style="background:#ffe14d"></span><span class="ayuda-sw" style="background:#b8e0b8"></span><span class="ayuda-sw" style="background:#9fe3ea"></span><span class="ayuda-sw" style="background:#fac2db"></span><span class="ayuda-sw" style="background:#d1d1d1"></span><span class="ayuda-sw" style="background:#f59e9e"></span>Elegís celdas y tocás un color: se pinta en la planilla. <b>✕ Sin color</b> lo saca'],
+    [['Naranja ✉'], '<span class="ayuda-sw" style="background:#ffb347"></span>El hub ya envió algo (FC, aviso, telex). Cuando lo revisás: “Marcar como visto”'],
+    [['Violeta ?'], '<span class="ayuda-sw" style="background:#d9c9f7"></span>Producto en duda (¿es NOP?). Con celdas de Producto elegidas: En duda / Es NOP / Es convencional'],
     [['—'], 'El naranja y el violeta no se pisan con la paleta de colores'] ] },
   { titulo: 'Comentarios', filas: [
     [['Ctrl', '+ Alt', '+ M'], 'Abrir los comentarios de la celda (o el botón 💬 de abajo)'],
