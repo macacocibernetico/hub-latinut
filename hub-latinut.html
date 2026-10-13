@@ -314,6 +314,22 @@ body.t-redim{cursor:col-resize;user-select:none;}
 .t-nota{font-size:10px;color:var(--text3);font-style:italic;}
 .t-grid .col-acciones{position:sticky;right:0;z-index:3;padding:0 4px;box-shadow:-4px 0 6px -3px rgba(0,0,0,.18);}
 .t-grid thead th.col-acciones{z-index:6;}
+/* Tabla a la altura de la pantalla: la barra de acciones de abajo siempre se ve (el alto lo pone ajustarAltoTabla). */
+.tabla-cargas.t-ajustada .t-scroll{flex:1 1 auto;max-height:none;min-height:0;}
+.tabla-cargas.t-ajustada .t-top,.tabla-cargas.t-ajustada .t-mas,.tabla-cargas.t-ajustada .t-stats{flex:none;}
+.tabla-cargas.t-ajustada .t-stats{box-shadow:0 -6px 16px rgba(0,0,0,.06);border:1px solid var(--border);}
+.tabla-cargas .cargas-toolbar{padding:6px 12px;}
+/* Barra compacta de la tabla: buscador + Filtros (plegados) + vista */
+.t-barra{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:8px;}
+.t-barra-sep{width:1px;height:18px;background:var(--border);}
+.t-filtros-wrap{position:relative;}
+.t-filtros-btn{font-size:12px;padding:6px 12px;border-radius:8px;border:1px solid var(--border);background:var(--bg2);color:var(--text2);cursor:pointer;font-family:var(--font);}
+.t-filtros-btn.on{border-color:var(--accent);background:var(--accent-light);color:var(--accent);font-weight:600;}
+.t-filtros-btn b{background:var(--accent);color:#fff;border-radius:999px;padding:0 6px;font-size:10px;margin-left:4px;}
+.filtros-pop{position:absolute;top:calc(100% + 6px);left:0;z-index:120;background:var(--bg2);border:1px solid var(--border);border-radius:12px;box-shadow:var(--shadow-lg);padding:12px 14px;min-width:320px;}
+.fp-fila{display:flex;align-items:center;gap:10px;margin-bottom:8px;}
+.fp-fila label{width:64px;font-size:12px;color:var(--text2);}
+.fp-fila select{flex:1;}
 .tabla-cargas.dens-comoda .t-grid{font-size:13px;}
 .tabla-cargas.dens-comoda .t-grid th,.tabla-cargas.dens-comoda .t-grid thead th{font-size:12px;}
 .tabla-cargas.dens-comoda .t-grid td{height:30px;}
@@ -4320,6 +4336,40 @@ function sortCargas(field){
   renderCargas();
 }
 
+// Filtros plegados de la tabla: se abre y cierra con el boton; sigue abierto mientras se cambian filtros.
+let _filtrosAbiertos = false;
+function toggleFiltrosPop(ev){
+  if(ev && ev.stopPropagation) ev.stopPropagation();
+  _filtrosAbiertos = !_filtrosAbiertos;
+  const p = document.getElementById('filtros-pop');
+  if(p) p.style.display = _filtrosAbiertos ? 'block' : 'none';
+  const b = document.querySelector('.t-filtros-btn');
+  if(b && b.setAttribute) b.setAttribute('aria-expanded', _filtrosAbiertos ? 'true' : 'false');
+}
+function cerrarFiltrosPop(){
+  if(!_filtrosAbiertos) return;
+  _filtrosAbiertos = false;
+  const p = document.getElementById('filtros-pop');
+  if(p) p.style.display = 'none';
+  const b = document.querySelector('.t-filtros-btn');
+  if(b && b.setAttribute) b.setAttribute('aria-expanded', 'false');
+}
+document.addEventListener('click', e => {
+  if(_filtrosAbiertos && e.target && e.target.closest && !e.target.closest('.t-filtros-wrap')) cerrarFiltrosPop();
+});
+// La tabla ocupa el alto que queda de la pantalla: asi las filas aprovechan el espacio y la barra de
+// acciones de abajo (colores, comentarios, NOP) queda siempre a la vista, sin bajar la pagina.
+function ajustarAltoTabla(){
+  const t = document.getElementById('tabla-cargas');
+  if(!t || !t.classList) return;
+  if(cargasTablaFull || typeof t.getBoundingClientRect !== 'function'){ t.classList.remove('t-ajustada'); if(t.style) t.style.height = ''; return; }
+  const top = t.getBoundingClientRect().top + (window.scrollY || 0);
+  const h = Math.max(380, Math.round((window.innerHeight || 800) - top - 28));
+  t.classList.add('t-ajustada');
+  t.style.height = h + 'px';
+}
+if(typeof window.addEventListener === 'function') window.addEventListener('resize', () => ajustarAltoTabla());
+
 function togglePagareDD(){
   const dd = document.getElementById('dd-pagare');
   if(dd) dd.style.display = dd.style.display==='none'?'block':'none';
@@ -4698,13 +4748,32 @@ function renderCargas(showAll, sort){
   }
 
   // Vista tabla: replica de la planilla (ver renderCargasTabla).
-  const corteT = html.indexOf('<div id="fc-bulk-bar"');
-  const filtrosT = (corteT >= 0 ? html.slice(0, corteT) : html) + '</div>';
+  const nFiltros = Object.values(cargasDropFilters).filter(v => v !== '').length + (cargasPagareStates.size > 0 ? 1 : 0);
+  const filaFiltro = (rotulo, control) => control ? `<div class="fp-fila"><label>${rotulo}</label>${control}</div>` : '';
+  const filtrosT = `<div class="t-barra">
+    ${searchHtml}
+    <div class="t-filtros-wrap">
+      <button class="t-filtros-btn${nFiltros ? ' on' : ''}" onclick="toggleFiltrosPop(event)" aria-haspopup="true" aria-expanded="${_filtrosAbiertos ? 'true' : 'false'}">Filtros${nFiltros ? ' <b>' + nFiltros + '</b>' : ''} ▾</button>
+      <div id="filtros-pop" class="filtros-pop" style="display:${_filtrosAbiertos ? 'block' : 'none'}" onclick="event.stopPropagation()">
+        ${filaFiltro('Cliente', sel('cliente', cargasDropFilters.cliente, 'Todos', uniqueClientes.map(c => ({ val: c, label: c }))))}
+        ${filaFiltro('Pagaré', pagareDropHtml)}
+        ${filaFiltro('Docs', sel('docs', cargasDropFilters.docs, 'Todos', [{val:'pendientes',label:'Pendientes'},{val:'completos',label:'Completos'}]))}
+        ${filaFiltro('TELEX', sel('telex', cargasDropFilters.telex, 'Todos', [{val:'sin_solicitar',label:'Sin solicitar'},{val:'en_proceso',label:'En proceso'},{val:'liberado',label:'Liberado'}]))}
+        ${filaFiltro('Naviera', sel('naviera', cargasDropFilters.naviera, 'Todas', uniqueNavieras.map(n => ({ val: n, label: n }))))}
+        ${filaFiltro('Puerto', sel('puerto', cargasDropFilters.puerto, 'Todos', uniquePuertos.map(p => ({ val: p, label: p }))))}
+      </div>
+    </div>
+    ${resetBtn}
+    <span style="flex:1;"></span>
+    ${viewChip('Por embarque', false, "cargasVista='grupos';renderCargas()")}
+    ${viewChip('Tabla', true, "cargasVista='tabla';cargasTablaIrAlFinal=true;renderCargas()")}
+  </div>`;
   const scPrev = document.getElementById('t-scroll');
   const pos = scPrev && scPrev.scrollHeight ? { t: scPrev.scrollTop, l: scPrev.scrollLeft } : null;
   document.getElementById('content').innerHTML = filtrosT + renderCargasTabla(rows);
   window.actualizarBarraFC();
   // Al re-dibujar (editar, filtrar) se conserva donde estabas; la primera vez va al final.
+  ajustarAltoTabla();
   const sc = document.getElementById('t-scroll');
   if(sc && sc.scrollHeight){
     if(pos && !cargasTablaIrAlFinal){ sc.scrollTop = pos.t; sc.scrollLeft = pos.l; }
@@ -5322,7 +5391,7 @@ const AYUDA_SECCIONES = [
     [['—'], 'Lo editado queda con un borde ámbar y un puntito hasta que apretás Guardar: nada va a la planilla sin que confirmes'] ] },
   { titulo: 'Colores y marcas', filas: [
     [['Pintar:'], '<span class="ayuda-sw" style="background:#ffe14d"></span><span class="ayuda-sw" style="background:#b8e0b8"></span><span class="ayuda-sw" style="background:#9fe3ea"></span><span class="ayuda-sw" style="background:#fac2db"></span><span class="ayuda-sw" style="background:#d1d1d1"></span><span class="ayuda-sw" style="background:#f59e9e"></span>Elegís celdas y tocás un color: se pinta en la planilla. <b>✕ Sin color</b> lo saca'],
-    [['Naranja ✉'], '<span class="ayuda-sw" style="background:#ffb347"></span>El hub ya envió algo (FC, aviso, telex). Cuando lo revisás: “Marcar como visto”'],
+    [['Naranja ✉'], '<span class="ayuda-sw" style="background:#ffb347"></span>El hub ya envió algo (FC, aviso, telex). Para revisar qué cambió y darle el visto bueno: “Revisar marcas”'],
     [['Violeta ?'], '<span class="ayuda-sw" style="background:#d9c9f7"></span>Producto en duda (¿es NOP?). Con celdas de Producto elegidas: En duda / Es NOP / Es convencional'],
     [['—'], 'El naranja y el violeta no se pisan con la paleta de colores'] ] },
   { titulo: 'Comentarios', filas: [
@@ -9701,11 +9770,15 @@ function actualizarToolbarCargas(){
   if(!tb) return;
   const n = window._fcSelectedRows ? window._fcSelectedRows.size : 0;
   const nMarcas = Object.keys(marcasEnVista()).reduce((a, c) => a + marcasEnVista()[c].length, 0);
-  const btnVisto = nMarcas ? '<button class="tb-btn" onclick="marcarComoVisto()" title="Pasa a blanco las celdas naranjas (de las cargas tildadas, o de todas las de la tabla)">✓ Marcar como visto (' + nMarcas + ')</button>' : '';
+  const btnVisto = nMarcas ? '<button class="tb-btn" onclick="marcarComoVisto()" title="Mirá qué cambió en las celdas naranjas (de las cargas tildadas, o de todas las de la tabla) y da el visto bueno">✓ Revisar ' + nMarcas + (nMarcas === 1 ? ' marca' : ' marcas') + '</button>' : '';
   if(!n){
-    tb.innerHTML = '<span style="font-size:12px;color:var(--text3);">Tildá cargas o un embarque entero para actuar sobre ellos · Tocá una fila para ver su detalle</span><span style="flex:1;"></span>' + btnVisto;
+    // En la tabla, sin nada tildado ni marcas, esta barra no aporta: se esconde y deja lugar a las filas.
+    const enTabla = cargasVista === 'tabla';
+    tb.style.display = (enTabla && !nMarcas) ? 'none' : '';
+    tb.innerHTML = '<span style="font-size:12px;color:var(--text3);">' + (enTabla ? 'Hay celdas marcadas en naranja por el hub' : 'Tildá cargas o un embarque entero para actuar sobre ellos · Tocá una fila para ver su detalle') + '</span><span style="flex:1;"></span>' + btnVisto;
     return;
   }
+  tb.style.display = '';
   const sel = window._selFCaGlobal ? window._selFCaGlobal() : [];
   const r = resumenFC(sel);
   const res = r.bloqueo
@@ -12229,6 +12302,7 @@ document.addEventListener('keydown', e => {
   if(tablaTeclado(e)) return;
   if(e.key === 'Escape' && _comPop){ cerrarComentarios(); return; }
   if(e.key === 'Escape' && _filtroAbierto){ cerrarFiltroColumna(); return; }
+  if(e.key === 'Escape' && _filtrosAbiertos){ cerrarFiltrosPop(); return; }
   if(e.key === 'Escape' && cargasTablaFull && document.getElementById('confirm-overlay').classList.contains('hidden')){ toggleTablaFull(); return; }
   // Cmd+K or Ctrl+K → focus search
   if((e.metaKey||e.ctrlKey) && e.key==='k'){
