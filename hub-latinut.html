@@ -1675,6 +1675,17 @@ function costoLogisticoFC(product, packing){
   if((p.indexOf('paste') !== -1 || p.indexOf('pasta') !== -1) && k.indexOf('pote') !== -1) return 354;
   return null;
 }
+// Para productos que no estan en el cuadro de arriba (p. ej. Peanut flour): el costo logistico por tonelada
+// sale de la propia carga. "Price serv" es el total de la factura de servicios (viene de "FC Servicios" del
+// contrato por las toneladas), asi que se divide por las toneladas de las filas que lo tienen.
+function costoLogisticoDeFilas(filas){
+  let total = 0, tns = 0;
+  (filas || []).forEach(r => {
+    const sv = parseSheetNum(r[COL.PRICE_SERV]), n = parseSheetNum(r[COL.TNS]);
+    if(!isNaN(sv) && sv > 0 && !isNaN(n) && n > 0){ total += sv; tns += n; }
+  });
+  return tns > 0 ? Math.round(total / tns * 100) / 100 : null;
+}
 const numFC = v => { const n = parseSheetNum(v); return isNaN(n) ? '' : n.toLocaleString('en-US'); };
 
 function armarSolicitudFC(filas){
@@ -1698,7 +1709,9 @@ function armarSolicitudFC(filas){
 
   let texto, html;
   if(es2FC){
-    const cl = costoLogisticoFC(product, packing);
+    // Primero el cuadro conocido; si el producto no esta, se calcula con lo que dice la carga.
+    let cl = costoLogisticoFC(product, packing);
+    if(cl === null) cl = costoLogisticoDeFilas(filas);
     const costoLogStr = cl !== null ? cl + ' USD/TN' : '⚠️ PRODUCTO NO RECONOCIDO – completar manualmente';
     const precioSinFlete = priceLomb ? numFC(priceLomb) + ' USD/TN' : '⚠️ completar';
     const fleteStr = flete ? numFC(flete) + ' por tonelada' : '⚠️ completar';
