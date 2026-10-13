@@ -2609,12 +2609,21 @@ async function loadContratos(){
 // Contratos que podrian corresponder a una carga. El producto y el importador se
 // comparan exactos (sin acentos ni mayusculas); el puerto alcanza con que este
 // entre los del contrato.
+// Un contrato que admite varios calibres al mismo precio los lleva en el Producto separados por " - "
+// (Blanched peanuts 38/42 - Blanched peanuts 40/50). El separador lleva espacios a los lados para no
+// confundirse con guiones dentro de un nombre.
+function calibresDeProducto(producto){
+  return (producto||'').toString().split(/\s+-\s+/).map(x => x.trim()).filter(Boolean);
+}
+function contratoAdmiteProducto(k, prod){
+  return calibresDeProducto(k.producto).some(c => normTar(c) === prod);
+}
 function contratosPara(customer, producto, puerto){
   const cli = normTar(customer), prod = normTar(producto), pto = normTar(puerto);
   if(!cli || !prod) return [];
   return contratos.filter(k => {
     if(normTar(k.importador) !== cli) return false;
-    if(normTar(k.producto) !== prod) return false;
+    if(!contratoAdmiteProducto(k, prod)) return false;
     if(!pto) return true;                       // sin puerto todavia, no filtra
     if(!k.puertos.length) return true;          // contrato sin puerto: sirve para cualquiera
     return k.puertos.some(x => normTar(x) === pto);
@@ -7545,6 +7554,51 @@ function tipoCampoContrato(h){
   if(/PRICE|PRECIO|FLETE|FREIGHT|SERVICIO|TNS|TONELADAS|MONTO|IMPORTE|TOTAL|SALDO|CANTIDAD|USD/.test(n)) return 'numero';
   return 'texto';
 }
+// ── Calibres de un contrato (campo Producto con uno o varios) ──
+// El valor que se guarda en la planilla vive en un campo oculto (kc-N) con los calibres unidos por " - ";
+// los cuadros visibles son los calibres uno por uno. Todos comparten el mismo precio.
+let _calibresForm = {};
+const SEP_CALIBRES = ' - ';
+function esCampoProductoContrato(h){ const n = normTar(h); return n === 'PRODUCTO' || n === 'PRODUCT'; }
+function unirCalibres(lista){
+  const vistos = new Set(), out = [];
+  (lista || []).forEach(c => { const t = (c || '').toString().trim(); const k = t.toLowerCase(); if(t && !vistos.has(k)){ vistos.add(k); out.push(t); } });
+  return out.join(SEP_CALIBRES);
+}
+function htmlCalibres(i){
+  const lista = _calibresForm[i] || [''];
+  const esc = t => (t||'').toString().replace(/"/g,'&quot;');
+  const sugeridos = [...new Set(_contratosFilas.reduce((a, f) => a.concat(calibresDeProducto(f[i])), []))].sort();
+  return lista.map((c, k) => `<div style="display:flex;gap:6px;margin-bottom:6px;align-items:center;">
+      <input class="config-input" id="kc-${i}-c${k}" value="${esc(c)}" list="kc-${i}-dl" placeholder="${k === 0 ? 'Calibre / producto' : 'Otro calibre (mismo precio)'}" oninput="actualizarCalibres(${i},${k},this.value)" style="flex:1;">
+      ${lista.length > 1 ? `<button type="button" class="btn" onclick="quitarCalibre(${i},${k})" title="Quitar este calibre" aria-label="Quitar este calibre" style="padding:4px 10px;">×</button>` : ''}
+    </div>`).join('') +
+    `<datalist id="kc-${i}-dl">${sugeridos.map(v => `<option value="${esc(v)}">`).join('')}</datalist>
+    <button type="button" class="btn" onclick="agregarCalibre(${i})" style="font-size:12px;">＋ Agregar otro calibre</button>
+    <div style="font-size:11px;color:var(--text3);margin-top:4px;">Sumá un calibre solo si el contrato lo admite <b>al mismo precio</b>: se guardan juntos separados por “ - ”. Si el precio es distinto, cargá un contrato por calibre.</div>`;
+}
+function dibujarCalibres(i){
+  const caja = document.getElementById('kc-' + i + '-lista');
+  if(caja) caja.innerHTML = htmlCalibres(i);
+  const oculto = document.getElementById('kc-' + i);
+  if(oculto) oculto.value = unirCalibres(_calibresForm[i]);
+}
+function actualizarCalibres(i, k, v){
+  (_calibresForm[i] = _calibresForm[i] || [''])[k] = v;
+  const oculto = document.getElementById('kc-' + i);
+  if(oculto) oculto.value = unirCalibres(_calibresForm[i]);
+}
+function agregarCalibre(i){
+  (_calibresForm[i] = _calibresForm[i] || ['']).push('');
+  dibujarCalibres(i);
+  setTimeout(() => { const el = document.getElementById('kc-' + i + '-c' + (_calibresForm[i].length - 1)); if(el && el.focus) el.focus(); }, 0);
+}
+function quitarCalibre(i, k){
+  const l = _calibresForm[i] || [];
+  if(l.length > 1) l.splice(k, 1);
+  dibujarCalibres(i);
+}
+
 // Que encabezado es obligatorio: sin estos el contrato no se puede cruzar con cargas.
 function esObligatorioContrato(h){
   const n = normTar(h);
@@ -7731,6 +7785,14 @@ function abrirFormContrato(idxEditar){
     const oblig = esObligatorioContrato(h) ? ' *' : '';
     const n = normTar(h);
     const extra = (n === 'IMPORTADOR' || n === 'IMPORTER') ? ' oninput="sugerirNumeroContrato()"' : '';
+    if(esCampoProductoContrato(h)){
+      _calibresForm[i] = editando && valOrig(i) ? calibresDeProducto(valOrig(i)) : [''];
+      if(!_calibresForm[i].length) _calibresForm[i] = [''];
+      campos += `<div class="config-field"><div class="config-label">${h}${oblig}</div>
+        <input type="hidden" id="${id}" value="${esc(unirCalibres(_calibresForm[i]))}">
+        <div id="${id}-lista">${htmlCalibres(i)}</div></div>`;
+      return;
+    }
     if(tipo === 'fecha'){
       campos += `<div class="config-field"><div class="config-label">${h}${oblig}</div>
         <input class="config-input" type="date" id="${id}" value="${editando ? fechaAInput(valOrig(i)) : ''}"></div>`;
