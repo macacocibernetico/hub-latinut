@@ -4434,6 +4434,23 @@ function setCargasFilter(key, value){
 // las recargas automaticas (al reconectar con Google, al leer colores) no lo deben pisar.
 let _editCargaAbierta = false;
 function formularioAbierto(){ return currentView === 'nueva_carga' || (currentView === 'cargas' && _editCargaAbierta); }
+// Busqueda tipo Ctrl+F sobre TODA la fila (todas las columnas, tambien lo que esta editado y sin guardar).
+// No distingue mayusculas ni tildes; si hay varias palabras, tienen que estar todas en la fila.
+function normBusca(s){ return (s === null || s === undefined ? '' : String(s)).normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase(); }
+function textoDeFila(r){
+  const partes = [];
+  for(let c = 0; c < r.length; c++){
+    const v = valorVisible(r, c);
+    if(v !== '' && v !== null && v !== undefined) partes.push(normBusca(v));
+  }
+  return partes.join(' \u00a6 ');
+}
+function filaCoincide(r, q){
+  const palabras = normBusca(q).split(/\s+/).filter(Boolean);
+  if(!palabras.length) return true;
+  const t = textoDeFila(r);
+  return palabras.every(p => t.includes(p));
+}
 function renderCargas(showAll, sort){
   _editCargaAbierta = false;
   if(showAll !== undefined) cargasShowAll = showAll;
@@ -4446,7 +4463,8 @@ function renderCargas(showAll, sort){
 
   // Base filter
   // La tabla es la replica de la planilla: trae TODAS las filas, tambien las ya cobradas.
-  let rows = cargasVista === 'tabla'
+  // Con una busqueda escrita se mira en TODA la planilla (tambien las ya cobradas), sin importar la vista.
+  let rows = (cargasVista === 'tabla' || cargasSearch.trim())
     ? allRowsAll
     : cargasShowAll
     ? allRows
@@ -4471,17 +4489,7 @@ function renderCargas(showAll, sort){
   }
 
   // Búsqueda libre
-  if(cargasSearch.trim()){
-    const q = cargasSearch.trim().toLowerCase();
-    rows = rows.filter(r =>
-      (r[COL.BL]||'').toLowerCase().includes(q) ||
-      (r[COL.BOOKING]||'').toLowerCase().includes(q) ||
-      (r[COL.LOTS]||'').toLowerCase().includes(q) ||
-      (r[COL.CUSTOMER]||'').toLowerCase().includes(q) ||
-      (r[COL.NEGOCIO]||'').toLowerCase().includes(q) ||
-      (r[COL.VESSEL]||'').toLowerCase().includes(q)
-    );
-  }
+  if(cargasSearch.trim()) rows = rows.filter(r => filaCoincide(r, cargasSearch));
   if(cargasDropFilters.docs){
     rows = rows.filter(r => {
       const docs=(r[COL.DOCUMENTOS]||'').trim().toUpperCase();
@@ -4594,7 +4602,8 @@ function renderCargas(showAll, sort){
       id="cargas-search-input"
       aria-label="Buscar en esta tabla"
       type="text"
-      placeholder="BL, lote, booking, cliente..."
+      placeholder="Buscar en toda la planilla..."
+      title="Busca en todas las columnas (factura, BL, contenedor, contrato, lote, cliente...), sin importar mayusculas ni tildes"
       value="${cargasSearch.replace(/"/g,'&quot;')}"
       oninput="cargasSearch=this.value;cargasPage=0;if(this._t)clearTimeout(this._t);this._t=setTimeout(()=>{const v=this.value;renderCargas();setTimeout(()=>{const el=document.getElementById('cargas-search-input');if(el){el.focus();el.setSelectionRange(v.length,v.length);}},0);},300);"
       style="font-size:11px;font-family:var(--mono);padding:5px 10px 5px 30px;border-radius:8px;border:1px solid ${cargasSearch?'var(--accent)':'var(--border)'};background:${cargasSearch?'var(--accent-light)':'var(--bg2)'};color:var(--text);width:220px;outline:none;"
@@ -8667,17 +8676,10 @@ function closeSidebar(){
 function handleSearch(q){
   const box = document.getElementById('search-results');
   if(!q || q.length < 2){ box.classList.add('hidden'); return; }
-  const qUp = q.toUpperCase();
   const results = [];
 
-  allRows.forEach((row, idx) => {
-    const bl = (row[COL.BL]||'').toUpperCase();
-    const customer = (row[COL.CUSTOMER]||'').toUpperCase();
-    const booking = (row[COL.BOOKING]||'').toUpperCase();
-    const inv1 = (row[COL.INVOICE_CLIENTE]||'').toUpperCase();
-    const inv2 = (row[COL.INVOICE_FC_SERV]||'').toUpperCase();
-    const vessel = (row[COL.VESSEL]||'').toUpperCase();
-    if([bl,customer,booking,inv1,inv2,vessel].some(f=>f.includes(qUp))){
+  allRowsAll.forEach((row, idx) => {
+    if(filaCoincide(row, q)){
       const d = daysFrom(row[COL.ETA]);
       const dCobro = daysFrom(row[getCobroCol()]);
       results.push({
@@ -8685,7 +8687,7 @@ function handleSearch(q){
         sub: `ETA: ${fmtDate(row[COL.ETA])} · Booking: ${row[COL.BOOKING]||'—'} · ${row[COL.INVOICE_CLIENTE]||''}`,
         badge: d!==null&&d<=7?'critical':'carga',
         badgeLabel: d!==null&&d<=7?`ETA ${d}d`:'Carga',
-        action: ()=>{ showView('cargas'); hideSearch(); }
+        action: ()=>{ cargasVista = 'tabla'; cargasSearch = (row[COL.BL]||'').toString().trim() || q; cargasPage = 0; cargasTablaIrAlFinal = true; hideSearch(); showView('cargas'); }
       });
     }
   });
