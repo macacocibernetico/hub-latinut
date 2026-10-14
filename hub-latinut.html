@@ -1130,6 +1130,15 @@ function empresaDelNegocio(){
 function esDelNegocio(c){
   return (c.empresa||'').toUpperCase().indexOf(empresaDelNegocio()) >= 0;
 }
+// Contactos del OTRO negocio: nunca entran en un mail de este (ni para, ni en copia).
+function esDeOtroNegocio(c){
+  const otro = empresaDelNegocio() === 'AXT' ? 'BUZARAM' : 'AXT';
+  return (c.empresa||'').toUpperCase().indexOf(otro) >= 0;
+}
+// Como se nombra el negocio en asuntos y textos de mails: nunca el del otro.
+function marcaDelNegocio(){
+  return empresaDelNegocio() === 'AXT' ? 'AXT Trading' : 'Buzaram';
+}
 function comoDestinatario(c){
   return c.contacto ? c.contacto + ' <' + c.email + '>' : c.email;
 }
@@ -1150,7 +1159,7 @@ function destinatariosFCHoja(){
 
 // Quienes van en copia del aviso al cliente.
 function ccAvisoHoja(){
-  return contacts.filter(c => c.ccAviso).map(c => c.email);
+  return contacts.filter(c => c.ccAviso && !esDeOtroNegocio(c)).map(c => c.email);
 }
 
 // Quienes van siempre en copia del pedido de liberacion de este negocio.
@@ -1246,10 +1255,10 @@ function getContactsForEmpresa(empresa){
   const principal=match.filter(c=>c.rol.toLowerCase().includes('principal'));
   // Las direcciones @latinutsa.com de la hoja CONTACTOS se excluyen aca: la copia
   // interna la pone CC_EQUIPO, asi no se duplica ni depende de como este cargada la hoja.
-  const cc=contacts.filter(c=>c.ccSiempre&&!c.email.toLowerCase().includes('latinutsa.com')).map(c=>c.email);
+  const cc=contacts.filter(c=>c.ccSiempre&&!esDeOtroNegocio(c)&&!c.email.toLowerCase().includes('latinutsa.com')).map(c=>c.email);
   const toContact=principal[0]||match[0];
   const toStr=toContact?`${toContact.contacto} <${toContact.email}>`:'';
-  const otherEmails=match.filter(c=>c!==toContact&&!c.ccSiempre).map(c=>c.email);
+  const otherEmails=match.filter(c=>c!==toContact&&!c.ccSiempre&&!esDeOtroNegocio(c)).map(c=>c.email);
   const reciproca=getReciprocaCC().split(',').map(e=>e.trim()).filter(Boolean);
   const allCC=[...new Set([...cc,...otherEmails,...reciproca])];
   return{to:toStr, cc:sanitizarCC(allCC.join(', '))||''};
@@ -1660,9 +1669,11 @@ function armarAvisoCliente(filas){
     + (f.eta ? '  ETA: ' + f.eta + '\n' : '')
   ).join('\n') + '\nQuedamos a disposición ante cualquier consulta.';
 
-  const asunto = 'Embarque ' + customer + ' - AXT Trading - ' + tns + ' tn ' + product + ' - ETD ' + etd + ' - ETA ' + eta;
+  const asunto = 'Embarque ' + customer + ' - ' + marcaDelNegocio() + ' - ' + tns + ' tn ' + product + ' - ETD ' + etd + ' - ETA ' + eta;
   const delCliente = getContactsForEmpresa(customer);
-  const cc = [delCliente.cc, ccAvisoHoja().join(', ')].filter(Boolean).join(', ');
+  // En copia: la contraparte del negocio (Pedro en AXT, Yael en Buzaram), mas lo que la hoja marca en CC_Aviso.
+  const cp = contraparteDeHoja();
+  const cc = [delCliente.cc, cp ? cp.email : '', ccAvisoHoja().join(', ')].filter(Boolean).join(', ');
   const faltantes = delCliente.to ? []
     : ['No hay ningún contacto de ' + customer + ' en la hoja CONTACTOS.'];
   return { asunto, html, texto, dest: delCliente.to, cc: cc, customer, tns, faltantes };
@@ -4240,7 +4251,7 @@ function renderAlertas(){
   const warnCount=alerts.filter(a=>a.level==='warning').length;
   const proxETA=allRows.filter(r=>{const d=daysFrom(r[COL.ETA]);return d!==null&&d>=0&&d<=7;}).length;
   let html=`<div class="stats-row">
-    <div class="stat-card"><div class="stat-label">Cargas activas</div><div class="stat-value">${allRows.length}</div><div class="stat-sub">AXT Solutions</div></div>
+    <div class="stat-card"><div class="stat-label">Cargas activas</div><div class="stat-value">${allRows.length}</div><div class="stat-sub">${getNegocioConfig().label}</div></div>
     <div class="stat-card alert-card"><div class="stat-label">Alertas críticas</div><div class="stat-value" style="color:var(--danger)">${critCount}</div><div class="stat-sub">Acción urgente</div></div>
     <div class="stat-card warn-card"><div class="stat-label">Advertencias</div><div class="stat-value" style="color:var(--warn)">${warnCount}</div><div class="stat-sub">A monitorear</div></div>
     <div class="stat-card"><div class="stat-label">ETA próximos 7d</div><div class="stat-value" style="color:var(--info)">${proxETA}</div><div class="stat-sub">Sin liberación solicitada</div></div>
@@ -6696,7 +6707,7 @@ async function reclamarCobranzaBulk(rowIndices){
   // Build dates string - single if all same, comma separated if different
   const dates=[...new Set(rows.map(r=>fmtDate(r[getCobroCol()])).filter(Boolean))];
   const datesStr=dates.length===1?dates[0]:dates.join(', ');
-  const subject=`Consulta de pago - ${customer} - AXT Trading - Vencimiento ${datesStr}`;
+  const subject=`Consulta de pago - ${customer} - ${marcaDelNegocio()} - Vencimiento ${datesStr}`;
   const body=`${getSaludoReclamo(customer,'es')},\n\nNos comunicamos para consultar respecto a ${intro}:\n\n${lines}\n\nAgradecemos confirmar estado del pago.`;
 
   modalData={rowIndices, isBulk:true, mailType:'reclamo_cobro', customer, rows};
@@ -8397,8 +8408,8 @@ function buildMailBody(mailType,d,lang){
       es:{subject:`Pagaré - ${d.negocio} / BL: ${d.bl}`,body:`${hi},\n\nLe solicitamos la firma y devolución del pagaré correspondiente al siguiente embarque:\n\nNegocio: ${d.negocio}\nCliente: ${d.customer}\nBL: ${d.bl}\nBooking: ${d.booking}\nContainer(s): ${d.containers}\nBuque: ${d.vessel}\nETA: ${d.etaFmt}${invLine}\n\n${bye}`}
     },
     reclamo_cobro:{
-      en:{subject:`Consulta de pago - ${d.customer} - AXT Trading - Vencimiento ${d.paymentDueFmt}`,body:`${saludoReclamo},\n\nNos comunicamos para consultar respecto al siguiente pago:\n\nCliente: ${d.customer}\nInvoice: ${d.inv1||d.bl}${d.inv2?'\nFC Servicios: '+d.inv2:''}\nFecha de vencimiento: ${d.paymentDueFmt}\n\nAgradecemos confirmar estado del pago.`},
-      es:{subject:`Consulta de pago - ${d.customer} - AXT Trading - Vencimiento ${d.paymentDueFmt}`,body:`${saludoReclamo},\n\nNos comunicamos para consultar respecto al siguiente pago:\n\nCliente: ${d.customer}\nInvoice: ${d.inv1||d.bl}${d.inv2?'\nFC Servicios: '+d.inv2:''}\nFecha de vencimiento: ${d.paymentDueFmt}\n\nAgradecemos confirmar estado del pago.`}
+      en:{subject:`Consulta de pago - ${d.customer} - ${marcaDelNegocio()} - Vencimiento ${d.paymentDueFmt}`,body:`${saludoReclamo},\n\nNos comunicamos para consultar respecto al siguiente pago:\n\nCliente: ${d.customer}\nInvoice: ${d.inv1||d.bl}${d.inv2?'\nFC Servicios: '+d.inv2:''}\nFecha de vencimiento: ${d.paymentDueFmt}\n\nAgradecemos confirmar estado del pago.`},
+      es:{subject:`Consulta de pago - ${d.customer} - ${marcaDelNegocio()} - Vencimiento ${d.paymentDueFmt}`,body:`${saludoReclamo},\n\nNos comunicamos para consultar respecto al siguiente pago:\n\nCliente: ${d.customer}\nInvoice: ${d.inv1||d.bl}${d.inv2?'\nFC Servicios: '+d.inv2:''}\nFecha de vencimiento: ${d.paymentDueFmt}\n\nAgradecemos confirmar estado del pago.`}
     },
     solicitar_liberacion:{
       en:{subject:`Release request - ${d.exporter||d.customer} - ${d.negocioLabel||'AXT'} - ETA ${d.etaFmt}`,body:`Dear,\n\nWe kindly request the release of the following shipment:\n\nExporter: ${d.exporter||d.customer}\nCustomer: ${d.customer}\nBL: ${d.bl}\nBooking: ${d.booking}\nContainer(s): ${d.containers}\nVessel: ${d.vessel}\nPort: ${d.port}\nETA: ${d.etaFmt}\n\n@${d.contraparte||'la contraparte'} Please confirm to proceed with the release.`},
