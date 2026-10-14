@@ -4811,6 +4811,7 @@ function renderCargas(showAll, sort){
     ${searchHtml}
     ${filtrosWrap}
     ${resetBtn}
+    ${_etaOrdenFijo && ordenPorETAActivo() ? '<button class="t-filtros-btn on" onclick="reordenarPorETA()" title="Las fechas que cambiaste siguen en su lugar; esto acomoda todas por ETA (la que llega ultima, abajo de todo)">↕ Reordenar por ETA</button>' : ''}
     <span style="flex:1;"></span>
     ${viewChip('Por embarque', false, "cargasVista='grupos';renderCargas()")}
     ${viewChip('Tabla', true, "cargasVista='tabla';cargasTablaIrAlFinal=true;renderCargas()")}
@@ -5040,6 +5041,19 @@ function ordenTablaActual(){
 }
 function cambiarOrdenTabla(v){
   try{ localStorage.setItem('hub_tabla_orden', v === 'planilla' ? 'planilla' : 'eta'); }catch(e){}
+  _etaOrdenFijo = null;
+  renderCargas();
+}
+// Al editar una ETA las filas NO se mueven solas: se queda la foto del orden que tenian y aparece arriba el
+// boton "Reordenar por ETA". Asi se pueden ir actualizando varias fechas sin que las filas salten.
+let _etaOrdenFijo = null;   // clave de fila -> lugar que tenia
+const claveOrdenFila = r => negocioActivo + ':' + (r._sheetRow || 0);
+function congelarOrdenETA(){
+  if(_etaOrdenFijo || !ordenPorETAActivo()) return;
+  _etaOrdenFijo = new Map((window._tablaBaseRows || []).map((r, i) => [claveOrdenFila(r), i]));
+}
+function reordenarPorETA(){
+  _etaOrdenFijo = null;
   renderCargas();
 }
 // Sin ETA o con ETA ilegible van al final; a igual fecha, queda el orden de la planilla.
@@ -5057,6 +5071,10 @@ function seguirFilaTras(row, c, filaDebajo, mover){
   } else marcarCelda(p, c);
 }
 function ordenarPorETA(rows){
+  if(_etaOrdenFijo){
+    const lugar = r => _etaOrdenFijo.has(claveOrdenFila(r)) ? _etaOrdenFijo.get(claveOrdenFila(r)) : Infinity;
+    return rows.map((r, i) => ({ r, i, p: lugar(r) })).sort((a, b) => (a.p === b.p ? a.i - b.i : (a.p < b.p ? -1 : 1))).map(x => x.r);
+  }
   const t = r => { const d = parseDate((valorVisible(r, COL.ETA) + '').trim()); return d ? d.getTime() : Infinity; };
   return rows.map((r, i) => ({ r, i, t: t(r) })).sort((a, b) => (a.t === b.t ? a.i - b.i : (a.t < b.t ? -1 : 1))).map(x => x.r);
 }
@@ -5383,6 +5401,7 @@ function anotarCambioTabla(row, c, nuevo){
     if(cargasPend[k]){ delete cargasPend[k][c]; if(!Object.keys(cargasPend[k]).length) delete cargasPend[k]; }
     return;
   }
+  if(c === COL.ETA) congelarOrdenETA();
   (cargasPend[k] = cargasPend[k] || {})[c] = { antes: orig, despues: nuevo, row };
 }
 
