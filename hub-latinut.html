@@ -329,6 +329,7 @@ body.t-redim{cursor:col-resize;user-select:none;}
 .t-filtros-btn.on{border-color:var(--accent);background:var(--accent-light);color:var(--accent);font-weight:600;}
 .t-filtros-btn b{background:var(--accent);color:#fff;border-radius:999px;padding:0 6px;font-size:10px;margin-left:4px;}
 .filtros-pop{position:absolute;top:calc(100% + 6px);left:0;z-index:120;background:var(--bg2);border:1px solid var(--border);border-radius:12px;box-shadow:var(--shadow-lg);padding:12px 14px;min-width:320px;}
+.fp-cierre{display:none;justify-content:space-between;align-items:center;margin-bottom:10px;}
 .fp-fila{display:flex;align-items:center;gap:10px;margin-bottom:8px;}
 .fp-fila label{width:64px;font-size:12px;color:var(--text2);}
 .fp-fila select{flex:1;}
@@ -383,24 +384,26 @@ body.t-redim{cursor:col-resize;user-select:none;}
 .row-action:hover{border-color:var(--accent);color:var(--accent);background:var(--accent-light);}
 
 /* MODAL */
-.modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:100;display:flex;align-items:center;justify-content:center;backdrop-filter:blur(8px);}
+/* Ventanas: todas comparten fondo, cabecera gris, boton × redondo y borde; solo cambia el ancho. */
+.modal-overlay,.ayuda-overlay,.confirm-overlay,.cf-detail-overlay{position:fixed;inset:0;background:rgba(0,0,0,.4);display:flex;align-items:center;justify-content:center;backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px);}
+.modal-overlay{z-index:100;}
 .modal-overlay.hidden{display:none;}
-.modal{background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius-xl);width:560px;max-width:95vw;overflow:hidden;box-shadow:0 20px 60px rgba(0,0,0,.2);}
+.modal{background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius-xl);width:560px;max-width:95vw;max-height:92vh;display:flex;flex-direction:column;overflow:hidden;box-shadow:0 20px 60px rgba(0,0,0,.2);}
 .modal-header{padding:16px 20px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;background:var(--bg3);}
-.modal-title{font-size:14px;font-weight:600;color:var(--text);}
+.modal-title,.cf-detail-title{font-size:14px;font-weight:600;color:var(--text);}
 .modal-header-right{display:flex;align-items:center;gap:10px;}
-.modal-close{font-size:20px;color:var(--text3);cursor:pointer;width:28px;height:28px;display:flex;align-items:center;justify-content:center;border-radius:50%;background:var(--bg4);transition:all .15s;line-height:1;}
-.modal-close:hover{background:var(--border);color:var(--text);}
+.modal-close,.cf-detail-close{font-size:20px;color:var(--text3);cursor:pointer;width:28px;height:28px;display:flex;align-items:center;justify-content:center;border-radius:50%;background:var(--bg4);border:none;padding:0;font-family:inherit;transition:all .15s;line-height:1;flex-shrink:0;}
+.modal-close:hover,.cf-detail-close:hover{background:var(--border);color:var(--text);}
 .lang-toggle{display:flex;border:1px solid var(--border);border-radius:7px;overflow:hidden;background:var(--bg4);}
 .lang-btn{padding:4px 10px;font-size:11px;font-weight:600;cursor:pointer;background:transparent;color:var(--text3);border:none;font-family:var(--font);transition:all .15s;}
 .lang-btn.active{background:var(--accent);color:#fff;}
-.modal-body{padding:18px 20px;}
+.modal-body{padding:18px 20px;overflow-y:auto;min-height:0;}
 .mail-field{margin-bottom:12px;}
 .mail-label{font-size:10px;text-transform:uppercase;letter-spacing:0.5px;color:var(--text3);margin-bottom:5px;font-weight:600;}
 .mail-value{font-size:11px;font-family:var(--mono);color:var(--text2);background:var(--bg3);padding:7px 10px;border-radius:7px;border:1px solid var(--border);}
 .mail-textarea{width:100%;background:var(--bg3);border:1px solid var(--border);border-radius:7px;color:var(--text);font-family:var(--mono);font-size:11px;padding:8px 10px;resize:vertical;min-height:140px;line-height:1.6;transition:border-color .15s;}
 .mail-textarea:focus{outline:none;border-color:var(--accent);background:var(--bg2);}
-.modal-footer{padding:14px 20px;border-top:1px solid var(--border);display:flex;justify-content:flex-end;gap:8px;background:var(--bg3);}
+.modal-footer{flex-shrink:0;padding:14px 20px;border-top:1px solid var(--border);display:flex;justify-content:flex-end;gap:8px;background:var(--bg3);}
 
 /* CONFIG */
 .config-section{background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius-lg);padding:18px;margin-bottom:12px;box-shadow:var(--shadow);}
@@ -472,10 +475,10 @@ tr:hover .col-acciones{background:var(--bg3);}
 
 /* CONFIRM DIALOG */
 .ayuda-btn{width:30px;height:30px;padding:0;justify-content:center;border-radius:50%;font-weight:700;font-size:14px;}
-.ayuda-overlay{position:fixed;inset:0;background:rgba(0,0,0,.35);z-index:190;display:flex;align-items:center;justify-content:center;backdrop-filter:blur(3px);}
+.ayuda-overlay{z-index:190;}
 .ayuda-overlay.hidden{display:none;}
-.ayuda-box{background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius-xl);width:760px;max-width:94vw;max-height:88vh;display:flex;flex-direction:column;box-shadow:0 20px 60px rgba(0,0,0,.2);}
-.ayuda-head{display:flex;justify-content:space-between;align-items:center;padding:14px 18px;border-bottom:1px solid var(--border);font-size:15px;}
+.ayuda-box{background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius-xl);width:760px;max-width:95vw;max-height:88vh;display:flex;flex-direction:column;overflow:hidden;box-shadow:0 20px 60px rgba(0,0,0,.2);}
+.ayuda-head{display:flex;justify-content:space-between;align-items:center;padding:16px 20px;border-bottom:1px solid var(--border);background:var(--bg3);flex-shrink:0;}
 .ayuda-body{overflow:auto;padding:6px 18px 16px;}
 .ayuda-body h4{margin:16px 0 6px;font-size:12px;text-transform:uppercase;letter-spacing:.06em;color:var(--text3);}
 .ayuda-tab{width:100%;border-collapse:collapse;font-size:13px;}
@@ -495,9 +498,9 @@ tr:hover .col-acciones{background:var(--bg3);}
 .v-ahora{color:var(--ok);}
 .v-sin{color:var(--text3);font-style:italic;font-size:12px;}
 .v-mas{font-size:11px;color:var(--text3);cursor:help;}
-.confirm-overlay{position:fixed;inset:0;background:rgba(0,0,0,.35);z-index:200;display:flex;align-items:center;justify-content:center;backdrop-filter:blur(4px);}
+.confirm-overlay{z-index:200;}
 .confirm-overlay.hidden{display:none;}
-.confirm-box{background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius-xl);padding:28px 32px;width:340px;max-width:90vw;box-shadow:0 20px 60px rgba(0,0,0,.15);text-align:center;}
+.confirm-box{background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius-xl);padding:28px 32px;width:340px;max-width:95vw;box-shadow:0 20px 60px rgba(0,0,0,.2);text-align:center;}
 .confirm-icon{font-size:36px;margin-bottom:12px;}
 .confirm-title{font-size:15px;font-weight:600;color:var(--text);margin-bottom:6px;}
 .confirm-msg{font-size:12px;color:var(--text3);margin-bottom:24px;line-height:1.5;}
@@ -627,9 +630,19 @@ tr:hover .col-acciones{background:var(--bg3);}
   .search-bar:focus-within{width:180px;}
   .table-wrap thead th{font-size:9px;padding:7px 8px;}
   .table-wrap td{padding:8px;font-size:11px;}
-  .modal{width:95vw;}
+  /* Ventanas en celular: hoja que sube desde abajo, a todo el ancho (el aviso de confirmacion queda centrado). */
+  .modal-overlay,.ayuda-overlay,.cf-detail-overlay{align-items:flex-end;}
+  .modal,.ayuda-box,.cf-detail-panel{width:100%!important;max-width:100%!important;max-height:92vh;border-radius:16px 16px 0 0;border-bottom:0;}
   .modal-body{padding:14px 16px;}
-  .modal-footer{padding:12px 16px;}
+  .modal-footer{padding:12px 16px;padding-bottom:calc(12px + env(safe-area-inset-bottom));}
+  .modal-close,.cf-detail-close{width:36px;height:36px;}
+  /* Filtros de Cargas: barra compacta; el panel sube desde abajo, por encima del menu inferior */
+  .t-barra-m{margin-bottom:6px;flex-wrap:nowrap;}
+  .t-barra-m .t-busca{flex:1;min-width:0;}
+  .t-barra-m #cargas-search-input{width:100%!important;}
+  .t-filtros-btn{padding:9px 14px;font-size:13px;}
+  .filtros-pop{position:fixed;left:0;right:0;top:auto;bottom:0;min-width:0;border-radius:16px 16px 0 0;padding:14px 16px calc(16px + env(safe-area-inset-bottom));z-index:150;box-shadow:0 -10px 40px rgba(0,0,0,.25);}
+  .fp-cierre{display:flex!important;}
   .bottom-nav{display:block;}
   /* Bulk bar mobile - full width at bottom above nav */
   #lib-bulk-bar,#cob-bulk-bar,#fc-bulk-bar,.bulk-bar{
@@ -710,13 +723,10 @@ tr:hover .col-acciones{background:var(--bg3);}
 .cf-chip.pago-ok{background:#eceff1;color:#546e7a;border:1px solid #cfd8dc;text-decoration:line-through;opacity:.9;}
 .cf-more{font-size:11px;color:var(--accent);font-family:var(--mono);margin-top:3px;font-weight:600;padding-left:2px;}
 /* DAY DETAIL PANEL */
-.cf-detail-overlay{position:fixed;inset:0;background:rgba(0,0,0,.35);z-index:150;display:flex;align-items:center;justify-content:center;backdrop-filter:blur(6px);}
+.cf-detail-overlay{z-index:150;}
 .cf-detail-overlay.hidden{display:none;}
 .cf-detail-panel{background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius-xl);width:520px;max-width:95vw;max-height:82vh;overflow:hidden;display:flex;flex-direction:column;box-shadow:0 24px 64px rgba(0,0,0,.15);}
 .cf-detail-header{padding:16px 20px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;background:var(--bg3);flex-shrink:0;}
-.cf-detail-title{font-size:14px;font-weight:600;color:var(--text);}
-.cf-detail-close{width:28px;height:28px;border-radius:50%;background:var(--bg4);border:none;cursor:pointer;font-size:16px;display:flex;align-items:center;justify-content:center;color:var(--text3);transition:all .15s;}
-.cf-detail-close:hover{background:var(--border);}
 .cf-detail-body{overflow-y:auto;flex:1;padding:16px 20px;}
 .cf-event-card{background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius-lg);padding:14px 16px;margin-bottom:10px;box-shadow:var(--shadow);}
 .cf-event-card:last-child{margin-bottom:0;}
@@ -851,7 +861,7 @@ tr:hover .col-acciones{background:var(--bg3);}
 
 <!-- MODAL MAIL -->
 <div class="modal-overlay hidden" id="mail-modal">
-  <div class="modal">
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="modal-title">
     <div class="modal-header">
       <span class="modal-title" id="modal-title">Crear borrador</span>
       <div class="modal-header-right">
@@ -859,7 +869,7 @@ tr:hover .col-acciones{background:var(--bg3);}
           <button class="lang-btn active" id="lang-en" onclick="setLang('en')">EN</button>
           <button class="lang-btn" id="lang-es" onclick="setLang('es')">ES</button>
         </div>
-        <span class="modal-close" onclick="closeModal()">×</span>
+        <button type="button" class="modal-close" onclick="closeModal()" aria-label="Cerrar">×</button>
       </div>
     </div>
     <div class="modal-body">
@@ -3081,11 +3091,11 @@ function abrirFacturaForwarder(idxs){
       <td class="mono" style="text-align:right;">${f.tarifa ? 'USD ' + fmtUsd2(f.esperado) : '—'}</td>
       <td class="mono" style="text-align:right;" id="fwd-fac-${f.idx}">—</td>
     </tr>`).join('');
-  m.innerHTML = `<div class="modal" style="width:720px;max-width:96vw;">
+  m.innerHTML = `<div class="modal" role="dialog" aria-modal="true" aria-label="Factura de forwarder" style="width:720px;max-width:96vw;">
     <div class="modal-header">
       <div><span class="modal-title">🚚 Factura de forwarder</span>
       <div style="font-size:11px;color:var(--text3);margin-top:2px;">${(r0[COL.CUSTOMER]||'—')} · ${idxs.length} carga${idxs.length>1?'s':''} · ${esp.cnt} contenedor${esp.cnt>1?'es':''}</div></div>
-      <span class="modal-close" onclick="cerrarFacturaForwarder()">×</span>
+      <button type="button" class="modal-close" onclick="cerrarFacturaForwarder()" aria-label="Cerrar">×</button>
     </div>
     <div class="modal-body" style="max-height:72vh;overflow-y:auto;">
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
@@ -4751,11 +4761,35 @@ function renderCargas(showAll, sort){
       </tr></thead>
       <tbody>`;
 
-  // Mobile: show cards instead of table
+  // Filtros: se comparten entre la tabla (panel flotante) y el celular (panel que sube desde abajo).
+  const nFiltros = Object.values(cargasDropFilters).filter(v => v !== '').length + (cargasPagareStates.size > 0 ? 1 : 0);
+  const filaFiltro = (rotulo, control) => control ? `<div class="fp-fila"><label>${rotulo}</label>${control}</div>` : '';
+  const filtrosWrap = `<div class="t-filtros-wrap">
+      <button class="t-filtros-btn${nFiltros ? ' on' : ''}" onclick="toggleFiltrosPop(event)" aria-haspopup="true" aria-expanded="${_filtrosAbiertos ? 'true' : 'false'}">Filtros${nFiltros ? ' <b>' + nFiltros + '</b>' : ''} ▾</button>
+      <div id="filtros-pop" class="filtros-pop" style="display:${_filtrosAbiertos ? 'block' : 'none'}" onclick="event.stopPropagation()">
+        <div class="fp-cierre"><b>Filtros</b><button type="button" class="btn primary" onclick="cerrarFiltrosPop()">Listo</button></div>
+        ${filaFiltro('Cliente', sel('cliente', cargasDropFilters.cliente, 'Todos', uniqueClientes.map(c => ({ val: c, label: c }))))}
+        ${filaFiltro('Pagaré', pagareDropHtml)}
+        ${filaFiltro('Docs', sel('docs', cargasDropFilters.docs, 'Todos', [{val:'pendientes',label:'Pendientes'},{val:'completos',label:'Completos'}]))}
+        ${filaFiltro('TELEX', sel('telex', cargasDropFilters.telex, 'Todos', [{val:'sin_solicitar',label:'Sin solicitar'},{val:'en_proceso',label:'En proceso'},{val:'liberado',label:'Liberado'}]))}
+        ${filaFiltro('Naviera', sel('naviera', cargasDropFilters.naviera, 'Todas', uniqueNavieras.map(n => ({ val: n, label: n }))))}
+        ${filaFiltro('Puerto', sel('puerto', cargasDropFilters.puerto, 'Todos', uniquePuertos.map(p => ({ val: p, label: p }))))}
+      </div>
+    </div>`;
+
+  // Mobile: cards, con buscador y un solo boton Filtros (antes los filtros ocupaban dos tercios de la pantalla).
   if(isMobile()){
     // Cerrar bien tbody/table/wrapper antes de las cards: si no, quedaba una tabla
     // abierta y el navegador acomodaba las cards adentro del <tbody>.
-    const mobileHtml = html + '</tbody></table></div>' +
+    const barraM = `<div class="table-top" style="flex-direction:column;align-items:stretch;gap:8px;padding:10px 12px;">
+      <div class="t-barra t-barra-m"><div class="t-busca">${searchHtml}</div>${filtrosWrap}</div>
+      <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;">
+        <span style="font-size:13px;font-weight:600;color:var(--text);margin-right:auto;">${rows.length} cargas</span>
+        ${viewChip('Activas', !cargasShowAll, "renderCargas(false)")}
+        ${viewChip('Todas', cargasShowAll, "renderCargas(true)")}
+        ${resetBtn}
+      </div></div>`;
+    const mobileHtml = '<div class="table-wrap">' + barraM + '<div id="fc-bulk-bar" class="bulk-bar"></div>' +
       '<div style="overflow-x:visible;padding:12px 0;">' + renderCargasMobileCards(rows, pagedRows) + '</div>' +
       buildPagination(totalRows, cargasPage, 'setCargasPage') + '</div>';
     document.getElementById('content').innerHTML = mobileHtml;
@@ -4773,21 +4807,9 @@ function renderCargas(showAll, sort){
   }
 
   // Vista tabla: replica de la planilla (ver renderCargasTabla).
-  const nFiltros = Object.values(cargasDropFilters).filter(v => v !== '').length + (cargasPagareStates.size > 0 ? 1 : 0);
-  const filaFiltro = (rotulo, control) => control ? `<div class="fp-fila"><label>${rotulo}</label>${control}</div>` : '';
   const filtrosT = `<div class="t-barra">
     ${searchHtml}
-    <div class="t-filtros-wrap">
-      <button class="t-filtros-btn${nFiltros ? ' on' : ''}" onclick="toggleFiltrosPop(event)" aria-haspopup="true" aria-expanded="${_filtrosAbiertos ? 'true' : 'false'}">Filtros${nFiltros ? ' <b>' + nFiltros + '</b>' : ''} ▾</button>
-      <div id="filtros-pop" class="filtros-pop" style="display:${_filtrosAbiertos ? 'block' : 'none'}" onclick="event.stopPropagation()">
-        ${filaFiltro('Cliente', sel('cliente', cargasDropFilters.cliente, 'Todos', uniqueClientes.map(c => ({ val: c, label: c }))))}
-        ${filaFiltro('Pagaré', pagareDropHtml)}
-        ${filaFiltro('Docs', sel('docs', cargasDropFilters.docs, 'Todos', [{val:'pendientes',label:'Pendientes'},{val:'completos',label:'Completos'}]))}
-        ${filaFiltro('TELEX', sel('telex', cargasDropFilters.telex, 'Todos', [{val:'sin_solicitar',label:'Sin solicitar'},{val:'en_proceso',label:'En proceso'},{val:'liberado',label:'Liberado'}]))}
-        ${filaFiltro('Naviera', sel('naviera', cargasDropFilters.naviera, 'Todas', uniqueNavieras.map(n => ({ val: n, label: n }))))}
-        ${filaFiltro('Puerto', sel('puerto', cargasDropFilters.puerto, 'Todos', uniquePuertos.map(p => ({ val: p, label: p }))))}
-      </div>
-    </div>
+    ${filtrosWrap}
     ${resetBtn}
     <span style="flex:1;"></span>
     ${viewChip('Por embarque', false, "cargasVista='grupos';renderCargas()")}
@@ -12377,6 +12399,13 @@ document.addEventListener('keydown', e => {
   if(ayudaAbierta()){ if(e.key === 'Escape') cerrarAyuda(); return; }
   const ov = document.getElementById('visto-overlay');
   if(ov && ov.classList && !ov.classList.contains('hidden')){ if(e.key === 'Escape') cerrarRevisionVistos(); return; }
+  if(e.key === 'Escape'){
+    const abiertas = [['cf-detail-overlay', closeDayDetail], ['tasks-modal', closeTasksModal], ['fwd-modal', cerrarFacturaForwarder]];
+    for(const [id, cerrar] of abiertas){
+      const o = document.getElementById(id);
+      if(o && o.classList && !o.classList.contains('hidden')){ cerrar(); return; }
+    }
+  }
   if(tablaTeclado(e)) return;
   if(e.key === 'Escape' && _comPop){ cerrarComentarios(); return; }
   if(e.key === 'Escape' && _filtroAbierto){ cerrarFiltroColumna(); return; }
@@ -12422,20 +12451,20 @@ window.onload=()=>{
 
 <!-- CONFIRM DIALOG -->
 <div class="ayuda-overlay hidden" id="ayuda-overlay" onclick="if(event.target===this)cerrarAyuda()">
-  <div class="ayuda-box" role="dialog" aria-label="Atajos y trucos">
-    <div class="ayuda-head"><b>Atajos y trucos del hub</b><button class="btn" onclick="cerrarAyuda()">Cerrar (Esc)</button></div>
+  <div class="ayuda-box" role="dialog" aria-modal="true" aria-label="Atajos y trucos">
+    <div class="ayuda-head"><span class="modal-title">Atajos y trucos del hub</span><button type="button" class="modal-close" onclick="cerrarAyuda()" aria-label="Cerrar">×</button></div>
     <div class="ayuda-body" id="ayuda-body"></div>
   </div>
 </div>
 <div class="ayuda-overlay hidden" id="visto-overlay" onclick="if(event.target===this)cerrarRevisionVistos()">
-  <div class="ayuda-box visto-box" role="dialog" aria-label="Revisar cambios marcados">
-    <div class="ayuda-head"><b>Revisar los cambios marcados en naranja</b><button class="btn" onclick="cerrarRevisionVistos()">Cerrar</button></div>
+  <div class="ayuda-box visto-box" role="dialog" aria-modal="true" aria-label="Revisar cambios marcados">
+    <div class="ayuda-head"><span class="modal-title">Revisar los cambios marcados en naranja</span><button type="button" class="modal-close" onclick="cerrarRevisionVistos()" aria-label="Cerrar">×</button></div>
     <div class="ayuda-body" id="visto-body"></div>
     <div class="visto-pie"><span class="v-sub">Al dar el visto bueno solo se pasa el color a blanco: no se cambia ningún dato.</span><button class="btn primary" id="visto-ok" onclick="confirmarVistoBueno()">Dar el visto bueno</button></div>
   </div>
 </div>
 <div class="confirm-overlay hidden" id="confirm-overlay">
-  <div class="confirm-box">
+  <div class="confirm-box" role="alertdialog" aria-modal="true" aria-labelledby="confirm-title">
     <div class="confirm-icon" id="confirm-icon">⚠️</div>
     <div class="confirm-title" id="confirm-title">¿Confirmar acción?</div>
     <div class="confirm-msg" id="confirm-msg"></div>
@@ -12480,10 +12509,10 @@ window.onload=()=>{
 
 <!-- DAY DETAIL MODAL -->
 <div class="cf-detail-overlay hidden" id="cf-detail-overlay" onclick="if(event.target===this)closeDayDetail()">
-  <div class="cf-detail-panel">
+  <div class="cf-detail-panel" role="dialog" aria-modal="true" aria-labelledby="cf-detail-title">
     <div class="cf-detail-header">
       <span class="cf-detail-title" id="cf-detail-title">Detalle del día</span>
-      <button class="cf-detail-close" onclick="closeDayDetail()">×</button>
+      <button type="button" class="cf-detail-close" onclick="closeDayDetail()" aria-label="Cerrar">×</button>
     </div>
     <div class="cf-detail-body" id="cf-detail-body"></div>
   </div>
@@ -12491,13 +12520,13 @@ window.onload=()=>{
 
 <!-- TASKS MODAL -->
 <div class="modal-overlay hidden" id="tasks-modal" onclick="if(event.target===this)closeTasksModal()">
-  <div class="modal" style="width:560px;">
+  <div class="modal" role="dialog" aria-modal="true" aria-label="Google Tasks" style="width:560px;">
     <div class="modal-header">
       <div>
         <span class="modal-title">📋 Google Tasks</span>
         <div id="tasks-modal-carga" style="font-size:11px;color:var(--text3);margin-top:2px;"></div>
       </div>
-      <span class="modal-close" onclick="closeTasksModal()">×</span>
+      <button type="button" class="modal-close" onclick="closeTasksModal()" aria-label="Cerrar">×</button>
     </div>
     <div class="modal-body">
       <div class="mail-field">
