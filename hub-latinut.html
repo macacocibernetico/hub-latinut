@@ -3428,6 +3428,20 @@ function textoComparacionFlete(cmp){
 }
 
 // ─── WRITE TO SHEET ───────────────────────────────────────────────────────────
+// La planilla usa coma como separador decimal. Un numero que arma el hub ("12000.5") escrito como texto no lo
+// entiende como numero y rompe las formulas. Para las columnas numericas se manda un numero real (Sheets lo guarda
+// igual en cualquier idioma), tanto si viene con punto del calculo como con coma de lo tipeado. Los valores con
+// 3 decimales o mas ("1.180") no se tocan: pueden ser miles y los interpreta la planilla como siempre.
+const COLS_NUMERICAS_NOMBRES = ['TNS','PRICE_FCA','TOTAL_FCA','PRICE_CLIENTE','FLETE','TOTAL_CFR_ORIG','PRICE_SERV',
+  'TOTAL_CFR','PRECIO_FINAL_TN','COMISION_BROKER','MONTO_FLETE','MONTO_COURIER','TOTAL_PAGO','PAGO_90','PAGO_SALDO','STENN','COSTO_STENN','MONTO_LT'];
+function esColNumerica(col){ return COLS_NUMERICAS_NOMBRES.some(n => COL[n] !== undefined && COL[n] >= 0 && COL[n] === col); }
+function valorNumericoParaPlanilla(col, v){
+  if(typeof v !== 'string' || !esColNumerica(col)) return v;
+  const t = v.trim();
+  if(/^-?\d+([.,]\d{1,2})?$/.test(t)){ const n = Number(t.replace(',', '.')); if(isFinite(n)) return n; }
+  return v;
+}
+
 async function writeCell(row, col, value){
   if(!accessToken){alert('Conectate con Google primero para escribir en la planilla.');return false;}
   // row es 0-based en allRows, datos empiezan en fila 4 del sheet (filas 1-3 son headers)
@@ -3452,7 +3466,7 @@ async function writeCell(row, col, value){
   const r = await fetch(url, {
     method: 'PUT',
     headers: {'Authorization':`Bearer ${accessToken}`,'Content-Type':'application/json'},
-    body: JSON.stringify({values:[[value]]})
+    body: JSON.stringify({values:[[valorNumericoParaPlanilla(col, value)]]})
   });
   if(r.ok) registrarCambioCelda(fila, sheetRow, col, antesCelda, value);
   return r.ok;
@@ -5686,6 +5700,7 @@ async function guardarCambiosTabla(){
     let v = x.despues;
     // Tns como numero, para que Sheets no lo lea como fecha (igual que writeRow).
     if(x.col === COL.TNS && v !== ''){ const n = parseFloat(String(v).replace(',', '.')); if(!isNaN(n)) v = n; }
+    v = valorNumericoParaPlanilla(x.col, v);
     return { range: hoja + '!' + colIndexToLetter(x.col) + x.sheetRow, values: [[v]] };
   });
   const r = await fetch('https://sheets.googleapis.com/v4/spreadsheets/' + (nc.sheetId || cfg.sheetId) + '/values:batchUpdate', {
@@ -5729,6 +5744,7 @@ async function writeRow(rowData, sheetRow){
       const num = parseFloat(String(val).replace(',', '.'));
       if(!isNaN(num)) val = num; // número real → Sheets lo guarda como número, no como fecha
     }
+    val = valorNumericoParaPlanilla(colNum, val);
     return {range: `${sheetName}!${colLetter}${sheetRow}`, values: [[val]]};
   });
   const url = `https://sheets.googleapis.com/v4/spreadsheets/${(nc.sheetId||cfg.sheetId)}/values:batchUpdate`;
@@ -6132,7 +6148,7 @@ function valForm(prefix, id){
 }
 function setForm(prefix, id, v){
   const el = document.getElementById(prefix + '-' + id);
-  if(el && v !== undefined && v !== null) el.value = v;
+  if(el && v !== undefined && v !== null) el.value = (typeof v === 'number') ? String(v).replace('.', ',') : v;
 }
 
 function buscarContratos(prefix){
