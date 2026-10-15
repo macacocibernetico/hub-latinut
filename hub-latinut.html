@@ -251,6 +251,12 @@ body.tabla-full-on{overflow:hidden;}
 .t-grid th.formula,.t-grid td.formula{color:var(--text3);}
 .t-grid td.formula{background:#fafafa;font-style:italic;}
 .t-grid tbody tr:nth-child(even) td{background:#fafbfc;}
+/* Colores por grupo de columnas (paleta de Google Sheets), SOLO en los encabezados. Solo se ven en la tabla del hub:
+   no tocan la planilla. Las celdas de datos no se pintan. */
+[data-t="nar"]{--tint:#ff9900}[data-t="mag1"]{--tint:#c27ba0}[data-t="azu3"]{--tint:#c9daf8}[data-t="ver1"]{--tint:#93c47d}
+[data-t="mag2"]{--tint:#d5a6bd}[data-t="mag3"]{--tint:#ead1dc}[data-t="roj2"]{--tint:#ea9999}[data-t="azu1"]{--tint:#6d9eeb}
+[data-t="roj1"]{--tint:#e06666}[data-t="nar2"]{--tint:#f9cb9c}[data-t="ama"]{--tint:#ffff00}
+.t-grid thead th[data-t]{background:var(--tint);color:#16201f;}
 .t-grid tbody tr:hover td{background:#f1f6fe;}
 .t-grid tbody tr.row-cur td{background:#e8f0fe;}
 .t-grid tbody tr.sel td{background:#dde9fb;}
@@ -5232,6 +5238,28 @@ function ordenarPorETA(rows){
   const t = r => { const d = parseDate((valorVisible(r, COL.ETA) + '').trim()); return d ? d.getTime() : Infinity; };
   return rows.map((r, i) => ({ r, i, t: t(r) })).sort((a, b) => (a.t === b.t ? a.i - b.i : (a.t < b.t ? -1 : 1))).map(x => x.r);
 }
+// A que grupo de color pertenece el ENCABEZADO de cada columna de la tabla (por nombre de encabezado, via COL).
+function mapaTintes(){
+  const m = {};
+  const ok = c => c !== undefined && c !== null && c >= 0;
+  const rango = (a, b, t) => { if(!ok(a) || !ok(b)) return; for(let c = Math.min(a, b); c <= Math.max(a, b); c++) m[c] = t; };
+  const uno = (a, t) => { if(ok(a)) m[a] = t; };
+  rango(COL.NEGOCIO, COL.PORT, 'nar');                       // Negocio ... Port: naranja
+  rango(COL.DOCUMENTOS, COL.TELEX, 'mag1');                  // DOCUMENTOS ... TELEX: magenta claro 1
+  rango(COL.EXPORTER, COL.TOTAL_FCA, 'azu3');                // Exporter ... Total FCA: azul aciano claro 3
+  rango(COL.CUSTOMER, COL.INCOTERM, 'ver1');                 // Customer ... INCOTERM: verde claro 1
+  uno(COL.INVOICE_FC_SERV, 'mag2'); uno(COL.PRICE_SERV, 'mag2');       // Invoice serv, Price serv: magenta claro 2
+  uno(COL.TOTAL_CFR, 'mag3'); uno(COL.PRECIO_FINAL_TN, 'mag3');        // TOTAL FINAL, Precio final x tn: magenta claro 3
+  uno(COL.COMISION_BROKER, 'roj2');                          // Comision Broker: rojo claro 2
+  rango(COL.FC_FLETE, COL.FECHA_PAGO_FWD_REAL, 'azu1');      // FC Flete ... Fecha de pago real: azul aciano claro 1
+  rango(COL.PAGARE_ENVIADO, COL.PAGARE_FIRMADO, 'roj1');     // Enviado, Firmado: rojo claro 1
+  uno(COL.FECHA_EST_COBRO, 'nar2'); uno(COL.FECHA_COBRO, 'nar2');      // Fecha estimada, Fecha de cobro: naranja claro 2
+  if(ok(COL.MONTO_LT)){                                      // Monto LT y todas las que siguen: amarillo
+    const ult = Math.max.apply(null, (_tablaCols && _tablaCols.length ? _tablaCols : [COL.MONTO_LT]).concat([COL.MONTO_LT]));
+    rango(COL.MONTO_LT, ult, 'ama');
+  }
+  return m;
+}
 function renderCargasTabla(rows){
   const hdr = encabezadosCargas();
   // Replica de la hoja: mismo orden que la planilla (el selector de orden de
@@ -5263,11 +5291,12 @@ function renderCargasTabla(rows){
   let izq = 104; const left = {};
   _tablaCols.slice(0, TABLA_FIJAS).forEach(c => { left[c] = izq; izq += anchos[c]; });
 
+  const tintes = mapaTintes();
   const th = _tablaCols.map((c, k) => {
     const fil = !!cargasColFiltros[c];
     const ord = cargasColSort && cargasColSort.col === c ? (cargasColSort.dir > 0 ? ' ↑' : ' ↓') : '';
     const fija = k < TABLA_FIJAS;
-    return `<th data-c="${c}" class="${fija ? 'fija' : ''}${k === TABLA_FIJAS - 1 ? ' fija-ult' : ''}${esColFormula(c) ? ' formula' : ''}" style="min-width:${anchos[c]}px;max-width:${anchos[c]}px;${fija ? 'left:' + left[c] + 'px;' : ''}" title="${esc(hdr[c])} · columna ${colIndexToLetter(c)}${esColFormula(c) ? ' · tiene fórmula, no se edita desde el hub' : ''}">
+    return `<th data-c="${c}" class="${fija ? 'fija' : ''}${k === TABLA_FIJAS - 1 ? ' fija-ult' : ''}${esColFormula(c) ? ' formula' : ''}" style="min-width:${anchos[c]}px;max-width:${anchos[c]}px;${fija ? 'left:' + left[c] + 'px;' : ''}" title="${esc(hdr[c])} · columna ${colIndexToLetter(c)}${esColFormula(c) ? ' · tiene fórmula, no se edita desde el hub' : ''}"${tintes[c] ? ' data-t="' + tintes[c] + '"' : ''}>
       <div class="th-in"><span class="th-letra">${colIndexToLetter(c)}</span><span class="th-nom">${esc(hdr[c])}${ord}</span>
       <button class="th-fil${fil ? ' on' : ''}" onclick="abrirFiltroColumna(${c},event)" aria-label="Filtrar ${esc(hdr[c])}">${fil ? '⏷' : '▾'}</button></div><span class="th-res" onmousedown="iniciarResize(${c},event)" ondblclick="resetAncho(${c},event)" title="Arrastrá para cambiar el ancho · doble clic para volver al automático"></span></th>`;
   }).join('');
