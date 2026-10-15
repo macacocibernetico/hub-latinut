@@ -8853,6 +8853,16 @@ function avisoContactosFaltantes(faltantes){
   ).join('');
 }
 
+// Boton "Cobro" de la planilla: el mismo mail que el de la pestana Cobranza (consulta de pago).
+// El pedido sale a un solo cliente, asi que una seleccion con varios clientes no se mezcla.
+function reclamoCobroDeSeleccion(){
+  const sel = window._selFCaGlobal ? window._selFCaGlobal() : [];
+  if(!sel.length){ showToast('Seleccioná al menos una carga para reclamar el cobro.', 'err'); return; }
+  const clientes = new Set(sel.map(i => ((filaPorIdx(i)||[])[COL.CUSTOMER]||'').trim().toUpperCase()));
+  if(clientes.size > 1){ showToast('Elegiste cargas de ' + clientes.size + ' clientes distintos. El reclamo de cobro sale a un cliente por vez: dejá seleccionadas solo las de uno.', 'err'); return; }
+  reclamarCobranzaBulk(sel);
+}
+
 function openBulkMailModal(rowIndices, mailType){
   if(!rowIndices.length) return;
   const rows=rowIndices.map(i=>filaPorIdx(i));
@@ -10303,7 +10313,7 @@ function actualizarToolbarCargas(){
     '<button class="tb-btn prim"' + dis + ' onclick="requestBulkFC()">📄 FC</button>' +
     '<button class="tb-btn"' + dis + ' onclick="bulkAvisoCliente()">📦 Aviso cliente</button>' +
     '<button class="tb-btn"' + dis + ' onclick="bulkLiberacion()">🚢 Liberación</button>' +
-    '<button class="tb-btn" onclick="openBulkMailModal(window._selFCaGlobal(),\'reclamo_pago\')">✉ Cobro</button>' +
+    '<button class="tb-btn" onclick="reclamoCobroDeSeleccion()">✉ Cobro</button>' +
     '<button class="tb-btn" onclick="abrirFacturaForwarder(window._selFCaGlobal())">🚚 Factura fwd</button>' +
     '<button class="tb-btn" onclick="marcarDudaNOP(window._selFCaGlobal(),true)" title="Deja el Producto en violeta hasta saber si es NOP">❓ Duda NOP</button>' +
     '<button class="tb-btn" onclick="resolverNOP(window._selFCaGlobal(),true)" title="Pasa a NOP: cambia producto, contrato y precios">✓ Es NOP</button>' +
@@ -10347,7 +10357,7 @@ function abrirPanelCarga(idx){
       <button style="background:var(--accent);color:#fff;border-color:var(--accent);" onclick="solicitarFC(${idx})">📄 Solicitud FC</button>
       <button onclick="avisoClienteBulk([${idx}])">📦 Aviso cliente</button>
       <button onclick="solicitarLiberacionViaAppScript(${idx})">🚢 Liberación</button>
-      <button onclick="openMailModal(${idx},'reclamo_pago')">✉ Reclamo cobro</button>
+      <button onclick="openMailModal(${idx},'reclamo_cobro')">✉ Reclamo cobro</button>
       <button onclick="renderEditCarga(${idx})">✎ Editar carga</button>
       <button onclick="abrirFacturaForwarder([${idx}])">🚚 Factura forwarder</button>
       <button onclick="triggerDriveUpload(${idx})">📎 Subir docs</button>
@@ -10441,7 +10451,7 @@ function renderCargasMobileCards(rows, pagedRows){
       </div>
       <!-- Actions -->
       <div style="display:flex;gap:8px;" onclick="event.stopPropagation()">
-        <button onclick="openMailModal(${idx},'reclamo_pago')" style="flex:1;padding:10px;border-radius:10px;background:#f3f4f6;border:none;font-size:14px;font-weight:600;cursor:pointer;color:#374151;">✉ Reclamo</button>
+        <button onclick="openMailModal(${idx},'reclamo_cobro')" style="flex:1;padding:10px;border-radius:10px;background:#f3f4f6;border:none;font-size:14px;font-weight:600;cursor:pointer;color:#374151;">✉ Reclamo</button>
         <button onclick="renderEditCarga(${idx})" style="flex:1;padding:10px;border-radius:10px;background:#f3f4f6;border:none;font-size:14px;font-weight:600;cursor:pointer;color:#374151;">✎ Editar</button>
         <button onclick="solicitarFC(${idx})" style="flex:1;padding:10px;border-radius:10px;background:#0071e3;border:none;font-size:14px;font-weight:600;cursor:pointer;color:#fff;">📄 FC</button>
       </div>
@@ -12005,7 +12015,7 @@ function openDayDetail(key, dateLabel){
         </div>
         <div class="cf-event-actions">
           ${telex!=='SI'?`<button class="action-btn write" onclick="closeDayDetail();openMailModal(${idx},'solicitar_liberacion')">🔓 Solicitar liberación</button>`:''}
-          <button class="action-btn mail" onclick="closeDayDetail();openMailModal(${idx},'reclamo_pago')">✉ Reclamo de pago</button>
+          <button class="action-btn mail" onclick="closeDayDetail();openMailModal(${idx},'reclamo_cobro')">✉ Reclamo de cobro</button>
           <button class="action-btn mail" onclick="closeDayDetail();openMailModal(${idx},'shipment_advice')">📋 Shipment Advice</button>
         </div>
       </div>`;
