@@ -133,6 +133,15 @@ body.sin-google .mobile-toggle::after{content:'';position:absolute;top:-3px;righ
 .stats-row{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:20px;}
 
 /* Lista de Contratos */
+/* Texto de la vista Contratos en negro: lo gris pasa a negro y la jerarquia la dan el tamano y el peso. */
+.ct-vista{--text:#111113;--text2:#111113;--text3:#1f1f22;}
+.ct-ico{display:inline-flex;vertical-align:-3px;}
+.ct-ico svg{width:15px;height:15px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;}
+.ct-lupa{position:absolute;left:9px;display:flex;color:var(--text);}
+.ct-st .ct-ico{margin-right:3px;vertical-align:-2px;}.ct-st .ct-ico svg{width:12px;height:12px;stroke-width:2.4;}
+.ct-dalerta{display:flex;gap:8px;align-items:flex-start;}.ct-dalerta .ct-ico{margin-top:1px;flex-shrink:0;}
+.table-wrap.ct-vista .row-action{color:var(--text);padding:3px 7px;}.table-wrap.ct-vista .row-action .ct-ico svg{width:14px;height:14px;}
+.ct-exp .ct-ico{vertical-align:middle;}
 /* Letra de la vista Contratos: Manrope (cifras del mismo ancho). Los botones y campos la heredan. */
 .ct-vista,.ct-vista *{font-family:'Manrope',var(--font);}
 .table-wrap.ct-vista td.mono{font-family:'Manrope',var(--font);font-size:12px;font-variant-numeric:tabular-nums;}
@@ -7955,6 +7964,17 @@ let contratosVerTodo = false;
 
 // ─── LISTA DE CONTRATOS ──────────────────────────────────────────────────────
 // Que se ve de un vistazo: que contratos tienen saldo, cuales estan completos y cuanto sale cada tonelada.
+// Iconos dibujados de la vista (mismo trazo; ni emojis ni simbolos de texto).
+const ICO_CT = {
+  buscar:'<circle cx="11" cy="11" r="6.5"/><path d="m20 20-4.2-4.2"/>',
+  lapiz:'<path d="M4 20h4L19 9l-4-4L4 16z"/><path d="m13.5 6.5 4 4"/>',
+  derecha:'<path d="m9 6 6 6-6 6"/>', abajo:'<path d="m6 9 6 6 6-6"/>',
+  recargar:'<path d="M19.5 12a7.5 7.5 0 1 1-2.3-5.4"/><path d="M19.5 4.5v4.5H15"/>',
+  mas:'<path d="M12 5v14M5 12h14"/>',
+  aviso:'<path d="M12 4 3 19.5h18z"/><path d="M12 10v4.5"/><path d="M12 17.2v.1"/>',
+  check:'<path d="m5 12.5 4.5 4.5L19 7.5"/>'
+};
+const icoCt = n => '<span class="ct-ico" aria-hidden="true"><svg viewBox="0 0 24 24">' + ICO_CT[n] + '</svg></span>';
 let contratosFiltro = 'abiertos';              // 'abiertos' (con saldo) | 'completos' | 'todos'
 let contratosOrden = { col: 'cliente', dir: 1 };
 let contratosExpandidos = new Set();            // contratos con el desglose de precios abierto (clave: fila de la hoja)
@@ -7966,7 +7986,7 @@ function estadoContrato(tns, saldo){
   if(saldo >= tns) return 'sin';
   return 'parcial';
 }
-const ETIQUETA_ESTADO_CONTRATO = { completo: '✓ Completo', parcial: 'Parcial', sin: 'Sin embarcar' };
+const ETIQUETA_ESTADO_CONTRATO = { completo: 'Completo', parcial: 'Parcial', sin: 'Sin embarcar' };
 
 // Desglose de precios: las mismas cuentas que Nueva carga (calcularDesdeContrato).
 //   Total CFR por tn = Price + Flete · Precio final por tn = Total CFR por tn + FC Servicios
@@ -8067,7 +8087,7 @@ function renderContratos(){
     const pct = Math.max(0, Math.min(100, x.emb / x.tns * 100));
     return `<span class="ct-bar${x.estado === 'completo' ? ' full' : ''}" title="${num(x.emb)} de ${num(x.tns)} tns embarcadas (${Math.round(pct)}%)"><i style="width:${pct}%"></i></span><span class="ct-sd">${num(x.emb)}</span>`;
   };
-  const estado = x => x.estado ? `<span class="ct-st ${x.estado}">${ETIQUETA_ESTADO_CONTRATO[x.estado]}</span>` : '';
+  const estado = x => x.estado ? `<span class="ct-st ${x.estado}">${x.estado === 'completo' ? icoCt('check') : ''}${ETIQUETA_ESTADO_CONTRATO[x.estado]}</span>` : '';
   const lineaDesglose = (rot, val, fuerte) => val === null || val === undefined ? '' : `<div class="ct-dl${fuerte ? ' f' : ''}"><span>${rot}</span><b>${usd(val)}</b></div>`;
   // Desglose por tonelada (no se muestran totales del contrato).
   const desglose = x => {
@@ -8077,13 +8097,13 @@ function renderContratos(){
       <div>
         ${lineaDesglose('Precio cliente', d.price)}${lineaDesglose('Flete', d.flete)}${lineaDesglose('Total CFR', d.cfrTn, true)}
         ${lineaDesglose('Precio servicios', d.servTn)}${lineaDesglose('Precio final x tn', d.finalTn, true)}</div>
-      ${x.difiere ? `<div class="ct-dalerta">⚠ La planilla dice PRECIO FINAL ${usd(x.finalPlanilla)} y la cuenta (Precio cliente + Flete + Precio servicios) da ${usd(d.finalTn)} por tn. Revisá cuál es el correcto.</div>` : ''}
+      ${x.difiere ? `<div class="ct-dalerta">${icoCt('aviso')}<span>La planilla dice PRECIO FINAL ${usd(x.finalPlanilla)} y la cuenta (Precio cliente + Flete + Precio servicios) da ${usd(d.finalTn)} por tn. Revisá cuál es el correcto.</span></div>` : ''}
     </div>`;
   };
 
   const encabezado = `<div class="table-top ct-top">
       <div style="position:relative;display:flex;align-items:center;">
-        <span style="position:absolute;left:9px;font-size:13px;color:var(--text3);" aria-hidden="true">🔍</span>
+        <span class="ct-lupa" aria-hidden="true">${icoCt('buscar')}</span>
         <input id="contratos-search" type="text" aria-label="Buscar contratos" placeholder="Buscar: cliente, producto, contrato…" value="${esc2(contratosBusqueda)}"
           oninput="contratosBusqueda=this.value;if(this._t)clearTimeout(this._t);this._t=setTimeout(()=>{const v=this.value;renderContratos();setTimeout(()=>{const el=document.getElementById('contratos-search');if(el){el.focus();el.setSelectionRange(v.length,v.length);}},0);},300);"
           style="font-size:12px;padding:5px 26px 5px 30px;border-radius:8px;border:1px solid var(--border);background:var(--bg2);color:var(--text);width:240px;outline:none;">
@@ -8093,8 +8113,8 @@ function renderContratos(){
       <span style="flex:1;"></span>
       <span class="ct-res">${filas.length} contrato${filas.length === 1 ? '' : 's'}${C.saldo >= 0 ? ' · ' + num(saldoTotal) + ' tns de saldo' : ''}</span>
       ${otras.length ? `<button type="button" class="btn" style="font-size:11px;padding:5px 12px;" onclick="contratosVerTodo=!contratosVerTodo;renderContratos();">${contratosVerTodo ? 'Ocultar columnas extra' : 'Ver todas las columnas (' + otras.length + ' más)'}</button>` : ''}
-      <button class="btn" style="font-size:11px;padding:5px 12px;" onclick="recargarContratos()">↻ Releer</button>
-      <button class="btn primary" style="font-size:11px;padding:5px 12px;" onclick="abrirFormContrato()">＋ Nuevo contrato</button>
+      <button class="btn" style="font-size:11px;padding:5px 12px;" onclick="recargarContratos()">${icoCt('recargar')} Releer</button>
+      <button class="btn primary" style="font-size:11px;padding:5px 12px;" onclick="abrirFormContrato()">${icoCt('mas')} Nuevo contrato</button>
     </div>`;
 
   const vacio = `<div class="empty" style="padding:24px;">${palabras.length ? 'Nada coincide con “' + esc2(contratosBusqueda) + '”.' : (contratosFiltro === 'completos' ? 'Todavía no hay contratos completos.' : 'No hay contratos cargados.')}
@@ -8112,7 +8132,7 @@ function renderContratos(){
         <div>${barra(x)}${!isNaN(x.tns) ? '<span class="ct-sd"> de ' + num(x.tns) + ' tns</span>' : ''}</div>
         <div class="ct-cf"><b>Saldo ${num(x.saldo)} tns</b> · ${isNaN(x.finalTn) ? '—' : usd(x.finalTn) + ' x tn'}${v(f,C.pago) ? ' · ' + esc2(v(f,C.pago)) : ''}</div>
         <div class="ct-ca"><button type="button" class="btn" onclick="toggleContratoDet(${fila})" aria-expanded="${abierto}">${abierto ? 'Ocultar desglose' : 'Ver desglose de precios'}</button>
-          <button type="button" class="btn" onclick="abrirFormContrato(${_contratosFilas.indexOf(f)})" aria-label="Editar el contrato ${esc2(v(f,C.contrato))}">✎ Editar</button></div>
+          <button type="button" class="btn" onclick="abrirFormContrato(${_contratosFilas.indexOf(f)})" aria-label="Editar el contrato ${esc2(v(f,C.contrato))}">${icoCt('lapiz')} Editar</button></div>
         ${abierto ? '<div class="ct-det2">' + desglose(x) + '</div>' : ''}
       </div>`; }).join('') : vacio) + '</div></div>';
     cont.innerHTML = html;
@@ -8133,14 +8153,14 @@ function renderContratos(){
     const f = x.f, fila = f._fila, abierto = contratosExpandidos.has(fila);
     const tipo = v(f, C.tipo), nop = /NOP/i.test(tipo);
     html += `<tr>
-      <td><button type="button" class="ct-exp" onclick="toggleContratoDet(${fila})" aria-expanded="${abierto}" aria-label="${abierto ? 'Ocultar' : 'Ver'} el desglose de precios de ${esc2(v(f,C.contrato))}" title="Desglose de precios">${abierto ? '▾' : '▸'}</button><b>${esc2(v(f,C.cliente)) || '—'}</b></td>
+      <td><button type="button" class="ct-exp" onclick="toggleContratoDet(${fila})" aria-expanded="${abierto}" aria-label="${abierto ? 'Ocultar' : 'Ver'} el desglose de precios de ${esc2(v(f,C.contrato))}" title="Desglose de precios">${icoCt(abierto ? 'abajo' : 'derecha')}</button><b>${esc2(v(f,C.cliente)) || '—'}</b></td>
       <td class="mono"><span style="font-weight:600;color:var(--accent);">${esc2(v(f,C.contrato)) || '—'}</span>
-        <button class="row-action" style="margin-left:6px;" onclick="abrirFormContrato(${_contratosFilas.indexOf(f)})" title="Editar este contrato" aria-label="Editar el contrato ${esc2(v(f,C.contrato))}">✎</button></td>
-      <td class="ct-prod" title="${esc2(v(f,C.producto))}">${esc2(abreviarProducto(v(f,C.producto))) || '—'}${nop ? ' <span class="ct-nop">NOP</span>' : (tipo ? ' <span class="ct-tipo">' + esc2(tipo) + '</span>' : '')}</td>
+        <button class="row-action" style="margin-left:6px;" onclick="abrirFormContrato(${_contratosFilas.indexOf(f)})" title="Editar este contrato" aria-label="Editar el contrato ${esc2(v(f,C.contrato))}">${icoCt('lapiz')}</button></td>
+      <td class="ct-prod" title="${esc2(v(f,C.producto))}">${esc2(abreviarProducto(v(f,C.producto))) || '—'}${nop ? ' <span class="ct-nop">NOP</span>' : ''}</td>
       <td class="ct-pto" title="${esc2(v(f,C.puerto))}">${esc2(v(f,C.puerto)) || '—'}</td>
       ${C.tns >= 0 ? `<td class="mono" style="text-align:right;">${num(v(f,C.tns))}</td>` : ''}
       ${C.saldo >= 0 ? `<td style="white-space:nowrap;">${barra(x)}</td><td class="mono" style="text-align:right;font-weight:600;">${num(v(f,C.saldo))}</td>` : ''}
-      <td class="mono ct-fin" style="text-align:right;cursor:pointer;" onclick="toggleContratoDet(${fila})" title="Ver el desglose de precios">${isNaN(x.finalTn) ? '—' : usd(x.finalTn)}${x.difiere ? ' <span title="La planilla y la cuenta no coinciden: abrí el desglose" style="color:var(--warn);">⚠</span>' : ''}</td>
+      <td class="mono ct-fin" style="text-align:right;cursor:pointer;" onclick="toggleContratoDet(${fila})" title="Ver el desglose de precios">${isNaN(x.finalTn) ? '—' : usd(x.finalTn)}${x.difiere ? ' <span title="La planilla y la cuenta no coinciden: abrí el desglose" style="color:var(--warn);">' + icoCt('aviso') + '</span>' : ''}</td>
       ${C.pago >= 0 ? `<td class="mono" style="font-size:11px;white-space:nowrap;">${esc2(v(f,C.pago)) || '—'}</td>` : ''}
       <td>${estado(x)}</td>
       ${contratosVerTodo ? otras.map(i => `<td class="mono" style="font-size:11px;white-space:nowrap;">${esc2(v(f,i)) || '—'}</td>`).join('') : ''}
