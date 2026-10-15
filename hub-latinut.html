@@ -7,7 +7,7 @@
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E🌿%3C/text%3E%3C/svg%3E">
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🌿</text></svg>">
 <style>
-@import url('https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Inter:wght@300;400;500;600&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Inter:wght@300;400;500;600&family=Manrope:wght@400;500;600;700&display=swap');
 
 :root {
   --bg:#f5f5f7;
@@ -133,30 +133,37 @@ body.sin-google .mobile-toggle::after{content:'';position:absolute;top:-3px;righ
 .stats-row{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:20px;}
 
 /* Lista de Contratos */
+/* Letra de la vista Contratos: Manrope (cifras del mismo ancho). Los botones y campos la heredan. */
+.ct-vista,.ct-vista *{font-family:'Manrope',var(--font);}
+.table-wrap.ct-vista td.mono{font-family:'Manrope',var(--font);font-size:12px;font-variant-numeric:tabular-nums;}
+.ct-vista button,.ct-vista input{font-family:inherit;}
 .ct-top{gap:10px;flex-wrap:wrap;}
 .ct-chip{font-size:12px;padding:5px 12px;border-radius:20px;border:1px solid var(--border);background:var(--bg2);color:var(--text2);cursor:pointer;font-family:var(--font);}
-.ct-chip.on{background:var(--accent);border-color:var(--accent);color:#fff;}
+.ct-chip.on{background:var(--accent);border-color:var(--accent);color:#fff;font-weight:600;}
 .ct-chip b{font-weight:600;margin-left:3px;}
 .ct-res{font-size:12px;color:var(--text3);}
 .ct-x{position:absolute;right:6px;width:20px;height:20px;border-radius:50%;background:var(--bg4);color:var(--text3);font-size:14px;line-height:1;cursor:pointer;}
 .ct-tabla td{padding:4px 10px;white-space:nowrap;vertical-align:middle;}
+.ct-tabla td b{font-size:13px;color:var(--text);}
+.table-wrap.ct-vista td.ct-fin{font-size:13px;font-weight:700;color:var(--text);}
+.table-wrap.ct-vista .row-action{padding:3px 8px;min-height:24px;line-height:1.4;}
 .ct-tabla .ct-prod{max-width:230px;overflow:hidden;text-overflow:ellipsis;}
 .ct-tabla .ct-pto{max-width:150px;overflow:hidden;text-overflow:ellipsis;font-size:11px;color:var(--text2);}
-.ct-ord{font-size:11px;font-weight:600;color:var(--text2);background:none;padding:0;font-family:var(--font);cursor:pointer;}
+.ct-ord{font-size:11px;font-weight:600;color:var(--text2);background:none;padding:0 2px;min-height:24px;min-width:24px;font-family:var(--font);cursor:pointer;}
 .ct-ord.on{color:var(--accent);}
-.ct-exp{width:22px;height:22px;vertical-align:middle;margin-right:4px;border-radius:5px;color:var(--text3);font-size:12px;cursor:pointer;}
+.ct-exp{width:24px;height:24px;vertical-align:middle;margin-right:4px;border-radius:5px;color:var(--text3);font-size:12px;cursor:pointer;}
 .ct-exp:hover{background:var(--bg4);}
 .ct-bar{display:inline-block;vertical-align:middle;width:72px;height:6px;border-radius:3px;background:var(--bg4);overflow:hidden;margin-right:8px;}
 .ct-bar i{display:block;height:100%;background:var(--accent);}
 .ct-bar.full i{background:var(--ok);}
 .ct-sd{font-size:11px;color:var(--text3);font-variant-numeric:tabular-nums;}
 .ct-st{display:inline-block;font-size:11px;font-weight:600;padding:1px 9px;border-radius:10px;}
-.ct-st.completo{background:var(--ok-light);color:var(--ok);}
+.ct-st.completo{background:var(--ok-light);color:#1a6137;}
 .ct-st.parcial{background:var(--accent-light);color:var(--accent);}
 .ct-st.sin{background:var(--bg4);color:var(--text2);}
 .ct-nop,.ct-tipo{font-size:11px;color:var(--text3);border:1px solid var(--border);border-radius:6px;padding:0 5px;}
 .ct-detrow td{background:var(--bg3);white-space:normal;}
-.ct-dgrid{display:grid;grid-template-columns:1fr 1fr;gap:6px 36px;padding:6px 8px 6px 34px;max-width:760px;}
+.ct-dgrid{display:grid;grid-template-columns:minmax(260px,380px);gap:6px;padding:6px 8px 6px 34px;}
 .ct-dsub{font-size:11px;font-weight:600;color:var(--text3);margin-bottom:4px;text-transform:uppercase;letter-spacing:.04em;}
 .ct-dl{display:flex;justify-content:space-between;gap:16px;font-size:12px;padding:1px 0;color:var(--text2);}
 .ct-dl.f{border-top:1px solid var(--border);margin-top:2px;padding-top:3px;color:var(--text);}
@@ -8032,7 +8039,7 @@ function renderContratos(){
     const d = desgloseContrato(parseSheetNum(v(f, C.price)), parseSheetNum(v(f, C.flete)), parseSheetNum(v(f, C.serv)), tns);
     const finalPlanilla = parseSheetNum(v(f, C.final)), totalPlanilla = parseSheetNum(v(f, C.total));
     const finalTn = !isNaN(finalPlanilla) ? finalPlanilla : (d ? d.finalTn : NaN);   // manda lo que dice la planilla; si no hay, el calculo
-    const difiere = !!d && ((!isNaN(finalPlanilla) && Math.abs(finalPlanilla - d.finalTn) > 0.5) || (!isNaN(totalPlanilla) && d.totalFinal !== null && Math.abs(totalPlanilla - d.totalFinal) > Math.max(1, d.totalFinal * 0.001)));
+    const difiere = !!d && !isNaN(finalPlanilla) && Math.abs(finalPlanilla - d.finalTn) > 0.5;
     return { f, tns, saldo, emb: (!isNaN(tns) && !isNaN(saldo)) ? Math.max(0, tns - saldo) : NaN, estado: estadoContrato(tns, saldo), d, finalPlanilla, totalPlanilla, finalTn, difiere };
   };
 
@@ -8062,18 +8069,15 @@ function renderContratos(){
   };
   const estado = x => x.estado ? `<span class="ct-st ${x.estado}">${ETIQUETA_ESTADO_CONTRATO[x.estado]}</span>` : '';
   const lineaDesglose = (rot, val, fuerte) => val === null || val === undefined ? '' : `<div class="ct-dl${fuerte ? ' f' : ''}"><span>${rot}</span><b>${usd(val)}</b></div>`;
+  // Desglose por tonelada (no se muestran totales del contrato).
   const desglose = x => {
     const d = x.d;
     if(!d) return '<div class="ct-dsub">Este contrato no tiene precio cargado: no hay desglose.</div>';
-    const tnsTxt = !isNaN(x.tns) && x.tns > 0 ? num(x.tns) + ' tns' : 's/d tns';
     return `<div class="ct-dgrid">
-      <div><div class="ct-dsub">Por tonelada</div>
-        ${lineaDesglose('Price Cliente', d.price)}${lineaDesglose('Flete', d.flete)}${lineaDesglose('Total CFR', d.cfrTn, true)}
-        ${lineaDesglose('FC Servicios', d.servTn)}${lineaDesglose('Precio final x tn', d.finalTn, true)}</div>
-      <div><div class="ct-dsub">Totales (${tnsTxt})</div>
-        ${lineaDesglose('Total CFR', d.totalCFR)}${lineaDesglose('Total FC servicios', d.totalServ)}${lineaDesglose('Total final', d.totalFinal, true)}
-        ${d.totalFinal === null ? '<div class="ct-dsub">Faltan las toneladas para calcular los totales.</div>' : ''}</div>
-      ${x.difiere ? `<div class="ct-dalerta">⚠ La planilla dice ${!isNaN(x.finalPlanilla) ? 'PRECIO FINAL ' + usd(x.finalPlanilla) : ''}${!isNaN(x.finalPlanilla) && !isNaN(x.totalPlanilla) ? ' y ' : ''}${!isNaN(x.totalPlanilla) ? 'Total ' + usd(x.totalPlanilla) : ''}, y la cuenta (Price + Flete + FC Servicios) da ${usd(d.finalTn)} por tn${d.totalFinal !== null ? ' y ' + usd(d.totalFinal) + ' en total' : ''}. Revisá cuál es el correcto.</div>` : ''}
+      <div>
+        ${lineaDesglose('Precio cliente', d.price)}${lineaDesglose('Flete', d.flete)}${lineaDesglose('Total CFR', d.cfrTn, true)}
+        ${lineaDesglose('Precio servicios', d.servTn)}${lineaDesglose('Precio final x tn', d.finalTn, true)}</div>
+      ${x.difiere ? `<div class="ct-dalerta">⚠ La planilla dice PRECIO FINAL ${usd(x.finalPlanilla)} y la cuenta (Precio cliente + Flete + Precio servicios) da ${usd(d.finalTn)} por tn. Revisá cuál es el correcto.</div>` : ''}
     </div>`;
   };
 
@@ -8098,7 +8102,7 @@ function renderContratos(){
 
   let html = '';
   if(isMobile()){
-    html = `<div class="table-wrap">${encabezado}<div style="padding:10px 12px;">` + (filas.length ? filas.map(x => {
+    html = `<div class="table-wrap ct-vista">${encabezado}<div style="padding:10px 12px;">` + (filas.length ? filas.map(x => {
       const f = x.f, fila = f._fila, abierto = contratosExpandidos.has(fila);
       const ptos = v(f, C.puerto);
       return `<div class="ct-card">
@@ -8116,7 +8120,7 @@ function renderContratos(){
   }
 
   const nCols = 10 + (contratosVerTodo ? otras.length : 0);
-  html = `<div class="table-wrap">${encabezado}
+  html = `<div class="table-wrap ct-vista">${encabezado}
     <div style="overflow-x:auto;"><table class="ct-tabla">
       <thead><tr>
         ${th('cliente','Cliente')}${th('contrato','Contrato')}${th('producto','Producto')}<th>Puerto</th>
