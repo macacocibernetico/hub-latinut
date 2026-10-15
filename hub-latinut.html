@@ -2598,7 +2598,8 @@ async function loadContratos(){
       price:      col('Price Cliente','Precio Cliente','Precio/tn','Price','Precio'),
       flete:      col('Flete','Freight','Flete/tn'),
       incoterm:   col('INCOTERM','Incoterm'),
-      fcServ:     col('FC Servicios','FC Servicio','Fc Serv','Servicios')
+      fcServ:     col('FC Servicios','FC Servicio','Fc Serv','Servicios'),
+      formulaPago: col('Formula pago','Formula de pago')
     };
     const faltan = [];
     if(c.importador < 0) faltan.push('Importador');
@@ -2619,7 +2620,8 @@ async function loadContratos(){
         puertos: g(f, c.puerto).split(/[,;\/]+/).map(x => x.trim()).filter(Boolean),
         puertoTxt: g(f, c.puerto),
         price: parseSheetNum(f[c.price]), flete: parseSheetNum(f[c.flete]),
-        incoterm: g(f, c.incoterm), fcServ: parseSheetNum(f[c.fcServ])
+        incoterm: g(f, c.incoterm), fcServ: parseSheetNum(f[c.fcServ]),
+        formulaPago: g(f, c.formulaPago)
       });
     }
     console.log('Contratos abiertos: ' + contratos.length);
@@ -2684,6 +2686,124 @@ function calcularDesdeContrato(k, tns, puertoCarga){
   };
 }
 function redondear2(x){ return Math.round(x * 100) / 100; }
+
+// ─── FECHA ESTIMADA DE COBRO (sale de la "Formula pago" del contrato) ────────
+// Cada contrato dice cuando se cobra: "ETD +60", "ETA +0", "ETA -7". Es la ETD o la ETA de la carga mas o menos
+// N dias corridos. Va SOLO en la columna "Fecha estimada"; "Fecha de cobro" (el cobro real) siempre es manual y nunca se toca,
+// aunque la carga ya la tenga cargada (la estimada se actualiza igual).
+function parsearFormulaPago(txt){
+  const m = (txt || '').toString().trim().match(/^(ETD|ETA)\s*([+\-\u2212])\s*(\d{1,4})$/i);
+  if(!m) return null;
+  return { base: m[1].toUpperCase(), dias: parseInt(m[3], 10) * (m[2] === '+' ? 1 : -1) };
+}
+// etd / eta: texto dd/mm/aaaa de la carga. Devuelve dd/mm/aaaa, o '' si falta la fecha base.
+function fechaDesdeFormulaPago(formula, etd, eta){
+  if(!formula) return '';
+  const base = parseDate(((formula.base === 'ETD' ? etd : eta) || '').toString().trim());
+  if(!base) return '';
+  const d = new Date(base.getFullYear(), base.getMonth(), base.getDate() + formula.dias);
+  return String(d.getDate()).padStart(2, '0') + '/' + String(d.getMonth() + 1).padStart(2, '0') + '/' + d.getFullYear();
+}
+
+// El contrato puede estar en la hoja de abiertos o en la de cerrados: se busca primero en los abiertos y,
+// si no esta, se lee la hoja "Contratos cerrados" (nombre exacto; una sola vez por negocio).
+let _formulasCerradas = null, _formulasCerradasClave = '';
+async function cargarFormulasCerradas(){
+  const nc = getNegocioConfig();
+  const sid = nc.sheetId || cfg.sheetId;
+  if(_formulasCerradas && _formulasCerradasClave === sid) return _formulasCerradas;
+  const mapa = new Map();
+  _formulasCerradas = mapa; _formulasCerradasClave = sid;
+  if(!sid || !accessToken) return mapa;
+  try{
+    const h = { headers: { Authorization: 'Bearer ' + accessToken } };
+    const rm = await fetch('https://sheets.googleapis.com/v4/spreadsheets/' + sid + '?fields=sheets.properties', h);
+    if(!rm.ok) return mapa;
+    const meta = await rm.json();
+    // Solo la hoja que se llama exactamente "Contratos cerrados" (no una que apenas contenga la palabra).
+    const hoja = (meta.sheets || []).map(x => (x.properties || {}).title || '').find(t => t.trim().toLowerCase() === 'contratos cerrados');
+    if(!hoja) return mapa;
+    const rv = await fetch('https://sheets.googleapis.com/v4/spreadsheets/' + sid + '/values/' + encodeURIComponent(hoja + '!A1:Z1500'), h);
+    if(!rv.ok) return mapa;
+    const filas = (await rv.json()).values || [];
+    let hdr = -1;
+    for(let i = 0; i < Math.min(6, filas.length); i++){
+      const H = (filas[i] || []).map(normTar);
+      if((H.indexOf('CONTRATO') >= 0 || H.indexOf('CONTRACT') >= 0) && (H.indexOf('FORMULA PAGO') >= 0 || H.indexOf('FORMULA DE PAGO') >= 0)){ hdr = i; break; }
+    }
+    if(hdr < 0) return mapa;
+    const H = filas[hdr].map(normTar);
+    const cc = Math.max(H.indexOf('CONTRATO'), H.indexOf('CONTRACT'));
+    const cf = H.indexOf('FORMULA PAGO') >= 0 ? H.indexOf('FORMULA PAGO') : H.indexOf('FORMULA DE PAGO');
+    for(let i = hdr + 1; i < filas.length; i++){
+      const num = normTar((filas[i] || [])[cc]);
+      const txt = ((filas[i] || [])[cf] || '').toString().trim();
+      if(num && txt) mapa.set(num, txt);
+    }
+  }catch(e){ console.warn('contratos cerrados:', e); }
+  return mapa;
+}
+async function formulaPagoDeContrato(numero){
+  const n = normTar(numero);
+  if(!n) return { texto: '', origen: '' };
+  const k = contratos.find(x => normTar(x.contrato) === n);
+  if(k && k.formulaPago) return { texto: k.formulaPago, origen: 'abiertos' };
+  const cer = await cargarFormulasCerradas();
+  const t = cer.get(n);
+  if(t) return { texto: t, origen: 'cerrados' };
+  return { texto: '', origen: k ? 'abiertos' : '' };
+}
+
+// Al cambiar la ETD o la ETA de una carga (en la tabla), la fecha estimada de cobro se recalcula con la formula
+// de su contrato. No se escribe sola: queda como cambio pendiente (borde ambar) y se avisa, para revisarla y guardar.
+async function propagarFechaCobroEstimada(row, c){
+  if(c !== COL.ETD && c !== COL.ETA) return;
+  // Solo se escribe "Fecha estimada". Nunca la de cobro real: si por un error de mapeo fueran la misma columna, no se hace nada.
+  if(COL.FECHA_EST_COBRO < 0 || COL.FECHA_EST_COBRO === COL.FECHA_COBRO || esColFormula(COL.FECHA_EST_COBRO)) return;
+  const numero = valorVisible(row, COL.CONTRACT_CLIENTE).trim();
+  if(!numero) return;
+  const { texto } = await formulaPagoDeContrato(numero);
+  if(!texto) return;
+  const formula = parsearFormulaPago(texto);
+  if(!formula){
+    if(typeof showToast === 'function') showToast('La fórmula de pago "' + texto + '" del contrato ' + numero + ' no la entiendo (tiene que ser ETD o ETA ±días): la fecha estimada de cobro queda como está.', 'err');
+    return;
+  }
+  if(formula.base !== (c === COL.ETD ? 'ETD' : 'ETA')) return;             // la edicion no afecta a esta formula
+  const nueva = fechaDesdeFormulaPago(formula, valorVisible(row, COL.ETD), valorVisible(row, COL.ETA));
+  if(!nueva) return;
+  const actual = valorVisible(row, COL.FECHA_EST_COBRO).trim();
+  if(actual === nueva) return;
+  anotarCambioTabla(row, COL.FECHA_EST_COBRO, nueva);
+  if(typeof showToast === 'function') showToast('Fecha estimada de cobro: ' + (actual || '(vacía)') + ' → ' + nueva + ' (' + texto + ' según el contrato ' + numero + '). Queda pendiente: revisala y guardá.', 'info');
+  if(currentView === 'cargas' && cargasVista === 'tabla'){
+    const sel = _tablaSel ? { row: _tablaRows[_tablaSel.r], c: _tablaSel.c } : null;
+    renderCargas();
+    if(sel && sel.row){ const p = _tablaRows.indexOf(sel.row); if(p >= 0) marcarCelda(p, sel.c); }
+  }
+}
+
+// En los formularios (Nueva carga y Editar): al elegir el contrato o cambiar la ETD/ETA se completa la fecha estimada
+// de cobro y se dice de donde sale.
+async function autoFechaCobro(prefix, ev){
+  const id = ev && ev.target && ev.target.id ? ev.target.id : '';
+  if(ev && [prefix + '-etd', prefix + '-eta', prefix + '-contractCliente'].indexOf(id) < 0) return;
+  const el = document.getElementById(prefix + '-fechaEstCobro');
+  if(!el) return;
+  const nota = document.getElementById(prefix + '-fechaEstCobro-nota');
+  const dec = t => { if(nota) nota.textContent = t; };
+  const numero = valForm(prefix, 'contractCliente');
+  if(!numero) return;
+  const { texto } = await formulaPagoDeContrato(numero);
+  if(!texto){ dec('El contrato ' + numero + ' no tiene "Formula pago": la fecha estimada se carga a mano.'); return; }
+  const formula = parsearFormulaPago(texto);
+  if(!formula){ dec('La fórmula de pago "' + texto + '" no la entiendo (tiene que ser ETD o ETA ±días): cargá la fecha a mano.'); return; }
+  const nueva = fechaDesdeFormulaPago(formula, fromInputDate(valForm(prefix, 'etd')), fromInputDate(valForm(prefix, 'eta')));
+  if(!nueva){ dec('Contrato ' + numero + ': ' + texto + '. Falta la ' + formula.base + ' para calcular la fecha.'); return; }
+  const antes = fromInputDate(el.value);
+  el.value = toInputDate(nueva);
+  dec('Calculada: ' + texto + ' según el contrato ' + numero + (antes && antes !== nueva ? ' (antes decía ' + antes + ')' : '') + '. Podés corregirla a mano.');
+}
 
 // ─── ORDENES QUE SIRVEN PARA TRABAJAR ────────────────────────────────────────
 // Ordenar por fecha ascendente trae primero cargas que llegaron hace meses;
@@ -5423,6 +5543,7 @@ function anotarCambioTabla(row, c, nuevo){
   }
   if(c === COL.ETA) congelarOrdenETA();
   (cargasPend[k] = cargasPend[k] || {})[c] = { antes: orig, despues: nuevo, row };
+  if(c === COL.ETD || c === COL.ETA) propagarFechaCobroEstimada(row, c).catch(e => console.warn('fecha estimada de cobro:', e));
 }
 
 function moverSel(dr, dc, extender){
@@ -5649,6 +5770,13 @@ async function appendRow(rowData){
   const newRow = lastRow + 1;
   const sheetId = await getSheetId();
   if(sheetId === null){ alert('No se pudo obtener el ID de la hoja.'); return null; }
+  // Las columnas que en la planilla son formula (Total FC servicios, fecha de pago estimada, etc.) se miran en la
+  // ultima fila ANTES de insertar: despues se copian a la fila nueva, como arrastrar la fila hacia abajo en Sheets.
+  let colsFormula = [];
+  try{
+    const fl = await releerFilasCarga([lastRow]);
+    colsFormula = ((fl[lastRow] || {}).formulas || []).map((v, i) => esFormulaCelda(v) ? i : -1).filter(i => i >= 0);
+  }catch(e){ console.warn('formulas de la ultima fila:', e); }
   const insertUrl = `https://sheets.googleapis.com/v4/spreadsheets/${sheetId2}:batchUpdate`;
   const insertR = await fetch(insertUrl, {
     method: 'POST',
@@ -5656,9 +5784,38 @@ async function appendRow(rowData){
     body: JSON.stringify({requests:[{insertDimension:{range:{sheetId,dimension:'ROWS',startIndex:lastRow,endIndex:lastRow+1},inheritFromBefore:true}}]})
   });
   if(!insertR.ok){ alert('Error al insertar fila.'); return null; }
-  const ok = await writeRow(rowData, newRow);
+  // Con la formula copiada manda la planilla: no se pisa con el valor del formulario. Si la copia falla,
+  // se escriben los valores como antes para no dejar la fila vacia.
+  window._ultimaCargaFormulas = 0;
+  let datos = rowData;
+  if(colsFormula.length){
+    const copiado = await copiarFormulasFila(sheetId2, sheetId, lastRow, newRow, colsFormula);
+    if(copiado){
+      datos = {};
+      Object.keys(rowData).forEach(k => { if(colsFormula.indexOf(parseInt(k)) < 0) datos[k] = rowData[k]; });
+      window._ultimaCargaFormulas = colsFormula.length;
+    }
+  }
+  const ok = await writeRow(datos, newRow);
   if(ok) return newRow;
   return null;
+}
+
+// Copia las formulas de la fila de arriba (filaOrigen) a la fila nueva, columna por columna. Las referencias
+// relativas se ajustan solas. Devuelve false si Sheets no la acepto.
+async function copiarFormulasFila(sid, gid, filaOrigen, filaNueva, cols){
+  try{
+    const requests = cols.map(c => ({ copyPaste: {
+      source:      { sheetId:gid, startRowIndex:filaOrigen-1, endRowIndex:filaOrigen,  startColumnIndex:c, endColumnIndex:c+1 },
+      destination: { sheetId:gid, startRowIndex:filaNueva-1,  endRowIndex:filaNueva,   startColumnIndex:c, endColumnIndex:c+1 },
+      pasteType: 'PASTE_FORMULA'
+    }}));
+    const r = await fetch('https://sheets.googleapis.com/v4/spreadsheets/' + sid + ':batchUpdate', {
+      method:'POST', headers:{ Authorization:'Bearer ' + accessToken, 'Content-Type':'application/json' },
+      body: JSON.stringify({ requests })
+    });
+    return !!(r && r.ok);
+  }catch(e){ console.warn('copiarFormulasFila:', e); return false; }
 }
 
 function colIndexToLetter(idx){
@@ -5757,7 +5914,7 @@ async function submitNuevaCarga(){
   if(falta.length){ alert('Faltan datos obligatorios: ' + falta.join(', ') + '.'); return; }
   const ok0 = await showConfirm(
     'Agregar la carga a la planilla',
-    'Se inserta una fila nueva al final de la planilla de ' + getNegocioConfig().label + '.',
+    'Se inserta una fila nueva al final de la planilla de ' + getNegocioConfig().label + '. Las columnas que en la planilla son fórmula (totales, fechas de pago estimada, etc.) se copian de la fila anterior.',
     { icono:'➕', okLabel:'Agregar carga',
       detalle:'<div><span style="color:var(--text3);">Cliente:</span> <b>'+d.customer+'</b></div>'
             + '<div><span style="color:var(--text3);">Producto:</span> <b>'+d.product+'</b></div>'
@@ -5776,7 +5933,7 @@ async function submitNuevaCarga(){
     cargasGuardadasSesion.push({ fila: newRow, customer: d.customer, product: d.product });
     if(dudaNOP) await pintarCeldas([newRow], COL.PRODUCT, COLOR_VIOLETA);
     avisoUltimaCarga(newRow);
-    showToast(`✓ Carga agregada en fila ${newRow}`);
+    showToast(`✓ Carga agregada en fila ${newRow}` + (window._ultimaCargaFormulas ? ` · ${window._ultimaCargaFormulas} columnas con fórmula copiadas` : ''));
     const prim = document.getElementById('nc-customer-sel') || document.getElementById('nc-customer');
     if(prim && prim.focus) prim.focus();
   }
@@ -5925,6 +6082,7 @@ function dateField(prefix, id, label, value=''){
     <input class="config-input" id="${prefix}-${id}" type="date" value="${inputVal}"
       style="cursor:pointer;"
       onchange="this.dataset.converted=fromInputDate(this.value)">
+    ${id === 'fechaEstCobro' ? '<div id="' + prefix + '-fechaEstCobro-nota" style="font-size:11px;color:var(--text3);margin-top:4px;"></div>' : ''}
   </div>`;
 }
 
@@ -6049,6 +6207,7 @@ function aplicarContrato(prefix, i){
   setForm(prefix, 'priceFCServ',     v.priceServ);
   setForm(prefix, 'totalFinal',      v.totalFinal);
   setForm(prefix, 'precioFinalTn',   v.finalPorTn);
+  autoFechaCobro(prefix);
 
   if(caja){
     const avisos = [];
@@ -6171,10 +6330,11 @@ function buildCargaForm(prefix, d={}, fullEdit=false){
         ${field('totalFinal','TOTAL FINAL',d.totalFinal||'','text','Total CFR + Price serv')}
         ${field('precioFinalTn','Precio final x tn',d.precioFinalTn||'','text','TOTAL FINAL ÷ Tns')}
         ${fullEdit ? '' : fechasBuzaram}
+        ${(!fullEdit && esAXT) ? dateField(prefix,'fechaEstCobro','Fecha estimada de cobro',d.fechaEstCobro||'') : ''}
       </div>
     </div>`;
 
-  const envuelve = html => `<div class="cf-form" oninput="actualizarFaltantes('${prefix}')" onchange="actualizarFaltantes('${prefix}')">${html}</div>`;
+  const envuelve = html => `<div class="cf-form" oninput="actualizarFaltantes('${prefix}');autoFechaCobro('${prefix}',event)" onchange="actualizarFaltantes('${prefix}')">${html}</div>`;
   if(!fullEdit) return envuelve(bQue + bEmbarque + bProveedor + bAuto);
 
   const mas = (titulo, campos) => `<div class="cf-sec"><div class="cf-tit">${titulo}</div><div class="cf-grid">${campos}</div></div>`;
