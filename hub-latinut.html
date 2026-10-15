@@ -257,6 +257,8 @@ body.tabla-full-on{overflow:hidden;}
 [data-t="mag2"]{--tint:#d5a6bd}[data-t="mag3"]{--tint:#ead1dc}[data-t="roj2"]{--tint:#ea9999}[data-t="azu1"]{--tint:#6d9eeb}
 [data-t="roj1"]{--tint:#e06666}[data-t="nar2"]{--tint:#f9cb9c}[data-t="ama"]{--tint:#ffff00}
 .t-grid thead th[data-t]{background:var(--tint);color:#16201f;}
+/* Division entre grupos de columnas: la linea que separa un grupo del siguiente es mas marcada que las demas. */
+.t-grid th[data-corte],.t-grid td[data-corte]{border-right:2px solid #6b7978;}
 .t-grid tbody tr:hover td{background:#f1f6fe;}
 .t-grid tbody tr.row-cur td{background:#e8f0fe;}
 .t-grid tbody tr.sel td{background:#dde9fb;}
@@ -5292,11 +5294,14 @@ function renderCargasTabla(rows){
   _tablaCols.slice(0, TABLA_FIJAS).forEach(c => { left[c] = izq; izq += anchos[c]; });
 
   const tintes = mapaTintes();
+  // Ultima columna de cada grupo de color: ahi va la linea divisoria mas marcada.
+  const corte = {};
+  _tablaCols.forEach((c, k) => { const sig = _tablaCols[k + 1]; if(sig !== undefined && tintes[c] !== tintes[sig] && (tintes[c] || tintes[sig])) corte[c] = true; });
   const th = _tablaCols.map((c, k) => {
     const fil = !!cargasColFiltros[c];
     const ord = cargasColSort && cargasColSort.col === c ? (cargasColSort.dir > 0 ? ' ↑' : ' ↓') : '';
     const fija = k < TABLA_FIJAS;
-    return `<th data-c="${c}" class="${fija ? 'fija' : ''}${k === TABLA_FIJAS - 1 ? ' fija-ult' : ''}${esColFormula(c) ? ' formula' : ''}" style="min-width:${anchos[c]}px;max-width:${anchos[c]}px;${fija ? 'left:' + left[c] + 'px;' : ''}" title="${esc(hdr[c])} · columna ${colIndexToLetter(c)}${esColFormula(c) ? ' · tiene fórmula, no se edita desde el hub' : ''}"${tintes[c] ? ' data-t="' + tintes[c] + '"' : ''}>
+    return `<th data-c="${c}" class="${fija ? 'fija' : ''}${k === TABLA_FIJAS - 1 ? ' fija-ult' : ''}${esColFormula(c) ? ' formula' : ''}" style="min-width:${anchos[c]}px;max-width:${anchos[c]}px;${fija ? 'left:' + left[c] + 'px;' : ''}" title="${esc(hdr[c])} · columna ${colIndexToLetter(c)}${esColFormula(c) ? ' · tiene fórmula, no se edita desde el hub' : ''}"${tintes[c] ? ' data-t="' + tintes[c] + '"' : ''}${corte[c] ? ' data-corte="1"' : ''}>
       <div class="th-in"><span class="th-letra">${colIndexToLetter(c)}</span><span class="th-nom">${esc(hdr[c])}${ord}</span>
       <button class="th-fil${fil ? ' on' : ''}" onclick="abrirFiltroColumna(${c},event)" aria-label="Filtrar ${esc(hdr[c])}">${fil ? '⏷' : '▾'}</button></div><span class="th-res" onmousedown="iniciarResize(${c},event)" ondblclick="resetAncho(${c},event)" title="Arrastrá para cambiar el ancho · doble clic para volver al automático"></span></th>`;
   }).join('');
@@ -5315,7 +5320,7 @@ function renderCargasTabla(rows){
       // carga viaja con BL Original (no lleva pagare). No se escribe nada.
       if(!v && c === COL.PAGARE_ENVIADO && !nc.sinPagares && motivoSinPagare(row) === 'BL Original'){ extra = '<span class="t-nota">N/A · BL Orig</span>'; }
       const fija = kk < TABLA_FIJAS;
-      return `<td data-r="${r}" data-c="${c}" class="${fija ? 'fija' : ''}${kk === TABLA_FIJAS - 1 ? ' fija-ult' : ''}${p ? ' chg' : ''}${esColFormula(c) ? ' formula' : ''}${celdaMarcada(row, c) ? ' t-marca' : ''}${(c === COL.PRODUCT && enDudaNOP(row)) ? ' t-duda' : ''}${comAbiertosCelda(row, c).length ? ' t-com' : ''}${colorDeCelda(row, c) ? ' t-pint' : ''}" style="${colorDeCelda(row, c) ? '--pin:' + hexColor(colorPaleta(colorDeCelda(row, c)).rgb) + ';' : ''}${fija ? 'left:' + left[c] + 'px;' : ''}max-width:${anchos[c]}px;" title="${esc(v)}${p ? ' · antes: ' + esc(p.antes || '(vacío)') : ''}">${esc(v)}${extra}</td>`;
+      return `<td data-r="${r}" data-c="${c}" class="${fija ? 'fija' : ''}${kk === TABLA_FIJAS - 1 ? ' fija-ult' : ''}${p ? ' chg' : ''}${esColFormula(c) ? ' formula' : ''}${celdaMarcada(row, c) ? ' t-marca' : ''}${(c === COL.PRODUCT && enDudaNOP(row)) ? ' t-duda' : ''}${comAbiertosCelda(row, c).length ? ' t-com' : ''}${colorDeCelda(row, c) ? ' t-pint' : ''}" style="${colorDeCelda(row, c) ? '--pin:' + hexColor(colorPaleta(colorDeCelda(row, c)).rgb) + ';' : ''}${fija ? 'left:' + left[c] + 'px;' : ''}max-width:${anchos[c]}px;" title="${esc(v)}${p ? ' · antes: ' + esc(p.antes || '(vacío)') : ''}"${corte[c] ? ' data-corte="1"' : ''}>${esc(v)}${extra}</td>`;
     }).join('');
     return `<tr id="fc-tr-${localIdx}" class="${sel ? 'sel' : ''}${filaVista(row) ? ' vista' : ''}">
       <td class="t-num" role="button" aria-label="Marcar o desmarcar la fila ${row._sheetRow || ''} como vista" title="Clic para marcar / desmarcar la fila como vista" onclick="toggleFilaVista(${localIdx},event)">${row._sheetRow || ''}</td>
