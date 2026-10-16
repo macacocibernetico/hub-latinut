@@ -5159,7 +5159,7 @@ function renderCargas(showAll, sort){
     ${filtrosWrap}
     ${resetBtn}
     ${_colEstCobroOk() ? '<button class="t-filtros-btn" onclick="rellenarFechasEstimadas()" title="Completa la fecha estimada de cobro de las cargas que la tienen vacía, con la fórmula de pago de su contrato (te muestra cómo se calculó cada una antes de aplicar)">📅 Rellenar fecha estimada</button>' : ''}
-    ${_etaOrdenFijo && ordenPorETAActivo() ? '<button class="t-filtros-btn on" onclick="reordenarPorETA()" title="Las fechas que cambiaste siguen en su lugar; esto acomoda todas por ETA (la que llega ultima, abajo de todo)">↕ Reordenar por ETA</button>' : ''}
+    ${_etaOrdenFijo && ordenPorETAActivo() && Object.keys(cargasPend).length ? '<button class="t-filtros-btn on" onclick="reordenarPorETA()" title="Las fechas que cambiaste siguen en su lugar; esto acomoda todas por ETA (la que llega ultima, abajo de todo)">↕ Reordenar por ETA</button>' : ''}
     <span style="flex:1;"></span>
     ${viewChip('Por embarque', false, "cargasVista='grupos';renderCargas()")}
     ${viewChip('Tabla', true, "cargasVista='tabla';cargasTablaIrAlFinal=true;renderCargas()")}
@@ -5362,7 +5362,7 @@ function aplicarFiltroColumna(c){
   cerrarFiltroColumna();
   renderCargas();
 }
-function ordenarColumna(c, dir){ cargasColSort = { col: c, dir }; cerrarFiltroColumna(); renderCargas(); }
+function ordenarColumna(c, dir){ cargasColSort = { col: c, dir }; cargasTablaIrAlFinal = true; cerrarFiltroColumna(); renderCargas(); }
 function quitarFiltroColumna(c){ delete cargasColFiltros[c]; renderCargas(); }
 function quitarOrdenColumna(){ cargasColSort = null; renderCargas(); }
 
@@ -5419,6 +5419,9 @@ function seguirFilaTras(row, c, filaDebajo, mover){
   } else marcarCelda(p, c);
 }
 function ordenarPorETA(rows){
+  // La foto del orden vale solo mientras haya cambios sin guardar. Con todo guardado (o descartado) la tabla vuelve sola
+  // a estar ordenada por ETA, la que llega ultima abajo de todo, como al ordenar de la A a la Z en Sheets.
+  if(_etaOrdenFijo && !Object.keys(cargasPend).length) _etaOrdenFijo = null;
   if(_etaOrdenFijo){
     const lugar = r => _etaOrdenFijo.has(claveOrdenFila(r)) ? _etaOrdenFijo.get(claveOrdenFila(r)) : Infinity;
     return rows.map((r, i) => ({ r, i, p: lugar(r) })).sort((a, b) => (a.p === b.p ? a.i - b.i : (a.p < b.p ? -1 : 1))).map(x => x.r);
@@ -5457,7 +5460,8 @@ function renderCargasTabla(rows){
   if(ordenTablaActual() === 'eta') rows = ordenarPorETA(rows);
   window._tablaBaseRows = rows;
   rows = aplicarFiltrosColumna(rows);
-  const visibles = cargasColSort ? rows.slice(0, cargasTablaLimite) : rows.slice(Math.max(0, rows.length - cargasTablaLimite));
+  // Con o sin orden por columna se ve el FINAL de la lista (la que llega ultima, abajo de todo) y "anteriores" trae las de arriba.
+  const visibles = rows.slice(Math.max(0, rows.length - cargasTablaLimite));
   _tablaRows = visibles;
   // La tabla reordena y filtra: la seleccion y los grupos de embarque se vuelven
   // a calcular sobre ESTA lista, si no el chip de un grupo tildaba otras cargas.
@@ -5544,7 +5548,7 @@ function renderCargasTabla(rows){
         <button onclick="descartarCambiosTabla()">Descartar</button><button class="prim" onclick="guardarCambiosTabla()">Revisar y guardar</button>
       </div>
     </div>
-    ${quedan > 0 ? `<div class="t-mas"><span onclick="cargasTablaLimite+=200;renderCargas();">${cargasColSort ? 'Mostrar ' + Math.min(200, quedan) + ' más' : '↑ Mostrar ' + Math.min(200, quedan) + ' filas anteriores'} (quedan ${quedan})</span></div>` : ''}
+    ${quedan > 0 ? `<div class="t-mas"><span onclick="cargasTablaLimite+=200;renderCargas();">↑ Mostrar ${Math.min(200, quedan)} filas anteriores (quedan ${quedan})</span></div>` : ''}
     <div class="t-scroll" id="t-scroll">
       <table class="t-grid" id="t-grid" ondblclick="tablaDblClick(event)" onmousedown="tablaMouseDown(event)" onmouseover="tablaMouseOver(event)">
         <thead><tr><th class="t-num">#</th><th class="t-cb"></th>${th}<th class="col-acciones">Acciones</th></tr></thead>
@@ -10014,6 +10018,99 @@ async function resolverNOP(idxs, aNOP){
   showToast('✓ ' + hechas + ' carga' + (hechas === 1 ? '' : 's') + ' pasada' + (hechas === 1 ? '' : 's') + (aNOP ? ' a NOP' : ' a común'), hechas ? 'ok' : 'err');
 }
 
+// ─── CAMBIAR EL CONTRATO DE UNA CARGA ────────────────────────────────────────
+// Elegis otro contrato del mismo cliente y la carga toma de el: numero de contrato, precio, flete, incoterm, servicios y
+// totales (la misma cuenta que al crear la carga), y la fecha estimada de cobro segun su "Formula pago". No cambia el producto.
+function planCambioContrato(row, k){
+  const t = c => (c >= 0 ? (row[c] || '') : '').toString().trim();
+  const cambios = [], avisos = [];
+  const v = calcularDesdeContrato(k, t(COL.TNS), t(COL.PORT));
+  CAMPOS_CONTRATO_NOP.forEach(([clave, nombre, prop]) => {
+    const col = COL[clave];
+    if(col === undefined || col < 0) return;
+    const nv = v[prop];
+    if(nv === '' || nv === undefined || nv === null){
+      if(prop === 'flete' && t(col)) avisos.push('El contrato ' + k.contrato + ' no tiene flete y la carga tiene ' + t(col) + ': el flete queda como estaba.');
+      return;
+    }
+    const ant = t(col);
+    const igual = (!isNaN(numeroCelda(ant)) && !isNaN(numeroCelda(nv)) && Math.abs(numeroCelda(ant) - numeroCelda(nv)) < 0.005) || ant.toLowerCase() === String(nv).toLowerCase();
+    if(!igual) cambios.push({ col, nombre, antes: ant, despues: String(nv) });
+  });
+  if(!t(COL.TNS) || isNaN(parseSheetNum(t(COL.TNS)))) avisos.push('La carga no tiene toneladas cargadas: no se pueden calcular los totales.');
+  if(_colEstCobroOk()){
+    const f = parsearFormulaPago(k.formulaPago);
+    const nueva = f ? fechaDesdeFormulaPago(f, t(COL.ETD), t(COL.ETA)) : '';
+    if(nueva && nueva !== t(COL.FECHA_EST_COBRO)){
+      cambios.push({ col: COL.FECHA_EST_COBRO, nombre: 'Fecha estimada', antes: t(COL.FECHA_EST_COBRO), despues: nueva, nota: 'según la fórmula "' + k.formulaPago + '" del contrato' });
+    } else if(!f && k.formulaPago) avisos.push('La fórmula de pago "' + k.formulaPago + '" del contrato no se entiende: la fecha estimada de cobro queda como estaba.');
+  }
+  const prod = normTar(t(COL.PRODUCT));
+  if(prod && !contratoAdmiteProducto(k, prod)) avisos.push('El contrato ' + k.contrato + ' es de "' + k.producto + '" y la carga es de "' + t(COL.PRODUCT) + '": revisá que sea el correcto.');
+  const pto = normTar(t(COL.PORT));
+  if(pto && k.puertos.length && !k.puertos.some(x => normTar(x) === pto)) avisos.push('El contrato ' + k.contrato + ' es para ' + k.puertos.join(' / ') + ' y la carga va a ' + t(COL.PORT) + '.');
+  return { actual: t(COL.CONTRACT_CLIENTE), nuevo: k.contrato, cambios, avisos };
+}
+
+async function cambiarContratoCarga(idx){
+  const row = filaPorIdx(idx);
+  if(!row) return;
+  if(!accessToken){ alert('Conectate con Google primero para escribir en la planilla.'); return; }
+  if(!contratos.length){ try{ await loadContratos(); }catch(e){} }
+  const cli = normTar((row[COL.CUSTOMER] || '').toString());
+  const cands = contratos.filter(k => normTar(k.importador) === cli);
+  if(!cands.length){ showToast('No encontré contratos abiertos de ' + ((row[COL.CUSTOMER] || '').toString().trim() || 'este cliente') + '.', 'info'); return; }
+  const actual = (row[COL.CONTRACT_CLIENTE] || '').toString().trim();
+  const prod = normTar((row[COL.PRODUCT] || '').toString()), pto = normTar((row[COL.PORT] || '').toString());
+  const compat = k => (!prod || contratoAdmiteProducto(k, prod)) && (!pto || !k.puertos.length || k.puertos.some(x => normTar(x) === pto));
+  const orden = cands.map(k => ({ k, ok: compat(k), esActual: normTar(k.contrato) === normTar(actual) }))
+    .sort((a, b) => (b.ok - a.ok) || String(a.k.contrato).localeCompare(String(b.k.contrato)));
+  const usd = n => isNaN(n) ? '—' : 'USD ' + n.toLocaleString('es-AR', { maximumFractionDigits: 2 });
+  const sugerido = orden.find(o => o.ok && !o.esActual) || orden.find(o => !o.esActual) || orden[0];
+  const opciones = orden.map(o => '<option value="' + escH(String(contratos.indexOf(o.k))) + '"' + (o === sugerido ? ' selected' : '') + '>'
+    + escH(o.k.contrato + ' · ' + (o.k.producto || '—') + ' · ' + (o.k.puertoTxt || 'sin puerto') + ' · precio ' + usd(o.k.price) + (isNaN(o.k.flete) ? '' : ' + flete ' + usd(o.k.flete))
+      + (o.esActual ? ' (el actual)' : '') + (o.ok ? '' : ' ⚠ otro producto/puerto')) + '</option>').join('');
+  const cab = '<div style="margin-bottom:8px;"><b>' + escH((row[COL.CUSTOMER] || '').toString().trim() || '—') + '</b> · BL ' + escH((row[COL.BL] || '').toString().trim() || '—') + ' · fila ' + (row._sheetRow || '?')
+    + '<br><span style="color:var(--text3);">Contrato actual:</span> <b>' + escH(actual || '(sin contrato)') + '</b></div>'
+    + '<select id="cc-contrato-sel" style="width:100%;padding:8px;border-radius:8px;border:1px solid var(--border);font-size:13px;">' + opciones + '</select>';
+  const ok1 = await showConfirm('Cambiar el contrato de esta carga',
+    'Elegí el contrato nuevo. En el próximo paso ves qué precios y fechas cambian, antes de escribir nada en la planilla.',
+    { icono: '📑', okLabel: 'Ver los cambios', detalle: cab });
+  if(!ok1) return;
+  const sel = document.getElementById('cc-contrato-sel');
+  const k = sel ? contratos[parseInt(sel.value, 10)] : null;
+  if(!k){ return; }
+  if(normTar(k.contrato) === normTar(actual)){ showToast('Esa carga ya tiene el contrato ' + k.contrato + '.', 'info'); return; }
+  const plan = planCambioContrato(row, k);
+  const lineas = plan.cambios.map(c => '<div style="margin-left:12px;"><span style="color:var(--text3);">' + escH(c.nombre) + ':</span> ' + escH(c.antes || '(vacío)') + ' → <b>' + escH(c.despues) + '</b>'
+    + (c.nota ? ' <span style="color:var(--text3);font-size:12px;">(' + escH(c.nota) + ')</span>' : '') + '</div>').join('');
+  const detalle = '<div style="margin-bottom:6px;">Fila ' + row._sheetRow + ' · ' + escH((row[COL.CUSTOMER] || '').toString().trim()) + '</div>' + lineas
+    + plan.avisos.map(a => '<div style="margin-top:6px;color:var(--warn);">⚠ ' + escH(a) + '</div>').join('');
+  const ok2 = await showConfirm('Pasar al contrato ' + k.contrato, 'Se escriben estos cambios en la planilla. Lo demás de la carga no se toca (producto, fechas, facturas, fecha de cobro real).',
+    { icono: '📑', okLabel: 'Cambiar contrato', detalle });
+  if(!ok2) return;
+  showToast('Actualizando...');
+  let fresco;
+  try{ fresco = await releerFilasCarga([row._sheetRow]); }
+  catch(e){ alert('No pude releer la planilla antes de escribir: ' + e.message); return; }
+  const f = fresco[row._sheetRow] || { valores: [], formulas: [] };
+  if(((f.valores[COL.CONTRACT_CLIENTE] || '').toString().trim()) !== plan.actual){
+    alert('El contrato de esta carga cambió en la planilla mientras tanto. Sincronizá y probá de nuevo.'); return;
+  }
+  const data = {}, formulas = [];
+  plan.cambios.forEach(c => { if(esFormulaCelda(f.formulas[c.col])) formulas.push(c.nombre); else data[c.col] = valorNumericoParaPlanilla(c.col, c.despues); });
+  if(Object.keys(data).length){
+    const ok3 = await writeRow(data, row._sheetRow);
+    if(!ok3){ alert('No se pudo escribir en la planilla. No se cambió nada.'); return; }
+  }
+  await appendLog({ fc: (row[COL.INVOICE_CLIENTE] || '').trim(), fcServ: '', bl: (row[COL.BL] || '').trim(), customer: (row[COL.CUSTOMER] || '').trim(),
+    accion: 'cambio de contrato', detalle: 'fila ' + row._sheetRow + ' - ' + (plan.actual || '(sin contrato)') + ' -> ' + plan.nuevo + ' - ' + plan.cambios.length + ' valor(es)' });
+  _dataVersion++;
+  await loadData();
+  if(formulas.length) alert('No toqué ' + formulas.join(', ') + ' porque tienen fórmula en la planilla.');
+  showToast('✓ Contrato cambiado a ' + plan.nuevo, 'ok');
+}
+
 // ─── IMPORTAR VARIAS PLANILLAS DEL DESPACHANTE A LA VEZ ───────────────────────
 // Cada planilla es una carga. Se revisan todas juntas en una tabla, se completa lo
 // que falta (cliente, contenedores, consolidacion, POL) y se guardan de una vez.
@@ -10477,6 +10574,7 @@ function actualizarToolbarCargas(){
     '<button class="tb-btn" onclick="resolverNOP(window._selFCaGlobal(),true)" title="Pasa a NOP: cambia producto, contrato y precios">✓ Es NOP</button>' +
     '<button class="tb-btn" onclick="resolverNOP(window._selFCaGlobal(),false)" title="Pasa a común: cambia producto, contrato y precios">✓ Es común</button>' +
     (uno !== null ? '<button class="tb-btn" onclick="renderEditCarga(' + uno + ')">✎ Editar</button>' +
+                    '<button class="tb-btn" onclick="cambiarContratoCarga(' + uno + ')" title="Elegí otro contrato del cliente: cambia precio, flete, servicios, totales y fecha estimada de cobro">📑 Contrato</button>' +
                     '<button class="tb-btn" onclick="abrirPanelCarga(' + uno + ')">Detalle</button>' : '') +
     btnVisto +
     '<button class="tb-btn" onclick="limpiarSelFC()">Limpiar</button>';
@@ -10517,6 +10615,7 @@ function abrirPanelCarga(idx){
       <button onclick="solicitarLiberacionViaAppScript(${idx})">🚢 Liberación</button>
       <button onclick="openMailModal(${idx},'reclamo_cobro')">✉ Reclamo cobro</button>
       <button onclick="renderEditCarga(${idx})">✎ Editar carga</button>
+      <button onclick="cambiarContratoCarga(${idx})">📑 Cambiar contrato</button>
       <button onclick="abrirFacturaForwarder([${idx}])">🚚 Factura forwarder</button>
       <button onclick="triggerDriveUpload(${idx})">📎 Subir docs</button>
       <button onclick="driveOpenFolder(${idx})">📁 Carpeta Drive</button>
