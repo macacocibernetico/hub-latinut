@@ -1453,6 +1453,23 @@ function getReclamoInfoFromLog(bl, mailType){
   return{count:matches.length, timeStr};
 }
 
+// Fecha y hora del ultimo reclamo registrado en el LOG para ese BL ("reclamo cobro"). null si nunca se reclamo.
+function fechaUltimoReclamo(bl, mailType){
+  if(!logRows.length) return null;
+  const clave=(mailType||'reclamo cobro').replace(/_/g,' ').toLowerCase().split(' ')[0];
+  const m=getLogDeBL(bl).filter(r=>(r[7]||'').toLowerCase().includes(clave));
+  if(!m.length) return null;
+  const u=m[m.length-1];
+  return {fecha:(u[0]||'').toString(), hora:(u[1]||'').toString()};
+}
+// Texto del registro de reclamos de una carga: "2 reclamos · último 14/10/2026 10:30 (hace 2d)".
+function textoReclamoCobro(bl){
+  const i=getReclamoInfoFromLog(bl,'reclamo cobro');
+  if(!i) return '';
+  const f=fechaUltimoReclamo(bl,'reclamo cobro');
+  return i.count+(i.count===1?' reclamo':' reclamos')+' · último '+(f?f.fecha+(f.hora?' '+f.hora:''):'')+' ('+i.timeStr+')';
+}
+
 // ─── COLUMNAS ────────────────────────────────────────────────────────────────
 // Estos son solo VALORES POR DEFECTO, usados unicamente antes del primer
 // loadData(). Una vez que corre mapearColumnasPorNombre(), todas las columnas se
@@ -6963,7 +6980,7 @@ function renderCobranzaMobile(rows){
           <div style="font-size:15px;font-weight:700;color:#111;">USD ${total.toLocaleString('es-AR',{maximumFractionDigits:0})}</div>
         </div>`:''}
         ${recInfo?`<div style="background:#fef3c7;border-radius:8px;padding:8px 10px;grid-column:1/-1;">
-          <div style="font-size:12px;color:#92400e;">⚠ Reclamado ${recInfo.count}x · ${recInfo.timeStr}</div>
+          <div style="font-size:12px;color:#92400e;">⚠ Reclamado ${recInfo.count}x · último ${escH((fechaUltimoReclamo(row[COL.BL]||'')||{}).fecha||'')} · ${recInfo.timeStr}</div>
         </div>`:''}
       </div>
       <div style="display:flex;gap:8px;" onclick="event.stopPropagation()">
@@ -7118,7 +7135,7 @@ function renderCobranza(filterKey, filterVal){
     const inv2=(_inv2r==='-'||_inv2r==='--')?'':_inv2r;
     const invDisplay=inv1&&inv2?`${inv1} / ${inv2}`:inv1||'--';
     const recInfo=getReclamoInfoFromLog(row[COL.BL]||'','reclamo cobro');
-    const recHtml=recInfo?`<span style="color:var(--warn);font-size:11px;font-family:var(--mono)">${recInfo.count}x · ${recInfo.timeStr}</span>`:`<span style="color:var(--text3);font-size:11px">--</span>`;
+    const recHtml=recInfo?`<span style="color:var(--warn);font-size:11px;font-family:var(--mono)" title="${escH(textoReclamoCobro(row[COL.BL]||''))}">${recInfo.count}x · último ${escH((fechaUltimoReclamo(row[COL.BL]||'')||{}).fecha||'')} · ${recInfo.timeStr}</span>`:`<span style="color:var(--text3);font-size:11px">--</span>`;
     const customer=(row[COL.CUSTOMER]||'--').trim();
     const contactInfo=getContactsForEmpresa(customer);
     const contactDisplay=contactInfo.to?contactInfo.to.split('<')[0].trim():'--';
@@ -9024,7 +9041,23 @@ async function sendDraft(){
   // Crear draft en Gmail
   await createGmailDraft(to, cc, subject, body);
 
-  if(isBulk && rowIndices){
+  if(isBulk && rowIndices && mailType==='reclamo_cobro'){
+    // Reclamo de cobro masivo: no toca la planilla de cargas; deja una linea en el LOG por cada carga (con fecha y hora).
+    for(let i=0;i<rowIndices.length;i++){
+      const row=filaPorIdx(rowIndices[i]);
+      if(!row) continue;
+      const inv2raw=(row[COL.INVOICE_FC_SERV]||'').trim();
+      await appendLog({
+        fc:(row[COL.INVOICE_CLIENTE]||'').trim(),
+        fcServ:(inv2raw==='-'||inv2raw==='--')?'':inv2raw,
+        bl:(row[COL.BL]||'').trim(),
+        customer:(row[COL.CUSTOMER]||'').trim(),
+        accion:'reclamo cobro',
+        detalle: subject
+      });
+    }
+    showToast('✓ Reclamo registrado en el LOG ('+rowIndices.length+(rowIndices.length===1?' carga':' cargas')+')');
+  } else if(isBulk && rowIndices){
     // Bulk liberation
     for(let i=0;i<rowIndices.length;i++){
       const ri=rowIndices[i];
@@ -10363,7 +10396,7 @@ function abrirPanelCarga(idx){
     ${est ? fila('Pagaré', est.label) : ''}
     <div style="font-size:11px;font-weight:600;color:var(--text3);text-transform:uppercase;margin:12px 0 4px;">Facturación</div>
     ${fila('Contrato', v(COL.CONTRACT_CLIENTE))}${fila('Invoice FC1', v(COL.INVOICE_CLIENTE))}${fila('Invoice FC2', v(COL.INVOICE_FC_SERV))}
-    ${fila('Total', usd(COL.TOTAL_CFR))}${fila('Cobro estimado', fmtDate(row[getCobroCol()]))}
+    ${fila('Total', usd(COL.TOTAL_CFR))}${fila('Cobro estimado', fmtDate(row[getCobroCol()]))}${fila('Cobro consultado', textoReclamoCobro(row[COL.BL]||'') || 'Nunca')}
     <div class="pc-acc">
       <button style="background:var(--accent);color:#fff;border-color:var(--accent);" onclick="solicitarFC(${idx})">📄 Solicitud FC</button>
       <button onclick="avisoClienteBulk([${idx}])">📦 Aviso cliente</button>
