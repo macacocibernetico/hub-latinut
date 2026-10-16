@@ -7260,11 +7260,23 @@ let pagaresOrden = 'pendientes';
 // Busca en lo que uno tiene a mano cuando arranca por un papel: el numero de
 // factura (la del cliente o la de servicios), el cliente, el BL, el lote,
 // el booking o el buque.
+// Se pueden poner varias cosas separadas por coma ("FC-1001, FC-1002"): trae las cargas que coinciden con
+// CUALQUIERA. Asi un pagare que cubre dos operaciones se arma buscando sus facturas de una vez.
+function terminosPagare(q){
+  return (q||'').toString().toLowerCase().split(',').map(t => t.trim()).filter(Boolean);
+}
 function coincidePagare(row, q){
-  if(!q) return true;
+  const terminos = terminosPagare(q);
+  if(!terminos.length) return true;
   const campos = [row[COL.CUSTOMER], row[COL.INVOICE_CLIENTE], row[COL.INVOICE_FC_SERV],
-                  row[COL.BL], row[COL.LOTS], row[COL.BOOKING], row[COL.VESSEL], row[COL.NEGOCIO]];
-  return campos.some(v => (v||'').toString().toLowerCase().includes(q));
+                  row[COL.BL], row[COL.LOTS], row[COL.BOOKING], row[COL.VESSEL], row[COL.NEGOCIO]]
+                  .map(v => (v||'').toString().toLowerCase());
+  return terminos.some(t => campos.some(c => c.includes(t)));
+}
+// Tilda de una vez todas las cargas que muestra la busqueda (las de pagare, no las que no corresponden).
+function seleccionarEncontradasPagare(){
+  window._pagSel = new Set(window._pagVisibles || []);
+  renderPagares();
 }
 function setPagaresOrden(v){ pagaresOrden = v; renderPagares(); }
 
@@ -7567,6 +7579,18 @@ function renderPagares(){
   // te la tiene que encontrar aunque esa carga no lleve pagare.
   const naVisibles = q ? noCorresponde.filter(o => coincidePagare(o.row, q)) : noCorresponde;
   const hayRecorte = !!(q || pagaresFiltro.size);
+  window._pagVisibles = visibles.map(o => o.idx);
+  // Varias facturas en la busqueda: cuales encontro y cuales no (un error de tipeo se nota enseguida).
+  const terminos = terminosPagare(pagaresBusqueda);
+  const sinHallar = terminos.length > 1
+    ? terminos.filter(t => !conPagare.concat(noCorresponde).some(o => coincidePagare(o.row, t)))
+    : [];
+  const barraVarias = terminos.length > 1
+    ? `<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;width:100%;font-size:12px;color:var(--text2);">
+        <span>Buscando ${terminos.length} cosas a la vez: ${visibles.length} carga${visibles.length===1?'':'s'} encontrada${visibles.length===1?'':'s'}.</span>
+        ${visibles.length ? `<button onclick="seleccionarEncontradasPagare()" style="padding:5px 12px;border-radius:7px;border:none;font-size:12px;font-weight:600;cursor:pointer;background:var(--accent);color:#fff;">Seleccionar las ${visibles.length} para un pagaré</button>` : ''}
+        ${sinHallar.length ? `<span style="color:var(--danger);">⚠ Sin resultados: ${sinHallar.map(t => escH(t)).join(', ')}</span>` : ''}
+      </div>` : '';
   const tnsVisibles = visibles.reduce((acc, o) => {
     const t = parseSheetNum(o.row[COL.TNS]);
     return acc + (isNaN(t) ? 0 : t);
@@ -7689,10 +7713,10 @@ function renderPagares(){
   // tipear y despues devuelve el foco al input con el cursor donde estaba.
   const buscador = `<div style="position:relative;display:flex;align-items:center;">
     <span style="position:absolute;left:9px;font-size:14px;color:var(--text3);">🔍</span>
-    <input id="pagares-search-input" type="text" placeholder="Factura, cliente, BL, lote, buque..."
+    <input id="pagares-search-input" type="text" placeholder="Factura, cliente, BL, lote, buque... (varias, con coma)" title="Podés poner varias facturas separadas por coma para armar un pagaré de más de una operación"
       value="${pagaresBusqueda.replace(/"/g,'&quot;')}"
       oninput="pagaresBusqueda=this.value;window._pagSel=new Set();if(this._t)clearTimeout(this._t);this._t=setTimeout(()=>{const v=this.value;renderPagares();setTimeout(()=>{const el=document.getElementById('pagares-search-input');if(el){el.focus();el.setSelectionRange(v.length,v.length);}},0);},300);"
-      style="font-size:12px;font-family:var(--mono);padding:5px 10px 5px 30px;border-radius:8px;border:1px solid ${pagaresBusqueda?'var(--accent)':'var(--border)'};background:${pagaresBusqueda?'var(--accent-light)':'var(--bg2)'};color:var(--text);width:230px;outline:none;">
+      style="font-size:12px;font-family:var(--mono);padding:5px 10px 5px 30px;border-radius:8px;border:1px solid ${pagaresBusqueda?'var(--accent)':'var(--border)'};background:${pagaresBusqueda?'var(--accent-light)':'var(--bg2)'};color:var(--text);width:300px;max-width:100%;outline:none;">
     ${pagaresBusqueda?`<span onclick="limpiarBusquedaPagares()" style="position:absolute;right:8px;cursor:pointer;font-size:13px;color:var(--text3);">×</span>`:''}
   </div>`;
 
@@ -7720,6 +7744,7 @@ function renderPagares(){
         <span style="font-size:14px;font-weight:600;color:var(--text);">Pagarés — ${hayRecorte?`${visibles.length} de ${total}`:`${total} carga${total===1?'':'s'}`}${tnsVisibles?` · ${tnsVisibles.toLocaleString('es-AR',{maximumFractionDigits:2})} tns`:''}</span>
         <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">${buscador}${ordenSel}</div>
       </div>
+      ${barraVarias}
       <div style="display:flex;align-items:center;justify-content:space-between;width:100%;flex-wrap:wrap;gap:8px;">
         ${filtros}
         <span style="font-size:12px;color:var(--text3);">${pendientes} pendiente${pendientes===1?'':'s'} de gestionar${claves.length?` · ${claves.length} grupo${claves.length===1?'':'s'} de cargas que viajaron juntas`:''}</span>
