@@ -9057,8 +9057,8 @@ async function sendDraft(){
       });
     }
     showToast('✓ Reclamo registrado en el LOG ('+rowIndices.length+(rowIndices.length===1?' carga':' cargas')+')');
-  } else if(isBulk && rowIndices){
-    // Bulk liberation
+  } else if(isBulk && rowIndices && mailType==='solicitar_liberacion'){
+    // Bulk liberation: es el UNICO mail masivo que toca TELEX
     for(let i=0;i<rowIndices.length;i++){
       const ri=rowIndices[i];
       const row=filaPorIdx(ri);
