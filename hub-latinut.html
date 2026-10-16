@@ -5713,6 +5713,7 @@ function editarCelda(r, c, inicial){
   const row = _tablaRows[r];
   if(!row) return;
   if(esColFormula(c)){ showToast('Esa columna tiene fórmula: se calcula sola en la planilla', 'info'); return; }
+  if(c === COL.CONTRACT_CLIENTE && inicial === undefined && editarContratoEnTabla(r, c)) return;
   marcarCelda(r, c);
   const td = celdaTd(r, c);
   if(!td) return;
@@ -5740,6 +5741,56 @@ function editarCelda(r, c, inicial){
   };
   inp.onblur = () => fin(true);
   if(inp.focus){ inp.focus(); if(inicial === undefined && inp.select) inp.select(); }
+}
+
+// Doble clic en la celda del contrato: en vez de escribir a mano, una lista con los contratos abiertos de ese cliente.
+// Al elegir uno, la carga toma de el precio, flete, servicios, totales y fecha estimada de cobro (la misma cuenta que
+// "Cambiar contrato"), pero como cambios pendientes en amarillo: se revisan y se guardan con "Revisar y guardar".
+// Devuelve false si el cliente no tiene contratos cargados (entonces se edita a mano como siempre).
+function editarContratoEnTabla(r, c){
+  const row = _tablaRows[r];
+  const cli = normTar((valorVisible(row, COL.CUSTOMER) || '').toString());
+  const cands = contratos.filter(k => normTar(k.importador) === cli);
+  if(!cands.length) return false;
+  marcarCelda(r, c);
+  const td = celdaTd(r, c);
+  if(!td) return false;
+  const actual = valorVisible(row, c).trim();
+  const prod = normTar(valorVisible(row, COL.PRODUCT)), pto = normTar(valorVisible(row, COL.PORT));
+  const compat = k => (!prod || contratoAdmiteProducto(k, prod)) && (!pto || !k.puertos.length || k.puertos.some(x => normTar(x) === pto));
+  const orden = cands.map(k => ({ k, ok: compat(k), esActual: normTar(k.contrato) === normTar(actual) }))
+    .sort((a, b) => (b.ok - a.ok) || String(a.k.contrato).localeCompare(String(b.k.contrato)));
+  const usd = n => isNaN(n) ? '—' : 'USD ' + n.toLocaleString('es-AR', { maximumFractionDigits: 2 });
+  td.classList.add('editando');
+  td.innerHTML = '<select class="t-edit" id="t-edit"><option value="">' + (actual ? escH(actual) + ' (sin cambios)' : 'Elegí un contrato…') + '</option>'
+    + orden.filter(o => !o.esActual).map(o => '<option value="' + escH(String(contratos.indexOf(o.k))) + '">'
+      + escH(o.k.contrato + ' · ' + (o.k.producto || '—') + ' · ' + (o.k.puertoTxt || 'sin puerto') + ' · ' + usd(o.k.price) + (o.ok ? '' : ' ⚠ otro producto/puerto')) + '</option>').join('')
+    + '</select>';
+  const sel = document.getElementById('t-edit');
+  let terminado = false;
+  const fin = elegido => {
+    if(terminado) return; terminado = true;
+    if(elegido){
+      const k = contratos[parseInt(elegido, 10)];
+      if(k){
+        const vis = row.map((x, i) => valorVisible(row, i)); vis._sheetRow = row._sheetRow;
+        const plan = planCambioContrato(vis, k);
+        let n = 0;
+        plan.cambios.forEach(ch => { if(esColFormula(ch.col)) return; anotarCambioTabla(row, ch.col, ch.despues, ch.nota); n++; });
+        const fila = 'Fila ' + row._sheetRow;
+        _avisoTabla = fila + ': contrato → ' + k.contrato + ' · ' + n + ' valor' + (n === 1 ? '' : 'es') + ' actualizados (en amarillo)';
+        showToast('📑 ' + fila + ': pasó al contrato ' + k.contrato + '. Cambiaron:\n' + plan.cambios.filter(ch => !esColFormula(ch.col)).slice(0, 8).map(ch => '• ' + ch.nombre + ': ' + (ch.antes || '(vacío)') + ' → ' + ch.despues).join('\n')
+          + (plan.avisos.length ? '\n⚠ ' + plan.avisos.join('\n⚠ ') : '') + '\nQuedaron en amarillo: revisalos y guardá.', plan.avisos.length ? 'warn' : 'info', 12000);
+      }
+    }
+    renderCargas();
+    marcarCelda(r, c);
+  };
+  sel.onchange = () => fin(sel.value);
+  sel.onkeydown = e => { if(e.key === 'Escape'){ e.preventDefault(); e.stopPropagation(); fin(''); } };
+  sel.onblur = () => fin('');
+  if(sel.focus) sel.focus();
+  return true;
 }
 
 // Al cambiar el Producto (por ejemplo de NOP a convencional) cambia el contrato que
