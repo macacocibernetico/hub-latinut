@@ -2858,12 +2858,22 @@ async function formulaPagoDeContrato(numero){
   return { texto: '', origen: k ? 'abiertos' : '' };
 }
 
+// Texto que explica la cuenta: "ETD 15/10/2026 + 60 días corridos".
+function explicarCalculoFecha(formula, etd, eta){
+  const base = formula.base === 'ETD' ? etd : eta;
+  const n = Math.abs(formula.dias);
+  return formula.base + ' ' + (base || '?') + (formula.dias >= 0 ? ' + ' : ' − ') + n + ' día' + (n === 1 ? '' : 's') + ' corridos';
+}
+const _colEstCobroOk = () => COL.FECHA_EST_COBRO >= 0 && COL.FECHA_EST_COBRO !== COL.FECHA_COBRO && !esColFormula(COL.FECHA_EST_COBRO);
+
 // Al cambiar la ETD o la ETA de una carga (en la tabla), la fecha estimada de cobro se recalcula con la formula
 // de su contrato. No se escribe sola: queda como cambio pendiente (borde ambar) y se avisa, para revisarla y guardar.
-async function propagarFechaCobroEstimada(row, c){
+// Si la fecha estimada tenia algo que NO era lo que daba la formula (escrito a mano), no se pisa: se pregunta.
+// antesBase: lo que decia la ETD/ETA ANTES del cambio (para saber si la fecha estaba atada a la formula).
+async function propagarFechaCobroEstimada(row, c, antesBase){
   if(c !== COL.ETD && c !== COL.ETA) return;
   // Solo se escribe "Fecha estimada". Nunca la de cobro real: si por un error de mapeo fueran la misma columna, no se hace nada.
-  if(COL.FECHA_EST_COBRO < 0 || COL.FECHA_EST_COBRO === COL.FECHA_COBRO || esColFormula(COL.FECHA_EST_COBRO)) return;
+  if(!_colEstCobroOk()) return;
   const numero = valorVisible(row, COL.CONTRACT_CLIENTE).trim();
   if(!numero) return;
   const { texto } = await formulaPagoDeContrato(numero);
@@ -2874,17 +2884,94 @@ async function propagarFechaCobroEstimada(row, c){
     return;
   }
   if(formula.base !== (c === COL.ETD ? 'ETD' : 'ETA')) return;             // la edicion no afecta a esta formula
-  const nueva = fechaDesdeFormulaPago(formula, valorVisible(row, COL.ETD), valorVisible(row, COL.ETA));
+  const etd = valorVisible(row, COL.ETD), eta = valorVisible(row, COL.ETA);
+  const nueva = fechaDesdeFormulaPago(formula, etd, eta);
   if(!nueva) return;
   const actual = valorVisible(row, COL.FECHA_EST_COBRO).trim();
   if(actual === nueva) return;
-  anotarCambioTabla(row, COL.FECHA_EST_COBRO, nueva);
+  // Lo que habria dado la formula con la fecha de antes: si coincide con lo que hay, la fecha estaba atada a la formula.
+  const previa = fechaDesdeFormulaPago(formula, c === COL.ETD ? antesBase : etd, c === COL.ETA ? antesBase : eta);
+  const nota = 'Calculada: ' + explicarCalculoFecha(formula, etd, eta) + ' · contrato ' + numero + ' (fórmula "' + texto + '")';
+  if(actual && !(previa && actual === previa)){
+    encolarFechaAMano({ row, actual, nueva, nota, texto, numero });
+    return;
+  }
+  aplicarFechaEstimada(row, nueva, nota);
   if(typeof showToast === 'function') showToast('Fecha estimada de cobro: ' + (actual || '(vacía)') + ' → ' + nueva + ' (' + texto + ' según el contrato ' + numero + '). Queda pendiente: revisala y guardá.', 'info');
+}
+function aplicarFechaEstimada(row, nueva, nota){
+  anotarCambioTabla(row, COL.FECHA_EST_COBRO, nueva, nota);
   if(currentView === 'cargas' && cargasVista === 'tabla'){
     const sel = _tablaSel ? { row: _tablaRows[_tablaSel.r], c: _tablaSel.c } : null;
     renderCargas();
     if(sel && sel.row){ const p = _tablaRows.indexOf(sel.row); if(p >= 0) marcarCelda(p, sel.c); }
   }
+}
+// Varias ETA seguidas: se juntan y se pregunta UNA vez con la lista de las que tenian una fecha escrita a mano.
+let _fechasAMano = new Map(), _fechasAManoTimer = null;
+function encolarFechaAMano(item){
+  _fechasAMano.set(clavePend(item.row), item);
+  if(_fechasAManoTimer) clearTimeout(_fechasAManoTimer);
+  _fechasAManoTimer = setTimeout(resolverFechasAMano, 400);
+}
+async function resolverFechasAMano(){
+  _fechasAManoTimer = null;
+  const items = [..._fechasAMano.values()]; _fechasAMano = new Map();
+  if(!items.length) return;
+  const esc2 = t => String(t === undefined || t === null ? '' : t).replace(/&/g, '&amp;').replace(/</g, '&lt;');
+  const det = items.map(it => '<div style="margin-bottom:6px;">• <b>' + esc2((it.row[COL.CUSTOMER]||'').toString().trim() || '—') + '</b> · BL ' + esc2((it.row[COL.BL]||'').toString().trim() || '—')
+    + ' · fila ' + (it.row._sheetRow || '?') + '<br><span style="color:var(--text3);">Ahora dice</span> <b>' + esc2(it.actual) + '</b> <span style="color:var(--text3);">(no es lo que daba la fórmula) → fórmula</span> <b>' + esc2(it.nueva)
+    + '</b><br><span style="color:var(--text3);font-size:12px;">' + esc2(it.nota) + '</span></div>').join('');
+  const ok = await showConfirm('Hay fechas estimadas escritas a mano',
+    (items.length === 1 ? 'La fecha estimada de cobro de esta carga no coincide con la fórmula del contrato (alguien la puso a mano).' : 'En ' + items.length + ' cargas la fecha estimada de cobro no coincide con la fórmula del contrato (alguien la puso a mano).')
+    + ' ¿La reemplazo por la que da la fórmula? Si elegís no, queda como está. Si sí, queda como cambio pendiente para revisar y guardar.',
+    { icono: '✍️', okLabel: 'Reemplazar por la fórmula', detalle: det });
+  if(!ok) return;
+  items.forEach(it => anotarCambioTabla(it.row, COL.FECHA_EST_COBRO, it.nueva, it.nota));
+  if(currentView === 'cargas' && cargasVista === 'tabla') renderCargas();
+  if(typeof showToast === 'function') showToast('Fecha estimada de cobro reemplazada en ' + items.length + ' carga' + (items.length > 1 ? 's' : '') + '. Quedó pendiente: revisala y guardá.', 'info');
+}
+
+// Boton "Rellenar fecha estimada": completa las cargas activas que NO tienen fecha estimada, con la fórmula de su contrato,
+// y dice como se calculo cada una. No pisa las que ya tienen fecha y no escribe en la planilla: quedan como cambios pendientes.
+async function rellenarFechasEstimadas(){
+  if(!_colEstCobroOk()){ showToast('Esta planilla no tiene la columna "Fecha estimada" para completar.', 'info'); return; }
+  const vacias = allRows.filter(r => { const v = valorVisible(r, COL.FECHA_EST_COBRO).trim(); return !v || v === '-'; });
+  if(!vacias.length){ showToast('Todas las cargas activas ya tienen fecha estimada.', 'ok'); return; }
+  const listas = [], omitidas = {};
+  const omitir = (motivo, row) => { (omitidas[motivo] = omitidas[motivo] || []).push(row); };
+  for(const row of vacias){
+    const numero = valorVisible(row, COL.CONTRACT_CLIENTE).trim();
+    if(!numero){ omitir('sin número de contrato', row); continue; }
+    const { texto } = await formulaPagoDeContrato(numero);
+    if(!texto){ omitir('el contrato no tiene "Formula pago" (o no está en las hojas de contratos)', row); continue; }
+    const formula = parsearFormulaPago(texto);
+    if(!formula){ omitir('la fórmula de pago no se entiende (tiene que ser ETD o ETA ±días)', row); continue; }
+    const etd = valorVisible(row, COL.ETD), eta = valorVisible(row, COL.ETA);
+    const fecha = fechaDesdeFormulaPago(formula, etd, eta);
+    if(!fecha){ omitir('falta la ' + formula.base + ' de la carga', row); continue; }
+    listas.push({ row, fecha, numero, texto, nota: 'Calculada: ' + explicarCalculoFecha(formula, etd, eta) + ' · contrato ' + numero + ' (fórmula "' + texto + '")' });
+  }
+  const esc2 = t => String(t === undefined || t === null ? '' : t).replace(/&/g, '&amp;').replace(/</g, '&lt;');
+  const nomb = r => esc2((r[COL.CUSTOMER]||'').toString().trim() || '—') + ' · BL ' + esc2((r[COL.BL]||'').toString().trim() || '—') + ' · fila ' + (r._sheetRow || '?');
+  const MAX = 60;
+  let det = listas.slice(0, MAX).map(it => '<div style="margin-bottom:6px;">• <b>' + esc2(it.fecha) + '</b> — ' + nomb(it.row) + '<br><span style="color:var(--text3);font-size:12px;">' + esc2(it.nota) + '</span></div>').join('');
+  if(listas.length > MAX) det += '<div style="color:var(--text3);">…y ' + (listas.length - MAX) + ' más con el mismo criterio.</div>';
+  const motivos = Object.keys(omitidas);
+  if(motivos.length) det += '<div style="margin-top:8px;color:var(--warn);"><b>No se pueden completar (' + motivos.reduce((a, m) => a + omitidas[m].length, 0) + '):</b>'
+    + motivos.map(m => '<div>• ' + omitidas[m].length + ' — ' + esc2(m) + '</div>').join('') + '</div>';
+  if(!listas.length){
+    await showConfirm('No se puede completar ninguna', 'Hay ' + vacias.length + ' cargas sin fecha estimada, pero a ninguna se le puede calcular con el contrato.',
+      { icono: 'ℹ️', okLabel: 'Entendido', detalle: det });
+    return;
+  }
+  const ok = await showConfirm('Rellenar la fecha estimada de cobro en ' + listas.length + ' carga' + (listas.length > 1 ? 's' : ''),
+    'Se completa con la fórmula de pago del contrato (ETD o ETA ± días corridos). Solo las que están vacías: no se toca ninguna que ya tenga fecha. Quedan como cambios pendientes (en amarillo) para que las revises y guardes.',
+    { icono: '📅', okLabel: 'Rellenar', detalle: det });
+  if(!ok) return;
+  listas.forEach(it => anotarCambioTabla(it.row, COL.FECHA_EST_COBRO, it.fecha, it.nota));
+  if(currentView === 'cargas') renderCargas();
+  showToast('Fecha estimada completada en ' + listas.length + ' carga' + (listas.length > 1 ? 's' : '') + '. Revisalas (amarillo) y guardá.', 'info');
 }
 
 // En los formularios (Nueva carga y Editar): al elegir el contrato o cambiar la ETD/ETA se completa la fecha estimada
@@ -5071,6 +5158,7 @@ function renderCargas(showAll, sort){
     ${searchHtml}
     ${filtrosWrap}
     ${resetBtn}
+    ${_colEstCobroOk() ? '<button class="t-filtros-btn" onclick="rellenarFechasEstimadas()" title="Completa la fecha estimada de cobro de las cargas que la tienen vacía, con la fórmula de pago de su contrato (te muestra cómo se calculó cada una antes de aplicar)">📅 Rellenar fecha estimada</button>' : ''}
     ${_etaOrdenFijo && ordenPorETAActivo() ? '<button class="t-filtros-btn on" onclick="reordenarPorETA()" title="Las fechas que cambiaste siguen en su lugar; esto acomoda todas por ETA (la que llega ultima, abajo de todo)">↕ Reordenar por ETA</button>' : ''}
     <span style="flex:1;"></span>
     ${viewChip('Por embarque', false, "cargasVista='grupos';renderCargas()")}
@@ -5418,7 +5506,7 @@ function renderCargasTabla(rows){
       // carga viaja con BL Original (no lleva pagare). No se escribe nada.
       if(!v && c === COL.PAGARE_ENVIADO && !nc.sinPagares && motivoSinPagare(row) === 'BL Original'){ extra = '<span class="t-nota">N/A · BL Orig</span>'; }
       const fija = kk < TABLA_FIJAS;
-      return `<td data-r="${r}" data-c="${c}" class="${fija ? 'fija' : ''}${kk === TABLA_FIJAS - 1 ? ' fija-ult' : ''}${p ? ' chg' : ''}${esColFormula(c) ? ' formula' : ''}${celdaMarcada(row, c) ? ' t-marca' : ''}${(c === COL.PRODUCT && enDudaNOP(row)) ? ' t-duda' : ''}${comAbiertosCelda(row, c).length ? ' t-com' : ''}${colorDeCelda(row, c) ? ' t-pint' : ''}" style="${colorDeCelda(row, c) ? '--pin:' + hexColor(colorPaleta(colorDeCelda(row, c)).rgb) + ';' : ''}${fija ? 'left:' + left[c] + 'px;' : ''}max-width:${anchos[c]}px;" title="${esc(v)}${p ? ' · antes: ' + esc(p.antes || '(vacío)') : ''}"${corte[c] ? ' data-corte="1"' : ''}>${esc(v)}${extra}</td>`;
+      return `<td data-r="${r}" data-c="${c}" class="${fija ? 'fija' : ''}${kk === TABLA_FIJAS - 1 ? ' fija-ult' : ''}${p ? ' chg' : ''}${esColFormula(c) ? ' formula' : ''}${celdaMarcada(row, c) ? ' t-marca' : ''}${(c === COL.PRODUCT && enDudaNOP(row)) ? ' t-duda' : ''}${comAbiertosCelda(row, c).length ? ' t-com' : ''}${colorDeCelda(row, c) ? ' t-pint' : ''}" style="${colorDeCelda(row, c) ? '--pin:' + hexColor(colorPaleta(colorDeCelda(row, c)).rgb) + ';' : ''}${fija ? 'left:' + left[c] + 'px;' : ''}max-width:${anchos[c]}px;" title="${esc(v)}${p ? ' · antes: ' + esc(p.antes || '(vacío)') + (p.nota ? ' · ' + esc(p.nota) : '') : ''}"${corte[c] ? ' data-corte="1"' : ''}>${esc(v)}${extra}</td>`;
     }).join('');
     return `<tr id="fc-tr-${localIdx}" class="${sel ? 'sel' : ''}${filaVista(row) ? ' vista' : ''}">
       <td class="t-num" role="button" aria-label="Marcar o desmarcar la fila ${row._sheetRow || ''} como vista" title="Clic para marcar / desmarcar la fila como vista" onclick="toggleFilaVista(${localIdx},event)">${row._sheetRow || ''}</td>
@@ -5679,17 +5767,18 @@ function propagarProductoATabla(row, nuevoProd){
   }
 }
 
-function anotarCambioTabla(row, c, nuevo){
+function anotarCambioTabla(row, c, nuevo, nota){
   nuevo = (nuevo === undefined || nuevo === null) ? '' : String(nuevo).trim();
   const orig = valorCelda(row, c).trim();
+  const antesVisible = valorVisible(row, c).trim();
   const k = clavePend(row);
   if(nuevo === orig){
     if(cargasPend[k]){ delete cargasPend[k][c]; if(!Object.keys(cargasPend[k]).length) delete cargasPend[k]; }
     return;
   }
   if(c === COL.ETA) congelarOrdenETA();
-  (cargasPend[k] = cargasPend[k] || {})[c] = { antes: orig, despues: nuevo, row };
-  if(c === COL.ETD || c === COL.ETA) propagarFechaCobroEstimada(row, c).catch(e => console.warn('fecha estimada de cobro:', e));
+  (cargasPend[k] = cargasPend[k] || {})[c] = { antes: orig, despues: nuevo, row, nota: nota || '' };
+  if(c === COL.ETD || c === COL.ETA) propagarFechaCobroEstimada(row, c, antesVisible).catch(e => console.warn('fecha estimada de cobro:', e));
 }
 
 function moverSel(dr, dc, extender){
