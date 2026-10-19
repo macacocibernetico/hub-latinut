@@ -529,7 +529,7 @@ body.t-redim{cursor:col-resize;user-select:none;}
 .btn .sync-ico{display:inline-block;}
 .btn.sincronizando{opacity:.95;cursor:progress;}
 .btn.sincronizando .sync-ico{animation:syncGira .8s linear infinite;}
-@keyframes syncGira{to{transform:rotate(-360deg);}}
+@keyframes syncGira{to{transform:rotate(360deg);}}
 @media (prefers-reduced-motion:reduce){.progress-bar.active{animation:none;}.btn.sincronizando .sync-ico{animation-duration:2.4s;}}
 
 /* STICKY TABLE HEADER */
@@ -5961,13 +5961,21 @@ async function guardarCambiosTabla(){
   let fresco;
   try{ fresco = await releerFilasCarga([...new Set(lista.map(x => x.sheetRow))]); }
   catch(e){ alert(e.message); return; }
-  const aEscribir = [], conflictos = [], formulas = [];
+  const aEscribir = [], conflictos = [], formulas = [], dependientes = [];
   lista.forEach(x => {
     const fr = fresco[x.sheetRow];
-    if(esFormulaCelda(fr.formulas[x.col])){ formulas.push(x); return; }
+    if(esFormulaCelda(fr.formulas[x.col])){ x.formula = fr.formulas[x.col]; x.hoy = (fr.valores[x.col] || '').toString().trim(); formulas.push(x); return; }
     if((fr.valores[x.col] || '').toString().trim() !== x.antes){ x.ahora = (fr.valores[x.col] || '').toString().trim(); conflictos.push(x); return; }
     aEscribir.push(x);
   });
+  // Si la ETD o la ETA de una fila tiene formula en la planilla, ese cambio no se guarda, y la fecha estimada de cobro
+  // calculada a partir de ella tampoco: saldria con una fecha que la planilla nunca va a tener.
+  for(let i = aEscribir.length - 1; i >= 0; i--){
+    const x = aEscribir[i];
+    if(x.col !== COL.FECHA_EST_COBRO) continue;
+    const base = formulas.find(f => f.sheetRow === x.sheetRow && (f.col === COL.ETD || f.col === COL.ETA));
+    if(base){ x.porBase = base; dependientes.push(x); aEscribir.splice(i, 1); }
+  }
   const esc = s => String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;');
   const nom = x => esc(hdr[x.col] || colIndexToLetter(x.col));
   const cli = x => esc((x.row[COL.CUSTOMER] || '').trim());
@@ -5975,7 +5983,10 @@ async function guardarCambiosTabla(){
     aEscribir.map(x => `<div>Fila ${x.sheetRow} · ${cli(x)} · <b>${nom(x)}</b>: <span style="color:var(--text3);">${esc(x.antes || '(vacío)')}</span> → <b>${esc(x.despues || '(vacío)')}</b></div>`).join('') +
     (conflictos.length ? '<div style="margin-top:8px;color:var(--danger);"><b>No se guardan</b> porque cambiaron en la planilla mientras tanto:</div>' +
       conflictos.map(x => `<div style="color:var(--danger);">Fila ${x.sheetRow} · ${nom(x)}: ahora dice "${esc(x.ahora || '(vacío)')}"</div>`).join('') : '') +
-    (formulas.length ? '<div style="margin-top:8px;color:var(--text3);">No se guardan (tienen fórmula): ' + formulas.map(x => 'fila ' + x.sheetRow + ' · ' + nom(x)).join(', ') + '</div>' : '');
+    (formulas.length ? '<div style="margin-top:8px;color:var(--warn);"><b>No se guardan: esas celdas se calculan solas con una fórmula en la planilla</b> (el hub no las pisa):</div>' +
+      formulas.map(x => `<div style="color:var(--warn);">Fila ${x.sheetRow} · ${cli(x)} · <b>${nom(x)}</b> tiene la fórmula <code>${esc(x.formula)}</code> (hoy da ${esc(x.hoy || '(vacío)')}). Quisiste poner ${esc(x.despues || '(vacío)')}.</div>`).join('') +
+      '<div style="color:var(--text3);">Para cambiar esa fecha, cambiá lo que usa la fórmula (por ejemplo la ETD) o escribila directo en la planilla, pisando la fórmula.</div>' : '') +
+    (dependientes.length ? '<div style="margin-top:8px;color:var(--text3);">Tampoco se guarda la fecha estimada de cobro de ' + dependientes.map(x => 'la fila ' + x.sheetRow).join(', ') + ': dependía de la ' + esc(hdr[dependientes[0].porBase.col] || 'fecha') + ', que tiene fórmula.</div>' : '');
   if(!aEscribir.length){
     await showConfirm('No hay nada para guardar', 'Ninguno de los cambios se puede escribir.', { icono: '⚠️', okLabel: 'Entendido', detalle });
     return;
