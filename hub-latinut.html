@@ -7133,6 +7133,7 @@ function renderCobranzaMobile(rows){
         <div style="flex:1;min-width:0;">
           <div style="font-size:18px;font-weight:700;color:#111;margin-bottom:2px;">${customer}</div>
           <div style="font-size:13px;color:#374151;font-family:monospace;">${bl}</div>
+          ${(row[COL.NEGOCIO]||'').toString().trim()?`<div style="font-size:12px;color:#4b5563;font-family:monospace;margin-top:2px;">Negocio ${escH((row[COL.NEGOCIO]||'').toString().trim())}</div>`:''}
         </div>
         <div style="text-align:right;flex-shrink:0;margin-left:12px;">
           <div style="font-size:28px;font-weight:800;color:${color};line-height:1;">${dLabel}</div>
@@ -7274,7 +7275,7 @@ function renderCobranza(filterKey, filterVal){
     </div>
     <button id="cob-bulk-bar" class="bulk-bar" onclick="requestBulkReclamo()" style="background:var(--accent);color:#fff;font-weight:600;font-size:14px;cursor:pointer;border:none;font-family:var(--font);"></button>
     <div style="overflow-x:auto;${isMobile()?'display:none;':''}"><table>
-    <thead><tr><th style="width:30px"></th><th>Customer</th><th>BL</th><th>Invoice</th><th>Total</th><th onclick="renderCobranza('sort',cobranzaFilters.sort==='due_asc'?'due_desc':'due_asc')" style="cursor:pointer;user-select:none;">Vencimiento ${cobranzaFilters.sort==='due_asc'?'↑':cobranzaFilters.sort==='due_desc'?'↓':'↕'}</th><th>Días</th><th>Reclamos</th><th>Contacto</th><th></th><th></th></tr></thead>
+    <thead><tr><th style="width:30px"></th><th title="Uso interno: no aparece en los mails de reclamo">Negocio</th><th>Customer</th><th>BL</th><th>Invoice</th><th>Total</th><th onclick="renderCobranza('sort',cobranzaFilters.sort==='due_asc'?'due_desc':'due_asc')" style="cursor:pointer;user-select:none;">Vencimiento ${cobranzaFilters.sort==='due_asc'?'↑':cobranzaFilters.sort==='due_desc'?'↓':'↕'}</th><th>Días</th><th>Reclamos</th><th>Contacto</th><th></th><th></th></tr></thead>
     <tbody>`;
 
   window._cobSelectedRows = new Set();
@@ -7314,6 +7315,7 @@ function renderCobranza(filterKey, filterVal){
 
     html+=`<tr id="cob-tr-${localIdx}" style="cursor:pointer" onclick="toggleCobSelection(${localIdx})">
       <td onclick="event.stopPropagation()"><input type="checkbox" id="cob-cb-${localIdx}" onclick="toggleCobSelection(${localIdx})" style="accent-color:var(--accent);cursor:pointer;"></td>
+      <td class="mono" style="font-size:12px;color:var(--text2)" title="Uso interno: no aparece en los mails de reclamo">${escH((row[COL.NEGOCIO]||'').toString().trim()||'--')}</td>
       <td style="font-weight:500">${customer}</td>
       <td class="mono">${(row[COL.BL]||'--').substring(0,20)}</td>
       <td class="mono" style="font-size:11px;color:var(--accent)">${invDisplay}</td>
@@ -7327,7 +7329,7 @@ function renderCobranza(filterKey, filterVal){
     </tr>`;
   });
 
-  if(!rows.length) html += `<tr><td colspan="11"><div class="empty" style="padding:30px;">Sin cobros en este rango.</div></td></tr>`;
+  if(!rows.length) html += `<tr><td colspan="12"><div class="empty" style="padding:30px;">Sin cobros en este rango.</div></td></tr>`;
   if(isMobile()){
     const mobileCards = renderCobranzaMobile(rows);
     html += `</tbody></table></div><div style="padding:12px 0;">${mobileCards}</div></div>`;
