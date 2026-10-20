@@ -359,6 +359,11 @@ body.tabla-full-on{overflow:hidden;}
 .lt-ok{color:var(--ok);font-weight:600;font-size:12px;}
 .lt-err{color:var(--danger);font-weight:600;font-size:12px;}
 .lt-sin{color:var(--text3);}
+.lt-det{font-size:12px;padding:2px 8px 8px!important;border-top:none!important;}
+.lt-detfila td{border-top:none!important;}
+.lt-sub{color:var(--text3);}
+.lt-nums{display:flex;flex-wrap:wrap;gap:4px 16px;margin:2px 0;}
+.lt-nums i{font-style:normal;color:var(--text3);}
 .lt-duda{display:inline-flex;gap:4px;align-items:center;white-space:nowrap;}
 .t-grid td.t-marca,.t-grid tbody tr td.t-marca{background:#ffb347;color:#3d2400;font-weight:700;}
 .t-grid td.t-marca::before{content:'\2709';font-size:12px;margin-right:4px;}
@@ -6452,6 +6457,18 @@ function setForm(prefix, id, v){
   if(el && v !== undefined && v !== null) el.value = (typeof v === 'number') ? String(v).replace('.', ',') : v;
 }
 
+// Por que no hay contrato: se afloja el filtro para poder explicarlo.
+function textoSinContrato(customer, producto, puerto){
+  const soloCliente = contratos.filter(k => normTar(k.importador) === normTar(customer));
+  let pista = '';
+  if(!soloCliente.length) pista = ' No hay ningún contrato abierto de ' + customer + '.';
+  else {
+    const prods = [...new Set(soloCliente.map(k => k.producto))].filter(Boolean);
+    pista = ' De ' + customer + ' hay contratos de: ' + prods.join(', ') + '.';
+  }
+  return 'Ningún contrato coincide con ' + producto + (puerto ? ' a ' + puerto : '') + '.' + pista;
+}
+
 function buscarContratos(prefix){
   const caja = document.getElementById(prefix + '-contrato-box');
   if(!caja) return;
@@ -6476,16 +6493,7 @@ function buscarContratos(prefix){
   window['_contratos_' + prefix] = encontrados;
 
   if(!encontrados.length){
-    // Se afloja el filtro para poder explicar por que no encontro nada.
-    const soloCliente = contratos.filter(k => normTar(k.importador) === normTar(customer));
-    let pista = '';
-    if(!soloCliente.length) pista = ' No hay ningún contrato abierto de ' + customer + '.';
-    else {
-      const prods = [...new Set(soloCliente.map(k => k.producto))].filter(Boolean);
-      pista = ' De ' + customer + ' hay contratos de: ' + prods.join(', ') + '.';
-    }
-    caja.innerHTML = '<span style="color:var(--warn);">⚠ Ningún contrato coincide con ' + producto +
-                     (puerto ? ' a ' + puerto : '') + '.' + pista + ' Cargá los valores a mano.</span>';
+    caja.innerHTML = '<span style="color:var(--warn);">⚠ ' + textoSinContrato(customer, producto, puerto) + ' Cargá los valores a mano.</span>';
     return;
   }
 
@@ -10204,7 +10212,7 @@ function listaPol(){
 
 function itemLote(archivo, data){
   return { archivo, data, customer: '', containers: '', consol: '', pol: '', duda: false, incluir: true,
-           contratoSel: 0, estado: 'pend', fila: null };
+           contratoSel: -1, estado: 'pend', fila: null };
 }
 // Lo que se guardaria para una planilla (mismas claves que el formulario individual).
 function datosCargaLote(it){
@@ -10217,16 +10225,31 @@ function datosCargaLote(it){
   if(!isNaN(n) && n > 0 && !isNaN(p)) d.totalProv = String(redondear2(p * n));
   const k = contratosPara(it.customer, producto, d0.port);
   let contrato = { estado: 'sin', n: 0 };
+  const avisos = [];
   if(it.customer && producto){
     if(k.length === 1 || (k.length > 1 && k[it.contratoSel])){
       const c = k[k.length === 1 ? 0 : it.contratoSel];
       const v = calcularDesdeContrato(c, d0.tns, d0.port);
       d.contractCliente = v.contrato; d.priceCFR = v.price; d.flete = v.flete; d.totalCFR = v.totalCFR;
       d.incoterm = v.incoterm; d.priceFCServ = v.priceServ; d.totalFinal = v.totalFinal; d.precioFinalTn = v.finalPorTn;
-      contrato = { estado: 'ok', n: k.length, contrato: c.contrato };
+      contrato = { estado: 'ok', n: k.length, contrato: c.contrato, k: c, v };
+      // Igual que el formulario de una carga: la fecha estimada de cobro sale de la "Formula pago" del contrato.
+      if(_colEstCobroOk()){
+        const f = parsearFormulaPago(c.formulaPago);
+        const fecha = f ? fechaDesdeFormulaPago(f, d0.etd, d0.eta) : '';
+        if(fecha){ d.fechaEstCobro = fecha; contrato.notaFecha = c.formulaPago + ' según el contrato'; }
+        else if(!c.formulaPago) avisos.push('El contrato no tiene "Formula pago": la fecha estimada de cobro se carga a mano.');
+        else if(!f) avisos.push('La fórmula de pago "' + c.formulaPago + '" no se entiende (tiene que ser ETD o ETA ±días): la fecha estimada se carga a mano.');
+        else avisos.push('Falta la ' + f.base + ' para calcular la fecha estimada de cobro.');
+      }
+      if(!parseSheetNum(d0.tns)) avisos.push('Faltan las Tns: los totales quedan vacíos.');
+      if(isNaN(c.flete)) avisos.push('El contrato no tiene flete: ese campo queda en blanco.');
+      if(!c.incoterm) avisos.push('El contrato no tiene INCOTERM cargado.');
     } else if(k.length > 1){ contrato = { estado: 'varios', n: k.length, lista: k }; }
+    else avisos.push(textoSinContrato(it.customer, producto, d0.port) + ' Se guarda sin precios; cargalos a mano en la planilla.');
   }
-  return { d, producto, contrato };
+  if(producto && d0.product && producto !== d0.product) avisos.push('Producto ajustado a ' + producto + ' (ABW a Norfolk siempre es NOP).');
+  return { d, producto, contrato, avisos };
 }
 function faltantesLote(it){
   const { d } = datosCargaLote(it);
@@ -10302,7 +10325,8 @@ function renderLote(){
       <td class="lt-man"><input id="lt-${i}-pol" list="lt-pols" value="${escH(it.pol)}" placeholder="POL" autocomplete="off"${dis} oninput="loteCambio(${i})"></td>
       <td><label class="lt-duda"><input type="checkbox" id="lt-${i}-duda" ${it.duda ? 'checked' : ''}${dis} onchange="loteCambio(${i})"> ¿NOP?</label></td>
       <td id="lt-${i}-contrato" class="lt-contrato"></td>
-    </tr>`;
+    </tr>
+    <tr class="lt-detfila${hecho ? ' lt-hecho' : ''}"><td></td><td colspan="13" id="lt-${i}-detalle" class="lt-det"></td></tr>`;
   }).join('');
   document.getElementById('content').innerHTML = `
   <div class="config-section" style="max-width:100%;">
@@ -10345,7 +10369,31 @@ function loteCambio(i, soloMostrar){
         contrato.lista.map((k, j) => '<option value="' + j + '"' + (it.contratoSel === j ? ' selected' : '') + '>' + escH(k.contrato || '(sin número)') + (isNaN(k.price) ? '' : ' · USD ' + k.price) + '</option>').join('') + '</select>';
     } else celda.innerHTML = '<span class="lt-sin">' + (it.customer ? 'sin contrato' : '—') + '</span>';
   }
+  const det = document.getElementById('lt-' + i + '-detalle');
+  if(det) det.innerHTML = detalleContratoLote(it);
   loteResumen();
+}
+// Lo mismo que se ve al cargar una sola: de que contrato sale, los numeros que toma y los avisos.
+function detalleContratoLote(it){
+  if(it.estado === 'ok') return '';
+  const { d, contrato, avisos } = datosCargaLote(it);
+  const q = t => escH(t === undefined || t === null || t === '' ? '—' : t);
+  let h = '';
+  if(contrato.estado === 'ok'){
+    const k = contrato.k;
+    h += '<div><span class="lt-ok">✓ Contrato ' + escH(k.contrato || '(sin número)') + '</span><span class="lt-sub"> · ' + escH(k.producto || '') + (k.puertoTxt ? ' · ' + escH(k.puertoTxt) : '')
+      + (isNaN(k.fcServ) || !k.fcServ ? '' : ' · servicios USD ' + escH(k.fcServ) + '/tn') + (contrato.n > 1 ? ' · de ' + contrato.n + ' posibles' : '') + '</span></div>';
+    const num = [['Price cliente', d.priceCFR], ['Flete', d.flete], ['Total CFR', d.totalCFR], ['INCOTERM', d.incoterm], ['Price serv', d.priceFCServ],
+                 ['TOTAL FINAL', d.totalFinal], ['Precio final x tn', d.precioFinalTn], ['Fecha estimada de cobro', d.fechaEstCobro]];
+    h += '<div class="lt-nums">' + num.map(n => '<span><i>' + n[0] + '</i> <b>' + q(n[1]) + '</b></span>').join('') + '</div>';
+    if(contrato.notaFecha) h += '<div class="lt-sub">Fecha estimada calculada: ' + escH(contrato.notaFecha) + '.</div>';
+  } else if(contrato.estado === 'varios'){
+    h += '<div style="color:var(--warn);">Hay ' + contrato.n + ' contratos que coinciden: elegí cuál para ver precio, flete y totales.</div>';
+  } else if(!it.customer){
+    h += '<div class="lt-sub">Completá el Customer para que busque el contrato.</div>';
+  }
+  h += (avisos || []).map(a => '<div style="color:var(--warn);">⚠ ' + escH(a) + '</div>').join('');
+  return h;
 }
 function loteResumen(){
   const el = document.getElementById('lt-resumen');
@@ -10372,7 +10420,8 @@ async function guardarLote(){
   const detalle = pend.map(x => {
     const { d, contrato } = datosCargaLote(x.it);
     return '<div>• <b>' + escH(d.customer) + '</b> · ' + escH(d.product) + ' · ' + escH(d.tns) + ' tns · ' + escH(d.port) + ' · ETA ' + escH(d.eta) +
-           (d.pol ? ' · POL ' + escH(d.pol) : '') + ' · ' + nombres[contrato.estado] + (x.it.duda ? ' · ❓ NOP en duda' : '') + '</div>';
+           (d.pol ? ' · POL ' + escH(d.pol) : '') + ' · ' + nombres[contrato.estado] + (x.it.duda ? ' · ❓ NOP en duda' : '') + '</div>'
+      + (contrato.estado === 'ok' ? '<div style="margin-left:12px;color:var(--text3);">' + escH(contrato.contrato) + ' · precio ' + escH(d.priceCFR === '' ? '—' : d.priceCFR) + (d.flete === '' ? '' : ' + flete ' + escH(d.flete)) + ' · TOTAL FINAL ' + escH(d.totalFinal === '' ? '—' : d.totalFinal) + (d.fechaEstCobro ? ' · cobro est. ' + escH(d.fechaEstCobro) : '') + '</div>' : '');
   }).join('');
   const ok = await showConfirm('Agregar ' + pend.length + ' carga' + (pend.length > 1 ? 's' : '') + ' a la planilla',
     'Se insertan ' + pend.length + ' filas nuevas al final de la planilla de ' + getNegocioConfig().label + ', una por planilla del despachante.',
