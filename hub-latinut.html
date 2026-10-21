@@ -2916,7 +2916,7 @@ async function propagarFechaCobroEstimada(row, c, antesBase){
     return;
   }
   aplicarFechaEstimada(row, nueva, nota);
-  if(typeof showToast === 'function') showToast('Fecha estimada de cobro: ' + (actual || '(vacía)') + ' → ' + nueva + ' (' + texto + ' según el contrato ' + numero + '). Queda pendiente: revisala y guardá.', 'info');
+  if(typeof showToast === 'function') showToast('Fecha estimada de cobro: ' + (actual || '(vacía)') + ' → ' + nueva + ' (' + texto + ' según el contrato ' + numero + '). Se guarda sola (Ctrl+Z deshace).', 'info');
 }
 function aplicarFechaEstimada(row, nueva, nota){
   anotarCambioTabla(row, COL.FECHA_EST_COBRO, nueva, nota);
@@ -2925,6 +2925,7 @@ function aplicarFechaEstimada(row, nueva, nota){
     renderCargas();
     if(sel && sel.row){ const p = _tablaRows.indexOf(sel.row); if(p >= 0) marcarCelda(p, sel.c); }
   }
+  autoGuardarTabla();
 }
 // Varias ETA seguidas: se juntan y se pregunta UNA vez con la lista de las que tenian una fecha escrita a mano.
 let _fechasAMano = new Map(), _fechasAManoTimer = null;
@@ -5564,7 +5565,7 @@ function renderCargasTabla(rows){
       </div>
       <div id="tabla-pend" class="t-pend" style="${nPend ? '' : 'display:none;'}">
         <span>✎ <b>${nPend} cambio${nPend === 1 ? '' : 's'} sin guardar</b>${_avisoTabla && nPend ? '<span class="t-pend-nota">🔄 ' + esc(_avisoTabla) + '</span>' : ''}</span><span style="flex:1;"></span>
-        <button onclick="descartarCambiosTabla()">Descartar</button><button class="prim" onclick="guardarCambiosTabla()">Revisar y guardar</button>
+        <button onclick="descartarCambiosTabla()">Descartar</button><button class="prim" onclick="guardarCambiosTabla()">Guardar</button>
       </div>
     </div>
     ${quedan > 0 ? `<div class="t-mas"><span onclick="cargasTablaLimite+=200;renderCargas();">↑ Mostrar ${Math.min(200, quedan)} filas anteriores (quedan ${quedan})</span></div>` : ''}
@@ -5752,6 +5753,7 @@ function editarCelda(r, c, inicial){
     renderCargas();
     if(guardar && c === COL.ETA && ordenPorETAActivo()) seguirFilaTras(row, c, filaDebajo, mover);
     else if(mover) moverSel(mover[0], mover[1]); else marcarCelda(r, c);
+    if(guardar) autoGuardarTabla();
   };
   inp.onkeydown = e => {
     if(e.key === 'Enter'){ e.preventDefault(); fin(true, [1, 0]); }
@@ -5804,6 +5806,7 @@ function editarContratoEnTabla(r, c){
     }
     renderCargas();
     marcarCelda(r, c);
+    if(elegido) autoGuardarTabla();
   };
   sel.onchange = () => fin(sel.value);
   sel.onkeydown = e => { if(e.key === 'Escape'){ e.preventDefault(); e.stopPropagation(); fin(''); } };
@@ -5841,7 +5844,7 @@ function propagarProductoATabla(row, nuevoProd){
   }
 }
 
-function anotarCambioTabla(row, c, nuevo, nota){
+function anotarCambioTabla(row, c, nuevo, nota, sinPropagar){
   nuevo = (nuevo === undefined || nuevo === null) ? '' : String(nuevo).trim();
   const orig = valorCelda(row, c).trim();
   const antesVisible = valorVisible(row, c).trim();
@@ -5852,7 +5855,7 @@ function anotarCambioTabla(row, c, nuevo, nota){
   }
   if(c === COL.ETA) congelarOrdenETA();
   (cargasPend[k] = cargasPend[k] || {})[c] = { antes: orig, despues: nuevo, row, nota: nota || '' };
-  if(c === COL.ETD || c === COL.ETA) propagarFechaCobroEstimada(row, c, antesVisible).catch(e => console.warn('fecha estimada de cobro:', e));
+  if(!sinPropagar && (c === COL.ETD || c === COL.ETA)) propagarFechaCobroEstimada(row, c, antesVisible).catch(e => console.warn('fecha estimada de cobro:', e));
 }
 
 function moverSel(dr, dc, extender){
@@ -5881,11 +5884,128 @@ function tablaTeclado(e){
     anotarCambioTabla(filaVaciada, _tablaSel.c, '');
     const s = _tablaSel; renderCargas();
     if(s.c === COL.ETA && ordenPorETAActivo()) seguirFilaTras(filaVaciada, s.c, null, null); else marcarCelda(s.r, s.c);
+    autoGuardarTabla();
     return true;
   }
+  if((e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey && (e.key === 'z' || e.key === 'Z')){ e.preventDefault(); deshacerTabla(); return true; }
   if(e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey){ e.preventDefault(); editarCelda(_tablaSel.r, _tablaSel.c, e.key); return true; }
   return false;
 }
+
+// ── Copiar y pegar en la grilla (Ctrl+C / Ctrl+V), en el mismo formato de texto que usa Sheets ──
+// Copiar: las celdas elegidas, con lo que se ve (incluidos los cambios pendientes). Se puede pegar en Sheets, Excel o en otra celda.
+// Pegar: arranca en la celda de arriba a la izquierda de lo elegido. Todo queda como cambio pendiente en amarillo: nada va a la
+// planilla hasta "Revisar y guardar". Si se pega un solo valor sobre varias celdas elegidas, se repite en todas (como Sheets).
+function _tablaEnGrilla(e){
+  if(currentView !== 'cargas' || cargasVista !== 'tabla' || !_tablaSel) return false;
+  const t = e && e.target;
+  if(t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT')) return false;
+  if(_filtroAbierto) return false;
+  return true;
+}
+function tsvCelda(v){
+  const t = (v === undefined || v === null) ? '' : String(v);
+  return /[\t\n\r"]/.test(t) ? '"' + t.replace(/"/g, '""') + '"' : t;
+}
+// Texto del portapapeles -> matriz de filas y columnas (con comillas, como lo escribe Sheets).
+function parsearTSV(txt){
+  const filas = []; let fila = [], cel = '', q = false;
+  const s = String(txt || '').replace(/\r\n?/g, '\n');
+  for(let i = 0; i < s.length; i++){
+    const ch = s[i];
+    if(q){
+      if(ch === '"'){ if(s[i + 1] === '"'){ cel += '"'; i++; } else q = false; }
+      else cel += ch;
+    } else if(ch === '"' && cel === ''){ q = true; }
+    else if(ch === '\t'){ fila.push(cel); cel = ''; }
+    else if(ch === '\n'){ fila.push(cel); filas.push(fila); fila = []; cel = ''; }
+    else cel += ch;
+  }
+  if(cel !== '' || fila.length) { fila.push(cel); filas.push(fila); }
+  return filas;
+}
+function tablaCopiar(e){
+  if(!_tablaEnGrilla(e)) return false;
+  const g = rangoTabla() || { r1: _tablaSel.r, r2: _tablaSel.r, k1: _tablaCols.indexOf(_tablaSel.c), k2: _tablaCols.indexOf(_tablaSel.c) };
+  if(g.k1 < 0) return false;
+  const lineas = [];
+  for(let r = g.r1; r <= g.r2; r++){
+    const row = _tablaRows[r]; const cel = [];
+    for(let k = g.k1; k <= g.k2; k++) cel.push(row ? tsvCelda(valorVisible(row, _tablaCols[k])) : '');
+    lineas.push(cel.join('\t'));
+  }
+  const n = (g.r2 - g.r1 + 1) * (g.k2 - g.k1 + 1);
+  if(e.clipboardData && e.clipboardData.setData){ e.clipboardData.setData('text/plain', lineas.join('\n')); e.preventDefault(); }
+  showToast('📋 ' + n + ' celda' + (n === 1 ? ' copiada' : 's copiadas'), 'info', 1800);
+  return true;
+}
+function tablaPegar(e){
+  if(!_tablaEnGrilla(e)) return false;
+  const txt = e.clipboardData && e.clipboardData.getData ? e.clipboardData.getData('text/plain') : '';
+  e.preventDefault();
+  let m = parsearTSV(txt);
+  if(!m.length || (m.length === 1 && m[0].length === 1 && m[0][0] === '' && !String(txt).length)){ showToast('No hay nada para pegar', 'info'); return true; }
+  const g = rangoTabla() || { r1: _tablaSel.r, r2: _tablaSel.r, k1: _tablaCols.indexOf(_tablaSel.c), k2: _tablaCols.indexOf(_tablaSel.c) };
+  if(g.k1 < 0) return true;
+  // Un solo valor sobre varias celdas elegidas: se repite en todas.
+  const unico = m.length === 1 && m[0].length === 1;
+  const filasDest = unico ? g.r2 - g.r1 + 1 : m.length;
+  const colsDest  = unico ? g.k2 - g.k1 + 1 : Math.max.apply(null, m.map(f => f.length));
+  let puestas = 0, formulas = 0, fuera = 0;
+  const productos = [];
+  for(let i = 0; i < filasDest; i++){
+    const r = g.r1 + i, row = _tablaRows[r];
+    if(!row){ fuera += colsDest; continue; }
+    for(let j = 0; j < colsDest; j++){
+      const k = g.k1 + j, c = _tablaCols[k];
+      if(c === undefined){ fuera++; continue; }
+      if(esColFormula(c)){ formulas++; continue; }
+      const v = unico ? m[0][0] : (m[i][j] === undefined ? '' : m[i][j]);
+      if(!unico && m[i][j] === undefined) continue;
+      anotarCambioTabla(row, c, v);
+      puestas++;
+      if(c === COL.PRODUCT) productos.push([row, v]);
+    }
+  }
+  const r2 = Math.min(_tablaRows.length - 1, g.r1 + filasDest - 1);
+  const k2 = Math.min(_tablaCols.length - 1, g.k1 + colsDest - 1);
+  renderCargas();
+  _tablaAncla = { r: g.r1, c: _tablaCols[g.k1] };
+  marcarCelda(r2, _tablaCols[k2], true);
+  // Cambiar el producto arrastra el contrato (precios, flete, totales): solo se hace con pocos para no llenar la pantalla de avisos.
+  if(productos.length && productos.length <= 3) productos.forEach(p => propagarProductoATabla(p[0], p[1]));
+  let msg = '📋 ' + puestas + ' celda' + (puestas === 1 ? ' pegada' : 's pegadas') + ' (en amarillo: revisalas y guardá).';
+  if(productos.length > 3) msg += ' Cambiaste el Producto en ' + productos.length + ' cargas: los precios del contrato no se recalcularon.';
+  if(formulas) msg += ' ' + formulas + ' con fórmula no se tocaron.';
+  if(fuera) msg += ' ' + fuera + ' quedaron fuera de la tabla.';
+  showToast(msg, (formulas || fuera || productos.length > 3) ? 'warn' : 'info', 6000);
+  autoGuardarTabla();
+  return true;
+}
+// Ctrl+X: copia y deja vacias las celdas elegidas (las que tienen formula no se tocan).
+function tablaCortar(e){
+  if(!_tablaEnGrilla(e)) return false;
+  if(!tablaCopiar(e)) return false;
+  const g = rangoTabla() || { r1: _tablaSel.r, r2: _tablaSel.r, k1: _tablaCols.indexOf(_tablaSel.c), k2: _tablaCols.indexOf(_tablaSel.c) };
+  let n = 0, formulas = 0;
+  for(let r = g.r1; r <= g.r2; r++){
+    const row = _tablaRows[r]; if(!row) continue;
+    for(let k = g.k1; k <= g.k2; k++){
+      const c = _tablaCols[k];
+      if(esColFormula(c)){ formulas++; continue; }
+      anotarCambioTabla(row, c, ''); n++;
+    }
+  }
+  const a = _tablaAncla, sel = _tablaSel;
+  renderCargas();
+  if(a && sel){ _tablaAncla = a; marcarCelda(sel.r, sel.c, true); }
+  showToast('✂ ' + n + ' celda' + (n === 1 ? ' cortada' : 's cortadas') + (formulas ? ' · ' + formulas + ' con fórmula no se tocaron' : '') + ' · Ctrl+Z deshace', formulas ? 'warn' : 'info', 4000);
+  autoGuardarTabla();
+  return true;
+}
+document.addEventListener('copy', e => { tablaCopiar(e); });
+document.addEventListener('cut', e => { tablaCortar(e); });
+document.addEventListener('paste', e => { tablaPegar(e); });
 
 // ─── AYUDA: ATAJOS Y TRUCOS ──────────────────────────────────────────────────
 // Boton "?" de arriba. Si se agrega un atajo nuevo a la tabla, sumarlo aca.
@@ -5904,7 +6024,11 @@ const AYUDA_SECCIONES = [
     [['Tab', 'Shift', '+ Tab'], 'Al editar: confirma y va a la derecha / izquierda'],
     [['Esc'], 'Cancelar la edición'],
     [['Supr', 'Retroceso'], 'Vaciar la celda elegida (una por vez)'],
-    [['—'], 'Lo editado queda con un borde ámbar y un puntito hasta que apretás Guardar: nada va a la planilla sin que confirmes'] ] },
+    [['Ctrl', '+ C'], 'Copiar las celdas elegidas (se pueden pegar en Sheets o Excel)'],
+    [['Ctrl', '+ V'], 'Pegar desde la celda elegida: lo copiado de Sheets o de otra celda. Un solo valor sobre varias celdas elegidas se repite en todas'],
+    [['Ctrl', '+ X'], 'Cortar: copia y vacía las celdas elegidas'],
+    [['Ctrl', '+ Z'], 'Deshacer lo último que se guardó'],
+    [['—'], 'Lo que editás se guarda solo en la planilla, con un aviso chico que dice qué cambió. Si te equivocás, Ctrl+Z lo deshace. Si algo no se puede guardar (una fórmula, o alguien lo cambió en la planilla), te lo explica'] ] },
   { titulo: 'Colores y marcas', filas: [
     [['Pintar:'], '<span class="ayuda-sw" style="background:#ffe14d"></span><span class="ayuda-sw" style="background:#b8e0b8"></span><span class="ayuda-sw" style="background:#9fe3ea"></span><span class="ayuda-sw" style="background:#fac2db"></span><span class="ayuda-sw" style="background:#d1d1d1"></span><span class="ayuda-sw" style="background:#f59e9e"></span>Elegís celdas y tocás un color: se pinta en la planilla. <b>✕ Sin color</b> lo saca'],
     [['Naranja ✉'], '<span class="ayuda-sw" style="background:#ffb347"></span>El hub ya envió algo (FC, aviso, telex). Para revisar qué cambió y darle el visto bueno: “Revisar marcas”'],
@@ -5952,9 +6076,38 @@ async function descartarCambiosTabla(){
   renderCargas();
 }
 
-// Guarda todos los cambios pendientes. Relee la planilla: si una celda cambio
-// desde que se sincronizo, esa NO se escribe y se avisa. Las de formula tampoco.
+// Lo que se edita en la tabla se guarda solo, sin pedir confirmacion: un aviso chico dice que cambio y Ctrl+Z lo deshace.
+// Se espera medio segundo para juntar varias ediciones seguidas (pegar un bloque, por ejemplo) en una sola escritura.
+let _guardandoTabla = false, _guardarOtraVez = false, _autoGuardarTimer = null;
+let _undoTabla = [];   // tandas guardadas, para Ctrl+Z
+function autoGuardarTabla(){
+  if(window.__sinAutoGuardado || !accessToken) return;
+  if(_autoGuardarTimer) clearTimeout(_autoGuardarTimer);
+  _autoGuardarTimer = setTimeout(() => { _autoGuardarTimer = null; guardarCambiosTabla(); }, 500);
+}
+// Deshace la ultima tanda guardada: vuelve a poner lo que habia antes (pasa por el mismo camino que cualquier edicion,
+// asi sigue avisando si alguien toco esa celda en la planilla mientras tanto).
+async function deshacerTabla(){
+  const tanda = _undoTabla.pop();
+  if(!tanda){ showToast('No hay nada para deshacer', 'info'); return; }
+  let n = 0;
+  tanda.forEach(x => { if(valorCelda(x.row, x.col).trim() === x.despues){ anotarCambioTabla(x.row, x.col, x.antes, '', true); n++; } });
+  if(!n){ showToast('Esos cambios ya no se pueden deshacer: la celda cambió después', 'warn'); return; }
+  renderCargas();
+  await guardarCambiosTabla();
+  showToast('↩ Deshecho: ' + n + ' celda' + (n === 1 ? '' : 's') + ' volvieron a como estaban', 'info');
+}
 async function guardarCambiosTabla(){
+  if(_guardandoTabla){ _guardarOtraVez = true; return; }
+  _guardandoTabla = true;
+  try{ await _guardarCambiosTablaInterno(); }
+  finally{
+    _guardandoTabla = false;
+    if(_guardarOtraVez){ _guardarOtraVez = false; if(Object.keys(cargasPend).length) await guardarCambiosTabla(); }
+  }
+}
+// Relee la planilla: si una celda cambio desde que se sincronizo, esa NO se escribe y se avisa. Las de formula tampoco.
+async function _guardarCambiosTablaInterno(){
   if(!accessToken){ alert('Conectate con Google primero para escribir en la planilla.'); return; }
   const lista = [];
   Object.keys(cargasPend).forEach(f => Object.keys(cargasPend[f]).forEach(c => {
@@ -5985,20 +6138,26 @@ async function guardarCambiosTabla(){
   const nom = x => esc(hdr[x.col] || colIndexToLetter(x.col));
   const cli = x => esc((x.row[COL.CUSTOMER] || '').trim());
   const detalle =
-    aEscribir.map(x => `<div>Fila ${x.sheetRow} · ${cli(x)} · <b>${nom(x)}</b>: <span style="color:var(--text3);">${esc(x.antes || '(vacío)')}</span> → <b>${esc(x.despues || '(vacío)')}</b></div>`).join('') +
     (conflictos.length ? '<div style="margin-top:8px;color:var(--danger);"><b>No se guardan</b> porque cambiaron en la planilla mientras tanto:</div>' +
       conflictos.map(x => `<div style="color:var(--danger);">Fila ${x.sheetRow} · ${nom(x)}: ahora dice "${esc(x.ahora || '(vacío)')}"</div>`).join('') : '') +
     (formulas.length ? '<div style="margin-top:8px;color:var(--warn);"><b>No se guardan: esas celdas se calculan solas con una fórmula en la planilla</b> (el hub no las pisa):</div>' +
       formulas.map(x => `<div style="color:var(--warn);">Fila ${x.sheetRow} · ${cli(x)} · <b>${nom(x)}</b> tiene la fórmula <code>${esc(x.formula)}</code> (hoy da ${esc(x.hoy || '(vacío)')}). Quisiste poner ${esc(x.despues || '(vacío)')}.</div>`).join('') +
       '<div style="color:var(--text3);">Para cambiar esa fecha, cambiá lo que usa la fórmula (por ejemplo la ETD) o escribila directo en la planilla, pisando la fórmula.</div>' : '') +
     (dependientes.length ? '<div style="margin-top:8px;color:var(--text3);">Tampoco se guarda la fecha estimada de cobro de ' + dependientes.map(x => 'la fila ' + x.sheetRow).join(', ') + ': dependía de la ' + esc(hdr[dependientes[0].porBase.col] || 'fecha') + ', que tiene fórmula.</div>' : '');
+  // Lo que no se puede escribir (cambio en la planilla, formula) no queda colgado como pendiente: la celda muestra lo que dice la planilla.
+  const soltarBloqueadas = () => {
+    conflictos.forEach(x => { x.row[x.col] = x.ahora; });
+    formulas.forEach(x => { x.row[x.col] = x.hoy; });
+    conflictos.concat(formulas, dependientes).forEach(x => {
+      if(cargasPend[x.sheetRow]){ delete cargasPend[x.sheetRow][x.col]; if(!Object.keys(cargasPend[x.sheetRow]).length) delete cargasPend[x.sheetRow]; }
+    });
+  };
+  const hayBloqueadas = conflictos.length || formulas.length || dependientes.length;
   if(!aEscribir.length){
-    await showConfirm('No hay nada para guardar', 'Ninguno de los cambios se puede escribir.', { icono: '⚠️', okLabel: 'Entendido', detalle });
+    soltarBloqueadas(); renderCargas();
+    await showConfirm('No se guardó nada', 'Ninguno de los cambios se puede escribir.', { icono: '⚠️', okLabel: 'Entendido', detalle });
     return;
   }
-  const ok = await showConfirm('Guardar ' + aEscribir.length + ' cambio' + (aEscribir.length === 1 ? '' : 's') + ' en la planilla',
-    'Revisá el antes y el después de cada celda.', { icono: '✎', okLabel: 'Guardar', detalle });
-  if(!ok) return;
 
   const nc = getNegocioConfig();
   const hoja = nc.sheetName || cfg.sheetName;
@@ -6017,8 +6176,13 @@ async function guardarCambiosTabla(){
   if(!r.ok){ alert('No se pudo guardar en la planilla. Tus cambios siguen pendientes: probá de nuevo o sincronizá.'); return; }
   aEscribir.forEach(x => {
     x.row[x.col] = x.despues;
-    if(cargasPend[x.sheetRow]){ delete cargasPend[x.sheetRow][x.col]; if(!Object.keys(cargasPend[x.sheetRow]).length) delete cargasPend[x.sheetRow]; }
+    // Si mientras se guardaba la celda se volvio a tocar, ese cambio nuevo sigue pendiente.
+    const pe = cargasPend[x.sheetRow] && cargasPend[x.sheetRow][x.col];
+    if(pe && pe.despues === x.despues){ delete cargasPend[x.sheetRow][x.col]; if(!Object.keys(cargasPend[x.sheetRow]).length) delete cargasPend[x.sheetRow]; }
   });
+  soltarBloqueadas();
+  _undoTabla.push(aEscribir.map(x => ({ row: x.row, col: x.col, antes: x.antes, despues: x.despues })));
+  if(_undoTabla.length > 20) _undoTabla.shift();
   // Una linea de LOG por fila, con todos sus cambios.
   const porFila = {};
   aEscribir.forEach(x => { (porFila[x.sheetRow] = porFila[x.sheetRow] || []).push(x); });
@@ -6028,9 +6192,13 @@ async function guardarCambiosTabla(){
       accion: 'edición en tabla', detalle: 'fila ' + f + ' · ' + xs.map(x => (hdr[x.col] || colIndexToLetter(x.col)) + ': ' + (x.antes || '(vacío)') + ' → ' + (x.despues || '(vacío)')).join(' | ') });
   }
   _dataVersion++;
-  showToast('✓ ' + aEscribir.length + ' cambio' + (aEscribir.length === 1 ? '' : 's') + ' guardado' + (aEscribir.length === 1 ? '' : 's') +
-            (conflictos.length ? ' · ' + conflictos.length + ' quedaron pendientes' : ''));
-  renderCargas();
+  const u = aEscribir.length === 1 ? aEscribir[0] : null;
+  showToast(u ? '✓ Fila ' + u.sheetRow + ' · ' + (hdr[u.col] || colIndexToLetter(u.col)) + ': ' + (u.antes || '(vacío)') + ' → ' + (u.despues || '(vacío)') + ' · Ctrl+Z deshace'
+              : '✓ ' + aEscribir.length + ' cambios guardados · Ctrl+Z deshace', 'ok', 4000);
+  // Si en este momento se esta escribiendo en otra celda, no se redibuja la tabla: se perderia lo tipeado.
+  const ed = document.getElementById('t-edit');
+  if(!(ed && ed.parentNode)) renderCargas();
+  if(hayBloqueadas) await showConfirm('Algunos cambios no se guardaron', 'El resto sí se guardó.', { icono: '⚠️', okLabel: 'Entendido', detalle });
 }
 
 
