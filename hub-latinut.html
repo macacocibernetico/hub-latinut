@@ -5561,6 +5561,8 @@ function renderCargasTabla(rows){
         <label class="t-fijas" title="Columnas que quedan quietas a la izquierda al desplazarte"><span aria-hidden="true">Columnas fijas</span>
           <select aria-label="Columnas fijas" onchange="cambiarFijas(parseInt(this.value))">${[0,1,2,3].map(n => '<option value="' + n + '"' + (TABLA_FIJAS === n ? ' selected' : '') + '>' + (n === 0 ? 'Ninguna' : n) + '</option>').join('')}</select></label>
         ${Object.keys(anchosU).length ? '<button class="t-full" onclick="resetAnchos()" title="Vuelve todos los anchos al automático">↔ Anchos automáticos</button>' : ''}
+        <button class="t-full" onclick="nuevaFilaTabla()" title="Agrega una carga nueva al final de la planilla">＋ Nueva fila</button>
+        <button class="t-full" onclick="duplicarFilaTabla()" title="Copia la fila de la celda elegida al final de la planilla, sin lote, BL, contenedores, booking ni facturas (Ctrl+D)">⧉ Duplicar fila</button>
         <button class="t-full" onclick="toggleTablaFull()">${cargasTablaFull ? '✕ Salir de pantalla completa' : '⛶ Pantalla completa'}</button>
       </div>
       <div id="tabla-pend" class="t-pend" style="${nPend ? '' : 'display:none;'}">
@@ -5887,6 +5889,7 @@ function tablaTeclado(e){
     autoGuardarTabla();
     return true;
   }
+  if((e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey && (e.key === 'd' || e.key === 'D')){ e.preventDefault(); duplicarFilaTabla(); return true; }
   if((e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey && (e.key === 'z' || e.key === 'Z')){ e.preventDefault(); deshacerTabla(); return true; }
   if(e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey){ e.preventDefault(); editarCelda(_tablaSel.r, _tablaSel.c, e.key); return true; }
   return false;
@@ -6007,6 +6010,98 @@ document.addEventListener('copy', e => { tablaCopiar(e); });
 document.addEventListener('cut', e => { tablaCortar(e); });
 document.addEventListener('paste', e => { tablaPegar(e); });
 
+// ── Duplicar una fila y agregar una fila nueva desde la tabla ──
+// Duplicar: la fila nueva queda al final de la planilla (como cualquier carga nueva) con todo lo de la elegida salvo lo que es propio de cada
+// embarque: negocio, lote, BL, contenedores, booking, facturas, pagares, telex, documentos y fecha de cobro. Se copia como "pegar valores" de Sheets:
+// no arrastra colores ni marcas, y las columnas con formula las completa la planilla igual que en cualquier carga nueva.
+const COLS_NO_DUPLICAR = ['NEGOCIO', 'LOTS', 'BL', 'CONTAINERS', 'BOOKING', 'INVOICE_PROVEEDOR', 'INVOICE_CLIENTE', 'INVOICE_FC_SERV', 'FC_FLETE', 'MONTO_FLETE',
+  'PAGARE_ENVIADO', 'PAGARE_FIRMADO', 'TELEX', 'DOCUMENTOS', 'LOMBARD', 'CLIENTE_ENV', 'FECHA_COBRO'];
+function columnasADuplicar(){
+  const hdr = encabezadosCargas();
+  const fuera = new Set(COLS_NO_DUPLICAR.map(k => COL[k]).filter(c => c !== undefined && c >= 0));
+  const cols = [];
+  for(let c = 0; c < hdr.length; c++){
+    if(fuera.has(c) || esColFormula(c) || !String(hdr[c] || '').trim()) continue;
+    cols.push(c);
+  }
+  return cols;
+}
+// Tandas de columnas seguidas: una sola orden de copiado por tanda.
+function tandasDeColumnas(cols){
+  const out = [];
+  cols.forEach(c => { const u = out[out.length - 1]; if(u && u[1] === c - 1) u[1] = c; else out.push([c, c]); });
+  return out;
+}
+async function copiarValoresFila(sid, gid, filaOrigen, filaNueva, cols){
+  const requests = tandasDeColumnas(cols).map(([a, b]) => ({ copyPaste: {
+    source:      { sheetId: gid, startRowIndex: filaOrigen - 1, endRowIndex: filaOrigen, startColumnIndex: a, endColumnIndex: b + 1 },
+    destination: { sheetId: gid, startRowIndex: filaNueva - 1,  endRowIndex: filaNueva,  startColumnIndex: a, endColumnIndex: b + 1 },
+    pasteType: 'PASTE_VALUES'
+  }}));
+  if(!requests.length) return true;
+  try{
+    const r = await fetch('https://sheets.googleapis.com/v4/spreadsheets/' + sid + ':batchUpdate', {
+      method: 'POST', headers: { Authorization: 'Bearer ' + accessToken, 'Content-Type': 'application/json' }, body: JSON.stringify({ requests })
+    });
+    return !!(r && r.ok);
+  }catch(e){ console.warn('copiarValoresFila:', e); return false; }
+}
+// Despues de sincronizar: deja elegida la primera celda de la fila (por su numero en la planilla).
+function irAFilaTabla(sheetRow, c){
+  if(currentView !== 'cargas' || cargasVista !== 'tabla') return;
+  renderCargas();
+  const p = _tablaRows.findIndex(r => r._sheetRow === sheetRow);
+  if(p >= 0) marcarCelda(p, c !== undefined ? c : _tablaCols[0]);
+}
+async function duplicarFilaTabla(){
+  if(!accessToken){ alert('Conectate con Google primero para escribir en la planilla.'); return; }
+  if(!_tablaSel || !_tablaRows[_tablaSel.r]){ showToast('Tocá una celda de la fila que querés duplicar', 'info'); return; }
+  const origen = _tablaRows[_tablaSel.r];
+  if(!origen._sheetRow) return;
+  if(Object.keys(cargasPend).length) await guardarCambiosTabla();   // que la copia lleve lo ultimo que editaste
+  showToast('Duplicando la fila ' + origen._sheetRow + '…', 'info', 2500);
+  const nueva = await appendRow({});
+  if(!nueva) return;
+  const nc = getNegocioConfig();
+  const gid = await getSheetId();
+  const ok = gid !== null && await copiarValoresFila(nc.sheetId || cfg.sheetId, gid, origen._sheetRow, nueva, columnasADuplicar());
+  await appendLog({ fc: '', fcServ: '', bl: '', customer: (valorCelda(origen, COL.CUSTOMER) || '').trim(), accion: 'fila duplicada', detalle: 'fila ' + origen._sheetRow + ' -> fila ' + nueva });
+  _dataVersion++;
+  await loadData();
+  irAFilaTabla(nueva, COL.LOTS >= 0 ? COL.LOTS : undefined);
+  if(ok) showToast('⧉ Fila ' + nueva + ' creada como copia de la ' + origen._sheetRow + '. Cambiale lo que cambie: lote, BL, contenedores, booking y facturas quedaron vacíos.', 'ok', 9000);
+  else alert('Se creó la fila ' + nueva + ' pero no se pudieron copiar los datos de la ' + origen._sheetRow + '. Sincronizá y completala a mano.');
+}
+
+// "＋ Nueva fila": se piden los datos de siempre (cliente, producto, puerto, ETA y alguno mas) y se agrega la carga al final de la planilla,
+// con el contrato, los precios y la fecha estimada de cobro como al cargar una carga nueva. El resto se completa en la tabla.
+async function nuevaFilaTabla(){
+  if(!accessToken){ alert('Conectate con Google primero para escribir en la planilla.'); return; }
+  const lista = (id, vals) => '<datalist id="' + id + '">' + vals.map(v => '<option value="' + escH(v) + '">').join('') + '</datalist>';
+  const campo = (id, label, extra) => '<div style="margin-bottom:8px;"><div style="font-size:12px;color:var(--text3);">' + label + '</div><input id="nf-' + id + '" class="config-input" autocomplete="off" ' + extra + '></div>';
+  const form = lista('nf-l-cust', getUnique(COL.CUSTOMER)) + lista('nf-l-prod', getUnique(COL.PRODUCT)) + lista('nf-l-port', getUnique(COL.PORT)) + lista('nf-l-exp', getUnique(COL.EXPORTER))
+    + campo('customer', 'Customer *', 'list="nf-l-cust"') + campo('product', 'Product *', 'list="nf-l-prod"') + campo('port', 'Port *', 'list="nf-l-port"')
+    + campo('eta', 'ETA *', 'type="date"') + campo('etd', 'ETD', 'type="date"') + campo('tns', 'Tns', '') + campo('exporter', 'Exporter (por ejemplo Nutrin)', 'list="nf-l-exp"');
+  const ok = await showConfirm('Nueva fila en la planilla', 'Se agrega una carga al final de la planilla. Lo demás lo completás después en la tabla.', { icono: '➕', okLabel: 'Agregar fila', detalle: form });
+  if(!ok) return;
+  const v = id => ((document.getElementById('nf-' + id) || {}).value || '').trim();
+  const falta = [['customer', 'Customer'], ['product', 'Product'], ['port', 'Port'], ['eta', 'ETA']].filter(c => !v(c[0])).map(c => c[1]);
+  if(falta.length){ alert('Faltan datos obligatorios: ' + falta.join(', ') + '. No se agregó nada.'); return; }
+  const it = itemLote('', { vessel: '', port: v('port'), booking: '', shipping: '', etd: v('etd') ? fromInputDate(v('etd')) : '', eta: fromInputDate(v('eta')),
+    exporter: v('exporter'), lots: '', product: v('product'), packing: '', tns: v('tns'), priceFOB: '' });
+  it.customer = v('customer');
+  const { d, contrato, avisos } = datosCargaLote(it);
+  const nueva = await appendRow(formToRowData(d));
+  if(!nueva){ alert('No se pudo agregar la fila. Revisá la conexión y probá de nuevo.'); return; }
+  await appendLog({ fc: '', fcServ: '', bl: '', customer: d.customer, accion: 'fila nueva desde la tabla', detalle: 'fila ' + nueva + ' - ' + d.product });
+  _dataVersion++;
+  await loadData();
+  irAFilaTabla(nueva);
+  const nota = contrato.estado === 'ok' ? ' Contrato ' + contrato.contrato + ' aplicado.'
+    : contrato.estado === 'varios' ? ' Hay ' + contrato.n + ' contratos posibles: elegí uno con doble clic en la celda del contrato.' : ' Sin contrato: precios a mano.';
+  showToast('✓ Fila ' + nueva + ' agregada.' + nota + (avisos && avisos.length ? ' ⚠ ' + avisos[0] : ''), 'ok', 9000);
+}
+
 // ─── AYUDA: ATAJOS Y TRUCOS ──────────────────────────────────────────────────
 // Boton "?" de arriba. Si se agrega un atajo nuevo a la tabla, sumarlo aca.
 const AYUDA_SECCIONES = [
@@ -6028,6 +6123,8 @@ const AYUDA_SECCIONES = [
     [['Ctrl', '+ V'], 'Pegar desde la celda elegida: lo copiado de Sheets o de otra celda. Un solo valor sobre varias celdas elegidas se repite en todas'],
     [['Ctrl', '+ X'], 'Cortar: copia y vacía las celdas elegidas'],
     [['Ctrl', '+ Z'], 'Deshacer lo último que se guardó'],
+    [['Ctrl', '+ D'], 'Duplicar la fila de la celda elegida (queda al final de la planilla, sin lote, BL, contenedores, booking ni facturas) para cambiarle lo que cambia'],
+    [['＋ Nueva fila'], 'Agregar una carga nueva sin salir de la tabla (cliente, producto, puerto, ETA y exporter)'],
     [['—'], 'Lo que editás se guarda solo en la planilla, con un aviso chico que dice qué cambió. Si te equivocás, Ctrl+Z lo deshace. Si algo no se puede guardar (una fórmula, o alguien lo cambió en la planilla), te lo explica'] ] },
   { titulo: 'Colores y marcas', filas: [
     [['Pintar:'], '<span class="ayuda-sw" style="background:#ffe14d"></span><span class="ayuda-sw" style="background:#b8e0b8"></span><span class="ayuda-sw" style="background:#9fe3ea"></span><span class="ayuda-sw" style="background:#fac2db"></span><span class="ayuda-sw" style="background:#d1d1d1"></span><span class="ayuda-sw" style="background:#f59e9e"></span>Elegís celdas y tocás un color: se pinta en la planilla. <b>✕ Sin color</b> lo saca'],
@@ -6286,6 +6383,7 @@ async function appendRow(rowData){
       window._ultimaCargaFormulas = colsFormula.length;
     }
   }
+  if(!Object.keys(datos).length) return newRow;   // fila que se completa despues (duplicar): no hay valores que escribir
   const ok = await writeRow(datos, newRow);
   if(ok) return newRow;
   return null;
