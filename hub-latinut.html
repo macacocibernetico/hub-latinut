@@ -5846,8 +5846,38 @@ function propagarProductoATabla(row, nuevoProd){
   }
 }
 
+// Columnas que son fecha: ETD, ETA, consolidacion y las que se llaman "Fecha ...".
+const COLS_FECHA_NOMBRES = ['ETD','ETA','CONSOLIDACION','FECHA_EST_COBRO','FECHA_COBRO','FECHA_PAGO_FWD','FECHA_PAGO_FWD_REAL','FECHA_LT','FECHA_PAGO_LT','FECHA_PAGO'];
+function esColFecha(c){
+  if(c === undefined || c < 0) return false;
+  if(COLS_FECHA_NOMBRES.some(k => COL[k] !== undefined && COL[k] === c)) return true;
+  return /^fecha\b/i.test(String(encabezadosCargas()[c] || '').trim());
+}
+// "20/10" -> "20/10/2026". Sin año se elige el año que deje la fecha mas cerca de hoy (en octubre, "05/01" es enero del año que viene);
+// con año de dos cifras ("20/10/26") se completa a 20xx. Si no se entiende como fecha, se deja tal cual.
+function completarFecha(txt, hoy){
+  const t = String(txt === undefined || txt === null ? '' : txt).trim();
+  const m = t.match(/^(\d{1,2})\s*[\/\-.]\s*(\d{1,2})(?:\s*[\/\-.]\s*(\d{2}|\d{4}))?$/);
+  if(!m) return t;
+  const dd = parseInt(m[1], 10), mm = parseInt(m[2], 10);
+  if(dd < 1 || dd > 31 || mm < 1 || mm > 12) return t;
+  const ref = hoy || new Date();
+  const valida = y => { const d = new Date(y, mm - 1, dd); return d.getFullYear() === y && d.getMonth() === mm - 1 && d.getDate() === dd; };
+  let anio;
+  if(m[3]) anio = m[3].length === 2 ? 2000 + parseInt(m[3], 10) : parseInt(m[3], 10);
+  else {
+    const hoyMs = new Date(ref.getFullYear(), ref.getMonth(), ref.getDate()).getTime();
+    const cand = [ref.getFullYear() - 1, ref.getFullYear(), ref.getFullYear() + 1].filter(valida);
+    if(!cand.length) return t;
+    anio = cand.sort((a, b) => Math.abs(new Date(a, mm - 1, dd).getTime() - hoyMs) - Math.abs(new Date(b, mm - 1, dd).getTime() - hoyMs))[0];
+  }
+  if(!valida(anio)) return t;
+  return String(dd).padStart(2, '0') + '/' + String(mm).padStart(2, '0') + '/' + anio;
+}
+
 function anotarCambioTabla(row, c, nuevo, nota, sinPropagar){
   nuevo = (nuevo === undefined || nuevo === null) ? '' : String(nuevo).trim();
+  if(nuevo && esColFecha(c)) nuevo = completarFecha(nuevo);
   const orig = valorCelda(row, c).trim();
   const antesVisible = valorVisible(row, c).trim();
   const k = clavePend(row);
@@ -6115,6 +6145,7 @@ const AYUDA_SECCIONES = [
     [['Doble clic'], 'Editar la celda'],
     [['Enter', 'F2'], 'Editar la celda elegida'],
     [['Escribir'], 'Empezar a editar reemplazando lo que había'],
+    [['20/10'], 'En una celda de fecha, si ponés solo día y mes se completa el año (20/10 → 20/10/2026). Con 20/10/26 también'],
     [['Enter'], 'Al editar: confirma y baja a la celda de abajo'],
     [['Tab', 'Shift', '+ Tab'], 'Al editar: confirma y va a la derecha / izquierda'],
     [['Esc'], 'Cancelar la edición'],
