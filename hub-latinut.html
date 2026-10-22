@@ -5565,9 +5565,9 @@ function renderCargasTabla(rows){
         <button class="t-full" onclick="duplicarFilaTabla()" title="Copia la fila de la celda elegida al final de la planilla, sin lote, BL, contenedores, booking ni facturas (Ctrl+D)">⧉ Duplicar fila</button>
         <button class="t-full" onclick="toggleTablaFull()">${cargasTablaFull ? '✕ Salir de pantalla completa' : '⛶ Pantalla completa'}</button>
       </div>
-      <div id="tabla-pend" class="t-pend" style="${nPend ? '' : 'display:none;'}">
+      <div id="tabla-pend" class="t-pend" style="${nPend && (_guardoFallo || window.__sinAutoGuardado) ? '' : 'display:none;'}">
         <span>✎ <b>${nPend} cambio${nPend === 1 ? '' : 's'} sin guardar</b>${_avisoTabla && nPend ? '<span class="t-pend-nota">🔄 ' + esc(_avisoTabla) + '</span>' : ''}</span><span style="flex:1;"></span>
-        <button onclick="descartarCambiosTabla()">Descartar</button><button class="prim" onclick="guardarCambiosTabla()">Guardar</button>
+        <button onclick="descartarCambiosTabla()">Descartar</button><button class="prim" onclick="guardarCambiosTabla()">Reintentar guardar</button>
       </div>
     </div>
     ${quedan > 0 ? `<div class="t-mas"><span onclick="cargasTablaLimite+=200;renderCargas();">↑ Mostrar ${Math.min(200, quedan)} filas anteriores (quedan ${quedan})</span></div>` : ''}
@@ -6205,13 +6205,14 @@ async function descartarCambiosTabla(){
 }
 
 // Lo que se edita en la tabla se guarda solo, sin pedir confirmacion: un aviso chico dice que cambio y Ctrl+Z lo deshace.
-// Se espera medio segundo para juntar varias ediciones seguidas (pegar un bloque, por ejemplo) en una sola escritura.
-let _guardandoTabla = false, _guardarOtraVez = false, _autoGuardarTimer = null;
+// Se espera una fracción de segundo para juntar varias ediciones seguidas (pegar un bloque, por ejemplo) en una sola escritura.
+let _guardandoTabla = false, _guardarOtraVez = false, _autoGuardarTimer = null, _guardoFallo = false;
 let _undoTabla = [];   // tandas guardadas, para Ctrl+Z
 function autoGuardarTabla(){
-  if(window.__sinAutoGuardado || !accessToken) return;
+  if(window.__sinAutoGuardado) return;
+  if(!accessToken){ _guardoFallo = true; showToast('Conectate con Google para que se guarde en la planilla', 'warn'); return; }
   if(_autoGuardarTimer) clearTimeout(_autoGuardarTimer);
-  _autoGuardarTimer = setTimeout(() => { _autoGuardarTimer = null; guardarCambiosTabla(); }, 500);
+  _autoGuardarTimer = setTimeout(() => { _autoGuardarTimer = null; guardarCambiosTabla(); }, 40);   // lo justo para juntar un pegado en una sola escritura
 }
 // Deshace la ultima tanda guardada: vuelve a poner lo que habia antes (pasa por el mismo camino que cualquier edicion,
 // asi sigue avisando si alguien toco esa celda en la planilla mientras tanto).
@@ -6246,7 +6247,7 @@ async function _guardarCambiosTablaInterno(){
   const hdr = encabezadosCargas();
   let fresco;
   try{ fresco = await releerFilasCarga([...new Set(lista.map(x => x.sheetRow))]); }
-  catch(e){ alert(e.message); return; }
+  catch(e){ _guardoFallo = true; renderCargas(); alert(e.message); return; }
   const aEscribir = [], conflictos = [], formulas = [], dependientes = [];
   lista.forEach(x => {
     const fr = fresco[x.sheetRow];
@@ -6301,7 +6302,8 @@ async function _guardarCambiosTablaInterno(){
     headers: { 'Authorization': 'Bearer ' + accessToken, 'Content-Type': 'application/json' },
     body: JSON.stringify({ valueInputOption: 'USER_ENTERED', data })
   });
-  if(!r.ok){ alert('No se pudo guardar en la planilla. Tus cambios siguen pendientes: probá de nuevo o sincronizá.'); return; }
+  if(!r.ok){ _guardoFallo = true; renderCargas(); alert('No se pudo guardar en la planilla. Tus cambios siguen pendientes: probá de nuevo o sincronizá.'); return; }
+  _guardoFallo = false;
   aEscribir.forEach(x => {
     x.row[x.col] = x.despues;
     // Si mientras se guardaba la celda se volvio a tocar, ese cambio nuevo sigue pendiente.
