@@ -2944,12 +2944,12 @@ async function resolverFechasAMano(){
     + '</b><br><span style="color:var(--text3);font-size:12px;">' + esc2(it.nota) + '</span></div>').join('');
   const ok = await showConfirm('Hay fechas estimadas escritas a mano',
     (items.length === 1 ? 'La fecha estimada de cobro de esta carga no coincide con la fórmula del contrato (alguien la puso a mano).' : 'En ' + items.length + ' cargas la fecha estimada de cobro no coincide con la fórmula del contrato (alguien la puso a mano).')
-    + ' ¿La reemplazo por la que da la fórmula? Si elegís no, queda como está. Si sí, queda como cambio pendiente para revisar y guardar.',
+    + ' ¿La reemplazo por la que da la fórmula? Si elegís no, queda como está. Si sí, se guarda (Ctrl+Z lo deshace).',
     { icono: '✍️', okLabel: 'Reemplazar por la fórmula', detalle: det });
   if(!ok) return;
   items.forEach(it => anotarCambioTabla(it.row, COL.FECHA_EST_COBRO, it.nueva, it.nota));
   if(currentView === 'cargas' && cargasVista === 'tabla') renderCargas();
-  if(typeof showToast === 'function') showToast('Fecha estimada de cobro reemplazada en ' + items.length + ' carga' + (items.length > 1 ? 's' : '') + '. Quedó pendiente: revisala y guardá.', 'info');
+  if(typeof showToast === 'function') showToast('Fecha estimada de cobro reemplazada en ' + items.length + ' carga' + (items.length > 1 ? 's' : '') + '. Se guardó (Ctrl+Z deshace).', 'info');
 }
 
 // Boton "Rellenar fecha estimada": completa las cargas activas que NO tienen fecha estimada, con la fórmula de su contrato,
@@ -2986,12 +2986,12 @@ async function rellenarFechasEstimadas(){
     return;
   }
   const ok = await showConfirm('Rellenar la fecha estimada de cobro en ' + listas.length + ' carga' + (listas.length > 1 ? 's' : ''),
-    'Se completa con la fórmula de pago del contrato (ETD o ETA ± días corridos). Solo las que están vacías: no se toca ninguna que ya tenga fecha. Quedan como cambios pendientes (en amarillo) para que las revises y guardes.',
+    'Se completa con la fórmula de pago del contrato (ETD o ETA ± días corridos). Solo las que están vacías: no se toca ninguna que ya tenga fecha. Se guardan en la planilla al confirmar (Ctrl+Z las deshace).',
     { icono: '📅', okLabel: 'Rellenar', detalle: det });
   if(!ok) return;
   listas.forEach(it => anotarCambioTabla(it.row, COL.FECHA_EST_COBRO, it.fecha, it.nota));
   if(currentView === 'cargas') renderCargas();
-  showToast('Fecha estimada completada en ' + listas.length + ' carga' + (listas.length > 1 ? 's' : '') + '. Revisalas (amarillo) y guardá.', 'info');
+  showToast('Fecha estimada completada en ' + listas.length + ' carga' + (listas.length > 1 ? 's' : '') + '. Se guardó (Ctrl+Z deshace).', 'info');
 }
 
 // En los formularios (Nueva carga y Editar): al elegir el contrato o cambiar la ETD/ETA se completa la fecha estimada
@@ -5887,6 +5887,7 @@ function anotarCambioTabla(row, c, nuevo, nota, sinPropagar){
   }
   if(c === COL.ETA) congelarOrdenETA();
   (cargasPend[k] = cargasPend[k] || {})[c] = { antes: orig, despues: nuevo, row, nota: nota || '' };
+  autoGuardarTabla();   // todo cambio anotado se guarda solo, venga de donde venga (editar, pegar, rellenar fechas...)
   if(!sinPropagar && (c === COL.ETD || c === COL.ETA)) propagarFechaCobroEstimada(row, c, antesVisible).catch(e => console.warn('fecha estimada de cobro:', e));
 }
 
@@ -6210,7 +6211,7 @@ let _guardandoTabla = false, _guardarOtraVez = false, _autoGuardarTimer = null, 
 let _undoTabla = [];   // tandas guardadas, para Ctrl+Z
 function autoGuardarTabla(){
   if(window.__sinAutoGuardado) return;
-  if(!accessToken){ _guardoFallo = true; showToast('Conectate con Google para que se guarde en la planilla', 'warn'); return; }
+  if(!accessToken){ if(!_guardoFallo) showToast('Conectate con Google para que se guarde en la planilla', 'warn'); _guardoFallo = true; return; }
   if(_autoGuardarTimer) clearTimeout(_autoGuardarTimer);
   _autoGuardarTimer = setTimeout(() => { _autoGuardarTimer = null; guardarCambiosTabla(); }, 40);   // lo justo para juntar un pegado en una sola escritura
 }
