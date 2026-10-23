@@ -4525,6 +4525,7 @@ function showView(view){
   if(view === 'nueva_carga' && currentView !== 'nueva_carga') cargasGuardadasSesion = [];
   saveLastView(view);
   updateBottomNav(view);
+  if(view !== 'cargas') _etaOrdenFijo = null;   // al salir de la tabla, la proxima vez vuelve ordenada por ETA
   currentView=view; _editCargaAbierta = false;
   document.querySelectorAll('.nav-item').forEach(el=>el.classList.remove('active'));
   const titles=window._viewTitles||{alertas:'Alertas',cargas:'Cargas AXT',nueva_carga:'Nueva carga',cobranza:'Cobranza',cashflow:'Calendario',liberaciones:'Liberaciones',pagares:'Pagarés',contratos:'Contratos abiertos',tarifario:'Tarifario de fletes',log:'Log de acciones',config:'Configuración'};
@@ -4827,6 +4828,7 @@ function filaCoincide(r, q){
 }
 function renderCargas(showAll, sort){
   _editCargaAbierta = false;
+  if(cargasVista !== 'tabla') _etaOrdenFijo = null;
   if(showAll !== undefined) cargasShowAll = showAll;
   if(sort !== undefined) cargasSort = sort;
 
@@ -5195,7 +5197,7 @@ function renderCargas(showAll, sort){
     ${filtrosWrap}
     ${resetBtn}
     ${_colEstCobroOk() ? '<button class="t-filtros-btn" onclick="rellenarFechasEstimadas()" title="Completa la fecha estimada de cobro de las cargas que la tienen vacía, con la fórmula de pago de su contrato (te muestra cómo se calculó cada una antes de aplicar)">📅 Rellenar fecha estimada</button>' : ''}
-    ${_etaOrdenFijo && ordenPorETAActivo() && Object.keys(cargasPend).length ? '<button class="t-filtros-btn on" onclick="reordenarPorETA()" title="Las fechas que cambiaste siguen en su lugar; esto acomoda todas por ETA (la que llega ultima, abajo de todo)">↕ Reordenar por ETA</button>' : ''}
+    ${_etaOrdenFijo && ordenPorETAActivo() ? '<button class="t-filtros-btn on" onclick="reordenarPorETA()" title="Las fechas que cambiaste siguen en su lugar hasta que salgas de la tabla; esto acomoda todas por ETA ahora (la que llega ultima, abajo de todo)">↕ Reordenar por ETA</button>' : ''}
     <span style="flex:1;"></span>
     ${viewChip('Por embarque', false, "cargasVista='grupos';renderCargas()")}
     ${viewChip('Tabla', true, "cargasVista='tabla';cargasTablaIrAlFinal=true;renderCargas()")}
@@ -5455,9 +5457,9 @@ function seguirFilaTras(row, c, filaDebajo, mover){
   } else marcarCelda(p, c);
 }
 function ordenarPorETA(rows){
-  // La foto del orden vale solo mientras haya cambios sin guardar. Con todo guardado (o descartado) la tabla vuelve sola
-  // a estar ordenada por ETA, la que llega ultima abajo de todo, como al ordenar de la A a la Z en Sheets.
-  if(_etaOrdenFijo && !Object.keys(cargasPend).length) _etaOrdenFijo = null;
+  // La foto del orden vale hasta que salgas de la tabla (otra pestaña, otra vista) o apretes "Reordenar por ETA": como los cambios
+  // se guardan solos, no se puede esperar a que no haya pendientes, o la fila saltaria apenas se guarda. Al volver, la tabla
+  // aparece ordenada por ETA, la que llega ultima abajo de todo, como al ordenar de la A a la Z en Sheets.
   if(_etaOrdenFijo){
     const lugar = r => _etaOrdenFijo.has(claveOrdenFila(r)) ? _etaOrdenFijo.get(claveOrdenFila(r)) : Infinity;
     return rows.map((r, i) => ({ r, i, p: lugar(r) })).sort((a, b) => (a.p === b.p ? a.i - b.i : (a.p < b.p ? -1 : 1))).map(x => x.r);
