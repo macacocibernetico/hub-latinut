@@ -342,6 +342,22 @@ body.tabla-full-on{overflow:hidden;}
 .t-grid tbody tr td.t-pint{background:var(--pin);color:#1f2933;}
 .t-grid tbody tr td.rango.t-pint{background:var(--pin)!important;box-shadow:inset 0 0 0 1px rgba(0,113,227,.6),inset 0 0 0 100px rgba(0,113,227,.10);}
 .t-pal{display:inline-flex;align-items:center;gap:5px;}
+/* Barra de arriba de la tabla: botones con icono, y cuadros que se abren debajo (Pintar, Configuracion) */
+.t-btn{display:inline-flex;align-items:center;gap:7px;padding:7px 13px;border-radius:9px;border:1px solid var(--border2);background:var(--bg2);color:var(--text);font:500 13px var(--font);cursor:pointer;white-space:nowrap;}
+.t-btn svg{width:15px;height:15px;stroke:currentColor;fill:none;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round;flex:none;}
+.t-btn:hover:not([disabled]){background:var(--bg3);}
+.t-btn[disabled]{opacity:.45;cursor:not-allowed;}
+.t-btn.on{border-color:var(--accent);box-shadow:0 0 0 2px rgba(var(--accent-rgb),.15);}
+.t-btn .t-n{background:var(--accent);color:#fff;border-radius:99px;font-size:11px;padding:1px 7px;}
+.t-filas{color:var(--text3);font-size:13px;}
+.t-pop{position:fixed;z-index:60;background:var(--bg2);border:1px solid var(--border2);border-radius:12px;box-shadow:0 10px 30px rgba(0,0,0,.16);padding:12px;min-width:240px;}
+.t-pop h4{font-size:12px;color:var(--text3);font-weight:600;margin:0 0 8px;}
+.t-pop .t-pal{display:flex;flex-wrap:wrap;gap:8px;}
+.t-pop .t-pal .t-sw{width:28px;height:28px;border-radius:8px;}
+.t-pop .t-pal .t-sw-x{height:28px;}
+.t-pop-fila{display:flex;align-items:center;justify-content:space-between;gap:24px;padding:8px 0;border-top:1px solid var(--bg3);font-size:13px;}
+.t-pop-fila:first-of-type{border-top:none;}
+.t-pop-fila select{font-size:13px;padding:4px 8px;border-radius:7px;border:1px solid var(--border2);background:var(--bg2);color:var(--text);}
 .t-pal .t-sw{width:18px;height:18px;border-radius:50%;border:1px solid rgba(0,0,0,.25);padding:0;cursor:pointer;}
 .t-pal .t-sw:hover{transform:scale(1.15);}
 .t-pal .t-sw-x{height:22px;padding:0 8px;border-radius:7px;border:1px solid var(--border2);background:var(--bg2);font-size:12px;font-family:var(--font);color:var(--text);cursor:pointer;}
@@ -3963,9 +3979,9 @@ async function aplicarColor(id){
   showToast(pal ? '🎨 ' + cuantas + ' en ' + pal.nombre : '✓ Color quitado de ' + cuantas, 'ok');
 }
 function paletaHTML(){
-  return '<span class="t-pal"><span class="t-stats-h">Pintar:</span>' +
-    PALETA_COLORES.map(p => '<button class="t-sw" style="background:' + hexColor(p.rgb) + '" title="Pintar de ' + p.nombre + ' en la planilla" aria-label="Pintar de ' + p.nombre + '" onclick="aplicarColor(\'' + p.id + '\')"></button>').join('') +
-    '<button class="t-sw-x" title="Sacar el color de las celdas elegidas" onclick="aplicarColor(null)">✕ Sin color</button></span>';
+  return '<span class="t-pal">' +
+    PALETA_COLORES.map(p => '<button class="t-sw" style="background:' + hexColor(p.rgb) + '" title="Pintar de ' + p.nombre + ' en la planilla" aria-label="Pintar de ' + p.nombre + '" onclick="cerrarPopTabla();aplicarColor(\'' + p.id + '\')"></button>').join('') +
+    '<button class="t-sw-x" title="Sacar el color de las celdas elegidas" onclick="cerrarPopTabla();aplicarColor(null)">✕ Sin color</button></span>';
 }
 
 function celdaMarcada(row, col){
@@ -5550,20 +5566,16 @@ function renderCargasTabla(rows){
     <div class="t-top">
       <div id="cargas-toolbar" class="cargas-toolbar"></div>
       <div class="t-sub">
-        <span>${rows.length} fila${rows.length === 1 ? '' : 's'}${quedan > 0 ? ' · mostrando ' + visibles.length : ''}</span>
+        <button class="t-btn" onclick="toggleTablaFull()">${ICO_BARRA.full} ${cargasTablaFull ? 'Salir de pantalla completa' : 'Pantalla completa'}</button>
+        <button class="t-btn" id="t-btn-com" onclick="abrirComentarios()" title="Comentarios de la celda elegida (Ctrl + Alt + M)"${_tablaSel && _tablaRows[_tablaSel.r] ? '' : ' disabled'}>${ICO_BARRA.com} Comentar${(() => { const cc = _tablaSel && _tablaRows[_tablaSel.r] ? comAbiertosCelda(_tablaRows[_tablaSel.r], _tablaSel.c).length : 0; return cc ? ' <span class="t-n">' + cc + '</span>' : ''; })()}</button>
+        <button class="t-btn" id="t-btn-pintar" data-pop="pintar" onclick="abrirPopTabla('pintar', this)" title="Pintar las celdas elegidas (se pinta en la planilla)"${_tablaSel ? '' : ' disabled'}>${ICO_BARRA.pintar} Pintar</button>
+        <button class="t-btn" onclick="nuevaFilaTabla()" title="Agrega una carga nueva al final de la planilla">${ICO_BARRA.mas} Nueva fila</button>
+        <button class="t-btn" onclick="duplicarFilaTabla()" title="Copia la fila de la celda elegida al final de la planilla, sin lote, BL, contenedores, booking ni facturas (Ctrl+D)">${ICO_BARRA.dup} Duplicar fila</button>
         ${chips}
         <span style="flex:1;"></span>
         <span class="t-ayuda">Doble clic o Enter para editar · flechas para moverte · Esc cancela</span>
-        <label class="t-fijas" title="Orden de las filas de la tabla"><span aria-hidden="true">Orden</span>
-          <select aria-label="Orden de la tabla" onchange="cambiarOrdenTabla(this.value)"><option value="eta"${ordenTablaActual() === 'eta' ? ' selected' : ''}>Por ETA (próxima arriba)</option><option value="planilla"${ordenTablaActual() === 'planilla' ? ' selected' : ''}>Como la planilla</option></select></label>
-        <label class="t-fijas" title="Tamaño del texto de la tabla"><span aria-hidden="true">Densidad</span>
-          <select aria-label="Densidad de la tabla" onchange="cambiarDensidad(this.value)"><option value="comoda"${densidadTabla() === 'comoda' ? ' selected' : ''}>Cómoda</option><option value="compacta"${densidadTabla() === 'compacta' ? ' selected' : ''}>Compacta</option></select></label>
-        <label class="t-fijas" title="Columnas que quedan quietas a la izquierda al desplazarte"><span aria-hidden="true">Columnas fijas</span>
-          <select aria-label="Columnas fijas" onchange="cambiarFijas(parseInt(this.value))">${[0,1,2,3].map(n => '<option value="' + n + '"' + (TABLA_FIJAS === n ? ' selected' : '') + '>' + (n === 0 ? 'Ninguna' : n) + '</option>').join('')}</select></label>
-        ${Object.keys(anchosU).length ? '<button class="t-full" onclick="resetAnchos()" title="Vuelve todos los anchos al automático">↔ Anchos automáticos</button>' : ''}
-        <button class="t-full" onclick="nuevaFilaTabla()" title="Agrega una carga nueva al final de la planilla">＋ Nueva fila</button>
-        <button class="t-full" onclick="duplicarFilaTabla()" title="Copia la fila de la celda elegida al final de la planilla, sin lote, BL, contenedores, booking ni facturas (Ctrl+D)">⧉ Duplicar fila</button>
-        <button class="t-full" onclick="toggleTablaFull()">${cargasTablaFull ? '✕ Salir de pantalla completa' : '⛶ Pantalla completa'}</button>
+        <span class="t-filas">${rows.length} fila${rows.length === 1 ? '' : 's'}${quedan > 0 ? ' · mostrando ' + visibles.length : ''}</span>
+        <button class="t-btn" data-pop="config" onclick="abrirPopTabla('config', this)" title="Orden, densidad, columnas fijas y anchos">${ICO_BARRA.config} Configuración</button>
       </div>
       <div id="tabla-pend" class="t-pend" style="${nPend && (_guardoFallo || window.__sinAutoGuardado) ? '' : 'display:none;'}">
         <span>✎ <b>${nPend} cambio${nPend === 1 ? '' : 's'} sin guardar</b>${_avisoTabla && nPend ? '<span class="t-pend-nota">🔄 ' + esc(_avisoTabla) + '</span>' : ''}</span><span style="flex:1;"></span>
@@ -5675,15 +5687,77 @@ function accionNOPSeleccion(que){
   else if(que === 'quitar') marcarDudaNOP(idxs, false);
   else resolverNOP(idxs, que === 'nop');
 }
+// Iconos de la barra de arriba de la tabla.
+const ICO_BARRA = {
+  full:   '<svg viewBox="0 0 24 24"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></svg>',
+  com:    '<svg viewBox="0 0 24 24"><path d="M4 5h16v11H9l-5 4z"/></svg>',
+  pintar: '<svg viewBox="0 0 24 24"><path d="M12 3l7 7-7 9-7-9z"/><path d="M3 21h8"/></svg>',
+  mas:    '<svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>',
+  dup:    '<svg viewBox="0 0 24 24"><rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2"/></svg>',
+  config: '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M5 5l2 2M17 17l2 2M19 5l-2 2M7 17l-2 2"/></svg>'
+};
+// Comentar y Pintar se prenden cuando hay una celda elegida; Comentar muestra cuantos comentarios abiertos tiene esa celda.
+function actualizarBarraTabla(){
+  const cel = comCelda();
+  const b = document.getElementById('t-btn-com');
+  if(b){
+    const n = cel ? comAbiertosCelda(cel.row, cel.c).length : 0;
+    b.disabled = !cel;
+    b.innerHTML = ICO_BARRA.com + ' Comentar' + (n ? ' <span class="t-n">' + n + '</span>' : '');
+  }
+  const p = document.getElementById('t-btn-pintar');
+  if(p) p.disabled = !_tablaSel;
+}
+// Cuadros que se abren debajo de un boton de la barra: "pintar" y "config".
+let _popTabla = null;
+function cerrarPopTabla(){
+  const p = document.getElementById('t-pop');
+  if(p && p.parentNode) p.parentNode.removeChild(p);
+  document.querySelectorAll('.t-btn.on').forEach(x => x.classList.remove('on'));
+  _popTabla = null;
+}
+function contenidoConfigTabla(){
+  const sel = (id, etiqueta, aria, onchange, opciones) => '<label class="t-pop-fila"><span aria-hidden="true">' + etiqueta + '</span><select aria-label="' + aria + '" onchange="cerrarPopTabla();' + onchange + '">' + opciones + '</select></label>';
+  const op = (v, t, actual) => '<option value="' + v + '"' + (actual === v ? ' selected' : '') + '>' + t + '</option>';
+  return sel('o', 'Orden', 'Orden de la tabla', 'cambiarOrdenTabla(this.value)', op('eta', 'Por ETA (próxima arriba)', ordenTablaActual()) + op('planilla', 'Como la planilla', ordenTablaActual()))
+    + sel('d', 'Densidad', 'Densidad de la tabla', 'cambiarDensidad(this.value)', op('comoda', 'Cómoda', densidadTabla()) + op('compacta', 'Compacta', densidadTabla()))
+    + sel('f', 'Columnas fijas', 'Columnas fijas', 'cambiarFijas(parseInt(this.value))', [0, 1, 2, 3].map(n => '<option value="' + n + '"' + (TABLA_FIJAS === n ? ' selected' : '') + '>' + (n === 0 ? 'Ninguna' : n) + '</option>').join(''))
+    + '<div class="t-pop-fila"><span>Anchos de columna</span>' + (Object.keys(anchosUsuario()).length
+      ? '<button class="t-btn" onclick="cerrarPopTabla();resetAnchos()" title="Vuelve todos los anchos al automático">↔ Volver a automáticos</button>'
+      : '<span style="color:var(--text3);">Automáticos</span>') + '</div>';
+}
+function abrirPopTabla(tipo, btn){
+  const ya = _popTabla === tipo;
+  cerrarPopTabla();
+  if(ya) return;
+  const p = document.createElement('div');
+  p.id = 't-pop'; p.className = 't-pop';
+  p.innerHTML = tipo === 'pintar'
+    ? '<h4>Pintar las celdas elegidas</h4>' + paletaHTML()
+    : contenidoConfigTabla();
+  document.body.appendChild(p);
+  _popTabla = tipo;
+  if(btn && btn.classList) btn.classList.add('on');
+  if(btn && btn.getBoundingClientRect){
+    const r = btn.getBoundingClientRect(), w = window.innerWidth || 1200;
+    p.style.top = Math.round(r.bottom + 6) + 'px';
+    p.style.left = Math.max(8, Math.min(Math.round(r.left), w - 330)) + 'px';
+  }
+}
+document.addEventListener('click', e => {
+  if(!_popTabla) return;
+  const t = e.target;
+  if(t && t.closest && (t.closest('#t-pop') || t.closest('[data-pop]'))) return;
+  cerrarPopTabla();
+});
+
 function pintarRango(){
   document.querySelectorAll('#t-grid td.rango').forEach(x => x.classList.remove('rango'));
   const bar = document.getElementById('t-stats');
   const st = estadisticasRango();
   const filasP = filasProductoSeleccionadas();
-  const celCom = comCelda();
-  const nCom = celCom ? comAbiertosCelda(celCom.row, celCom.c).length : 0;
-  const botonCom = celCom ? '<button class="t-com-btn" onclick="abrirComentarios()" title="Comentarios de la celda (Ctrl + Alt + M)">💬 ' + (nCom ? 'Comentarios (' + nCom + ')' : 'Comentar') + '</button>' : '';
-  const botones = paletaHTML() + botonCom + (filasP.length
+  actualizarBarraTabla();
+  const botones = (filasP.length
     ? '<span class="t-nop-acc"><span class="t-stats-h">Producto' + (filasP.length > 1 ? 's' : '') + ' (' + filasP.length + '):</span>' +
       '<button onclick="accionNOPSeleccion(\'duda\')" title="Deja el Producto en violeta hasta saber si es NOP o convencional">❓ En duda</button>' +
       '<button onclick="accionNOPSeleccion(\'nop\')" title="Es NOP: cambia producto, contrato y precios">✓ Es NOP</button>' +
@@ -9957,6 +10031,7 @@ function comRefrescar(){
 }
 // Triangulo naranja en las celdas con comentarios abiertos (sin redibujar la tabla).
 function comPintar(){
+  if(typeof actualizarBarraTabla === 'function') actualizarBarraTabla();
   document.querySelectorAll('#t-grid td.t-com').forEach(x => x.classList.remove('t-com'));
   if(currentView !== 'cargas' || cargasVista !== 'tabla') return;
   (_tablaRows || []).forEach((row, r) => {
@@ -13537,6 +13612,7 @@ document.addEventListener('keydown', e => {
       if(o && o.classList && !o.classList.contains('hidden')){ cerrar(); return; }
     }
   }
+  if(e.key === 'Escape' && _popTabla){ cerrarPopTabla(); return; }
   if(tablaTeclado(e)) return;
   if(e.key === 'Escape' && _comPop){ cerrarComentarios(); return; }
   if(e.key === 'Escape' && _filtroAbierto){ cerrarFiltroColumna(); return; }
