@@ -2845,52 +2845,68 @@ function fechaDesdeFormulaPago(formula, etd, eta){
 }
 
 // El contrato puede estar en la hoja de abiertos o en la de cerrados: se busca primero en los abiertos y,
-// si no esta, se lee la hoja "Contratos cerrados" (nombre exacto; una sola vez por negocio).
-let _formulasCerradas = null, _formulasCerradasClave = '';
-async function cargarFormulasCerradas(){
+// si no esta, se lee la hoja "Contratos cerrados" (nombre exacto) con los mismos nombres de columna que los abiertos.
+// Solo se recuerda una lectura que salio bien: si fallo (sin conexion, sin permiso, otra forma de encabezados) se vuelve a intentar,
+// y si el contrato no aparece se vuelve a leer la hoja (a lo sumo una vez por minuto) por si se cerro hace un rato.
+const ALIAS_CONTRATO = ['Contrato', 'Contract', 'N° Contrato', 'Nro Contrato', 'Contrato Cliente'];
+const ALIAS_FORMULA_PAGO = ['Formula pago', 'Formula de pago'];
+let _formulasCerradas = null, _formulasCerradasClave = '', _formulasCerradasT = 0;
+let _formulasCerradasInfo = { estado: '', detalle: '' };   // para explicar por que no se encontro una formula
+async function cargarFormulasCerradas(forzar){
   const nc = getNegocioConfig();
   const sid = nc.sheetId || cfg.sheetId;
-  if(_formulasCerradas && _formulasCerradasClave === sid) return _formulasCerradas;
+  if(!forzar && _formulasCerradas && _formulasCerradasClave === sid) return _formulasCerradas;
   const mapa = new Map();
-  _formulasCerradas = mapa; _formulasCerradasClave = sid;
-  if(!sid || !accessToken) return mapa;
+  const falla = (estado, detalle) => { _formulasCerradasInfo = { estado, detalle }; return mapa; };   // sin recordarla: se reintenta
+  if(!sid) return falla('sin_planilla', '');
+  if(!accessToken) return falla('sin_sesion', 'no hay sesión de Google');
   try{
     const h = { headers: { Authorization: 'Bearer ' + accessToken } };
     const rm = await fetch('https://sheets.googleapis.com/v4/spreadsheets/' + sid + '?fields=sheets.properties', h);
-    if(!rm.ok) return mapa;
+    if(!rm.ok) return falla('error', 'no pude ver las hojas de la planilla (HTTP ' + rm.status + ')');
     const meta = await rm.json();
     // Solo la hoja que se llama exactamente "Contratos cerrados" (no una que apenas contenga la palabra).
     const hoja = (meta.sheets || []).map(x => (x.properties || {}).title || '').find(t => t.trim().toLowerCase() === 'contratos cerrados');
-    if(!hoja) return mapa;
-    const rv = await fetch('https://sheets.googleapis.com/v4/spreadsheets/' + sid + '/values/' + encodeURIComponent(hoja + '!A1:Z1500'), h);
-    if(!rv.ok) return mapa;
+    if(!hoja) return falla('sin_hoja', 'la planilla no tiene una hoja llamada "Contratos cerrados"');
+    const rv = await fetch('https://sheets.googleapis.com/v4/spreadsheets/' + sid + '/values/' + encodeURIComponent(hoja + '!A1:AD4000'), h);
+    if(!rv.ok) return falla('error', 'no pude leer la hoja "' + hoja + '" (HTTP ' + rv.status + ')');
     const filas = (await rv.json()).values || [];
-    let hdr = -1;
-    for(let i = 0; i < Math.min(6, filas.length); i++){
+    // Los encabezados pueden no estar en la fila 1: se prueban las primeras filas y se elige la que tiene las dos columnas.
+    const alias = lista => lista.map(normTar);
+    const buscar = (H, lista) => { for(const a of alias(lista)){ const k = H.indexOf(a); if(k >= 0) return k; } return -1; };
+    let hdr = -1, cc = -1, cf = -1;
+    for(let i = 0; i < Math.min(15, filas.length); i++){
       const H = (filas[i] || []).map(normTar);
-      if((H.indexOf('CONTRATO') >= 0 || H.indexOf('CONTRACT') >= 0) && (H.indexOf('FORMULA PAGO') >= 0 || H.indexOf('FORMULA DE PAGO') >= 0)){ hdr = i; break; }
+      const a = buscar(H, ALIAS_CONTRATO), b = buscar(H, ALIAS_FORMULA_PAGO);
+      if(a >= 0 && b >= 0){ hdr = i; cc = a; cf = b; break; }
     }
-    if(hdr < 0) return mapa;
-    const H = filas[hdr].map(normTar);
-    const cc = Math.max(H.indexOf('CONTRATO'), H.indexOf('CONTRACT'));
-    const cf = H.indexOf('FORMULA PAGO') >= 0 ? H.indexOf('FORMULA PAGO') : H.indexOf('FORMULA DE PAGO');
+    if(hdr < 0) return falla('sin_encabezado', 'en "' + hoja + '" no encontré las columnas Contrato y Formula pago en las primeras 15 filas');
     for(let i = hdr + 1; i < filas.length; i++){
       const num = normTar((filas[i] || [])[cc]);
       const txt = ((filas[i] || [])[cf] || '').toString().trim();
-      if(num && txt) mapa.set(num, txt);
+      if(num && (txt || !mapa.has(num))) mapa.set(num, txt);   // tambien se anotan los que no tienen formula, para poder avisarlo
     }
-  }catch(e){ console.warn('contratos cerrados:', e); }
+    _formulasCerradas = mapa; _formulasCerradasClave = sid; _formulasCerradasT = Date.now();
+    _formulasCerradasInfo = { estado: 'ok', detalle: 'hoja "' + hoja + '": ' + mapa.size + ' contratos' };
+  }catch(e){ console.warn('contratos cerrados:', e); return falla('error', e.message); }
   return mapa;
 }
+// Devuelve { texto, origen, motivo }: motivo explica, cuando no hay formula, que paso (para avisarlo y no fallar en silencio).
 async function formulaPagoDeContrato(numero){
   const n = normTar(numero);
-  if(!n) return { texto: '', origen: '' };
+  if(!n) return { texto: '', origen: '', motivo: '' };
   const k = contratos.find(x => normTar(x.contrato) === n);
-  if(k && k.formulaPago) return { texto: k.formulaPago, origen: 'abiertos' };
-  const cer = await cargarFormulasCerradas();
-  const t = cer.get(n);
-  if(t) return { texto: t, origen: 'cerrados' };
-  return { texto: '', origen: k ? 'abiertos' : '' };
+  if(k && k.formulaPago) return { texto: k.formulaPago, origen: 'abiertos', motivo: '' };
+  let cer = await cargarFormulasCerradas();
+  if(!cer.has(n) && _formulasCerradasInfo.estado === 'ok' && Date.now() - _formulasCerradasT > 60000) cer = await cargarFormulasCerradas(true);
+  if(cer.get(n)) return { texto: cer.get(n), origen: 'cerrados', motivo: '' };
+  const info = _formulasCerradasInfo;
+  let motivo;
+  if(k) motivo = 'el contrato ' + numero + ' está en la hoja de contratos abiertos pero no tiene "Formula pago"';
+  else if(cer.has(n)) motivo = 'el contrato ' + numero + ' está en "Contratos cerrados" pero no tiene "Formula pago"';
+  else if(info.estado === 'ok') motivo = 'el contrato ' + numero + ' no aparece ni en los abiertos ni en "Contratos cerrados"';
+  else motivo = 'no pude mirar "Contratos cerrados": ' + (info.detalle || 'sin datos');
+  return { texto: '', origen: k ? 'abiertos' : '', motivo };
 }
 
 // Texto que explica la cuenta: "ETD 15/10/2026 + 60 días corridos".
@@ -2911,8 +2927,11 @@ async function propagarFechaCobroEstimada(row, c, antesBase){
   if(!_colEstCobroOk()) return;
   const numero = valorVisible(row, COL.CONTRACT_CLIENTE).trim();
   if(!numero) return;
-  const { texto } = await formulaPagoDeContrato(numero);
-  if(!texto) return;
+  const { texto, motivo } = await formulaPagoDeContrato(numero);
+  if(!texto){
+    if(motivo && typeof showToast === 'function') showToast('No pude recalcular la fecha estimada de cobro: ' + motivo + '. Queda como estaba.', 'warn', 9000);
+    return;
+  }
   const formula = parsearFormulaPago(texto);
   if(!formula){
     if(typeof showToast === 'function') showToast('La fórmula de pago "' + texto + '" del contrato ' + numero + ' no la entiendo (tiene que ser ETD o ETA ±días): la fecha estimada de cobro queda como está.', 'err');
@@ -6525,7 +6544,7 @@ function colIndexToLetter(idx){
 function getFormValues(prefix){
   const dateFields = ['consol','etd','eta','fechaEstCobro','fechaCobro'];
   const fields = [
-    'negocio','tns','product','packing','lots','pol','pricefob','invoiceProv','contractProv','totalProv','containers','booking','bl','shipping',
+    'negocio','tns','product','packing','lots','pol','pricefob','cNutrin','invoiceProv','contractProv','totalProv','containers','booking','bl','shipping',
     'vessel','consol','etd','eta','port','exporter','customer',
     'documentos','lombard','clienteEnv','telex',
     'invoiceCliente','contractCliente','priceCFR','flete','totalCFR','incoterm',
@@ -6555,6 +6574,7 @@ function formToRowData(d){
   set(COL.PRODUCT, d.product);
   set(COL.PACKING, d.packing);
   if(d.pricefob) set(COL.PRICE_FCA, d.pricefob); // Price FCA (antes Price FOB)
+  set(COL.C_NUTRIN, d.cNutrin);
   set(COL.INVOICE_PROVEEDOR, d.invoiceProv);
   set(COL.CONTRACT_PROVEEDOR, d.contractProv);
   set(COL.TOTAL_FCA, d.totalProv);
@@ -7006,7 +7026,8 @@ function buildCargaForm(prefix, d={}, fullEdit=false){
   const bProveedor = bloque(3, 'Proveedor', `
     ${field('invoiceProv','Invoice Proveedor',d.invoiceProv||'','text','ej: 0001-00001234')}
     ${field('contractProv','Contract Proveedor',d.contractProv||'','text','ej: 2026-PROV-01')}
-    ${field('pricefob','Price FCA',d.pricefob||'','text','ej: 1180')}`);
+    ${field('pricefob','Price FCA',d.pricefob||'','text','ej: 1180')}
+    ${COL.C_NUTRIN >= 0 ? field('cNutrin','C - NUTRIN',d.cNutrin||'','text','ej: C-4915') : ''}`);
 
   // Lo que se calcula o sale del contrato va al final, aparte: no se carga, se revisa.
   const esAXT = empresaDelNegocio() === 'AXT';
@@ -7093,7 +7114,7 @@ function renderNuevaCarga(){
     <div class="config-title">Nueva carga</div>
     <div class="config-desc">Completá los campos para agregar una nueva fila a la planilla ${getNegocioConfig().label}.</div>
     <div style="margin-bottom:16px;">
-      <button class="import-btn" onclick="triggerImportPlanilla()">📎 Importar planilla despachante (.xlsx)</button>
+      <button class="import-btn" onclick="triggerImportPlanilla()">📎 Importar planilla despachante (.xlsx o PDF de Nutrin)</button>
       <span style="font-size:11px;color:var(--text3);margin-left:10px;">Pre-completa los campos automáticamente</span>
       <button class="import-btn" style="margin-left:14px;" onclick="importarVariasPlanillas()">📎📎 Importar varias planillas a la vez</button>
     </div>
@@ -7137,6 +7158,7 @@ function renderEditCarga(rowIdx){
     invoiceProv:      g('INVOICE_PROVEEDOR'),
     contractProv:     g('CONTRACT_PROVEEDOR'),
     pricefob:         g('PRICE_FCA'),
+    cNutrin:          g('C_NUTRIN'),
     totalProv:        g('TOTAL_FCA'),
     invoiceCliente:   g('INVOICE_CLIENTE'),
     contractCliente:  g('CONTRACT_CLIENTE'),
@@ -10231,13 +10253,155 @@ function fmtDateFromExcel(val){
   };
 }
 
+// ── Planillas de despachante de NUTRIN (vienen en PDF, no en Excel) ──
+// Se lee el texto del PDF con su posicion en la hoja (pdf.js) y se ubica cada dato por el nombre de su casillero.
+// Lo que NO trae el PDF queda vacio para cargarlo a mano: Customer, consolidacion y numeros de contenedor.
+// Lote: "A DEFINIR". El contrato del proveedor (C-4915) va en la columna "C - NUTRIN".
+const PDFJS_URL = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js';
+const PDFJS_WORKER = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+function esArchivoPdf(f){ return !!f && (/\.pdf$/i.test(f.name || '') || f.type === 'application/pdf'); }
+async function cargarPdfJs(){
+  if(window.pdfjsLib) return window.pdfjsLib;
+  await new Promise((res, rej) => {
+    const sc = document.createElement('script');
+    sc.src = PDFJS_URL; sc.onload = res; sc.onerror = () => rej(new Error('No pude bajar el lector de PDF. Revisá la conexión.'));
+    document.head.appendChild(sc);
+  });
+  window.pdfjsLib.GlobalWorkerOptions.workerSrc = PDFJS_WORKER;
+  return window.pdfjsLib;
+}
+// Devuelve los textos de la primera hoja: { s: texto, x, y } con la posicion en puntos (y crece hacia arriba).
+async function textosDePdf(buf){
+  const lib = await cargarPdfJs();
+  const doc = await lib.getDocument({ data: new Uint8Array(buf) }).promise;
+  const pg = await doc.getPage(1);
+  const tc = await pg.getTextContent();
+  return tc.items.filter(i => i.str && i.str.trim()).map(i => ({ s: i.str, x: i.transform[4], y: i.transform[5] }));
+}
+function distanciaEdicion(a, b){
+  const m = [];
+  for(let i = 0; i <= a.length; i++){ m[i] = [i]; }
+  for(let j = 1; j <= b.length; j++) m[0][j] = j;
+  for(let i = 1; i <= a.length; i++) for(let j = 1; j <= b.length; j++)
+    m[i][j] = Math.min(m[i-1][j] + 1, m[i][j-1] + 1, m[i-1][j-1] + (a[i-1] === b[j-1] ? 0 : 1));
+  return m[a.length][b.length];
+}
+// "Norfolx" (errata del PDF) -> "Norfolk": se compara con los puertos que ya estan en la planilla.
+const PUERTOS_CONOCIDOS = ['Norfolk', 'New York', 'Savannah', 'Rotterdam', 'Valencia', 'Hamburg', 'Callao', 'Santos', 'Genoa'];
+function corregirPuerto(txt){
+  const t = String(txt || '').trim();
+  if(!t) return '';
+  const lista = (typeof getUnique === 'function' && COL.PORT >= 0 ? getUnique(COL.PORT) : []).concat(PUERTOS_CONOCIDOS);
+  const n = normTar(t);
+  const igual = lista.find(p => normTar(p) === n);
+  if(igual) return igual;
+  const cerca = lista.filter(p => n.length >= 5 && distanciaEdicion(normTar(p), n) <= 1);
+  return cerca.length ? cerca[0] : t.charAt(0).toUpperCase() + t.slice(1).toLowerCase();
+}
+// Embalaje: si en la planilla ya hay una forma de escribirlo (por ejemplo "Tambores" o "Drums"), se usa esa; si no, la primera de la lista.
+function embalajeDeLista(candidatos){
+  const hay = (typeof getUnique === 'function' && COL.PACKING >= 0) ? getUnique(COL.PACKING) : [];
+  for(const c of candidatos){ const h = hay.find(p => normTar(p) === normTar(c)); if(h) return h; }
+  return candidatos[0];
+}
+function parsePlanillaNutrin(items){
+  const it = (items || []).map(i => ({ s: String(i.s).trim(), x: i.x, y: i.y })).filter(i => i.s);
+  const todo = it.map(i => i.s).join(' ').toUpperCase();
+  if(todo.indexOf('PLANILLA DESPACHANTE') < 0 || todo.indexOf('NUTRIN') < 0) throw new Error('Este PDF no parece una planilla de despachante de Nutrin.');
+  const avisos = [];
+  // Dato de la cabecera: el texto que esta a la derecha del casillero, en la misma linea.
+  const valor = etiqueta => {
+    const e = it.find(i => i.s.toLowerCase() === etiqueta.toLowerCase());
+    if(!e) return '';
+    const der = it.filter(i => i !== e && Math.abs(i.y - e.y) <= 2.5 && i.x > e.x + 5).sort((a, b) => a.x - b.x)[0];
+    return der && !/:$/.test(der.s) ? der.s : '';
+  };
+  const fecha = t => /^\d{1,2}\/\d{1,2}\/\d{4}$/.test(t) ? t : '';
+  const etd = fecha(valor('ETD:')), eta = fecha(valor('ETA:'));
+  if(!eta) avisos.push('no encontré la ETA');
+  // La tabla de la carga: sus columnas se ubican por el titulo de cada una (el de mas arriba de la hoja).
+  const tit = nombre => it.filter(i => i.s.toLowerCase() === nombre.toLowerCase()).sort((a, b) => b.y - a.y)[0];
+  const tMerc = tit('Mercaderia'), tCant = tit('Cantidad'), tEmb = tit('Embalaje'), tCal = tit('Calibre'), tPto = tit('Puerto'),
+        tDes = tit('Destino'), tCond = tit('Cond.'), tPre = tit('Precio'), tDom = tit('Domicilio');
+  if(!tMerc || !tCant || !tEmb) throw new Error('No encontré la tabla de la carga en el PDF (Cantidad / Mercaderia / Embalaje).');
+  const yTit = tMerc.y, yFin = (it.find(i => /^Total Ctto\./i.test(i.s)) || { y: yTit - 120 }).y;
+  const fila = it.filter(i => i.y < yTit - 8 && i.y > yFin);
+  const MARGEN = 14;
+  const lim = [tCant, tMerc, tCal, tEmb, tCond, tPto, tDes, tDom, tPre].filter(Boolean).map(t => ({ t, x: t.x - MARGEN })).sort((a, b) => a.x - b.x);
+  const col = t => {
+    if(!t) return [];
+    const k = lim.findIndex(l => l.t === t);
+    const x1 = lim[k].x, x2 = k + 1 < lim.length ? lim[k + 1].x : 1e9;
+    return fila.filter(i => i.x >= x1 && i.x < x2 && i.s !== '/').sort((a, b) => (b.y - a.y) || (a.x - b.x)).map(i => i.s);
+  };
+  // Cantidad: 23.470 son kilos (punto de miles) -> 23,47 toneladas.
+  const cant = col(tCant).find(t => /\d/.test(t)) || '';
+  let tns = '';
+  if(/^\d{1,3}(\.\d{3})+$/.test(cant)) tns = String(Number(cant.replace(/\./g, '')) / 1000).replace('.', ',');
+  else if(cant) tns = cant.replace('.', ',');
+  if(!tns) avisos.push('no encontré las toneladas');
+  // Precio FCA por tonelada: "U$S 2.540,00"
+  const pre = col(tPre).concat(fila.filter(i => /U\$S/.test(i.s) && i.x > (tPre ? tPre.x - MARGEN : 0)).map(i => i.s)).find(t => /U\$S\s*[\d.]*\d,\d{2}/.test(t));
+  let priceFOB = '';
+  if(pre){ const m = pre.match(/U\$S\s*([\d.]*\d),(\d{2})/); priceFOB = String(Number(m[1].replace(/\./g, '') + '.' + m[2])); }
+  else avisos.push('no encontré el precio');
+  // Producto y embalaje: el texto de la mercaderia, el calibre y el embalaje. El PDF los mezcla ("MANI PARCIALMENTE ... HARINA (BOLSA PAPEL)").
+  const merc = col(tMerc), cal = col(tCal), emb = col(tEmb);
+  const crudo = merc.concat(cal, emb).join(' ');
+  const sinEsp = emb.join('').toUpperCase();
+  const mayus = crudo.toUpperCase();
+  let product = '';
+  if(/HARINA/.test(mayus)) product = 'Peanut flour';
+  else if(/ACEITE/.test(mayus)) product = 'Peanut oil';
+  else if(/PASTA|PASTE/.test(mayus)) product = 'Peanut paste';
+  else if(/TOSTAD|ROAST/.test(mayus)) product = 'Roasted peanuts';
+  else if(/BLANCH/.test(mayus)) product = 'Blanched peanuts';
+  else { product = merc.join(' ').trim(); avisos.push('no reconocí el producto "' + crudo + '": revisalo'); }
+  let packing = '';
+  if(/BIGBAG/.test(sinEsp)) packing = embalajeDeLista(['big bags', 'big bag']);
+  else if(/BOLSA/.test(sinEsp)) packing = embalajeDeLista(['bags', 'bolsas']);
+  else if(/TAMBOR/.test(sinEsp)) packing = embalajeDeLista(['drums', 'tambores']);
+  else if(/FLEXI/.test(sinEsp)) packing = embalajeDeLista(['flexi', 'flexis', 'flexitank', 'flexi tank']);
+  else if(/CAJA/.test(sinEsp)) packing = embalajeDeLista(['boxes', 'cajas']);
+  else { const par = emb.join(' ').match(/\(([^)]*)\)?/); packing = par ? par[1].trim() : ''; if(!packing) avisos.push('no encontré el embalaje'); }
+  // Puerto: el de descarga, y si no el destino final. El PDF trae errata ("Norfolx").
+  const pto = (col(tPto)[0] || col(tDes)[0] || valor('Terminal:') || '').trim();
+  const port = corregirPuerto(pto);
+  if(!port) avisos.push('no encontré el puerto');
+  // Contrato interno y del proveedor: "Total Ctto. Int - Ctto. Prov: 4.255 - C-4915"
+  const lineaC = (it.find(i => /Ctto\. Prov:/i.test(i.s)) || { s: '' }).s;
+  const mc = lineaC.match(/Prov:\s*([\d.]+)\s*-\s*(\S+)/i);
+  const armador = valor('Armador:').replace(/\s*S\.?A\.?$/i, '').trim();
+  return {
+    nutrin: true, vessel: valor('Vapor:'), port, booking: valor('Booking:'), shipping: armador, etd, eta,
+    incoterm: (col(tCond)[0] || '').trim(), exporter: 'Nutrin', lots: 'A DEFINIR', product, packing, tns, priceFOB,
+    cNutrin: mc ? mc[2] : '', contratoInterno: mc ? mc[1] : '', productoOriginal: crudo, avisos
+  };
+}
+async function leerPdfNutrin(file){
+  return parsePlanillaNutrin(await textosDePdf(await file.arrayBuffer()));
+}
+async function importarPdfNutrin(file){
+  showToast('Leyendo planilla de Nutrin…');
+  try{
+    const data = await leerPdfNutrin(file);
+    fillImportData(data);
+    const av = data.avisos.length ? ' ⚠ ' + data.avisos.join(' · ') : '';
+    showToast('✓ Planilla de Nutrin importada (' + data.productoOriginal + '). Falta elegir el Customer y cargar la consolidación y los contenedores.' + av, data.avisos.length ? 'warn' : 'ok', 12000);
+  }catch(err){
+    console.error('Import Nutrin:', err);
+    alert('No pude leer el PDF de Nutrin: ' + err.message);
+  }
+}
+
 function triggerImportPlanilla(){
   const inp = document.createElement('input');
   inp.type = 'file';
-  inp.accept = '.xlsx,.xls';
+  inp.accept = '.xlsx,.xls,.pdf';
   inp.onchange = async (e) => {
     const file = e.target.files[0];
     if(!file) return;
+    if(esArchivoPdf(file)){ await importarPdfNutrin(file); return; }   // PDF = Nutrin; el Excel de Argen sigue igual
     showToast('Leyendo planilla...');
     try{
       const buf = await file.arrayBuffer();
@@ -10348,6 +10512,7 @@ function fillImportData(data){
   setDate('etd', data.etd);
   setDate('eta', data.eta);
   if(data.priceFOB) setField('pricefob', data.priceFOB);
+  if(data.cNutrin) setField('cNutrin', data.cNutrin);
   // Also fill incoterm if field exists
   const incotermInp = document.getElementById(`${prefix}-incoterm`);
   if(incotermInp && data.incoterm) incotermInp.value = data.incoterm;
@@ -10595,7 +10760,7 @@ function itemLote(archivo, data){
 function datosCargaLote(it){
   const d0 = it.data;
   const producto = productoSegunReglas(d0.product, it.customer, d0.port);
-  const d = { tns: d0.tns, product: producto, packing: d0.packing, lots: d0.lots, pricefob: d0.priceFOB, containers: it.containers,
+  const d = { tns: d0.tns, product: producto, packing: d0.packing, lots: d0.lots, pricefob: d0.priceFOB, cNutrin: d0.cNutrin, containers: it.containers,
               booking: d0.booking, shipping: d0.shipping, vessel: d0.vessel, consol: it.consol, etd: d0.etd, eta: d0.eta,
               port: d0.port, pol: it.pol, exporter: d0.exporter, customer: it.customer };
   const n = parseSheetNum(d0.tns), p = parseSheetNum(d0.priceFOB);
@@ -10634,13 +10799,13 @@ function faltantesLote(it){
 }
 
 function armarLote(lista){
-  _lote = { items: lista.map(x => itemLote(x.archivo, parsePlanillaDespachante(x.wb))) };
+  _lote = { items: lista.map(x => itemLote(x.archivo, x.data || parsePlanillaDespachante(x.wb))) };
   renderLote();
 }
 
 async function importarVariasPlanillas(){
   const inp = document.createElement('input');
-  inp.type = 'file'; inp.accept = '.xlsx,.xls'; inp.multiple = true;
+  inp.type = 'file'; inp.accept = '.xlsx,.xls,.pdf'; inp.multiple = true;
   inp.onchange = async e => {
     const files = [...(e.target.files || [])];
     if(!files.length) return;
@@ -10654,7 +10819,10 @@ async function importarVariasPlanillas(){
         });
       }
       const lista = [];
-      for(const f of files) lista.push({ archivo: f.name, wb: window.XLSX.read(await f.arrayBuffer(), { type: 'array', cellDates: false }) });
+      for(const f of files){
+        if(esArchivoPdf(f)) lista.push({ archivo: f.name, data: await leerPdfNutrin(f) });   // PDF de Nutrin
+        else lista.push({ archivo: f.name, wb: window.XLSX.read(await f.arrayBuffer(), { type: 'array', cellDates: false }) });
+      }
       armarLote(lista);
       if(accessToken && cfg.anthropicKey && (document.getElementById('lt-ia') || {}).checked !== false) await completarLoteConMail();
     }catch(err){ console.error('Import lote:', err); alert('Error al leer las planillas: ' + err.message); }
@@ -10668,6 +10836,7 @@ async function completarLoteConMail(){
   const clientes = [...new Set(allRows.map(r => (r[COL.CUSTOMER]||'').trim()).filter(Boolean))];
   for(let i = 0; i < _lote.items.length; i++){
     const it = _lote.items[i];
+    if(it.data.nutrin) continue;   // las de Nutrin no se buscan en el mail: consolidacion y contenedores se cargan a mano
     showToast('🔍 Mail ' + (i + 1) + ' de ' + _lote.items.length + '...', 'info');
     try{
       const mail = await buscarMailDespachante(it.archivo);
