@@ -343,6 +343,22 @@ body.tabla-full-on{overflow:hidden;}
 .t-grid tbody tr td.rango.t-pint{background:var(--pin)!important;box-shadow:inset 0 0 0 1px rgba(0,113,227,.6),inset 0 0 0 100px rgba(0,113,227,.10);}
 .t-pal{display:inline-flex;align-items:center;gap:5px;}
 /* Barra de arriba de la tabla: botones con icono, y cuadros que se abren debajo (Pintar, Configuracion) */
+.fe-ov{position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:200;display:flex;align-items:center;justify-content:center;padding:12px;}
+.fe-box{background:var(--bg2);border:1px solid var(--border2);border-radius:14px;width:min(1060px,96vw);max-height:90vh;display:flex;flex-direction:column;box-shadow:0 20px 60px rgba(0,0,0,.25);overflow:hidden;}
+.fe-cab{padding:16px 18px 10px;border-bottom:1px solid var(--bg3);}
+.fe-cab b{font-size:16px;}
+.fe-cab p{color:var(--text3);margin-top:4px;font-size:13px;line-height:1.45;}
+.fe-tools{display:flex;gap:8px;align-items:center;padding:10px 18px;border-bottom:1px solid var(--bg3);flex-wrap:wrap;}
+.fe-sc{overflow:auto;flex:1;min-height:80px;}
+.fe-tab{border-collapse:collapse;width:100%;font-size:13px;}
+.fe-tab th{background:var(--bg3);text-align:left;padding:8px 10px;font-size:12px;color:var(--text3);position:sticky;top:0;white-space:nowrap;}
+.fe-tab td{padding:9px 10px;border-top:1px solid var(--bg3);vertical-align:middle;}
+.fe-sub{color:var(--text3);font-size:12px;}
+.fe-dif{color:var(--warn);font-weight:600;white-space:nowrap;}
+.fe-fm{color:var(--ok);font-weight:600;white-space:nowrap;}
+.fe-chip{display:inline-block;background:var(--bg3);border-radius:99px;padding:1px 8px;font-size:11px;color:var(--text3);}
+.fe-op label{display:block;white-space:nowrap;cursor:pointer;padding:2px 0;}
+.fe-pie{display:flex;align-items:center;gap:10px;padding:12px 18px;border-top:1px solid var(--bg3);flex-wrap:wrap;}
 .t-btn{display:inline-flex;align-items:center;gap:7px;padding:7px 13px;border-radius:9px;border:1px solid var(--border2);background:var(--bg2);color:var(--text);font:500 13px var(--font);cursor:pointer;white-space:nowrap;}
 .t-btn svg{width:15px;height:15px;stroke:currentColor;fill:none;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round;flex:none;}
 .t-btn:hover:not([disabled]){background:var(--bg3);}
@@ -3029,6 +3045,116 @@ async function rellenarFechasEstimadas(){
   showToast('Fecha estimada completada en ' + listas.length + ' carga' + (listas.length > 1 ? 's' : '') + '. Se guardó (Ctrl+Z deshace).', 'info');
 }
 
+// ── Revisar la fecha estimada de cobro ──
+// Compara la fecha estimada de cada carga activa con la que da la formula de pago de su contrato y deja elegir, una por una,
+// "dejar asi" o "poner la de la formula". Las que se dejan asi se recuerdan en este navegador (no vuelven a salir mientras no
+// cambie la fecha ni la formula). Nada se escribe hasta apretar "Aplicar"; ahi se guarda como cualquier edicion de la tabla.
+const FE_CLAVE_MEMORIA = 'hub_fechas_estimadas_ok';
+function feMemoria(){ try{ return JSON.parse(localStorage.getItem(FE_CLAVE_MEMORIA) || '{}') || {}; }catch(e){ return {}; } }
+function feGuardarMemoria(m){ try{ localStorage.setItem(FE_CLAVE_MEMORIA, JSON.stringify(m)); }catch(e){} }
+const feClave = (row, actual, nueva) => negocioActivo + ':' + (row._sheetRow || 0) + ':' + actual + ':' + nueva;
+const MS_DIA = 86400000;
+// Las cargas activas cuya fecha estimada NO coincide con la formula de su contrato.
+async function calcularFechasDistintas(){
+  const out = [], mem = feMemoria();
+  for(const row of allRows){
+    const actual = valorVisible(row, COL.FECHA_EST_COBRO).trim();
+    if(!actual || actual === '-') continue;                       // las vacias las completa "Rellenar"
+    const numero = valorVisible(row, COL.CONTRACT_CLIENTE).trim();
+    if(!numero) continue;
+    const { texto, origen } = await formulaPagoDeContrato(numero);
+    const formula = parsearFormulaPago(texto);
+    if(!formula) continue;                                        // sin formula o que no se entiende: no hay con que comparar
+    const etd = valorVisible(row, COL.ETD), eta = valorVisible(row, COL.ETA);
+    const nueva = fechaDesdeFormulaPago(formula, etd, eta);
+    if(!nueva) continue;
+    const da = parseDate(actual), dn = parseDate(nueva);
+    if(da && dn && da.getTime() === dn.getTime()) continue;       // coincide (aunque este escrita 9/1/2026 o 09/01/2026)
+    const dif = da && dn ? Math.round((da.getTime() - dn.getTime()) / MS_DIA) : null;
+    out.push({ row, numero, texto, origen, actual, nueva, dif, vista: !!mem[feClave(row, actual, nueva)],
+      nota: 'Calculada: ' + explicarCalculoFecha(formula, etd, eta) + ' · contrato ' + numero + ' (fórmula "' + texto + '")' });
+  }
+  return out;
+}
+let _feLista = [], _feSel = {};
+async function revisarFechasEstimadas(){
+  if(!_colEstCobroOk()){ showToast('Esta planilla no tiene la columna "Fecha estimada" para revisar.', 'info'); return; }
+  showToast('Revisando las fechas estimadas de cobro…', 'info', 2500);
+  _feLista = await calcularFechasDistintas();
+  _feSel = {};
+  if(!_feLista.length){ showToast('✓ Todas las fechas estimadas de cobro coinciden con la fórmula de su contrato.', 'ok'); return; }
+  abrirRevisionFechas();
+}
+function cerrarRevisionFechas(){
+  const o = document.getElementById('fe-overlay');
+  if(o && o.parentNode) o.parentNode.removeChild(o);
+  document.removeEventListener('keydown', _feTecla, true);
+}
+function _feTecla(e){ if(e.key === 'Escape'){ e.stopPropagation(); cerrarRevisionFechas(); } }
+function feCambio(i, v){ _feSel[i] = v; feResumen(); }
+function feTodas(v){ _feLista.forEach((it, i) => { if(!feVisible(it)) return; _feSel[i] = v; const r = document.querySelector('input[name="fe-' + i + '"][value="' + v + '"]'); if(r) r.checked = true; }); feResumen(); }
+function feVisible(it){ const c = document.getElementById('fe-ver-vistas'); return !it.vista || !!(c && c.checked); }
+function feVerVistas(){
+  document.querySelectorAll('#fe-overlay tr.fe-vista').forEach(tr => { tr.style.display = feVisible({ vista: true }) ? '' : 'none'; });
+  feResumen();
+}
+function feResumen(){
+  const el = document.getElementById('fe-resumen'); if(!el) return;
+  const visibles = _feLista.map((it, i) => ({ it, i })).filter(x => feVisible(x.it));
+  const cambiar = visibles.filter(x => _feSel[x.i] === 'formula').length;
+  el.textContent = cambiar + ' para cambiar a la fórmula · ' + (visibles.length - cambiar) + ' se dejan así';
+  const b = document.getElementById('fe-aplicar'); if(b) b.textContent = cambiar ? 'Aplicar (' + cambiar + ' cambio' + (cambiar === 1 ? '' : 's') + ')' : 'Aplicar';
+}
+function feTablaHTML(){
+  const esc = t => String(t === undefined || t === null ? '' : t).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
+  const nuevas = _feLista.filter(it => !it.vista).length;
+  const fil = _feLista.map((it, i) => {
+    const d = it.dif === null ? '—' : (it.dif > 0 ? '+' : it.dif < 0 ? '−' : '') + Math.abs(it.dif) + ' día' + (Math.abs(it.dif) === 1 ? '' : 's');
+    const dt = it.dif === null ? '' : (it.dif > 0 ? 'Hoy dice una fecha más tarde que la fórmula' : 'Hoy dice una fecha más temprano que la fórmula');
+    return '<tr class="' + (it.vista ? 'fe-vista' : '') + '" style="' + (it.vista ? 'display:none;' : '') + '">'
+      + '<td>' + (it.row._sheetRow || '') + '</td>'
+      + '<td>' + esc((it.row[COL.CUSTOMER] || '').toString().trim() || '—') + '<div class="fe-sub">BL ' + esc((it.row[COL.BL] || '').toString().trim() || '—') + '</div></td>'
+      + '<td>' + esc(it.numero) + (it.origen === 'cerrados' ? ' <span class="fe-chip">cerrado</span>' : '') + '</td>'
+      + '<td>' + esc(it.texto) + '</td>'
+      + '<td class="fe-dif">' + esc(it.actual) + '</td><td class="fe-fm">' + esc(it.nueva) + '</td>'
+      + '<td title="' + esc(dt) + '">' + d + '</td>'
+      + '<td class="fe-op"><label><input type="radio" name="fe-' + i + '" value="dejar" checked onchange="feCambio(' + i + ',\'dejar\')"> Dejar así</label>'
+      + '<label><input type="radio" name="fe-' + i + '" value="formula" onchange="feCambio(' + i + ',\'formula\')"> Poner la de la fórmula</label></td></tr>';
+  }).join('');
+  const vistas = _feLista.length - nuevas;
+  return '<div class="fe-cab"><b>' + (nuevas ? nuevas + ' carga' + (nuevas === 1 ? '' : 's') + ' con la fecha estimada de cobro distinta a la fórmula' : 'Ninguna carga nueva con la fecha distinta a la fórmula') + '</b>'
+    + '<p>Elegí qué hacer con cada una. Nada se escribe en la planilla hasta que apretás "Aplicar". Las de contratos sin fórmula (o con una que no se entiende) no aparecen acá.</p></div>'
+    + '<div class="fe-tools"><button class="btn" onclick="feTodas(\'formula\')">Todas a la fórmula</button><button class="btn" onclick="feTodas(\'dejar\')">Todas: dejar así</button><span style="flex:1"></span>'
+    + (vistas ? '<label class="fe-sub"><input type="checkbox" id="fe-ver-vistas" onchange="feVerVistas()"> Ver también las que ya dejé así (' + vistas + ')</label>' : '') + '</div>'
+    + '<div class="fe-sc"><table class="fe-tab"><thead><tr><th>Fila</th><th>Cliente · BL</th><th>Contrato</th><th>Fórmula</th><th>Hoy dice</th><th>Daría la fórmula</th><th>Diferencia</th><th>¿Qué hacemos?</th></tr></thead><tbody>' + fil + '</tbody></table></div>'
+    + '<div class="fe-pie"><span id="fe-resumen" class="fe-sub"></span><span style="flex:1"></span><button class="btn" onclick="cerrarRevisionFechas()">Cancelar</button><button class="btn primary" id="fe-aplicar" onclick="feAplicar()">Aplicar</button></div>';
+}
+function abrirRevisionFechas(){
+  cerrarRevisionFechas();
+  const o = document.createElement('div');
+  o.id = 'fe-overlay'; o.className = 'fe-ov';
+  o.innerHTML = '<div class="fe-box" role="dialog" aria-label="Revisar las fechas estimadas de cobro">' + feTablaHTML() + '</div>';
+  o.onclick = e => { if(e.target === o) cerrarRevisionFechas(); };
+  document.body.appendChild(o);
+  document.addEventListener('keydown', _feTecla, true);
+  feResumen();
+}
+function feAplicar(){
+  const mem = feMemoria();
+  let cambiadas = 0, dejadas = 0;
+  _feLista.forEach((it, i) => {
+    if(!feVisible(it)) return;                                    // las ocultas (ya dejadas) no se tocan
+    const k = feClave(it.row, it.actual, it.nueva);
+    if(_feSel[i] === 'formula'){ anotarCambioTabla(it.row, COL.FECHA_EST_COBRO, it.nueva, it.nota); delete mem[k]; cambiadas++; }
+    else { mem[k] = 1; dejadas++; }
+  });
+  feGuardarMemoria(mem);
+  cerrarRevisionFechas();
+  if(cambiadas && currentView === 'cargas') renderCargas();
+  showToast((cambiadas ? '✓ ' + cambiadas + ' fecha' + (cambiadas === 1 ? '' : 's') + ' estimada' + (cambiadas === 1 ? '' : 's') + ' de cobro puesta' + (cambiadas === 1 ? '' : 's') + ' según la fórmula (Ctrl+Z deshace). ' : '') +
+    (dejadas ? dejadas + ' se dejaron así.' : ''), 'ok', 6000);
+}
+
 // En los formularios (Nueva carga y Editar): al elegir el contrato o cambiar la ETD/ETA se completa la fecha estimada
 // de cobro y se dice de donde sale.
 async function autoFechaCobro(prefix, ev){
@@ -5215,7 +5341,7 @@ function renderCargas(showAll, sort){
     ${searchHtml}
     ${filtrosWrap}
     ${resetBtn}
-    ${_colEstCobroOk() ? '<button class="t-filtros-btn" onclick="rellenarFechasEstimadas()" title="Completa la fecha estimada de cobro de las cargas que la tienen vacía, con la fórmula de pago de su contrato (te muestra cómo se calculó cada una antes de aplicar)">📅 Rellenar fecha estimada</button>' : ''}
+    ${_colEstCobroOk() ? '<button class="t-filtros-btn" onclick="rellenarFechasEstimadas()" title="Completa la fecha estimada de cobro de las cargas que la tienen vacía, con la fórmula de pago de su contrato (te muestra cómo se calculó cada una antes de aplicar)">📅 Rellenar fecha estimada de cobro</button><button class="t-filtros-btn" onclick="revisarFechasEstimadas()" title="Compara la fecha estimada de cobro de cada carga con la que da la fórmula de pago de su contrato y te deja elegir, una por una, si la dejás así o la cambiás">🔎 Revisar fecha estimada de cobro</button>' : ''}
     ${_etaOrdenFijo && ordenPorETAActivo() ? '<button class="t-filtros-btn on" onclick="reordenarPorETA()" title="Las fechas que cambiaste siguen en su lugar hasta que salgas de la tabla; esto acomoda todas por ETA ahora (la que llega ultima, abajo de todo)">↕ Reordenar por ETA</button>' : ''}
     <span style="flex:1;"></span>
     ${viewChip('Por embarque', false, "cargasVista='grupos';renderCargas()")}
