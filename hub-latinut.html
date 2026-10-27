@@ -8684,6 +8684,10 @@ async function guardarTarifa(){
   const mesNum = mesTarifa(datos.fechaTxt);
   if(mesNum) datos.fechaTxt = mesLegible(mesNum);
   const fila = CAMPOS_TARIFA.map(c => datos[c.k]);
+  // El mes va con un apostrofo adelante: Sheets lo toma como texto y no lo interpreta. Sin el, "OCT-2026" se convertia en una
+  // fecha cualquiera (se vio "octubre 2001") y la tarifa dejaba de cruzar con las cargas. El apostrofo no queda escrito en la celda.
+  const iFecha = CAMPOS_TARIFA.findIndex(c => c.k === 'fechaTxt');
+  if(iFecha >= 0 && fila[iFecha]) fila[iFecha] = "'" + fila[iFecha];
   const nc = getNegocioConfig();
   const sid = nc.sheetId || cfg.sheetId;
   showToast('Guardando...');
@@ -9342,6 +9346,19 @@ function renderTarifario(){
     <div class="stat-card"><div class="stat-label">Forwarders</div><div class="stat-value">${forwarders.length}</div><div class="stat-sub">${forwarders.join(', ')||'—'}</div></div>
     <div class="stat-card"><div class="stat-label">Último mes</div><div class="stat-value" style="font-size:19px">${mesLegible(meses[0])}</div><div class="stat-sub">el más reciente cargado</div></div>
   </div>`;
+
+  // Tarifas con una fecha que no se entiende o de un año que no tiene sentido (por ejemplo OCT-2001): casi seguro Sheets convirtio el mes
+  // en otra fecha al guardarlo. Esas tarifas no cruzan con ninguna carga, asi que se avisa y se ofrece corregirlas.
+  const anioHoy = new Date().getFullYear();
+  const raras = tarifas.map((t, i) => ({ t, i })).filter(x => !x.t.mes || Math.abs(Math.floor(x.t.mes / 100) - anioHoy) > 1);
+  if(raras.length){
+    html += `<div class="t-pend" style="display:block;margin-bottom:12px;">
+      <div style="font-weight:600;margin-bottom:4px;">⚠ ${raras.length} tarifa${raras.length === 1 ? '' : 's'} con una fecha que no parece correcta</div>
+      <div style="font-size:12px;margin-bottom:6px;">Lo más probable es que Sheets haya convertido el mes en otra fecha al guardarlo. Mientras tanto no se cruzan con ninguna carga. Tocá Editar y elegí el mes que corresponde.</div>
+      ${raras.slice(0, 12).map(x => `<div style="font-size:12px;display:flex;gap:10px;align-items:center;margin-top:3px;"><span class="mono">Fila ${x.t._sheetRow}</span><span>${x.t.fechaTxt ? 'dice «' + String(x.t.fechaTxt).replace(/&/g,'&amp;').replace(/</g,'&lt;') + '»' : 'sin fecha'}</span><span>${x.t.destino || '—'} · ${x.t.carrier || '—'}</span><button class="row-action" onclick="editarTarifa(${x.i})">✎ Editar</button></div>`).join('')}
+      ${raras.length > 12 ? '<div style="font-size:12px;margin-top:4px;">…y ' + (raras.length - 12) + ' más.</div>' : ''}
+    </div>`;
+  }
 
   const opts = ['<option value="">Todos los meses</option>']
     .concat(meses.map(m => `<option value="${m}" ${String(tarifarioMes)===String(m)?'selected':''}>${mesLegible(m)}</option>`)).join('');
