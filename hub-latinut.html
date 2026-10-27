@@ -421,6 +421,17 @@ body.t-redim{cursor:col-resize;user-select:none;}
 .t-grp{margin-left:4px;font-size:10px;font-family:var(--mono);padding:2px 5px;border-radius:9px;background:rgba(0,113,227,.1);color:var(--accent);cursor:pointer;}
 .t-grp.man{background:rgba(247,148,29,.15);color:var(--warn);}
 .t-nota{font-size:11px;color:var(--text3);font-style:italic;}
+.t-fl{font-size:11px;font-weight:600;margin-left:6px;white-space:nowrap;}
+/* Sugerencia de flete en una celda vacia: texto fantasma (no esta escrito en la planilla) con un boton "Usar" en la celda elegida o al pasar el mouse. */
+.t-gh{display:inline-flex;align-items:center;gap:8px;}
+.t-gh-v{color:#667078;font-style:italic;border-bottom:1px dashed var(--border2);}
+.t-gh-usar{display:none;font:600 11px var(--font);color:var(--accent);background:rgba(var(--accent-rgb),.08);border:1px solid rgba(var(--accent-rgb),.35);border-radius:6px;padding:2px 8px;cursor:pointer;}
+.t-gh-usar kbd{font:inherit;opacity:.7;margin-left:4px;}
+.t-grid td.cur .t-gh-usar,.t-grid td:hover .t-gh-usar{display:inline-flex;}
+.t-fl.ok{color:var(--ok);}
+.t-fl.warn{color:var(--warn);}
+.t-fl.bad{color:var(--danger);}
+.t-fl.sin_tarifa,.t-fl.sin_importe{color:var(--text3);font-weight:500;}
 .t-grid .col-acciones{position:sticky;right:0;z-index:3;padding:0 4px;box-shadow:-4px 0 6px -3px rgba(0,0,0,.18);}
 .t-grid thead th.col-acciones{z-index:6;}
 /* Tabla a la altura de la pantalla: la barra de acciones de abajo siempre se ve (el alto lo pone ajustarAltoTabla). */
@@ -3342,16 +3353,19 @@ async function loadTarifario(){
   }
 }
 
-// Meses con los que se puede comparar una carga: el del ETD y el de la
-// consolidacion. El forwarder cotiza por mes de embarque, asi que cualquiera de
-// los dos es una referencia razonable.
+// Mes de la tarifa con la que se compara una carga: el de la CONSOLIDACION (una carga que consolido en septiembre y salio en
+// octubre se cotiza con la tarifa de septiembre). Solo si la carga no tiene fecha de consolidacion se usa el mes del ETD.
 function mesesDeCarga(row){
-  const m = [mesDeFecha(row[COL.ETD]), mesDeFecha(row[COL.CONSOLIDACION])];
-  return m.filter(Boolean);
+  const cons = mesDeFecha(row[COL.CONSOLIDACION]);
+  if(cons) return [cons];
+  return [mesDeFecha(row[COL.ETD])].filter(Boolean);
+}
+// De que fecha sale el mes de la tarifa de una carga: 'consolidación', 'ETD' o ''.
+function origenMesTarifa(row){
+  return mesDeFecha(row[COL.CONSOLIDACION]) ? 'consolidación' : (mesDeFecha(row[COL.ETD]) ? 'ETD' : '');
 }
 
-// Tarifa para una carga: mismo destino, misma naviera y MISMO MES que el ETD o
-// la consolidacion.
+// Tarifa para una carga: mismo destino, misma naviera y MISMO MES que la consolidacion (o el ETD, si no hay consolidacion).
 //
 // Antes, si faltaba el tarifario de ese mes se usaba el del mes anterior, y eso
 // generaba reclamos falsos: te marcaba en rojo una diferencia que solo existia
@@ -3365,7 +3379,6 @@ function tarifaPara(row){
 
   const meses = mesesDeCarga(row);
   if(!meses.length) return null;         // sin fechas no hay mes al que referirse
-  // Se prueba primero el mes del ETD y despues el de la consolidacion.
   // Dentro del mes, la de referencia es la que sale de Buenos Aires (o sin POL):
   // las cargas no dicen por donde salen y lo normal es BUE.
   // Si la carga tiene POL cargado, se usa la tarifa de ESE puerto. Si no, la de
@@ -3468,6 +3481,44 @@ function compararFlete(row){
     }
   }
   return { estado, importe, tarifa, ref, campoRef, lecturas, mejor, contenedores: n, porPol };
+}
+
+// Lo que DEBERIA decir el flete de una carga segun el tarifario, para mostrarlo en la tabla junto al importe cargado.
+// En AXT va en "total flete" (tarifa por contenedor x cantidad de contenedores); donde no hay esa columna (Buzaram), en "importe usd/fcl"
+// (la tarifa por contenedor). Devuelve null si no hay nada que decir (sin tarifario o sin datos de destino/naviera).
+function fleteEsperadoTabla(row){
+  if(!tarifas.length) return null;
+  const porTotal = COL.TOTAL_PAGO !== undefined && COL.TOTAL_PAGO >= 0;
+  const col = porTotal ? COL.TOTAL_PAGO : COL.MONTO_FLETE;
+  if(col === undefined || col < 0) return null;
+  const destino = (row[COL.PORT] || '').toString().trim(), naviera = (row[COL.SHIPPING] || '').toString().trim();
+  if(!destino || !naviera) return null;
+  const hayDestino = tarifas.some(t => coincideTexto(t.destino, destino) && coincideTexto(t.carrier, naviera));
+  if(!hayDestino) return null;
+  const meses = mesesDeCarga(row);
+  const tarifa = tarifaPara(row), ref = refTarifa(tarifa);
+  if(!tarifa || isNaN(ref) || !ref){
+    return { col, estado: 'sin_tarifa', texto: meses.length ? 'sin tarifa ' + mesLegible(meses[0]) : 'sin fecha p/ tarifa',
+      titulo: meses.length ? 'No hay tarifa de ' + mesLegible(meses[0]) + ' (mes de la ' + origenMesTarifa(row) + ') para ese destino y naviera, así que no hay con qué comparar.'
+                           : 'La carga no tiene fecha de consolidación ni ETD: no se sabe de qué mes tomar la tarifa.' };
+  }
+  const n = cantidadContenedores(row);
+  const esperado = porTotal ? ref * n : ref;
+  const actual = parseSheetNum(row[col]);
+  const f = x => Math.abs(x - Math.round(x)) < 0.005 ? Math.round(x).toLocaleString('es-AR') : fmtUsd2(x);
+  const cuenta = 'Tarifa ' + (!isNaN(tarifa.allIn) && tarifa.allIn ? 'ALL IN' : 'FLETE') + ' ' + mesLegible(tarifa.mes) + ' (mes de la ' + origenMesTarifa(row) + '): USD ' + f(ref)
+    + (porTotal ? ' × ' + n + ' contenedor' + (n === 1 ? '' : 'es') + ' = USD ' + f(esperado) : ' por contenedor');
+  if(isNaN(actual) || !actual){
+    // Sin importe cargado: se sugiere el que deberia ser (texto fantasma, NO escrito). Solo si la celda se puede escribir (no es una formula).
+    return { col, estado: 'sin_importe', esperado, texto: 'debería ' + f(esperado), numTxt: f(esperado),
+      valor: String(Math.round(esperado * 100) / 100).replace('.', ','), escribible: !esColFormula(col),
+      titulo: 'Sugerido, no escrito: ' + cuenta + '. Todavía no hay importe cargado.' };
+  }
+  const dif = actual - esperado, pct = esperado ? dif / esperado * 100 : 0;
+  if(Math.abs(dif) < 0.005) return { col, estado: 'ok', esperado, texto: '✓ tarifa', titulo: cuenta + '. Coincide.' };
+  const signo = dif > 0 ? '+' : '−';
+  return { col, estado: Math.abs(pct) >= TOL_ROJO_FLETE ? 'bad' : 'warn', esperado, dif, texto: 'debería ' + f(esperado),
+    titulo: cuenta + '. Hoy dice USD ' + f(actual) + ' (' + signo + 'USD ' + fmtUsd2(Math.abs(dif)) + ', ' + signo + fmtUsd2(Math.abs(pct)) + '%).' };
 }
 
 function fmtUsd2(n){
@@ -5679,6 +5730,7 @@ function renderCargasTabla(rows){
       <button class="th-fil${fil ? ' on' : ''}" onclick="abrirFiltroColumna(${c},event)" aria-label="Filtrar ${esc(hdr[c])}">${fil ? '⏷' : '▾'}</button></div><span class="th-res" onmousedown="iniciarResize(${c},event)" ondblclick="resetAncho(${c},event)" title="Arrastrá para cambiar el ancho · doble clic para volver al automático"></span></th>`;
   }).join('');
 
+  const _colFleteEsp = (COL.TOTAL_PAGO !== undefined && COL.TOTAL_PAGO >= 0) ? COL.TOTAL_PAGO : COL.MONTO_FLETE;
   const cuerpo = visibles.map((row, r) => {
     const localIdx = rows.indexOf(row);
     const idx = idxDeFila(row);
@@ -5689,6 +5741,12 @@ function renderCargasTabla(rows){
       const p = pendDe(row, c);
       let v = valorVisible(row, c);
       let extra = '';
+      if(c === _colFleteEsp){
+        const fe = fleteEsperadoTabla(row);
+        if(fe && fe.estado === 'sin_importe' && fe.escribible && !(v + '').trim())
+          extra = '<span class="t-gh" title="' + esc(fe.titulo) + ' Enter o clic en Usar para cargarlo."><span class="t-gh-usar" role="button" tabindex="-1" onmousedown="event.stopPropagation()" onclick="usarFleteSugerido(event)">Usar <kbd>↵</kbd></span><span class="t-gh-v">' + esc(fe.numTxt) + '</span></span>';
+        else if(fe) extra = '<span class="t-fl ' + fe.estado + '" title="' + esc(fe.titulo) + '">' + esc(fe.texto) + '</span>';
+      }
       // En la columna de pagare enviado se aclara por que esta vacia cuando la
       // carga viaja con BL Original (no lleva pagare). No se escribe nada.
       if(!v && c === COL.PAGARE_ENVIADO && !nc.sinPagares && motivoSinPagare(row) === 'BL Original'){ extra = '<span class="t-nota">N/A · BL Orig</span>'; }
@@ -5961,10 +6019,13 @@ function editarCelda(r, c, inicial){
   const td = celdaTd(r, c);
   if(!td) return;
   const actual = valorVisible(row, c);
+  // Celda de flete vacia: la edicion arranca con el importe sugerido por el tarifario (seleccionado: tipear lo reemplaza, Esc lo descarta).
+  let sugerido = '';
+  if(inicial === undefined && !actual.trim()){ const fe = fleteEsperadoTabla(row); if(fe && fe.col === c && fe.estado === 'sin_importe' && fe.escribible) sugerido = fe.valor; }
   td.classList.add('editando');
   td.innerHTML = '<input class="t-edit" id="t-edit">';
   const inp = document.getElementById('t-edit');
-  inp.value = inicial !== undefined ? inicial : actual;
+  inp.value = inicial !== undefined ? inicial : (actual || sugerido);
   let terminado = false;
   const fin = (guardar, mover) => {
     if(terminado) return; terminado = true;
@@ -5983,7 +6044,7 @@ function editarCelda(r, c, inicial){
     else if(e.key === 'Tab'){ e.preventDefault(); fin(true, [0, e.shiftKey ? -1 : 1]); }
     else if(e.key === 'Escape'){ e.preventDefault(); e.stopPropagation(); fin(false); }
   };
-  inp.onblur = () => fin(true);
+  inp.onblur = () => fin(!(sugerido && inp.value === sugerido));   // salir de la celda sin tocar la sugerencia no la escribe
   if(inp.focus){ inp.focus(); if(inicial === undefined && inp.select) inp.select(); }
 }
 
@@ -6110,6 +6171,20 @@ function anotarCambioTabla(row, c, nuevo, nota, sinPropagar){
   (cargasPend[k] = cargasPend[k] || {})[c] = { antes: orig, despues: nuevo, row, nota: nota || '' };
   autoGuardarTabla();   // todo cambio anotado se guarda solo, venga de donde venga (editar, pegar, rellenar fechas...)
   if(!sinPropagar && (c === COL.ETD || c === COL.ETA)) propagarFechaCobroEstimada(row, c, antesVisible).catch(e => console.warn('fecha estimada de cobro:', e));
+}
+
+// "Usar" en el flete sugerido de una celda vacia: lo escribe como cualquier edicion de la tabla (se guarda solo; Ctrl+Z lo deshace).
+function usarFleteSugerido(ev){
+  const td = ev && ev.target && ev.target.closest ? ev.target.closest('td[data-r]') : null;
+  if(ev && ev.stopPropagation) ev.stopPropagation();
+  if(!td) return;
+  const r = parseInt(td.getAttribute('data-r'), 10), c = parseInt(td.getAttribute('data-c'), 10);
+  const row = _tablaRows[r];
+  const fe = row ? fleteEsperadoTabla(row) : null;
+  if(!fe || fe.col !== c || fe.estado !== 'sin_importe' || !fe.escribible || valorVisible(row, c).trim()) return;
+  anotarCambioTabla(row, c, fe.valor);
+  renderCargas();
+  marcarCelda(r, c);
 }
 
 function moverSel(dr, dc, extender){
