@@ -674,6 +674,28 @@ tr:hover .col-acciones{background:var(--bg3);}
 .com-mas{padding:8px 12px;}
 .com-mas a{color:var(--accent);cursor:pointer;}
 .t-com-btn{margin-left:6px;}
+/* Notas de la carga en Alertas y Cobranza (compartidas con el equipo) */
+.nota-wrap{margin-top:8px;}
+.nota-btn{padding:5px 11px;border:1px solid #e6cf7d;background:#fff6d6;color:#6b5400;border-radius:8px;font:500 12px var(--font);cursor:pointer;white-space:nowrap;}
+.nota-btn:hover{background:#ffefb0;}
+.nota-pin{margin-top:8px;background:#fff6d6;border:1px solid #e6cf7d;border-radius:10px;padding:8px 10px;display:flex;gap:9px;align-items:flex-start;cursor:pointer;}
+.nota-av{width:22px;height:22px;border-radius:50%;background:var(--accent);color:#fff;font-size:11px;font-weight:700;display:flex;align-items:center;justify-content:center;flex:none;}
+.nota-meta{font-size:12px;color:#7a6a2e;margin-bottom:1px;}
+.nota-tx{line-height:1.4;font-size:13px;color:var(--text);word-break:break-word;}
+.nota-mas{font-size:12px;color:var(--accent);margin-top:3px;}
+.nota-hilo{margin-top:8px;border:1px solid #e6cf7d;background:#fffbea;border-radius:10px;padding:10px;}
+.nota-msg{display:flex;gap:9px;margin-bottom:9px;}
+.nota-hilo textarea{width:100%;border:1px solid var(--border2);border-radius:8px;padding:7px 9px;font:13px var(--font);resize:vertical;background:#fff;color:var(--text);}
+.nota-acc{display:flex;gap:6px;margin-top:6px;align-items:center;flex-wrap:wrap;}
+.nota-acc button,.nota-res button{padding:5px 11px;border:1px solid var(--border2);background:#fff;border-radius:8px;font:500 12px var(--font);cursor:pointer;color:var(--text);}
+.nota-acc button.prim{background:var(--accent);border-color:var(--accent);color:#fff;}
+.nota-del{font-size:12px;color:var(--text3);cursor:pointer;margin-left:8px;text-decoration:underline;}
+.nota-res{margin-top:6px;font-size:12px;color:var(--text3);}
+.nota-cel{display:inline-flex;align-items:center;gap:6px;max-width:210px;}
+.nota-cel .nota-prev{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12px;color:#6b5400;}
+.nota-pop{position:fixed;z-index:70;background:#fffbea;border:1px solid #e6cf7d;border-radius:12px;box-shadow:0 12px 34px rgba(0,0,0,.18);padding:12px;width:min(380px,94vw);max-height:80vh;overflow:auto;}
+.nota-pop-cab{display:flex;align-items:center;margin-bottom:6px;font-weight:600;font-size:13px;}
+.nota-pop-cab button{margin-left:auto;border:none;background:none;font-size:18px;cursor:pointer;color:var(--text3);}
 /* MOBILE */
 .mobile-toggle{display:none;align-items:center;justify-content:center;width:34px;height:34px;border-radius:8px;background:var(--bg3);border:1px solid var(--border);cursor:pointer;font-size:16px;color:var(--text2);}
 .overlay-close{display:none;position:fixed;inset:0;z-index:9;background:rgba(0,0,0,.3);}
@@ -2470,7 +2492,7 @@ async function loadData(){
       cargarFondos().catch(e => console.warn('fondos:', e)),
       cargarColoresUsuario().catch(e => console.warn('colores:', e))
     ]).then(() => { if(currentView === 'cargas' && !formularioAbierto()) renderCargas(); });
-    cargarComentarios().then(() => { if(currentView === 'cargas' && cargasVista === 'tabla') comPintar(); }).catch(e => console.warn('comentarios:', e));
+    cargarComentarios().then(() => { if(currentView === 'cargas' && cargasVista === 'tabla') comPintar(); notasRefrescar(); }).catch(e => console.warn('comentarios:', e));
   }catch(e){hideProgress();setSheetStatus('err','Error de conexión');console.error(e);}
 }
 
@@ -4848,7 +4870,11 @@ function renderAlertas(){
   };
 
   const levelFiltered = alertFilter==='all'?alerts:alerts.filter(a=>a.level===alertFilter);
-  const filteredAlerts = alertSubFilter==='all'?levelFiltered:levelFiltered.filter(a=>a.subtype===alertSubFilter);
+  const conNotasDe = a => a.rowIdx!==undefined && notasAbiertasDe(filaPorIdx(a.rowIdx)).length>0;
+  const nConNotas = alerts.filter(conNotasDe).length;
+  window.toggleAlertSoloNotas = function(){ window._alertSoloNotas=!window._alertSoloNotas; renderAlertas(); };
+  const filteredPre = alertSubFilter==='all'?levelFiltered:levelFiltered.filter(a=>a.subtype===alertSubFilter);
+  const filteredAlerts = window._alertSoloNotas?filteredPre.filter(conNotasDe):filteredPre;
 
   const chip = (label, key, count, onclick, color) => {
     const active = alertFilter===key||alertSubFilter===key;
@@ -4862,6 +4888,7 @@ function renderAlertas(){
     ${chip('Críticas','critical',alerts.filter(a=>a.level==='critical').length,"setAlertFilter('critical')","var(--danger)")}
     ${chip('Advertencias','warning',alerts.filter(a=>a.level==='warning').length,"setAlertFilter('warning')","var(--warn)")}
     ${chip('Info','info',alerts.filter(a=>a.level==='info').length,"setAlertFilter('info')","var(--info)")}
+    <span onclick="toggleAlertSoloNotas()" style="font-size:12px;font-family:var(--mono);padding:4px 12px;border-radius:20px;border:1px solid ${window._alertSoloNotas?'#e6cf7d':'var(--border)'};cursor:pointer;background:${window._alertSoloNotas?'#fff6d6':'var(--bg2)'};color:${window._alertSoloNotas?'#6b5400':'var(--text2)'};">💬 Con notas (${nConNotas})</span>
   </div>`;
 
   if(alertFilter!=='all'&&SUBTYPES[alertFilter]){
@@ -4906,6 +4933,7 @@ function renderAlertas(){
           <div class="alert-tags">${tagsHtml}</div>
           ${logHtml}${telexHtml}${docsHtml}${recHtml}${quickActionsHtml}
           <div class="alert-actions">${actionsHtml}</div>
+          ${a.rowIdx!==undefined?notaWrapHTML(filaPorIdx(a.rowIdx),'card'):''}
         </div>${rightHtml}</div>`;
     });
     html+=`</div>`;
@@ -7764,6 +7792,7 @@ function renderCobranzaMobile(rows){
         <button onclick="openMailModal(${origIdx},'reclamo_cobro')" style="flex:1;padding:11px;border-radius:10px;background:#0071e3;border:none;font-size:15px;font-weight:600;cursor:pointer;color:#fff;">✉ Reclamo</button>
         <button onclick="openArchiveModal(${origIdx})" style="padding:11px 14px;border-radius:10px;background:#f3f4f6;border:none;font-size:15px;cursor:pointer;color:#374151;">📁</button>
       </div>
+      <div onclick="event.stopPropagation()">${notaWrapHTML(row,'card')}</div>
     </div>`;
   });
   return html;
@@ -7882,7 +7911,7 @@ function renderCobranza(filterKey, filterVal){
     </div>
     <button id="cob-bulk-bar" class="bulk-bar" onclick="requestBulkReclamo()" style="background:var(--accent);color:#fff;font-weight:600;font-size:14px;cursor:pointer;border:none;font-family:var(--font);"></button>
     <div style="overflow-x:auto;${isMobile()?'display:none;':''}"><table>
-    <thead><tr><th style="width:30px"></th><th title="Uso interno: no aparece en los mails de reclamo">Negocio</th><th>Customer</th><th>BL</th><th>Invoice</th><th>Total</th><th onclick="renderCobranza('sort',cobranzaFilters.sort==='due_asc'?'due_desc':'due_asc')" style="cursor:pointer;user-select:none;">Vencimiento ${cobranzaFilters.sort==='due_asc'?'↑':cobranzaFilters.sort==='due_desc'?'↓':'↕'}</th><th>Días</th><th>Reclamos</th><th>Contacto</th><th></th><th></th></tr></thead>
+    <thead><tr><th style="width:30px"></th><th title="Uso interno: no aparece en los mails de reclamo">Negocio</th><th>Customer</th><th>BL</th><th>Invoice</th><th>Total</th><th onclick="renderCobranza('sort',cobranzaFilters.sort==='due_asc'?'due_desc':'due_asc')" style="cursor:pointer;user-select:none;">Vencimiento ${cobranzaFilters.sort==='due_asc'?'↑':cobranzaFilters.sort==='due_desc'?'↓':'↕'}</th><th>Días</th><th>Reclamos</th><th>Notas</th><th>Contacto</th><th></th><th></th></tr></thead>
     <tbody>`;
 
   window._cobSelectedRows = new Set();
@@ -7930,13 +7959,14 @@ function renderCobranza(filterKey, filterVal){
       <td class="mono">${fmtDate(row[getCobroCol()])}</td>
       <td><span style="color:${color};font-weight:700;font-family:var(--mono);font-size:13px;">${dLabel}</span></td>
       <td>${recHtml}</td>
+      <td onclick="event.stopPropagation()">${notaWrapHTML(row,'celda')}</td>
       <td style="font-size:11px;color:var(--text3)">${contactDisplay}</td>
       <td onclick="event.stopPropagation()"><button class="row-action" onclick="openMailModal(${origIdx},'reclamo_cobro')">✉ Reclamo</button></td>
       <td onclick="event.stopPropagation()"><button class="row-action" onclick="openArchiveModal(${origIdx})" style="color:var(--text3);">📁 Archivar</button></td>
     </tr>`;
   });
 
-  if(!rows.length) html += `<tr><td colspan="12"><div class="empty" style="padding:30px;">Sin cobros en este rango.</div></td></tr>`;
+  if(!rows.length) html += `<tr><td colspan="13"><div class="empty" style="padding:30px;">Sin cobros en este rango.</div></td></tr>`;
   if(isMobile()){
     const mobileCards = renderCobranzaMobile(rows);
     html += `</tbody></table></div><div style="padding:12px 0;">${mobileCards}</div></div>`;
@@ -10270,6 +10300,7 @@ async function comEliminar(id){
 function comRefrescar(){
   comPintar();
   if(_comPop) comDibujarGlobo();
+  if(typeof notasRefrescar === 'function') notasRefrescar();
 }
 // Triangulo naranja en las celdas con comentarios abiertos (sin redibujar la tabla).
 function comPintar(){
@@ -10341,10 +10372,136 @@ function comOtroNuevo(){
   if(mas) mas.outerHTML = `<div class="com-hilo com-nuevo"><textarea id="com-txt-nuevo" rows="3" placeholder="Escribí un comentario…"></textarea>
     <div class="com-acc"><button class="prim" onclick="comEnviarNuevo()">Comentar</button><button onclick="cerrarComentarios()">Cancelar</button></div></div>`;
 }
+// ─── NOTAS DE LA CARGA (en Alertas y Cobranza) ───────────────────────────────
+// Notas libres sobre una carga ("le escribi a Pedro, paga el jueves"), compartidas con el equipo. Usan la misma pestaña COMENTARIOS que los
+// comentarios de las celdas, con una "columna" especial (@nota) que no es ninguna columna real: asi no aparecen como comentario de una celda.
+// La nota es de la CARGA, no del tipo de alerta: si la alerta cambia de tipo o hay dos alertas de la misma carga, ven las mismas notas.
+const NOTA_COL = '@nota';
+let _notasAbiertas = new Set();   // _sheetRow de las cargas con el hilo desplegado en la tarjeta
+let _notaPop = null;              // _sheetRow de la carga cuyo cuadro flotante esta abierto (Cobranza)
+function comHilosCarga(row){
+  if(!row || !_comentarios.length) return [];
+  const ix = comIndice(), hd = normalizarHdr(NOTA_COL), ancla = comAncla(row), res = [];
+  (ix.porFila[hd + '|' + row._sheetRow] || []).forEach(h => { if(!h.raiz.ancla || h.raiz.ancla === ancla) res.push(h); });
+  if(ancla && ix.anclas[ancla] === 1) (ix.porAncla[hd + '|' + ancla] || []).forEach(h => { if(res.indexOf(h) < 0) res.push(h); });
+  return res;
+}
+const notasAbiertasDe = row => comHilosCarga(row).filter(h => !h.resuelto);
+function notasMensajes(row){
+  const out = [];
+  notasAbiertasDe(row).forEach(h => { out.push(h.raiz); h.respuestas.forEach(m => out.push(m)); });
+  return out.sort((a, b) => String(a.fecha).localeCompare(String(b.fecha)));
+}
+function notaMsgHTML(m){
+  const yo = comYo();
+  return '<div class="nota-msg"><div class="nota-av">' + escH((comNombre(m.autor)[0] || '?').toUpperCase()) + '</div><div><div class="nota-meta"><b>' + escH(comNombre(m.autor)) + '</b>' +
+    (m.autor === yo ? ' (vos)' : '') + ' · ' + escH(comFecha(m.fecha)) + (m.autor === yo ? '<a class="nota-del" onclick="comEliminar(\'' + m.id + '\')">Eliminar</a>' : '') +
+    '</div><div class="nota-tx">' + escH(m.texto).replace(/\n/g, '<br>') + '</div></div></div>';
+}
+// El hilo completo: mensajes, caja para escribir, resolver. Tambien las resueltas, plegadas.
+function notaHiloHTML(row){
+  const abiertos = notasAbiertasDe(row).sort((a, b) => String(a.raiz.fecha).localeCompare(String(b.raiz.fecha)));
+  const resueltos = comHilosCarga(row).filter(h => h.resuelto);
+  const cuerpo = abiertos.map(h => '<div>' + notaMsgHTML(h.raiz) + h.respuestas.map(notaMsgHTML).join('') +
+    '<div class="nota-res"><button onclick="comResolver(\'' + h.raiz.id + '\')">✓ Resolver</button></div></div>').join('<hr style="border:none;border-top:1px solid #e6cf7d;margin:8px 0;">');
+  const res = resueltos.length ? '<details class="nota-res"><summary>Resueltas (' + resueltos.length + ')</summary>' + resueltos.map(h => '<div style="opacity:.75;">' + notaMsgHTML(h.raiz) + h.respuestas.map(notaMsgHTML).join('') +
+    '<div class="nota-res">Resuelta por ' + escH(comNombre(h.raiz.resueltoPor)) + ' · <button onclick="comResolver(\'' + h.raiz.id + '\', true)">Reabrir</button></div></div>').join('') + '</details>' : '';
+  return '<div class="nota-hilo">' + cuerpo + '<textarea rows="2" placeholder="Escribí una nota o respuesta…" onkeydown="if(event.key===\'Enter\'&&(event.ctrlKey||event.metaKey)){event.preventDefault();notaEnviar(this)}"></textarea>' +
+    '<div class="nota-acc"><button class="prim" onclick="notaEnviar(this)">Agregar nota</button><span style="font-size:12px;color:var(--text3);">Ctrl+Enter para enviar · la ven todos</span></div>' + res + '</div>';
+}
+// modo: 'card' (Alertas y tarjetas del celular: nota pegada + hilo en la tarjeta) · 'celda' (tabla de Cobranza: boton con vista previa que abre un cuadro) · 'pop' (el cuadro)
+function notaContenidoHTML(row, modo){
+  const fila = row._sheetRow, msgs = notasMensajes(row), n = msgs.length, ultima = msgs[msgs.length - 1];
+  if(modo === 'pop') return notaHiloHTML(row);
+  if(modo === 'celda'){
+    const prev = ultima ? escH(ultima.texto.length > 60 ? ultima.texto.slice(0, 60) + '…' : ultima.texto) : '';
+    return '<span class="nota-cel"><button class="nota-btn" onclick="notaPopAbrir(' + fila + ', this)" title="' + (ultima ? escH(comNombre(ultima.autor) + ': ' + ultima.texto) : 'Agregar una nota sobre esta carga') + '">💬 ' + (n ? n : 'Nota') + '</button>' +
+      (prev ? '<span class="nota-prev">' + prev + '</span>' : '') + '</span>';
+  }
+  const abierto = _notasAbiertas.has(fila);
+  const pin = (n && !abierto)
+    ? '<div class="nota-pin" onclick="notaAlternar(' + fila + ')"><div class="nota-av">' + escH((comNombre(ultima.autor)[0] || '?').toUpperCase()) + '</div><div><div class="nota-meta"><b>' + escH(comNombre(ultima.autor)) + '</b> · ' + escH(comFecha(ultima.fecha)) + '</div>' +
+      '<div class="nota-tx">' + escH(ultima.texto.length > 180 ? ultima.texto.slice(0, 180) + '…' : ultima.texto) + '</div>' + (n > 1 ? '<div class="nota-mas">💬 ' + (n - 1) + ' nota' + (n === 2 ? '' : 's') + ' más · Ver y responder</div>' : '') + '</div></div>'
+    : '';
+  const boton = '<div style="margin-top:8px;"><button class="nota-btn" onclick="notaAlternar(' + fila + ')">💬 ' + (abierto ? 'Cerrar notas' : (n ? 'Notas (' + n + ')' : 'Nota')) + '</button></div>';
+  return pin + boton + (abierto ? notaHiloHTML(row) : '');
+}
+// Lo que se pone en la pantalla: un contenedor que se vuelve a dibujar solo (al escribir, resolver o leer lo de los demas).
+function notaWrapHTML(row, modo){
+  if(!row || !row._sheetRow) return '';
+  return '<div class="nota-wrap" data-nota-fila="' + row._sheetRow + '" data-nota-modo="' + modo + '"' + (modo === 'celda' ? ' onclick="event.stopPropagation()"' : '') + '>' + notaContenidoHTML(row, modo) + '</div>';
+}
+function filaPorSheetRow(n){ return allRowsAll.find(r => r._sheetRow === n) || allRows.find(r => r._sheetRow === n) || null; }
+// Vuelve a dibujar las notas que estan en pantalla, sin tocar el resto ni lo que se esta escribiendo.
+function notasRefrescar(){
+  document.querySelectorAll('.nota-wrap').forEach(w => {
+    const ta = w.querySelector ? w.querySelector('textarea') : null;
+    if(ta && (ta.value || '').trim()) return;                       // no se pisa lo que alguien esta escribiendo
+    const row = filaPorSheetRow(parseInt(w.getAttribute('data-nota-fila'), 10));
+    if(row) w.innerHTML = notaContenidoHTML(row, w.getAttribute('data-nota-modo'));
+  });
+}
+function notaAlternar(fila){
+  if(_notasAbiertas.has(fila)) _notasAbiertas.delete(fila); else _notasAbiertas.add(fila);
+  notasRefrescar();
+  setTimeout(() => { const w = document.querySelector('.nota-wrap[data-nota-fila="' + fila + '"] textarea'); if(_notasAbiertas.has(fila) && w && w.focus) w.focus(); }, 0);
+}
+function notaPopAbrir(fila, btn){
+  const ya = _notaPop === fila;
+  cerrarNotaPop();
+  if(ya) return;
+  const row = filaPorSheetRow(fila);
+  if(!row) return;
+  _notaPop = fila;
+  const p = document.createElement('div');
+  p.id = 'nota-pop'; p.className = 'nota-pop';
+  p.innerHTML = '<div class="nota-pop-cab">💬 ' + escH((row[COL.CUSTOMER] || '').toString().trim() || '—') + ' · ' + escH((row[COL.BL] || '').toString().trim() || 'fila ' + fila) +
+    '<button onclick="cerrarNotaPop()" aria-label="Cerrar">×</button></div><div class="nota-wrap" data-nota-fila="' + fila + '" data-nota-modo="pop">' + notaContenidoHTML(row, 'pop') + '</div>';
+  document.body.appendChild(p);
+  if(btn && btn.getBoundingClientRect){
+    const b = btn.getBoundingClientRect(), w = window.innerWidth || 1200, h = window.innerHeight || 700;
+    p.style.left = Math.max(8, Math.min(Math.round(b.left), w - 392)) + 'px';
+    p.style.top = Math.max(8, Math.min(Math.round(b.bottom + 6), h - 300)) + 'px';
+  }
+  setTimeout(() => { const t = p.querySelector('textarea'); if(t && t.focus) t.focus(); }, 0);
+}
+function cerrarNotaPop(){
+  const p = document.getElementById('nota-pop');
+  if(p && p.parentNode) p.parentNode.removeChild(p);
+  _notaPop = null;
+}
+document.addEventListener('click', e => {
+  if(_notaPop === null) return;
+  const t = e.target;
+  if(t && t.closest && (t.closest('#nota-pop') || t.closest('.nota-btn'))) return;
+  cerrarNotaPop();
+});
+// Agregar una nota (o responder en el hilo que ya esta abierto: se escribe a continuacion, como una charla).
+async function notaEnviar(el){
+  const w = el && el.closest ? el.closest('.nota-wrap') : null;
+  if(!w) return;
+  const row = filaPorSheetRow(parseInt(w.getAttribute('data-nota-fila'), 10));
+  const ta = w.querySelector('textarea');
+  const texto = ta ? (ta.value || '').trim() : '';
+  if(!row || !texto){ showToast('Escribí la nota primero', 'info'); return; }
+  if(!(await comSeQuienSoy())) return;
+  const abiertos = notasAbiertasDe(row).sort((a, b) => String(a.raiz.fecha).localeCompare(String(b.raiz.fecha)));
+  const hilo = abiertos.length ? abiertos[abiertos.length - 1].raiz.id : null;
+  const id = comNuevoId();
+  const ok = await comAgregar({ id, fecha: comAhora(), autor: comYo(), negocio: comNegocio(), fila: String(row._sheetRow), columna: NOTA_COL,
+    ancla: comAncla(row), texto, hilo: hilo || id, estado: 'abierto', resueltoPor: '' });
+  if(!ok){ showToast('No pude guardar la nota', 'err'); return; }
+  if(ta) ta.value = '';
+  showToast('💬 Nota guardada: la ve todo el equipo', 'ok');
+  _notasAbiertas.add(row._sheetRow);
+  comRefrescar();
+}
 // Cada tanto se vuelven a leer, para ver lo que escribieron los demas (sin tocar lo que estas haciendo).
 setInterval(() => {
-  if(!accessToken || document.hidden || currentView !== 'cargas' || _comPop || document.getElementById('t-edit')) return;
-  cargarComentarios().then(comPintar).catch(() => {});
+  if(!accessToken || document.hidden) return;
+  const enNotas = currentView === 'alertas' || currentView === 'cobranza';
+  if(!enNotas && (currentView !== 'cargas' || _comPop || document.getElementById('t-edit'))) return;
+  cargarComentarios().then(() => { comPintar(); notasRefrescar(); }).catch(() => {});
 }, 90000);
 
 // ─── IMPORTAR PLANILLA DESPACHANTE ───────────────────────────────────────────
@@ -14002,6 +14159,7 @@ document.addEventListener('keydown', e => {
     }
   }
   if(e.key === 'Escape' && _popTabla){ cerrarPopTabla(); return; }
+  if(e.key === 'Escape' && _notaPop !== null){ cerrarNotaPop(); return; }
   if(tablaTeclado(e)) return;
   if(e.key === 'Escape' && _comPop){ cerrarComentarios(); return; }
   if(e.key === 'Escape' && _filtroAbierto){ cerrarFiltroColumna(); return; }
