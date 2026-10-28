@@ -5036,7 +5036,19 @@ function formularioAbierto(){ return currentView === 'nueva_carga' || (currentVi
 // Busqueda tipo Ctrl+F sobre TODA la fila (todas las columnas, tambien lo que esta editado y sin guardar).
 // No distingue mayusculas ni tildes; si hay varias palabras, tienen que estar todas en la fila.
 function normBusca(s){ return (s === null || s === undefined ? '' : String(s)).normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase(); }
+// El texto normalizado de cada fila se guarda en memoria: normalizar ~80 celdas x miles de filas en cada tecla era lo que
+// hacia lenta la busqueda. Se recalcula solo si la fila cambio (valores, pendientes sin guardar o recarga de datos).
+const _textoFilaCache = new WeakMap();
 function textoDeFila(r){
+  const pend = r._sheetRow !== undefined ? cargasPend[r._sheetRow] : null;
+  const clave = _dataVersion + '|' + r.join('\u0001') + '|' + (pend ? Object.keys(pend).map(k => k + '=' + pend[k].despues).join('\u0002') : '');
+  const g = _textoFilaCache.get(r);
+  if(g && g.clave === clave) return g.texto;
+  const texto = _textoDeFilaCalc(r);
+  _textoFilaCache.set(r, { clave, texto });
+  return texto;
+}
+function _textoDeFilaCalc(r){
   const partes = [];
   for(let c = 0; c < r.length; c++){
     const v = valorVisible(r, c);
@@ -5049,6 +5061,26 @@ function filaCoincide(r, q){
   if(!palabras.length) return true;
   const t = textoDeFila(r);
   return palabras.every(p => t.includes(p));
+}
+// Buscador de Cargas. Mientras se escribe (y hasta que se redibuja) las teclas son del buscador: la grilla de la Tabla
+// no las toma. Antes, en el instante en que la pantalla se redibujaba el foco se perdia y un "-" arrancaba a editar una celda.
+let _buscaTimer = null;
+function _buscandoCargas(){
+  if(_buscaTimer) return true;
+  const a = document.activeElement;
+  return !!(a && a.id === 'cargas-search-input');
+}
+function cargasBuscarInput(el){
+  cargasSearch = el.value; cargasPage = 0;
+  if(_buscaTimer) clearTimeout(_buscaTimer);
+  _buscaTimer = setTimeout(() => {
+    _buscaTimer = null;
+    const v = cargasSearch, ini = el.selectionStart;
+    _tablaSel = null; _tablaAncla = null;
+    renderCargas();
+    const n = document.getElementById('cargas-search-input');
+    if(n){ n.focus(); const p = (ini === null || ini === undefined) ? v.length : Math.min(ini, v.length); try{ n.setSelectionRange(p, p); }catch(_){} }
+  }, 400);
 }
 function renderCargas(showAll, sort){
   _editCargaAbierta = false;
@@ -5205,7 +5237,7 @@ function renderCargas(showAll, sort){
       placeholder="Buscar en toda la planilla..."
       title="Busca en todas las columnas (factura, BL, contenedor, contrato, lote, cliente...), sin importar mayusculas ni tildes"
       value="${cargasSearch.replace(/"/g,'&quot;')}"
-      oninput="cargasSearch=this.value;cargasPage=0;if(this._t)clearTimeout(this._t);this._t=setTimeout(()=>{const v=this.value;renderCargas();setTimeout(()=>{const el=document.getElementById('cargas-search-input');if(el){el.focus();el.setSelectionRange(v.length,v.length);}},0);},300);"
+      oninput="cargasBuscarInput(this)"
       style="font-size:12px;font-family:var(--mono);padding:5px 10px 5px 30px;border-radius:8px;border:1px solid ${cargasSearch?'var(--accent)':'var(--border)'};background:${cargasSearch?'var(--accent-light)':'var(--bg2)'};color:var(--text);width:220px;outline:none;"
     >
     ${cargasSearch?`<span onclick="cargasSearch='';cargasPage=0;renderCargas();" style="position:absolute;right:8px;cursor:pointer;font-size:13px;color:var(--text3);">×</span>`:''}
@@ -6230,6 +6262,7 @@ function tablaTeclado(e){
   const t = e.target;
   if(t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT')) return false;
   if(_filtroAbierto) return false;
+  if(_buscandoCargas()) return false;   // se esta escribiendo en el buscador: la tecla NO es para la grilla
   const m = { ArrowUp: [-1, 0], ArrowDown: [1, 0], ArrowLeft: [0, -1], ArrowRight: [0, 1] }[e.key];
   if(m){ e.preventDefault(); moverSel(m[0], m[1], e.shiftKey); return true; }
   if(e.ctrlKey && e.altKey && (e.key === 'm' || e.key === 'M')){ e.preventDefault(); abrirComentarios(); return true; }
@@ -6259,6 +6292,7 @@ function _tablaEnGrilla(e){
   const t = e && e.target;
   if(t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT')) return false;
   if(_filtroAbierto) return false;
+  if(_buscandoCargas()) return false;
   return true;
 }
 function tsvCelda(v){
