@@ -2717,7 +2717,7 @@ let _contratosFormulas = [];    // indices de columnas que se calculan con formu
 let _contratosHeaderFila = 1;
 
 async function loadContratos(){
-  contratos = []; _contratosError = null;
+  contratos = []; _contratosError = null; _contratosCerr = null; _contratosCerrClave = '';
   _contratosHeaders = []; _contratosFilas = []; _contratosFormulas = [];   // nada del negocio anterior
   const nc = getNegocioConfig();
   const sid = nc.sheetId || cfg.sheetId;
@@ -2819,6 +2819,74 @@ async function loadContratos(){
   }
 }
 
+// Contratos de la hoja "Contratos cerrados" (nombre exacto). No se usan solos: sirven para poder elegir uno cuando se carga
+// una carga de un contrato que ya se cerro. Mismos nombres de columna que los abiertos. Se leen una vez por negocio.
+let _contratosCerr = null, _contratosCerrClave = '', _contratosCerrCargando = false;
+let _contratosCerrInfo = '';
+const CONTRATOS_CONOCIDOS = ['CONTRATO','CONTRACT','IMPORTADOR','IMPORTER','EXPORTADOR','PRODUCTO','PRODUCT','PUERTO','PUERTOS','PORT',
+                             'PRICE CLIENTE','PRECIO','FLETE','INCOTERM','FC SERVICIOS','TNS','TONELADAS','SALDO','FECHA','PACKAGING','TIPO'];
+async function cargarContratosCerrados(forzar){
+  const sid = getNegocioConfig().sheetId || cfg.sheetId;
+  if(!sid || !accessToken) return [];
+  if(!forzar && _contratosCerr && _contratosCerrClave === sid) return _contratosCerr;
+  if(_contratosCerrCargando) return _contratosCerr || [];
+  _contratosCerrCargando = true;
+  const lista = [];
+  try{
+    const h = { headers: { Authorization: 'Bearer ' + accessToken } };
+    const rm = await fetch('https://sheets.googleapis.com/v4/spreadsheets/' + sid + '?fields=sheets.properties', h);
+    if(!rm.ok){ _contratosCerrInfo = 'no pude ver las hojas (HTTP ' + rm.status + ')'; return lista; }
+    const hoja = ((await rm.json()).sheets || []).map(x => (x.properties || {}).title || '').find(t => t.trim().toLowerCase() === 'contratos cerrados');
+    if(!hoja){ _contratosCerrInfo = 'la planilla no tiene hoja "Contratos cerrados"'; _contratosCerr = lista; _contratosCerrClave = sid; return lista; }
+    const rv = await fetch('https://sheets.googleapis.com/v4/spreadsheets/' + sid + '/values/' + encodeURIComponent(hoja + '!A1:AD4000'), h);
+    if(!rv.ok){ _contratosCerrInfo = 'no pude leer "' + hoja + '" (HTTP ' + rv.status + ')'; return lista; }
+    const filas = (await rv.json()).values || [];
+    let hdr = 0, mejor = -1;
+    for(let i = 0; i < Math.min(15, filas.length); i++){
+      const pts = (filas[i] || []).filter(x => CONTRATOS_CONOCIDOS.indexOf(normTar(x)) >= 0).length;
+      if(pts > mejor){ mejor = pts; hdr = i; }
+    }
+    const H = (filas[hdr] || []).map(normTar);
+    const col = (...nombres) => { for(const n of nombres){ const i = H.indexOf(normTar(n)); if(i >= 0) return i; } return -1; };
+    const c = {
+      contrato: col('Contrato','Contract','N° Contrato','Nro Contrato','Contrato Cliente'),
+      importador: col('Importador','Importer','Cliente','Customer'), producto: col('Producto','Product'),
+      puerto: col('Puerto','Port','Puertos','Destino'), price: col('Price Cliente','Precio Cliente','Precio/tn','Price','Precio'),
+      flete: col('Flete','Freight','Flete/tn'), incoterm: col('INCOTERM','Incoterm'),
+      fcServ: col('FC Servicios','FC Servicio','Fc Serv','Servicios'), formulaPago: col('Formula pago','Formula de pago')
+    };
+    const faltan = ['importador','producto','puerto'].filter(k => c[k] < 0);
+    if(faltan.length){ _contratosCerrInfo = 'a "' + hoja + '" le faltan las columnas: ' + faltan.join(', '); _contratosCerr = lista; _contratosCerrClave = sid; return lista; }
+    const g = (fila, i) => i >= 0 ? (fila[i] || '').toString().trim() : '';
+    for(let i = hdr + 1; i < filas.length; i++){
+      const f = filas[i];
+      if(!f || !g(f, c.importador) || (c.contrato >= 0 && !esNumeroContrato(f[c.contrato]))) continue;
+      lista.push({
+        _fila: i + 1, cerrado: true,
+        contrato: g(f, c.contrato), importador: g(f, c.importador), producto: g(f, c.producto),
+        puertos: g(f, c.puerto).split(/[,;\/]+/).map(x => x.trim()).filter(Boolean), puertoTxt: g(f, c.puerto),
+        price: parseSheetNum(f[c.price]), flete: parseSheetNum(f[c.flete]),
+        incoterm: g(f, c.incoterm), fcServ: parseSheetNum(f[c.fcServ]), formulaPago: g(f, c.formulaPago)
+      });
+    }
+    _contratosCerrInfo = 'hoja "' + hoja + '": ' + lista.length + ' contratos';
+    _contratosCerr = lista; _contratosCerrClave = sid;
+  }catch(e){ _contratosCerrInfo = e.message; console.warn('contratos cerrados (lista):', e); }
+  finally{ _contratosCerrCargando = false; }
+  return lista;
+}
+// Los cerrados que coinciden con la carga y no estan tambien entre los abiertos (si un numero esta en las dos hojas, manda el abierto).
+function contratosCerradosPara(customer, producto, puerto){
+  if(!_contratosCerr || _contratosCerrClave !== (getNegocioConfig().sheetId || cfg.sheetId)) return [];
+  const abiertos = new Set(contratos.map(k => normTar(k.contrato)));
+  return contratosPara(customer, producto, puerto, _contratosCerr).filter(k => !abiertos.has(normTar(k.contrato)));
+}
+function textoOpcionContrato(k, i){
+  return '<option value="' + i + '">' + (k.cerrado ? 'CERRADO · ' : '') + (k.contrato || '(sin número)') + ' — ' +
+    (isNaN(k.price) ? 's/precio' : 'USD ' + k.price) + (k.puertoTxt ? ' · ' + k.puertoTxt : '') + '</option>';
+}
+const _SEL_CONTRATO_STYLE = 'font-size:12px;font-family:var(--mono);padding:5px 8px;border-radius:8px;border:1px solid var(--accent);background:var(--bg2);color:var(--text);width:100%;';
+
 // Contratos que podrian corresponder a una carga. El producto y el importador se
 // comparan exactos (sin acentos ni mayusculas); el puerto alcanza con que este
 // entre los del contrato.
@@ -2831,10 +2899,10 @@ function calibresDeProducto(producto){
 function contratoAdmiteProducto(k, prod){
   return calibresDeProducto(k.producto).some(c => normTar(c) === prod);
 }
-function contratosPara(customer, producto, puerto){
+function contratosPara(customer, producto, puerto, lista){
   const cli = normTar(customer), prod = normTar(producto), pto = normTar(puerto);
   if(!cli || !prod) return [];
-  return contratos.filter(k => {
+  return (lista || contratos).filter(k => {
     if(normTar(k.importador) !== cli) return false;
     if(!contratoAdmiteProducto(k, prod)) return false;
     if(!pto) return true;                       // sin puerto todavia, no filtra
@@ -7148,7 +7216,13 @@ function buscarContratos(prefix){
     return;
   }
 
-  const encontrados = contratosPara(customer, producto, puerto);
+  const abiertos = contratosPara(customer, producto, puerto);
+  // Los cerrados se leen una sola vez (la primera busqueda los pide y, al llegar, se repite la busqueda).
+  if(accessToken && (!_contratosCerr || _contratosCerrClave !== (getNegocioConfig().sheetId || cfg.sheetId)) && !_contratosCerrCargando){
+    cargarContratosCerrados().then(l => { if(l && l.length && document.getElementById(prefix + '-contrato-box')) buscarContratos(prefix); });
+  }
+  const cerrados = contratosCerradosPara(customer, producto, puerto);
+  const encontrados = abiertos.concat(cerrados);
   window['_contratos_' + prefix] = encontrados;
 
   if(!encontrados.length){
@@ -7156,20 +7230,19 @@ function buscarContratos(prefix){
     return;
   }
 
-  if(encontrados.length === 1){
+  // Un solo contrato abierto: se aplica solo (los cerrados, si hay, quedan como opcion aparte).
+  if(abiertos.length === 1){
     aplicarContrato(prefix, 0);
     return;
   }
 
-  // Varios: se elige de una lista, y no se toca nada hasta que elijas.
-  const opts = encontrados.map((k, i) =>
-    '<option value="' + i + '">' + (k.contrato || '(sin número)') + ' — ' +
-    (isNaN(k.price) ? 's/precio' : 'USD ' + k.price) +
-    (k.puertoTxt ? ' · ' + k.puertoTxt : '') + '</option>').join('');
-  caja.innerHTML = '<div style="color:var(--warn);margin-bottom:6px;">Hay ' + encontrados.length +
-    ' contratos que coinciden. Elegí cuál:</div>' +
-    '<select id="' + prefix + '-contrato-sel" onchange="aplicarContrato(\'' + prefix + '\', this.value)" ' +
-    'style="font-size:12px;font-family:var(--mono);padding:5px 8px;border-radius:8px;border:1px solid var(--accent);background:var(--bg2);color:var(--text);width:100%;">' +
+  // Varios, o solo cerrados: se elige de una lista, y no se toca nada hasta que elijas.
+  const opts = encontrados.map(textoOpcionContrato).join('');
+  const aviso = !abiertos.length
+    ? 'No hay contratos abiertos que coincidan, pero ' + (cerrados.length === 1 ? 'figura 1 CERRADO' : 'figuran ' + cerrados.length + ' CERRADOS') + '. Si es de uno de esos, elegilo:'
+    : 'Hay ' + encontrados.length + ' contratos que coinciden' + (cerrados.length ? ' (' + cerrados.length + ' cerrado' + (cerrados.length === 1 ? '' : 's') + ')' : '') + '. Elegí cuál:';
+  caja.innerHTML = '<div style="color:var(--warn);margin-bottom:6px;">' + aviso + '</div>' +
+    '<select id="' + prefix + '-contrato-sel" onchange="aplicarContrato(\'' + prefix + '\', this.value)" style="' + _SEL_CONTRATO_STYLE + '">' +
     '<option value="">— elegir contrato —</option>' + opts + '</select>';
 }
 
@@ -7195,14 +7268,21 @@ function aplicarContrato(prefix, i){
 
   if(caja){
     const avisos = [];
+    if(k.cerrado) avisos.push('Este contrato figura como CERRADO en la hoja "Contratos cerrados". Confirmá que corresponde antes de guardar.');
     if(!tns) avisos.push('Falta cargar las Tns: los totales quedan vacíos hasta que las pongas.');
     if(isNaN(k.flete)) avisos.push('El contrato no tiene flete, así que ese campo queda en blanco.');
     if(!k.incoterm) avisos.push('El contrato no tiene INCOTERM cargado.');
-    caja.innerHTML = '<span style="color:var(--ok);font-weight:600;">✓ Contrato ' + (k.contrato||'(sin número)') + '</span>' +
+    const otrosCerr = k.cerrado ? [] : lista.map((x, j) => [x, j]).filter(p => p[0].cerrado);
+    const selCerr = otrosCerr.length
+      ? '<div style="margin-top:6px;color:var(--text3);">También figuran ' + otrosCerr.length + ' cerrado' + (otrosCerr.length === 1 ? '' : 's') + ' para esta carga. Si es de uno de esos:</div>' +
+        '<select onchange="if(this.value!==\'\')aplicarContrato(\'' + prefix + '\', this.value)" style="' + _SEL_CONTRATO_STYLE + 'margin-top:4px;">' +
+        '<option value="">— elegir un contrato cerrado —</option>' + otrosCerr.map(p => textoOpcionContrato(p[0], p[1])).join('') + '</select>'
+      : '';
+    caja.innerHTML = '<span style="color:' + (k.cerrado ? 'var(--warn)' : 'var(--ok)') + ';font-weight:600;">' + (k.cerrado ? '⚠ CERRADO · ' : '✓ ') + 'Contrato ' + (k.contrato||'(sin número)') + '</span>' +
       '<span style="color:var(--text3);"> · ' + k.producto + (k.puertoTxt ? ' · ' + k.puertoTxt : '') +
       (isNaN(k.fcServ) || !k.fcServ ? '' : ' · servicios USD ' + k.fcServ + '/tn') + '</span>' +
       (lista.length > 1 ? '<span style="color:var(--text3);"> · de ' + lista.length + ' posibles</span>' : '') +
-      avisos.map(a => '<div style="color:var(--warn);margin-top:4px;">⚠ ' + a + '</div>').join('');
+      avisos.map(a => '<div style="color:var(--warn);margin-top:4px;">⚠ ' + a + '</div>').join('') + selCerr;
   }
 }
 
