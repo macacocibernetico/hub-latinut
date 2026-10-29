@@ -8823,6 +8823,14 @@ function normalizarPuerto(t){
   return (t === undefined || t === null ? '' : String(t)).trim().replace(/\s+/g, ' ').toLowerCase()
     .replace(/(^|[\s\/(])(\p{L})/gu, (m, a, b) => a + b.toUpperCase());
 }
+// Puerto de salida (POL): solo hay dos, BUE (Buenos Aires) y CHILE, y van en mayuscula. Cualquier otro puerto se escribe como un puerto comun.
+function normalizarPol(t){
+  const x = normTar(t);
+  if(!x) return '';
+  if(x === 'BUE' || x === 'BUENOS AIRES' || x === 'BS AS' || x === 'BSAS' || x === 'BS. AS' || x === 'ARG' || x === 'ARGENTINA') return 'BUE';
+  if(x === 'CHILE' || x === 'CHL' || x === 'SAN ANTONIO' || x === 'VALPARAISO') return 'CHILE';
+  return normalizarPuerto(t);
+}
 // Tipo de contenedor: todos los que se cargan son High Cube, asi que 40, 40 pies, 40'HC, 40 hc... quedan como "40' HC" (y 20 como "20' HC").
 // Si el texto no dice 20 ni 40, se deja como esta.
 function normalizarCnt(t){
@@ -8837,7 +8845,8 @@ function opcionesTarifa(k){
   const poner = v => {
     let t = (v === undefined || v === null || (typeof v === 'number' && isNaN(v))) ? '' : String(v).trim();
     if(!t) return;
-    if(k === 'destino' || k === 'pol') t = normalizarPuerto(t);
+    if(k === 'destino') t = normalizarPuerto(t);
+    if(k === 'pol') t = normalizarPol(t);
     if(k === 'cnt') t = normalizarCnt(t);
     if(k === 'carrier') t = normalizarNaviera(t);
     const c = t.toLowerCase();
@@ -8846,7 +8855,7 @@ function opcionesTarifa(k){
   tarifas.forEach(t => poner(t[k]));
   if(k === 'destino') (allRowsAll || []).forEach(r => poner(r[COL.PORT]));
   if(k === 'carrier') (allRowsAll || []).forEach(r => poner(r[COL.SHIPPING]));
-  if(k === 'pol') poner('Buenos Aires');
+  if(k === 'pol'){ poner('BUE'); poner('CHILE'); }
   if(k === 'cnt'){ poner("20' HC"); poner("40' HC"); }
   return out.sort((a, b) => a.localeCompare(b, 'es', { numeric: true, sensitivity: 'base' }));
 }
@@ -8879,7 +8888,7 @@ function abrirFormTarifa(i){
     const ops = ['pol','destino','cnt','carrier','diasLibres','forwarder'].indexOf(c.k) >= 0 ? opcionesTarifa(c.k) : null;
     const esPuerto = c.k === 'pol' || c.k === 'destino';
     return `<div class="config-field"><div class="config-label">${c.label}</div>
-      <input class="config-input" id="tf-${c.k}" value="${val(c.k)}" placeholder="${c.ph}" autocomplete="off"${ops ? ' list="tf-' + c.k + '-dl"' : ''}${esPuerto ? ' onblur="this.value=normalizarPuerto(this.value)"' : (c.k === 'cnt' ? ' onblur="this.value=normalizarCnt(this.value)"' : (c.k === 'carrier' ? ' onblur="this.value=normalizarNaviera(this.value)"' : ''))}>
+      <input class="config-input" id="tf-${c.k}" value="${val(c.k)}" placeholder="${c.ph}" autocomplete="off"${ops ? ' list="tf-' + c.k + '-dl"' : ''}${esPuerto ? ' onblur="this.value=' + (c.k === 'pol' ? 'normalizarPol' : 'normalizarPuerto') + '(this.value)"' : (c.k === 'cnt' ? ' onblur="this.value=normalizarCnt(this.value)"' : (c.k === 'carrier' ? ' onblur="this.value=normalizarNaviera(this.value)"' : ''))}>
       ${ops ? '<datalist id="tf-' + c.k + '-dl">' + ops.map(o => '<option value="' + o.replace(/"/g, '&quot;') + '">').join('') + '</datalist>' : ''}</div>`;
   }).join('');
 
@@ -8904,7 +8913,7 @@ function puertosSinNormalizar(){
   tarifas.forEach(t => {
     ['destino', 'pol', 'cnt', 'carrier'].forEach(k => {
       const v = (t[k] || '').toString();
-      const n = k === 'cnt' ? normalizarCnt(v) : k === 'carrier' ? normalizarNaviera(v) : normalizarPuerto(v);
+      const n = k === 'cnt' ? normalizarCnt(v) : k === 'carrier' ? normalizarNaviera(v) : k === 'pol' ? normalizarPol(v) : normalizarPuerto(v);
       if(v.trim() && n !== v) cambios.push({ t, k, antes: v, despues: n });
     });
   });
@@ -8942,7 +8951,7 @@ async function normalizarPuertosTarifario(){
 async function guardarTarifa(){
   const g = k => (document.getElementById('tf-' + k)||{}).value || '';
   const datos = {}; CAMPOS_TARIFA.forEach(c => { datos[c.k] = g(c.k).trim(); });
-  datos.destino = normalizarPuerto(datos.destino); datos.pol = normalizarPuerto(datos.pol); datos.cnt = normalizarCnt(datos.cnt); datos.carrier = normalizarNaviera(datos.carrier);
+  datos.destino = normalizarPuerto(datos.destino); datos.pol = normalizarPol(datos.pol); datos.cnt = normalizarCnt(datos.cnt); datos.carrier = normalizarNaviera(datos.carrier);
   if(!datos.destino || !datos.carrier){
     alert('Destino y Carrier son obligatorios: sin esos dos, la tarifa no se puede cruzar con ninguna carga.');
     return;
