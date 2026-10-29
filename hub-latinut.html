@@ -3383,6 +3383,40 @@ function claveForwarder(v){
 
 // Puertos y navieras se escriben de mil maneras ("Norfolk, VA" / "NORFOLK";
 // "MSC" / "MSC Mediterranean"). Alcanza con que uno contenga al otro.
+// Navieras: cada una se escribe de muchas maneras ("HAPAG", "Hapag Lloyd", "MSC", "MEDITERRANEAN SHIPPING COMPANY S.A."). Se reconocen por
+// una lista de nombres conocidos y se estandarizan al nombre corto de la primera columna. Una naviera que no esta en la lista se deja como esta.
+const NAVIERAS = [
+  ['MSC',         /\bMSC\b|MEDITERRANEAN SHIPPING/],
+  ['HAPAG-LLOYD', /HAPAG/],
+  ['MAERSK',      /MAERSK|MAEU\b/],
+  ['CMA CGM',     /\bCMA\b|CGM/],
+  ['ONE',         /^ONE( LINE)?$|OCEAN NETWORK EXPRESS/],
+  ['COSCO',       /COSCO/],
+  ['EVERGREEN',   /EVERGREEN/],
+  ['ZIM',         /^ZIM\b|ZIM INTEGRATED/],
+  ['HMM',         /^HMM$|HYUNDAI MERCHANT/],
+  ['YANG MING',   /YANG ?MING/],
+  ['OOCL',        /OOCL|ORIENT OVERSEAS/],
+  ['PIL',         /^PIL$|PACIFIC INTERNATIONAL LINES/],
+  ['SEABOARD',    /SEABOARD/]
+];
+function claveNaviera(v){
+  const n = normTar(v);
+  if(!n) return '';
+  const h = NAVIERAS.find(x => x[1].test(n));
+  return h ? h[0] : '';
+}
+function normalizarNaviera(v){
+  const t = (v === undefined || v === null ? '' : String(v)).trim().replace(/\s+/g, ' ');
+  return claveNaviera(t) || t;
+}
+// Dos navieras son la misma si el nombre estandar coincide; si alguna no se reconoce, se compara el texto como siempre.
+function coincideNaviera(a, b){
+  const x = claveNaviera(a), y = claveNaviera(b);
+  if(x && y) return x === y;
+  return coincideTexto(a, b);
+}
+
 function coincideTexto(a, b){
   const x = normTar(a), y = normTar(b);
   if(!x || !y) return false;
@@ -3471,7 +3505,7 @@ function origenMesTarifa(row){
 function tarifaPara(row){
   if(!tarifas.length) return null;
   const destino = row[COL.PORT], carrier = row[COL.SHIPPING];
-  const candidatas = tarifas.filter(t => coincideTexto(t.destino, destino) && coincideTexto(t.carrier, carrier));
+  const candidatas = tarifas.filter(t => coincideTexto(t.destino, destino) && coincideNaviera(t.carrier, carrier));
   if(!candidatas.length) return null;
 
   const meses = mesesDeCarga(row);
@@ -3514,7 +3548,7 @@ function tarifasAlternativas(row){
   const base = tarifaPara(row);
   if(!base) return [];
   return tarifas.filter(t => t !== base && t.mes === base.mes && !esPolBase(t) &&
-    coincideTexto(t.destino, row[COL.PORT]) && coincideTexto(t.carrier, row[COL.SHIPPING]))
+    coincideTexto(t.destino, row[COL.PORT]) && coincideNaviera(t.carrier, row[COL.SHIPPING]))
     .map(t => ({ tarifa: t, pol: t.pol, ref: refTarifa(t) }))
     .filter(a => !isNaN(a.ref) && a.ref);
 }
@@ -3541,11 +3575,11 @@ function compararFlete(row){
     // Se distingue el caso para que el mensaje sirva: no es lo mismo "nunca
     // cargamos ese destino" que "falta el tarifario de este mes".
     const meses = mesesDeCarga(row);
-    const hayDestino = tarifas.some(t => coincideTexto(t.destino, row[COL.PORT]) && coincideTexto(t.carrier, row[COL.SHIPPING]));
+    const hayDestino = tarifas.some(t => coincideTexto(t.destino, row[COL.PORT]) && coincideNaviera(t.carrier, row[COL.SHIPPING]));
     // Con POL cargado: hay tarifa de ese destino y mes, pero no saliendo por ese puerto
     const pol = polDeCarga(row);
     const hayMesOtroPol = !!pol && meses.length > 0 && tarifas.some(t => coincideTexto(t.destino, row[COL.PORT]) &&
-      coincideTexto(t.carrier, row[COL.SHIPPING]) && meses.indexOf(t.mes) >= 0);
+      coincideNaviera(t.carrier, row[COL.SHIPPING]) && meses.indexOf(t.mes) >= 0);
     return { estado:'sin_tarifa', importe: importe,
              faltaPol: hayMesOtroPol ? pol : null,
              faltaMes: hayDestino && meses.length && !hayMesOtroPol ? meses[0] : null };
@@ -3598,7 +3632,7 @@ function fleteEsperadoTabla(row, modo){
   if(col === undefined || col < 0) return null;
   const destino = (row[COL.PORT] || '').toString().trim(), naviera = (row[COL.SHIPPING] || '').toString().trim();
   if(!destino || !naviera) return null;
-  const hayDestino = tarifas.some(t => coincideTexto(t.destino, destino) && coincideTexto(t.carrier, naviera));
+  const hayDestino = tarifas.some(t => coincideTexto(t.destino, destino) && coincideNaviera(t.carrier, naviera));
   if(!hayDestino) return null;
   const meses = mesesDeCarga(row);
   const tarifa = tarifaPara(row), ref = refTarifa(tarifa);
@@ -8783,6 +8817,40 @@ function mesesParaElegir(){
   return lista.sort((a,b) => b - a);
 }
 
+// Puertos con la primera letra de cada palabra en mayuscula y el resto en minuscula (Ho Chi Minh, New York, Norfolk): asi se escriben
+// en la planilla, y asi el mismo puerto no aparece de tres formas (NORFOLK, norfolk, Norfolk).
+function normalizarPuerto(t){
+  return (t === undefined || t === null ? '' : String(t)).trim().replace(/\s+/g, ' ').toLowerCase()
+    .replace(/(^|[\s\/(])(\p{L})/gu, (m, a, b) => a + b.toUpperCase());
+}
+// Tipo de contenedor: todos los que se cargan son High Cube, asi que 40, 40 pies, 40'HC, 40 hc... quedan como "40' HC" (y 20 como "20' HC").
+// Si el texto no dice 20 ni 40, se deja como esta.
+function normalizarCnt(t){
+  const x = (t === undefined || t === null ? '' : String(t)).trim();
+  const m = x.match(/^(20|40|45)\s*(?:'|"|pies?|ft|feet|f)?\s*(?:-|\s)?\s*(?:hc|h\.c\.?|high\s*cube|hq)?\.?$/i);
+  return m ? m[1] + "' HC" : x;
+}
+// Opciones para los desplegables del formulario: lo que ya esta cargado en el tarifario (y los puertos / navieras de las cargas),
+// sin repetidos. En los campos de puerto se ofrecen ya normalizados.
+function opcionesTarifa(k){
+  const vistos = new Set(), out = [];
+  const poner = v => {
+    let t = (v === undefined || v === null || (typeof v === 'number' && isNaN(v))) ? '' : String(v).trim();
+    if(!t) return;
+    if(k === 'destino' || k === 'pol') t = normalizarPuerto(t);
+    if(k === 'cnt') t = normalizarCnt(t);
+    if(k === 'carrier') t = normalizarNaviera(t);
+    const c = t.toLowerCase();
+    if(!vistos.has(c)){ vistos.add(c); out.push(t); }
+  };
+  tarifas.forEach(t => poner(t[k]));
+  if(k === 'destino') (allRowsAll || []).forEach(r => poner(r[COL.PORT]));
+  if(k === 'carrier') (allRowsAll || []).forEach(r => poner(r[COL.SHIPPING]));
+  if(k === 'pol') poner('Buenos Aires');
+  if(k === 'cnt'){ poner("20' HC"); poner("40' HC"); }
+  return out.sort((a, b) => a.localeCompare(b, 'es', { numeric: true, sensitivity: 'base' }));
+}
+
 let _tarifaEditando = null;   // indice en tarifas, o null si es nueva
 
 function nuevaTarifa(){ abrirFormTarifa(null); }
@@ -8808,8 +8876,11 @@ function abrirFormTarifa(i){
       return `<div class="config-field"><div class="config-label">${c.label}</div>
         <select class="config-input" id="tf-fechaTxt">${opcionesMes}</select></div>`;
     }
+    const ops = ['pol','destino','cnt','carrier','diasLibres','forwarder'].indexOf(c.k) >= 0 ? opcionesTarifa(c.k) : null;
+    const esPuerto = c.k === 'pol' || c.k === 'destino';
     return `<div class="config-field"><div class="config-label">${c.label}</div>
-      <input class="config-input" id="tf-${c.k}" value="${val(c.k)}" placeholder="${c.ph}"></div>`;
+      <input class="config-input" id="tf-${c.k}" value="${val(c.k)}" placeholder="${c.ph}" autocomplete="off"${ops ? ' list="tf-' + c.k + '-dl"' : ''}${esPuerto ? ' onblur="this.value=normalizarPuerto(this.value)"' : (c.k === 'cnt' ? ' onblur="this.value=normalizarCnt(this.value)"' : (c.k === 'carrier' ? ' onblur="this.value=normalizarNaviera(this.value)"' : ''))}>
+      ${ops ? '<datalist id="tf-' + c.k + '-dl">' + ops.map(o => '<option value="' + o.replace(/"/g, '&quot;') + '">').join('') + '</datalist>' : ''}</div>`;
   }).join('');
 
   document.getElementById('content').innerHTML = `
@@ -8818,7 +8889,7 @@ function abrirFormTarifa(i){
     <div class="config-desc">${i===null||i===undefined
       ? 'Se agrega una fila al final de la hoja ' + HOJA_TARIFARIO + '.'
       : 'Se modifica la fila ' + t._sheetRow + ' de la hoja ' + HOJA_TARIFARIO + '.'}
-      El mes se elige de la lista y se guarda siempre como MMM-AAAA.</div>
+      El mes se elige de la lista y se guarda siempre como MMM-AAAA. En los demás campos podés elegir de la lista o escribir uno nuevo; los puertos se guardan con la primera letra de cada palabra en mayúscula (Ho Chi Minh) y las navieras con su nombre estándar (MSC, HAPAG-LLOYD).</div>
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:0 16px;">${campos}</div>
     <div class="config-save">
       <button class="btn" onclick="showView('tarifario')" style="margin-right:8px;">Cancelar</button>
@@ -8827,9 +8898,51 @@ function abrirFormTarifa(i){
   </div>`;
 }
 
+// Puertos ya cargados en el tarifario que no estan escritos como Norfolk / Ho Chi Minh (destino y POL).
+function puertosSinNormalizar(){
+  const cambios = [];
+  tarifas.forEach(t => {
+    ['destino', 'pol', 'cnt', 'carrier'].forEach(k => {
+      const v = (t[k] || '').toString();
+      const n = k === 'cnt' ? normalizarCnt(v) : k === 'carrier' ? normalizarNaviera(v) : normalizarPuerto(v);
+      if(v.trim() && n !== v) cambios.push({ t, k, antes: v, despues: n });
+    });
+  });
+  return cambios;
+}
+async function normalizarPuertosTarifario(){
+  if(!accessToken){ alert('Conectate con Google primero para escribir en la planilla.'); return; }
+  const cambios = puertosSinNormalizar();
+  if(!cambios.length){ showToast('Todos los puertos ya están normalizados'); return; }
+  const esc = x => String(x).replace(/&/g, '&amp;').replace(/</g, '&lt;');
+  const ok = await showConfirm('Normalizar puertos del tarifario',
+    'Se corrigen ' + cambios.length + ' celda' + (cambios.length === 1 ? '' : 's') + ' (Destino, POL, CNT y Carrier) para que los puertos queden con la primera letra de cada palabra en mayúscula (Ho Chi Minh) los contenedores como 40\' HC y las navieras con su nombre estándar (MSC, HAPAG-LLOYD...).',
+    { icono: '🚢', okLabel: 'Normalizar',
+      detalle: cambios.slice(0, 15).map(c => '<div>Fila ' + c.t._sheetRow + ' · ' + (c.k === 'pol' ? 'POL' : c.k === 'cnt' ? 'CNT' : c.k === 'carrier' ? 'Carrier' : 'Destino') + ': ' + esc(c.antes) + ' → <b>' + esc(c.despues) + '</b></div>').join('')
+             + (cambios.length > 15 ? '<div style="color:var(--text3);">…y ' + (cambios.length - 15) + ' más.</div>' : '') });
+  if(!ok) return;
+  const nc = getNegocioConfig();
+  const sid = nc.sheetId || cfg.sheetId;
+  const letra = k => colIndexToLetter(CAMPOS_TARIFA.findIndex(c => c.k === k));
+  const data = cambios.map(c => ({ range: HOJA_TARIFARIO + '!' + letra(c.k) + c.t._sheetRow, values: [[c.despues]] }));
+  showToast('Normalizando...');
+  try{
+    const r = await fetch('https://sheets.googleapis.com/v4/spreadsheets/' + sid + '/values:batchUpdate', {
+      method: 'POST', headers: { Authorization: 'Bearer ' + accessToken, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ valueInputOption: 'USER_ENTERED', data })
+    });
+    if(!r.ok){ alert('No se pudo guardar en la planilla. No se escribió nada: probá de nuevo.'); return; }
+    await appendLog({ customer: '', accion: 'tarifario: puertos normalizados', detalle: cambios.length + ' celdas de Destino / POL / CNT / Carrier' });
+    showToast('✓ ' + cambios.length + ' puerto' + (cambios.length === 1 ? '' : 's') + ' normalizado' + (cambios.length === 1 ? '' : 's'));
+    await loadTarifario(); await loadLog();
+    renderTarifario();
+  }catch(e){ console.error('normalizarPuertosTarifario:', e); alert('No se pudo normalizar: ' + e.message); }
+}
+
 async function guardarTarifa(){
   const g = k => (document.getElementById('tf-' + k)||{}).value || '';
   const datos = {}; CAMPOS_TARIFA.forEach(c => { datos[c.k] = g(c.k).trim(); });
+  datos.destino = normalizarPuerto(datos.destino); datos.pol = normalizarPuerto(datos.pol); datos.cnt = normalizarCnt(datos.cnt); datos.carrier = normalizarNaviera(datos.carrier);
   if(!datos.destino || !datos.carrier){
     alert('Destino y Carrier son obligatorios: sin esos dos, la tarifa no se puede cruzar con ninguna carga.');
     return;
@@ -9547,6 +9660,7 @@ function renderTarifario(){
               style="font-size:12px;font-family:var(--mono);padding:5px 10px 5px 30px;border-radius:8px;border:1px solid ${tarifarioBusqueda?'var(--accent)':'var(--border)'};background:var(--bg2);color:var(--text);width:210px;outline:none;">
           </div>
           <select onchange="setTarifarioMes(this.value)" style="font-size:12px;font-family:var(--mono);padding:5px 8px;border-radius:8px;border:1px solid var(--border);background:var(--bg2);color:var(--text2);cursor:pointer;">${opts}</select>
+          ${puertosSinNormalizar().length ? `<button class="btn" style="font-size:12px;padding:5px 12px;" onclick="normalizarPuertosTarifario()" title="Deja los puertos con la primera letra de cada palabra en mayúscula (Ho Chi Minh, Norfolk) los contenedores como 40' HC y las navieras (MSC, HAPAG-LLOYD...)">✨ Normalizar tarifario (${puertosSinNormalizar().length})</button>` : ''}
           <button class="btn" style="font-size:12px;padding:5px 12px;" onclick="recargarTarifario()">↻ Releer</button>
           <button class="btn primary" style="font-size:12px;padding:5px 12px;" onclick="nuevaTarifa()">＋ Nueva tarifa</button>
         </div>
