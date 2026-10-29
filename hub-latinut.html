@@ -6212,6 +6212,7 @@ function editarCelda(r, c, inicial){
     if(guardar){
       anotarCambioTabla(row, c, inp.value);
       if(c === COL.PRODUCT) propagarProductoATabla(row, inp.value);
+      if(c === COL.CONTRACT_CLIENTE) propagarContratoATabla(row, inp.value);
     }
     const filaDebajo = _tablaRows[r + 1];
     renderCargas();
@@ -6277,6 +6278,35 @@ function editarContratoEnTabla(r, c){
   sel.onblur = () => fin('');
   if(sel.focus) sel.focus();
   return true;
+}
+
+// Escribir (o pegar) a mano el numero de contrato en la tabla recalcula la carga con ese contrato, igual que elegirlo de la lista:
+// precio, flete, incoterm, servicios, Total CFR, TOTAL FINAL, precio final x tn y fecha estimada de cobro. Todo queda como cambio
+// pendiente en amarillo (y se guarda solo como cualquier edicion de la tabla). Las columnas con formula en la planilla no se tocan:
+// se recalculan solas y el hub las vuelve a leer despues de guardar.
+function contratoPorNumero(numero){
+  const n = normTar(numero);
+  if(!n) return null;
+  return contratos.find(k => normTar(k.contrato) === n) ||
+    ((_contratosCerr || []).find(k => normTar(k.contrato) === n) || null);
+}
+function propagarContratoATabla(row, numero){
+  const nuevo = (numero || '').toString().trim();
+  if(!nuevo) return;
+  const k = contratoPorNumero(nuevo);
+  const fila = 'Fila ' + row._sheetRow;
+  if(!k){
+    if(contratos.length) showToast('⚠ ' + fila + ': no encontré el contrato ' + nuevo + ' entre los abiertos ni los cerrados. Cambió el número, pero no recalculé precio ni totales.', 'warn', 9000);
+    return;
+  }
+  const vis = row.map((x, i) => valorVisible(row, i)); vis._sheetRow = row._sheetRow;
+  const plan = planCambioContrato(vis, k);
+  const aplicar = plan.cambios.filter(ch => ch.col !== COL.CONTRACT_CLIENTE && !esColFormula(ch.col));
+  aplicar.forEach(ch => anotarCambioTabla(row, ch.col, ch.despues, ch.nota));
+  const aviso = (k.cerrado ? ['El contrato ' + k.contrato + ' figura como CERRADO.'] : []).concat(plan.avisos);
+  _avisoTabla = aplicar.length ? fila + ': contrato → ' + k.contrato + ' · ' + aplicar.length + ' valor' + (aplicar.length === 1 ? '' : 'es') + ' recalculados' : '';
+  showToast('📑 ' + fila + ': contrato ' + k.contrato + (aplicar.length ? '. Se recalcularon:\n' + aplicar.slice(0, 8).map(ch => '• ' + ch.nombre + ': ' + (ch.antes || '(vacío)') + ' → ' + ch.despues).join('\n') : '. Ya tenía esos valores.')
+    + (aviso.length ? '\n⚠ ' + aviso.join('\n⚠ ') : ''), aviso.length ? 'warn' : 'info', 10000);
 }
 
 // Al cambiar el Producto (por ejemplo de NOP a convencional) cambia el contrato que
@@ -6464,7 +6494,7 @@ function tablaPegar(e){
   const filasDest = unico ? g.r2 - g.r1 + 1 : m.length;
   const colsDest  = unico ? g.k2 - g.k1 + 1 : Math.max.apply(null, m.map(f => f.length));
   let puestas = 0, formulas = 0, fuera = 0;
-  const productos = [];
+  const productos = [], contratosPegados = [];
   for(let i = 0; i < filasDest; i++){
     const r = g.r1 + i, row = _tablaRows[r];
     if(!row){ fuera += colsDest; continue; }
@@ -6477,6 +6507,7 @@ function tablaPegar(e){
       anotarCambioTabla(row, c, v);
       puestas++;
       if(c === COL.PRODUCT) productos.push([row, v]);
+      if(c === COL.CONTRACT_CLIENTE) contratosPegados.push([row, v]);
     }
   }
   const r2 = Math.min(_tablaRows.length - 1, g.r1 + filasDest - 1);
@@ -6486,6 +6517,7 @@ function tablaPegar(e){
   marcarCelda(r2, _tablaCols[k2], true);
   // Cambiar el producto arrastra el contrato (precios, flete, totales): solo se hace con pocos para no llenar la pantalla de avisos.
   if(productos.length && productos.length <= 3) productos.forEach(p => propagarProductoATabla(p[0], p[1]));
+  if(contratosPegados.length && contratosPegados.length <= 3) contratosPegados.forEach(p => propagarContratoATabla(p[0], p[1]));
   let msg = '📋 ' + puestas + ' celda' + (puestas === 1 ? ' pegada' : 's pegadas') + ' (en amarillo: revisalas y guardá).';
   if(productos.length > 3) msg += ' Cambiaste el Producto en ' + productos.length + ' cargas: los precios del contrato no se recalcularon.';
   if(formulas) msg += ' ' + formulas + ' con fórmula no se tocaron.';
@@ -6705,6 +6737,26 @@ async function deshacerTabla(){
   await guardarCambiosTabla();
   showToast('↩ Deshecho: ' + n + ' celda' + (n === 1 ? '' : 's') + ' volvieron a como estaban', 'info');
 }
+// Las columnas con formula (TOTAL FINAL, Total CFR, fecha estimada...) las recalcula la planilla al cambiar contrato, precio, flete o toneladas.
+// El hub no las escribe, asi que despues de guardar vuelve a leer esas filas para mostrar el numero nuevo y no el viejo.
+async function refrescarCalculadasTabla(escritas){
+  try{
+    if(!_formulaCols || !_formulaCols.size) return;
+    const entradas = [COL.CONTRACT_CLIENTE, COL.PRICE_CLIENTE, COL.FLETE, COL.TNS, COL.ETD, COL.ETA, COL.PRODUCT].filter(c => c !== undefined && c >= 0);
+    const filas = [...new Set(escritas.filter(x => entradas.indexOf(x.col) >= 0).map(x => x.sheetRow))];
+    if(!filas.length) return;
+    const fresco = await releerFilasCarga(filas);
+    escritas.forEach(x => {
+      if(filas.indexOf(x.sheetRow) < 0) return;
+      const fr = fresco[x.sheetRow]; if(!fr || !x.row) return;
+      _formulaCols.forEach(c => {
+        if(cargasPend[x.sheetRow] && cargasPend[x.sheetRow][c]) return;
+        const nv = (fr.valores[c] || '').toString();
+        if(x.row[c] !== undefined && String(x.row[c]) !== nv) x.row[c] = nv;
+      });
+    });
+  }catch(e){ console.warn('refrescar columnas calculadas:', e); }
+}
 async function guardarCambiosTabla(){
   if(_guardandoTabla){ _guardarOtraVez = true; return; }
   _guardandoTabla = true;
@@ -6804,6 +6856,7 @@ async function _guardarCambiosTablaInterno(){
   const u = aEscribir.length === 1 ? aEscribir[0] : null;
   showToast(u ? '✓ Fila ' + u.sheetRow + ' · ' + (hdr[u.col] || colIndexToLetter(u.col)) + ': ' + (u.antes || '(vacío)') + ' → ' + (u.despues || '(vacío)') + ' · Ctrl+Z deshace'
               : '✓ ' + aEscribir.length + ' cambios guardados · Ctrl+Z deshace', 'ok', 4000);
+  await refrescarCalculadasTabla(aEscribir);
   // Si en este momento se esta escribiendo en otra celda, no se redibuja la tabla: se perderia lo tipeado.
   const ed = document.getElementById('t-edit');
   if(!(ed && ed.parentNode)) renderCargas();
