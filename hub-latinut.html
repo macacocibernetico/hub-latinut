@@ -3848,7 +3848,10 @@ async function releerFilasCarga(sheetRows){
   });
   return out;
 }
-const esFormulaCelda = v => typeof v === 'string' && v.charAt(0) === '=';
+// Una "formula" que es solo una cuenta con numeros (=17.8+5.67, los pesos de dos contenedores sumados a mano) no calcula nada
+// a partir de otras celdas: es un valor cargado a mano. Se trata como un valor comun, asi se puede cambiar desde el hub y
+// no se copia a las cargas nuevas (antes la carga nueva salia con el peso de la fila de arriba en vez del que se ponia).
+const esFormulaCelda = v => typeof v === 'string' && v.charAt(0) === '=' && !/^=[\s\d.+\-*\/()]+$/.test(v);
 
 async function guardarFacturaForwarder(){
   const d = leerFacturaForwarder();
