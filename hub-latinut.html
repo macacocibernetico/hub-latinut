@@ -2714,6 +2714,9 @@ let contratos = [];
 // Columna donde el contrato dice la condicion de cobro ("CAD BANK", "Pagare", ...). Si dice CAD BANK, la carga sale con "CAD BANK" en Envio al cliente.
 const ALIAS_FORMA_PAGO = ['Forma de pago','Forma pago','Condicion de pago','Condicion','Condiciones de pago','Payment terms'];
 const ENVIO_CAD_BANK = 'CAD BANK';
+// En el TELEX, "BL Original" y "CAD BANK" quieren decir lo mismo para el hub: esa carga no se libera por TELEX
+// (los documentos van en papel o por el banco), asi que no genera avisos de liberacion ni cuenta como "en proceso".
+function telexNoAplica(t){ t = (t || '').toString().toLowerCase(); return t.includes('bl orig') || /cad[\s\-_.]*bank/.test(t); }
 function esCadBank(k){ return !!k && /(^|[^a-z])cad[\s\-_.]*bank($|[^a-z])/i.test(normTar(k.formaPago || '')); }
 let _contratosError = null;
 let _contratosHeaders = [];     // encabezados tal cual estan en la hoja
@@ -4692,7 +4695,7 @@ function getAlerts(){
     const telex = (row[COL.TELEX]||'').trim();
     const telexLow = telex.toLowerCase();
     const telexSI = telexLow === 'si';
-    const telexBLOrig = telexLow.includes('bl orig');
+    const telexBLOrig = telexNoAplica(telexLow);
     const telexVacio = telex === '';
     const pagEnv = (row[COL.PAGARE_ENVIADO]||'').trim();
     const pagFirm = (row[COL.PAGARE_FIRMADO]||'').trim();
@@ -4853,7 +4856,7 @@ function updateBadges(){
   const cobros=allRows.filter(r=>{const d=daysFrom(r[getCobroCol()]);return d!==null&&d<=14;}).length;
   const bC=document.getElementById('badge-cobranza');
   bC.textContent=cobros||'';bC.style.display=cobros?'':'none';
-  const libs=allRows.concat(filasCerradas()).filter(r=>{const d=daysFrom(r[COL.ETA]);const t=(r[COL.TELEX]||'').trim().toLowerCase();return d!==null&&d>=0&&d<=7&&t!=='si'&&!t.includes('bl orig');}).length;
+  const libs=allRows.concat(filasCerradas()).filter(r=>{const d=daysFrom(r[COL.ETA]);const t=(r[COL.TELEX]||'').trim().toLowerCase();return d!==null&&d>=0&&d<=7&&t!=='si'&&!telexNoAplica(t);}).length;
   const bL=document.getElementById('badge-liberaciones');
   if(bL){bL.textContent=libs||'';bL.style.display=libs?'':'none';}
 }
@@ -5216,7 +5219,8 @@ function renderCargas(showAll, sort){
   // Base filter
   // La tabla es la replica de la planilla: trae TODAS las filas, tambien las ya cobradas.
   // Con una busqueda escrita se mira en TODA la planilla (tambien las ya cobradas), sin importar la vista.
-  let rows = (cargasVista === 'tabla' || cargasSearch.trim())
+  // En el celular no hay vista Tabla (son tarjetas): ahi manda Activas / Todas, como en Por embarque.
+  let rows = ((cargasVista === 'tabla' && !isMobile()) || cargasSearch.trim())
     ? allRowsAll
     : cargasShowAll
     ? allRows
@@ -5254,7 +5258,7 @@ function renderCargas(showAll, sort){
     rows = rows.filter(r => {
       const t=(r[COL.TELEX]||'').trim().toLowerCase();
       if(cargasDropFilters.telex === 'sin_solicitar') return t === '';
-      if(cargasDropFilters.telex === 'en_proceso') return t !== '' && t !== 'si';
+      if(cargasDropFilters.telex === 'en_proceso') return t !== '' && t !== 'si' && !telexNoAplica(t);
       if(cargasDropFilters.telex === 'liberado') return t === 'si';
       return true;
     });
@@ -5572,7 +5576,7 @@ function renderCargas(showAll, sort){
     ${searchHtml}
     ${filtrosWrap}
     ${resetBtn}
-    ${_colEstCobroOk() ? '<button class="t-filtros-btn" onclick="rellenarFechasEstimadas()" title="Completa la fecha estimada de cobro de las cargas que la tienen vacía, con la fórmula de pago de su contrato (te muestra cómo se calculó cada una antes de aplicar)">📅 Rellenar fecha estimada de cobro</button><button class="t-filtros-btn" onclick="revisarFechasEstimadas()" title="Compara la fecha estimada de cobro de cada carga con la que da la fórmula de pago de su contrato y te deja elegir, una por una, si la dejás así o la cambiás">🔎 Revisar fecha estimada de cobro</button>' : ''}
+    ${_colEstCobroOk() ? '<button class="t-filtros-btn" onclick="rellenarFechasEstimadas()" title="Completa la fecha estimada de cobro de las cargas que la tienen vacía, con la fórmula de pago de su contrato (te muestra cómo se calculó cada una antes de aplicar)">📅 Rellenar fecha estimada de cobro</button><button class="t-filtros-btn" onclick="revisarFechasEstimadas()" title="Compara la fecha estimada de cobro de cada carga con la que da la fórmula de pago de su contrato y te deja elegir, una por una, si la dejás así o la cambiás">🔎 Revisar fecha estimada de cobro</button>' : ''}${botonTelexCadBank()}
     ${_etaOrdenFijo && ordenPorETAActivo() ? '<button class="t-filtros-btn on" onclick="reordenarPorETA()" title="Las fechas que cambiaste siguen en su lugar hasta que salgas de la tabla; esto acomoda todas por ETA ahora (la que llega ultima, abajo de todo)">↕ Reordenar por ETA</button>' : ''}
     <span style="flex:1;"></span>
     ${viewChip('Por embarque', false, "cargasVista='grupos';renderCargas()")}
@@ -6278,6 +6282,77 @@ function editarContratoEnTabla(r, c){
   sel.onblur = () => fin('');
   if(sel.focus) sel.focus();
   return true;
+}
+
+// Cargas cuyo contrato (abierto o cerrado) tiene Forma de pago CAD BANK y todavia no dicen CAD BANK en el TELEX.
+// Las que tienen el TELEX vacio se escriben; las que ya tienen otra cosa (SI, solicitado...) se muestran aparte y no se pisan.
+function cargasCadBankSinTelex(){
+  const out = { vacias: [], conOtro: [] };
+  if(COL.TELEX === undefined || COL.TELEX < 0) return out;
+  const cad = new Map();
+  (_contratosCerr || []).concat(contratos).forEach(k => { if(esCadBank(k)) cad.set(normTar(k.contrato), k); });   // los abiertos pisan a los cerrados
+  contratos.forEach(k => { if(!esCadBank(k)) cad.delete(normTar(k.contrato)); });
+  if(!cad.size) return out;
+  allRowsAll.forEach(r => {
+    const k = cad.get(normTar(r[COL.CONTRACT_CLIENTE]));
+    if(!k || !esCadBank(k)) return;
+    const t = (r[COL.TELEX] || '').toString().trim();
+    if(/cad[\s\-_.]*bank/i.test(t)) return;
+    (t ? out.conOtro : out.vacias).push({ row: r, k, telex: t });
+  });
+  return out;
+}
+async function marcarTelexCadBank(){
+  if(!accessToken){ alert('Conectate con Google primero para escribir en la planilla.'); return; }
+  if(!contratos.length){ try{ await loadContratos(); }catch(e){} }
+  await cargarContratosCerrados();
+  const c = cargasCadBankSinTelex();
+  if(!c.vacias.length){
+    showToast(c.conOtro.length ? 'Las cargas CAD BANK que faltan ya tienen otra cosa en el TELEX: no las piso (' + c.conOtro.length + ').' : 'Todas las cargas con contrato CAD BANK ya dicen CAD BANK en el TELEX.', 'info', 7000);
+    return;
+  }
+  const e = t => String(t === undefined || t === null ? '' : t).replace(/&/g, '&amp;').replace(/</g, '&lt;');
+  const lin = x => '<div>Fila ' + x.row._sheetRow + ' · ' + e((x.row[COL.CUSTOMER] || '').trim() || '—') + ' · BL ' + e((x.row[COL.BL] || '').trim() || '—') + ' · contrato ' + e(x.k.contrato) + (x.k.cerrado ? ' (cerrado)' : '') + (x.telex ? ' · TELEX dice «' + e(x.telex) + '»' : '') + '</div>';
+  const detalle = '<div style="margin-bottom:4px;"><b>Se escribe CAD BANK en el TELEX de ' + c.vacias.length + ':</b></div>' + c.vacias.slice(0, 25).map(lin).join('')
+    + (c.vacias.length > 25 ? '<div style="color:var(--text3);">…y ' + (c.vacias.length - 25) + ' más.</div>' : '')
+    + (c.conOtro.length ? '<div style="margin-top:8px;color:var(--warn);"><b>No se tocan ' + c.conOtro.length + '</b> que ya tienen otra cosa en el TELEX:</div>' + c.conOtro.slice(0, 15).map(lin).join('') : '');
+  const ok = await showConfirm('CAD BANK en el TELEX', 'Las cargas cuyo contrato tiene Forma de pago CAD BANK quedan con "CAD BANK" en la columna TELEX. Solo se escriben las que tienen el TELEX vacío.', { icono: '🏦', okLabel: 'Escribir CAD BANK', detalle });
+  if(!ok) return;
+  showToast('Escribiendo...');
+  let fresco;
+  try{ fresco = await releerFilasCarga(c.vacias.map(x => x.row._sheetRow)); }
+  catch(err){ alert('No pude releer la planilla antes de escribir: ' + err.message); return; }
+  const nc = getNegocioConfig(), hoja = nc.sheetName || cfg.sheetName, saltadas = [];
+  const data = [];
+  c.vacias.forEach(x => {
+    const f = fresco[x.row._sheetRow] || { valores: [], formulas: [] };
+    if(((f.valores[COL.BL] || '').toString().trim()) !== ((x.row[COL.BL] || '').toString().trim())){ saltadas.push('Fila ' + x.row._sheetRow + ': la fila cambió en la planilla'); return; }
+    if(((f.valores[COL.TELEX] || '').toString().trim()) || esFormulaCelda(f.formulas[COL.TELEX])){ saltadas.push('Fila ' + x.row._sheetRow + ': el TELEX ya no está vacío'); return; }
+    data.push({ range: hoja + '!' + colIndexToLetter(COL.TELEX) + x.row._sheetRow, values: [[ENVIO_CAD_BANK]], x });
+  });
+  if(data.length){
+    const r = await fetch('https://sheets.googleapis.com/v4/spreadsheets/' + (nc.sheetId || cfg.sheetId) + '/values:batchUpdate', {
+      method: 'POST', headers: { Authorization: 'Bearer ' + accessToken, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ valueInputOption: 'USER_ENTERED', data: data.map(d => ({ range: d.range, values: d.values })) })
+    });
+    if(!r.ok){ alert('No se pudo escribir en la planilla. No se cambió nada.'); return; }
+    data.forEach(d => { d.x.row[COL.TELEX] = ENVIO_CAD_BANK; });
+    _dataVersion++;
+    await appendLog({ fc: '', fcServ: '', bl: '', customer: '', accion: 'TELEX CAD BANK', detalle: data.length + ' carga(s): filas ' + data.map(d => d.x.row._sheetRow).join(', ') });
+  }
+  if(saltadas.length) alert('Quedaron sin cambiar:\n' + saltadas.join('\n'));
+  showToast('🏦 CAD BANK escrito en el TELEX de ' + data.length + ' carga' + (data.length === 1 ? '' : 's'), data.length ? 'ok' : 'info');
+  if(currentView === 'cargas') renderCargas();
+}
+
+// Boton de la barra de Cargas: aparece solo si hay cargas CAD BANK con el TELEX vacio. Los contratos cerrados se leen una vez.
+function botonTelexCadBank(){
+  if(COL.TELEX === undefined || COL.TELEX < 0) return '';
+  if(accessToken && !_contratosCerr && !_contratosCerrCargando){
+    cargarContratosCerrados().then(() => { if(currentView === 'cargas' && cargasCadBankSinTelex().vacias.length) renderCargas(); }).catch(() => {});
+  }
+  const n = cargasCadBankSinTelex().vacias.length;
+  return n ? '<button class="t-filtros-btn" onclick="marcarTelexCadBank()" title="Cargas cuyo contrato tiene Forma de pago CAD BANK y el TELEX vacío: escribe CAD BANK en el TELEX (te muestra cuáles antes)">🏦 CAD BANK en TELEX (' + n + ')</button>' : '';
 }
 
 // Escribir (o pegar) a mano el numero de contrato en la tabla recalcula la carga con ese contrato, igual que elegirlo de la lista:
@@ -6998,7 +7073,7 @@ function getFormValues(prefix){
       data[f] = el.value.trim();
     }
   });
-  if(prefix === 'nc' && window._cad_nc && !data.clienteEnv) data.clienteEnv = ENVIO_CAD_BANK;
+  if(prefix === 'nc' && window._cad_nc && !data.telex) data.telex = ENVIO_CAD_BANK;
   return data;
 }
 
@@ -7371,9 +7446,9 @@ function aplicarContrato(prefix, i){
   setForm(prefix, 'totalFinal',      v.totalFinal);
   setForm(prefix, 'precioFinalTn',   v.finalPorTn);
   autoFechaCobro(prefix);
-  // Contrato CAD BANK: "Envio al cliente" sale con CAD BANK. En Nueva carga no hay ese campo en pantalla: se recuerda y se agrega al guardar.
+  // Contrato CAD BANK: el TELEX sale con CAD BANK. En Nueva carga no hay ese campo en pantalla: se recuerda y se agrega al guardar.
   window['_cad_' + prefix] = esCadBank(k);
-  const envEl = document.getElementById(prefix + '-clienteEnv');
+  const envEl = document.getElementById(prefix + '-telex');
   if(envEl){
     if(esCadBank(k)){ if(!envEl.value.trim()) envEl.value = ENVIO_CAD_BANK; }
     else if(envEl.value.trim() === ENVIO_CAD_BANK) envEl.value = '';
@@ -7381,7 +7456,7 @@ function aplicarContrato(prefix, i){
 
   if(caja){
     const avisos = [];
-    if(esCadBank(k)) avisos.push('Es CAD BANK: en "Envío al cliente" se carga CAD BANK.');
+    if(esCadBank(k)) avisos.push('Es CAD BANK: en "TELEX" se carga CAD BANK.');
     if(k.cerrado) avisos.push('Este contrato figura como CERRADO en la hoja "Contratos cerrados". Confirmá que corresponde antes de guardar.');
     if(!tns) avisos.push('Falta cargar las Tns: los totales quedan vacíos hasta que las pongas.');
     if(isNaN(k.flete)) avisos.push('El contrato no tiene flete, así que ese campo queda en blanco.');
@@ -7797,7 +7872,7 @@ function renderLiberaciones(){
     const d=daysFrom(r[COL.ETA]);
     if(d===null||d<0||d>7) return false;
     const t=(r[COL.TELEX]||'').trim().toLowerCase();
-    if(t.includes('bl orig')) return false;
+    if(telexNoAplica(t)) return false;
     if(t==='si') return false;
     return true;
   }).sort((a,b)=>(daysFrom(a[COL.ETA])||999)-(daysFrom(b[COL.ETA])||999));
@@ -7805,7 +7880,7 @@ function renderLiberaciones(){
   const nc=getNegocioConfig();
   const label=nc.label;
   const sinLib=rows.filter(r=>(r[COL.TELEX]||'').trim()==='').length;
-  const enProceso=rows.filter(r=>{const t=(r[COL.TELEX]||'').trim().toLowerCase();return t&&t!=='si'&&!t.includes('bl orig');}).length;
+  const enProceso=rows.filter(r=>{const t=(r[COL.TELEX]||'').trim().toLowerCase();return t&&t!=='si'&&!telexNoAplica(t);}).length;
   const liberado=allRows.filter(r=>(r[COL.TELEX]||'').trim().toUpperCase()==='SI').length;
 
   let html=`<div class="stats-row">
@@ -7860,7 +7935,7 @@ function renderLiberaciones(){
     const telex=(row[COL.TELEX]||'').trim();
     const telexLow=telex.toLowerCase();
     const telexOk=telex.toUpperCase()==='SI';
-    const esBLOrig=telexLow.includes('bl orig');
+    const esBLOrig=telexNoAplica(telexLow);
     const esSolic=telexLow.includes('solicitado');
     const esRecib=telexLow.includes('recibir');
     const pagNA=!!motivoSinPagare(row, nc);
@@ -7979,7 +8054,7 @@ function daysColor(d){
 function renderCobranzaMobile(rows){
   let html = '';
   rows.forEach((row, localIdx) => {
-    const origIdx = allRows.indexOf(row);
+    const origIdx = idxDeFila(row);
     const d = daysFrom(getCobroFecha(row));
     const color = d===null?'#9ca3af':d<=0?'#dc2626':d<=2?'#ea580c':d<=4?'#d97706':d<=10?'#ca8a04':'#16a34a';
     const customer = (row[COL.CUSTOMER]||'—').trim();
@@ -8162,7 +8237,7 @@ function renderCobranza(filterKey, filterVal){
   };
 
   rows.forEach((row,localIdx)=>{
-    const origIdx=allRows.indexOf(row);
+    const origIdx=idxDeFila(row);
     const d=daysFrom(row[getCobroCol()]);
     const color=daysColor(d);
     const inv1=(row[COL.INVOICE_CLIENTE]||'').trim();
@@ -11828,8 +11903,8 @@ function estadoCargaDots(row){
   const color = ok => ok === true ? 'var(--ok)' : ok === 'mid' ? 'var(--warn)' : 'var(--border2)';
   const dots = [
     ['Docs: ' + (docs || 'pendiente'), docs === 'SI' ? true : (docs ? 'mid' : false)],
-    ['Aviso al cliente: ' + (env || 'no enviado'), env === 'SI' ? true : (env === ENVIO_CAD_BANK ? 'mid' : false)],
-    ['TELEX: ' + (tl || 'sin solicitar'), (tl === 'si' || tl.indexOf('bl orig') >= 0) ? true : (tl ? 'mid' : false)]
+    ['Aviso al cliente: ' + (env || 'no enviado'), env === 'SI' ? true : false],
+    ['TELEX: ' + (tl || 'sin solicitar'), (tl === 'si' || telexNoAplica(tl)) ? true : (tl ? 'mid' : false)]
   ];
   if(!getNegocioConfig().sinPagares){
     const est = estadoPagare(row);
@@ -11843,7 +11918,7 @@ function filaCargaGrupos(row, i, enGrupo, mostrarCliente){
   const d = daysFrom(row[COL.ETA]);
   const dTxt = d === null ? '' : (d === 0 ? 'hoy' : (d > 0 ? 'en ' + d + 'd' : 'hace ' + (-d) + 'd'));
   const sel = window._fcSelectedRows && window._fcSelectedRows.has(i);
-  const idx = allRows.indexOf(row);
+  const idx = idxDeFila(row);
   return `<div class="crow${enGrupo?' en-grupo':''}" id="fc-tr-${i}" style="${sel?'background:rgba(0,113,227,.06);':''}" onclick="abrirPanelCarga(${idx})">
     <input type="checkbox" id="fc-cb-${i}" ${sel?'checked':''} onclick="event.stopPropagation();toggleFCSelection(${i})" style="accent-color:var(--accent);cursor:pointer;">
     <span class="mono" style="color:var(--accent);font-weight:600;">${(row[COL.LOTS]||'—').substring(0,18)}</span>
@@ -11997,7 +12072,7 @@ function cerrarPanelCarga(){
 function renderCargasMobileCards(rows, pagedRows){
   let html = '';
   pagedRows.forEach((row, localIdx) => {
-    const idx = allRows.indexOf(row);
+    const idx = idxDeFila(row);
     const d = daysFrom(row[COL.ETA]);
     const dc = daysClass(d);
     const customer = (row[COL.CUSTOMER]||'—').trim();
@@ -13037,7 +13112,7 @@ function openRangeDetail(type, bandKey, title){
     html += `<div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.8px;color:#2e7d32;margin-bottom:8px;">▲ Cobros · ${cobrosIn.length}</div>`;
     cobrosIn.forEach(e => {
       const row = e.rowData; if(!row) return;
-      const idx = allRows.indexOf(row);
+      const idx = idxDeFila(row);
       const diff = Math.round((new Date(e.date.getFullYear(),e.date.getMonth(),e.date.getDate()).getTime()-todayMs)/86400000);
       const isVencido = diff < 0;
       const diffStr = diff===0?'Hoy':diff<0?`Hace ${Math.abs(diff)}d`:`En ${diff}d`;
@@ -13540,7 +13615,7 @@ function openDayDetail(key, dateLabel){
     if(reclamoMultipleHtml) html += `<div style="margin-bottom:12px;">${reclamoMultipleHtml}</div>`;
     cobrosDay.forEach(e=>{
       const row=e.rowData; if(!row) return;
-      const idx=allRows.indexOf(row);
+      const idx=idxDeFila(row);
       const isVencido=diff<0;
       const cobrado = e.cobrado || false;
       const booking=(row[COL.BOOKING]||'—').trim();
@@ -13621,7 +13696,7 @@ function openDayDetail(key, dateLabel){
   if(cfMode==='eta'){
     cobrosDay.forEach(e=>{
       const row=e.rowData; if(!row) return;
-      const idx=allRows.indexOf(row);
+      const idx=idxDeFila(row);
       const bl=(row[COL.BL]||'—').trim();
       const vessel=(row[COL.VESSEL]||'—').trim();
       const port=(row[COL.PORT]||'—').trim();
