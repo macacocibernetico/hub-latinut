@@ -6490,6 +6490,9 @@ function tablaTeclado(e){
   if(_buscandoCargas()) return false;   // se esta escribiendo en el buscador: la tecla NO es para la grilla
   const m = { ArrowUp: [-1, 0], ArrowDown: [1, 0], ArrowLeft: [0, -1], ArrowRight: [0, 1] }[e.key];
   if(m){ e.preventDefault(); moverSel(m[0], m[1], e.shiftKey); return true; }
+  // Tab / Shift+Tab: una celda a la derecha / izquierda, como en Sheets. Antes el navegador mandaba el foco a los botones de la fila
+  // (Abrir, factura, FC) en vez de moverse por la tabla. En la ultima columna se queda ahi.
+  if(e.key === 'Tab' && !e.ctrlKey && !e.altKey && !e.metaKey && (!t || t === document.body || t.tagName === 'BODY' || (t.closest && t.closest('#t-grid')))){ e.preventDefault(); moverSel(0, e.shiftKey ? -1 : 1); return true; }
   if(e.ctrlKey && e.altKey && (e.key === 'm' || e.key === 'M')){ e.preventDefault(); abrirComentarios(); return true; }
   if(e.key === 'Enter' || e.key === 'F2'){ e.preventDefault(); editarCelda(_tablaSel.r, _tablaSel.c); return true; }
   if(e.key === 'Delete' || e.key === 'Backspace'){
