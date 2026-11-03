@@ -5576,7 +5576,7 @@ function renderCargas(showAll, sort){
     ${searchHtml}
     ${filtrosWrap}
     ${resetBtn}
-    ${_colEstCobroOk() ? '<button class="t-filtros-btn" onclick="rellenarFechasEstimadas()" title="Completa la fecha estimada de cobro de las cargas que la tienen vacía, con la fórmula de pago de su contrato (te muestra cómo se calculó cada una antes de aplicar)">📅 Rellenar fecha estimada de cobro</button><button class="t-filtros-btn" onclick="revisarFechasEstimadas()" title="Compara la fecha estimada de cobro de cada carga con la que da la fórmula de pago de su contrato y te deja elegir, una por una, si la dejás así o la cambiás">🔎 Revisar fecha estimada de cobro</button>' : ''}${botonTelexCadBank()}
+    ${_colEstCobroOk() ? '<button class="t-filtros-btn" onclick="rellenarFechasEstimadas()" title="Completa la fecha estimada de cobro de las cargas que la tienen vacía, con la fórmula de pago de su contrato (te muestra cómo se calculó cada una antes de aplicar)">📅 Rellenar fecha estimada de cobro</button><button class="t-filtros-btn" onclick="revisarFechasEstimadas()" title="Compara la fecha estimada de cobro de cada carga con la que da la fórmula de pago de su contrato y te deja elegir, una por una, si la dejás así o la cambiás">🔎 Revisar fecha estimada de cobro</button>' : ''}${botonTelexCadBank()}${botonTotalFca()}
     ${_etaOrdenFijo && ordenPorETAActivo() ? '<button class="t-filtros-btn on" onclick="reordenarPorETA()" title="Las fechas que cambiaste siguen en su lugar hasta que salgas de la tabla; esto acomoda todas por ETA ahora (la que llega ultima, abajo de todo)">↕ Reordenar por ETA</button>' : ''}
     <span style="flex:1;"></span>
     ${viewChip('Por embarque', false, "cargasVista='grupos';renderCargas()")}
@@ -6456,6 +6456,71 @@ function anotarCambioTabla(row, c, nuevo, nota, sinPropagar){
   (cargasPend[k] = cargasPend[k] || {})[c] = { antes: orig, despues: nuevo, row, nota: nota || '' };
   autoGuardarTabla();   // todo cambio anotado se guarda solo, venga de donde venga (editar, pegar, rellenar fechas...)
   if(!sinPropagar && (c === COL.ETD || c === COL.ETA)) propagarFechaCobroEstimada(row, c, antesVisible).catch(e => console.warn('fecha estimada de cobro:', e));
+  if(!sinPropagar && (c === COL.TNS || c === COL.PRICE_FCA)) recalcTotalFcaTabla(row);
+}
+// Total FCA (en Buzaram "Total Proveedor") = Price FCA x Tns. Al cambiar cualquiera de los dos en la tabla se recalcula y queda
+// como un cambio mas (se guarda solo, Ctrl+Z lo deshace). Si en la planilla esa columna es una formula, no se toca.
+function totalFcaEsperado(row){
+  const n = numeroCelda(valorVisible(row, COL.TNS)), p = numeroCelda(valorVisible(row, COL.PRICE_FCA));
+  if(isNaN(n) || isNaN(p) || n <= 0) return NaN;
+  return redondear2(p * n);
+}
+function recalcTotalFcaTabla(row){
+  if(COL.TOTAL_FCA === undefined || COL.TOTAL_FCA < 0 || esColFormula(COL.TOTAL_FCA)) return;
+  const v = totalFcaEsperado(row);
+  if(isNaN(v)) return;
+  const act = numeroCelda(valorVisible(row, COL.TOTAL_FCA));
+  if(!isNaN(act) && Math.abs(act - v) < 0.005) return;
+  anotarCambioTabla(row, COL.TOTAL_FCA, String(v).replace('.', ','), 'Price FCA × Tns', true);
+}
+
+// Cargas con Price FCA y Tns pero sin Total FCA (las que entraron sin que se calculara): se completan de una, con confirmacion.
+function cargasSinTotalFca(){
+  if(COL.TOTAL_FCA === undefined || COL.TOTAL_FCA < 0 || COL.PRICE_FCA === undefined || COL.PRICE_FCA < 0) return [];
+  return allRowsAll.filter(r => !(r[COL.TOTAL_FCA] || '').toString().trim() && !isNaN(totalFcaEsperado(r)));
+}
+function botonTotalFca(){
+  if(esColFormula(COL.TOTAL_FCA)) return '';
+  const n = cargasSinTotalFca().length;
+  return n ? '<button class="t-filtros-btn" onclick="completarTotalFca()" title="Cargas que tienen Price FCA y Tns pero el Total FCA vacío: lo calcula (Price FCA × Tns) y te muestra cuáles antes de escribir">🧮 Completar Total FCA (' + n + ')</button>' : '';
+}
+async function completarTotalFca(){
+  if(!accessToken){ alert('Conectate con Google primero para escribir en la planilla.'); return; }
+  const lista = cargasSinTotalFca();
+  if(!lista.length){ showToast('No hay cargas con el Total FCA vacío para completar.', 'info'); return; }
+  const nom = (encabezadosCargas()[COL.TOTAL_FCA] || 'Total FCA').toString().trim();
+  const e = t => String(t === undefined || t === null ? '' : t).replace(/&/g, '&amp;').replace(/</g, '&lt;');
+  const f = x => x.toLocaleString('es-AR', { maximumFractionDigits: 2 });
+  const detalle = lista.slice(0, 30).map(r => '<div>Fila ' + r._sheetRow + ' · ' + e((r[COL.CUSTOMER] || '').trim() || '—') + ' · BL ' + e((r[COL.BL] || '').trim() || '—') + ': '
+    + e(r[COL.PRICE_FCA]) + ' × ' + e(r[COL.TNS]) + ' tn = <b>' + f(totalFcaEsperado(r)) + '</b></div>').join('')
+    + (lista.length > 30 ? '<div style="color:var(--text3);">…y ' + (lista.length - 30) + ' más.</div>' : '');
+  const ok = await showConfirm('Completar ' + nom, 'Se escribe ' + nom + ' = Price FCA × Tns en ' + lista.length + ' carga' + (lista.length === 1 ? '' : 's') + ' que lo tienen vacío.', { icono: '🧮', okLabel: 'Completar', detalle });
+  if(!ok) return;
+  showToast('Escribiendo...');
+  let fresco;
+  try{ fresco = await releerFilasCarga(lista.map(r => r._sheetRow)); }
+  catch(err){ alert('No pude releer la planilla antes de escribir: ' + err.message); return; }
+  const nc = getNegocioConfig(), hoja = nc.sheetName || cfg.sheetName, saltadas = [], data = [];
+  lista.forEach(r => {
+    const fr = fresco[r._sheetRow] || { valores: [], formulas: [] };
+    const igual = c => ((fr.valores[c] || '').toString().trim()) === ((r[c] || '').toString().trim());
+    if(!igual(COL.BL) || !igual(COL.TNS) || !igual(COL.PRICE_FCA)){ saltadas.push('Fila ' + r._sheetRow + ': cambió en la planilla mientras tanto'); return; }
+    if(((fr.valores[COL.TOTAL_FCA] || '').toString().trim()) || esFormulaCelda(fr.formulas[COL.TOTAL_FCA])){ saltadas.push('Fila ' + r._sheetRow + ': ' + nom + ' ya no está vacío'); return; }
+    data.push({ r, v: totalFcaEsperado(r) });
+  });
+  if(data.length){
+    const resp = await fetch('https://sheets.googleapis.com/v4/spreadsheets/' + (nc.sheetId || cfg.sheetId) + '/values:batchUpdate', {
+      method: 'POST', headers: { Authorization: 'Bearer ' + accessToken, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ valueInputOption: 'USER_ENTERED', data: data.map(d => ({ range: hoja + '!' + colIndexToLetter(COL.TOTAL_FCA) + d.r._sheetRow, values: [[d.v]] })) })
+    });
+    if(!resp.ok){ alert('No se pudo escribir en la planilla. No se cambió nada.'); return; }
+    data.forEach(d => { d.r[COL.TOTAL_FCA] = String(d.v).replace('.', ','); });
+    _dataVersion++;
+    await appendLog({ fc: '', fcServ: '', bl: '', customer: '', accion: nom + ' completado', detalle: data.length + ' carga(s): filas ' + data.map(d => d.r._sheetRow).join(', ') });
+  }
+  if(saltadas.length) alert('Quedaron sin cambiar:\n' + saltadas.join('\n'));
+  showToast('🧮 ' + nom + ' completado en ' + data.length + ' carga' + (data.length === 1 ? '' : 's'), data.length ? 'ok' : 'info');
+  if(currentView === 'cargas') renderCargas();
 }
 
 // "Usar" en el flete sugerido de una celda vacia: lo escribe como cualquier edicion de la tabla (se guarda solo; Ctrl+Z lo deshace).
@@ -11287,6 +11352,8 @@ function fillImportData(data){
   // Also fill incoterm if field exists
   const incotermInp = document.getElementById(`${prefix}-incoterm`);
   if(incotermInp && data.incoterm) incotermInp.value = data.incoterm;
+  // Total FCA / Total Proveedor = Price FCA x Tns. Al completar los campos por codigo no se dispara el "oninput" que lo calcula.
+  recalcularTotalProveedor(prefix);
   // Con todo cargado: reglas de producto (ABW + Norfolk + pasta = NOP) y contrato.
   alCambiarCampoCarga(prefix);
 }
