@@ -3868,15 +3868,35 @@ function actualizarFacturaForwarder(){
 // Relee de la planilla las filas que se van a tocar. Sirve para dos cosas:
 // abortar si alguien cambio la fila mientras tanto (otro BL en esa fila), y
 // no pisar celdas que tienen formula.
-async function releerFilasCarga(sheetRows){
+// Que quiere decir cada error de Google al leer, en palabras.
+function motivoHttpSheets(st){
+  if(st === 429) return 'Google frenó las lecturas un momento por exceso de pedidos seguidos';
+  if(st === 401 || st === 403) return 'la sesión de Google no tiene permiso o se venció';
+  if(st === 400) return 'Google rechazó el pedido (rango fuera de la hoja)';
+  if(st >= 500) return 'Google tuvo un error de su lado';
+  return 'error ' + st;
+}
+const _esperar = ms => new Promise(r => setTimeout(r, ms));
+// soloValores: para cuando no hace falta saber que celdas tienen formula (una lectura en vez de dos).
+async function releerFilasCarga(sheetRows, soloValores){
   const nc = getNegocioConfig();
   const sid = nc.sheetId || cfg.sheetId;
   const hoja = nc.sheetName || cfg.sheetName;
-  const ranges = sheetRows.map(f => 'ranges=' + encodeURIComponent(hoja + '!A' + f + ':BT' + f)).join('&');
+  // Hasta la ultima columna con encabezado (antes era fija hasta BT: dejaba afuera las columnas nuevas de la derecha y, en una hoja
+  // con menos columnas, Google rechazaba el pedido por pasarse de la hoja).
+  const ultCol = colIndexToLetter(Math.max(0, (encabezadosCargas() || []).length - 1) || 71);
+  const ranges = sheetRows.map(f => 'ranges=' + encodeURIComponent(hoja + '!A' + f + ':' + ultCol + f)).join('&');
   const base = 'https://sheets.googleapis.com/v4/spreadsheets/' + sid + '/values:batchGet?' + ranges;
   const h = { headers: { Authorization: 'Bearer ' + accessToken } };
-  const [rv, rf] = await Promise.all([fetch(base, h), fetch(base + '&valueRenderOption=FORMULA', h)]);
-  if(!rv.ok || !rf.ok) throw new Error('No pude releer la planilla (HTTP ' + (rv.ok ? rf.status : rv.status) + ')');
+  // Si Google frena por muchos pedidos seguidos (429) o falla de su lado (5xx), se reintenta solo un par de veces antes de avisar.
+  let rv, rf;
+  for(let intento = 0; intento < 3; intento++){
+    [rv, rf] = await Promise.all([fetch(base, h), soloValores ? Promise.resolve({ ok: true, json: async () => ({}) }) : fetch(base + '&valueRenderOption=FORMULA', h)]);
+    const st = !rv.ok ? rv.status : (!rf.ok ? rf.status : 0);
+    if(!st) break;
+    if(!(st === 429 || st >= 500) || intento === 2) throw new Error('No pude releer la planilla: ' + motivoHttpSheets(st) + ' (HTTP ' + st + '). Tus cambios siguen pendientes: probá de nuevo en un rato.');
+    await _esperar(intento ? 4000 : 1500);
+  }
   const dv = await rv.json(), df = await rf.json();
   const out = {};
   sheetRows.forEach((f, k) => {
@@ -6457,6 +6477,38 @@ function anotarCambioTabla(row, c, nuevo, nota, sinPropagar){
   autoGuardarTabla();   // todo cambio anotado se guarda solo, venga de donde venga (editar, pegar, rellenar fechas...)
   if(!sinPropagar && (c === COL.ETD || c === COL.ETA)) propagarFechaCobroEstimada(row, c, antesVisible).catch(e => console.warn('fecha estimada de cobro:', e));
   if(!sinPropagar && (c === COL.TNS || c === COL.PRICE_FCA)) recalcTotalFcaTabla(row);
+  if(!sinPropagar && (c === COL.TNS || c === COL.PRICE_CLIENTE || c === COL.FLETE || c === COL.PRICE_SERV)) recalcTotalesClienteTabla(row, c);
+}
+// Lado cliente, igual que al cargar una carga con su contrato:
+//   Total CFR = (Price + Flete) x Tns · Price serv = FC Servicios del contrato x Tns · TOTAL FINAL / VALOR TOTAL = Total CFR + Price serv
+//   Precio final x tn = TOTAL FINAL / Tns
+// Al cambiar Tns, precio, flete o Price serv en la tabla se recalcula lo que depende de eso. Antes quedaban los numeros viejos (por ejemplo
+// al duplicar una fila de Buzaram, donde esas columnas son valores y no formulas, y despues cambiarle las toneladas).
+// Las columnas que en la planilla son formula no se tocan (las recalcula la planilla).
+function recalcTotalesClienteTabla(row, cambio){
+  const num = c => (c === undefined || c < 0) ? NaN : numeroCelda(valorVisible(row, c));
+  const n = num(COL.TNS), price = num(COL.PRICE_CLIENTE);
+  if(isNaN(n) || n <= 0 || isNaN(price)) return;
+  const flete = isNaN(num(COL.FLETE)) ? 0 : num(COL.FLETE);
+  const totalCFR = redondear2((price + flete) * n);
+  // Price serv: si cambiaron las toneladas, sale del contrato (FC Servicios por tonelada). Si lo cambiaste a mano, se respeta.
+  let serv = num(COL.PRICE_SERV);
+  if(cambio !== COL.PRICE_SERV){
+    const k = contratoPorNumero(valorVisible(row, COL.CONTRACT_CLIENTE));
+    if(k && !isNaN(k.fcServ) && k.fcServ) serv = redondear2(k.fcServ * n);
+  }
+  const servOk = !isNaN(serv);
+  const totalFinal = redondear2(totalCFR + (servOk ? serv : 0));
+  const poner = (c, v, nota) => {
+    if(c === undefined || c < 0 || esColFormula(c) || isNaN(v)) return;
+    const act = num(c);
+    if(!isNaN(act) && Math.abs(act - v) < 0.005) return;
+    anotarCambioTabla(row, c, String(v).replace('.', ','), nota, true);
+  };
+  poner(COL.TOTAL_CFR_ORIG, totalCFR, '(Price + Flete) × Tns');
+  if(cambio !== COL.PRICE_SERV && servOk) poner(COL.PRICE_SERV, serv, 'FC Servicios del contrato × Tns');
+  poner(COL.TOTAL_CFR, totalFinal, 'Total CFR + Price serv');
+  poner(COL.PRECIO_FINAL_TN, redondear2(totalFinal / n), 'total ÷ Tns');
 }
 // Total FCA (en Buzaram "Total Proveedor") = Price FCA x Tns. Al cambiar cualquiera de los dos en la tabla se recalcula y queda
 // como un cambio mas (se guarda solo, Ctrl+Z lo deshace). Si en la planilla esa columna es una formula, no se toca.
@@ -6888,7 +6940,7 @@ async function refrescarCalculadasTabla(escritas){
     const entradas = [COL.CONTRACT_CLIENTE, COL.PRICE_CLIENTE, COL.FLETE, COL.TNS, COL.ETD, COL.ETA, COL.PRODUCT].filter(c => c !== undefined && c >= 0);
     const filas = [...new Set(escritas.filter(x => entradas.indexOf(x.col) >= 0).map(x => x.sheetRow))];
     if(!filas.length) return;
-    const fresco = await releerFilasCarga(filas);
+    const fresco = await releerFilasCarga(filas, true);
     escritas.forEach(x => {
       if(filas.indexOf(x.sheetRow) < 0) return;
       const fr = fresco[x.sheetRow]; if(!fr || !x.row) return;
