@@ -1412,6 +1412,13 @@ body{background:radial-gradient(760px 420px at 86% -12%,rgba(var(--lg-a-rgb),.05
 .nav-item.active .nav-badge,.nav-item.active:hover .nav-badge{box-shadow:0 0 0 2px rgba(255,255,255,.18);}
 .bottom-nav-item.active,.bottom-nav-item.active:hover{background:var(--accent-light);}
 .bottom-nav-item.active .bnav-label,.bottom-nav-item.active:hover .bnav-label{color:var(--accent);}
+
+.cob-top-acc{display:inline-flex;align-items:center;gap:10px;flex-wrap:wrap;}
+.cob-copiar{display:inline-flex;align-items:center;gap:8px;height:38px;padding:0 16px;border-radius:13px;border:1px solid transparent;background:var(--lg-soft);color:var(--lg-soft-ink);font:600 13.5px var(--font);cursor:pointer;transition:background .18s var(--lg-ease),box-shadow .18s var(--lg-ease);}
+.cob-copiar .ico{width:16px;height:16px;}
+.cob-copiar:hover:not(:disabled){background:#fff;border-color:rgba(23,43,77,.12);box-shadow:var(--lg-sh1);color:var(--lg-ink);}
+.cob-copiar:disabled{background:rgba(23,43,77,.05);color:var(--lg-muted);cursor:not-allowed;}
+.cob-copiar:focus-visible{outline:2px solid rgba(var(--lg-a-rgb),.6);outline-offset:2px;}
 </style>
 </head>
 <body>
@@ -8848,7 +8855,7 @@ function renderCobranza(filterKey, filterVal){
     <div class="table-top cob-top">
       <div class="cob-top-fila">
         <span class="cob-tit">Cobranza activa — ${rows.length} cobros</span>
-        ${verTodosBtn}
+        <span class="cob-top-acc"><button type="button" id="cob-copy-btn" class="cob-copiar" onclick="copiarTablaCobranza()" disabled title="Tildá los cobros que querés y copiá una tabla con invoice, monto y fecha de cobro para pegar en el mail"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2"/></svg> <span id="cob-copy-lbl">Copiar tabla</span></button>${verTodosBtn}</span>
       </div>
       <div class="cob-filtros">
         ${clienteSel}${sortSel}${resetBtn}
@@ -8870,6 +8877,8 @@ function renderCobranza(filterKey, filterVal){
     if(tr) tr.style.background=window._cobSelectedRows.has(idx)?'rgba(0,113,227,.05)':'';
     const bar=document.getElementById('cob-bulk-bar');
     if(bar){const n=window._cobSelectedRows.size;bar.style.display=n>0?'block':'none';bar.textContent='✉ Reclamo masivo ('+n+' seleccionadas)';}
+    const cbtn=document.getElementById('cob-copy-btn'), clbl=document.getElementById('cob-copy-lbl');
+    if(cbtn){ cbtn.disabled=!window._cobSelectedRows.size; if(clbl) clbl.textContent=window._cobSelectedRows.size?'Copiar tabla ('+window._cobSelectedRows.size+')':'Copiar tabla'; }
   };
   window.requestBulkReclamo = function(){
     if(!window._cobSelectedRows.size) return;
@@ -8921,6 +8930,47 @@ function renderCobranza(filterKey, filterVal){
   document.getElementById('content').innerHTML = html;
 }
 
+// Copiar los cobros tildados como una tablita (Invoice | Monto | Fecha de cobro) para pegar en un mail. Se copia como tabla HTML (Gmail la
+// respeta) y como texto con tabuladores (para pegar en una planilla o en un editor de texto). Usa los mismos datos que muestra la tabla.
+function tablaCobranzaCopiable(rows){
+  const filas = rows.map(row => {
+    const inv1 = (row[COL.INVOICE_CLIENTE] || '').trim();
+    const r2 = (row[COL.INVOICE_FC_SERV] || '').trim(), inv2 = (r2 === '-' || r2 === '--') ? '' : r2;
+    const total = totalCargaDe(row);
+    return { invoice: inv1 && inv2 ? inv1 + ' / ' + inv2 : inv1 || '--',
+      monto: isNaN(total) ? '--' : 'USD ' + total.toLocaleString('es-AR', { maximumFractionDigits: 0 }),
+      fecha: fmtDate(row[getCobroCol()]) };
+  });
+  const th = 'border:1px solid #c9d1de;padding:6px 12px;background:#f1f4fa;font-weight:bold;text-align:left;';
+  const td = 'border:1px solid #c9d1de;padding:6px 12px;';
+  const html = '<table style="border-collapse:collapse;font-family:Arial,sans-serif;font-size:13px;"><thead><tr><th style="' + th + '">Invoice</th><th style="' + th + 'text-align:right;">Monto</th><th style="' + th + '">Fecha de cobro</th></tr></thead><tbody>'
+    + filas.map(f => '<tr><td style="' + td + '">' + escH(f.invoice) + '</td><td style="' + td + 'text-align:right;">' + escH(f.monto) + '</td><td style="' + td + '">' + escH(f.fecha) + '</td></tr>').join('') + '</tbody></table>';
+  const texto = ['Invoice\tMonto\tFecha de cobro'].concat(filas.map(f => f.invoice + '\t' + f.monto + '\t' + f.fecha)).join('\n');
+  return { html, texto, n: filas.length };
+}
+async function copiarTablaCobranza(){
+  const sel = [...(window._cobSelectedRows || [])].sort((a, b) => a - b).map(i => (window._cobRows || [])[i]).filter(Boolean);   // en el orden en que se ven
+  if(!sel.length){ showToast('Tildá los cobros que querés copiar', 'info'); return; }
+  const t = tablaCobranzaCopiable(sel);
+  let ok = false;
+  try{
+    if(typeof ClipboardItem !== 'undefined' && navigator.clipboard && navigator.clipboard.write){
+      await navigator.clipboard.write([new ClipboardItem({ 'text/html': new Blob([t.html], { type: 'text/html' }), 'text/plain': new Blob([t.texto], { type: 'text/plain' }) })]);
+      ok = true;
+    }
+  }catch(e){ console.warn('Portapapeles (tabla):', e); }
+  if(!ok){   // navegador sin ClipboardItem: se selecciona la tabla dibujada y se copia
+    try{
+      const box = document.createElement('div');
+      box.setAttribute('aria-hidden', 'true'); box.style.cssText = 'position:fixed;left:-9999px;top:0;';
+      box.innerHTML = t.html; document.body.appendChild(box);
+      const r = document.createRange(); r.selectNodeContents(box);
+      const sl = window.getSelection(); sl.removeAllRanges(); sl.addRange(r);
+      ok = document.execCommand('copy'); sl.removeAllRanges(); box.remove();
+    }catch(e){ console.warn('Copiar tabla (respaldo):', e); }
+  }
+  showToast(ok ? '✓ Tabla copiada (' + t.n + ' cobro' + (t.n === 1 ? '' : 's') + '). Pegala en el mail.' : 'No pude copiar la tabla: probá de nuevo o desde otro navegador', ok ? 'ok' : 'err');
+}
 function renderCobranzaArchivados(){
   const archivedRows = allRows.filter(r => archivedBLs.includes((r[COL.BL]||'').trim()));
   let html = `<div style="display:flex;align-items:center;gap:12px;margin-bottom:16px;">
