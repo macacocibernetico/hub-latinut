@@ -414,6 +414,11 @@ body.tabla-full-on{overflow:hidden;}
 .mc-acc{display:flex;gap:8px;margin-top:10px;}
 .mc-barra{display:flex;gap:12px;align-items:center;margin-bottom:12px;flex-wrap:wrap;}
 .mc-hora{font-size:12px;color:var(--text3);}
+.mc-prog{background:var(--bg3);border:1px solid var(--border);border-radius:10px;padding:10px 14px;margin-bottom:12px;}
+.mc-bar{height:6px;background:var(--border);border-radius:99px;overflow:hidden;margin:8px 0;}
+.mc-bar i{display:block;height:100%;background:var(--accent);transition:width .3s;}
+.mc-ahora{font-size:12px;color:var(--text3);margin-top:4px;}
+.mc-listo{font-size:13px;color:var(--ok);margin-bottom:10px;}
 .mc-bloque{background:var(--bg3);border:1px solid var(--border);border-radius:10px;padding:10px 14px;margin-bottom:12px;font-size:13px;}
 .mc-linea{margin-top:6px;}
 .mc-vacio-g{padding:30px;text-align:center;color:var(--text3);}
@@ -12193,7 +12198,11 @@ const MC_CONSULTAS = {
   argen:  '{subject:"SOLICITUD DE EXPORTACION" subject:"SOLICITUD DE EXPORTACIÓN"} from:argenpeanuts.com.ar has:attachment',
   nutrin: 'subject:"CARGAS NUTRIN" from:nutrin.com.ar has:attachment'
 };
-let _mc = { cards: [], vistos: new Set(), registro: new Map(), registroOk: false, titulo: null, cargando: false, ultima: 0, errores: [], pendientes: 0, lotes: [], lotesListos: false };
+// Alias de clientes: como se llama en el mail -> como esta cargado en la planilla. Hay uno de base y el resto se va sumando desde la
+// bandeja ("¿recordar que X es IDI?"), en la pestaña ALIAS_CLIENTES de HUB LATINUT, asi lo comparte todo el equipo.
+const MC_HOJA_ALIAS = 'ALIAS_CLIENTES';
+const MC_ALIAS_BASE = { 'INGREDIENTS DISTRIBUTION': 'IDI' };
+let _mc = { alias: new Map(Object.entries(MC_ALIAS_BASE).map(([a, c]) => [nombreSinFormaLegal(a), c])), aliasTitulo: null, cards: [], vistos: new Set(), registro: new Map(), registroOk: false, titulo: null, cargando: false, ultima: 0, errores: [], pendientes: 0, lotes: [], lotesListos: false };
 
 // ── Utilidades de mail ──
 function b64urlBytes(s){
@@ -12204,7 +12213,9 @@ function b64urlBytes(s){
 }
 function b64urlTexto(s){ try{ return new TextDecoder('utf-8').decode(b64urlBytes(s)); }catch(e){ return ''; } }
 async function gmailJson(ruta){
-  const r = await fetch('https://gmail.googleapis.com/gmail/v1/users/me/' + ruta, { headers: { Authorization: 'Bearer ' + accessToken } });
+  let r;
+  try{ r = await fetchConTope('https://gmail.googleapis.com/gmail/v1/users/me/' + ruta, { headers: { Authorization: 'Bearer ' + accessToken } }, 30000); }
+  catch(e){ throw new Error(e && e.name === 'AbortError' ? 'Gmail tardó demasiado en responder' : 'No pude conectar con Gmail'); }
   if(!r.ok) throw new Error('Gmail respondió HTTP ' + r.status + (r.status === 401 || r.status === 403 ? ' (revisá la conexión con Google: desconectate y volvé a conectar)' : ''));
   return r.json();
 }
@@ -12263,6 +12274,48 @@ async function mcBuscarMensajes(){
   return out;
 }
 
+// ── Alias de clientes (pestaña ALIAS_CLIENTES de HUB LATINUT) ──
+async function mcCargarAlias(){
+  try{
+    const r0 = await fetch('https://sheets.googleapis.com/v4/spreadsheets/' + cfg.hubSheetId + '?fields=sheets.properties.title', { headers: { Authorization: 'Bearer ' + accessToken } });
+    if(!r0.ok) return;
+    const t = (((await r0.json()).sheets || []).map(x => ((x.properties || {}).title || '')).find(x => x.trim().toLowerCase() === MC_HOJA_ALIAS.toLowerCase())) || null;
+    _mc.aliasTitulo = t;
+    if(!t) return;
+    const r = await fetch('https://sheets.googleapis.com/v4/spreadsheets/' + cfg.hubSheetId + '/values/' + encodeURIComponent(t + '!A2:D'), { headers: { Authorization: 'Bearer ' + accessToken } });
+    if(!r.ok) return;
+    ((await r.json()).values || []).forEach(f => { if(f[0] && f[1]) _mc.alias.set(nombreSinFormaLegal(f[0]), String(f[1]).trim()); });
+  }catch(e){ console.warn('Alias de clientes:', e); }
+}
+async function mcGuardarAlias(alias, cliente){
+  const base = 'https://sheets.googleapis.com/v4/spreadsheets/' + cfg.hubSheetId, hd = { Authorization: 'Bearer ' + accessToken, 'Content-Type': 'application/json' };
+  if(!_mc.aliasTitulo){
+    const r1 = await fetch(base + ':batchUpdate', { method: 'POST', headers: hd, body: JSON.stringify({ requests: [{ addSheet: { properties: { title: MC_HOJA_ALIAS } } }] }) });
+    if(!r1.ok) return false;
+    _mc.aliasTitulo = MC_HOJA_ALIAS;
+    await fetch(base + '/values/' + encodeURIComponent(MC_HOJA_ALIAS + '!A1:D1') + '?valueInputOption=RAW', { method: 'PUT', headers: hd, body: JSON.stringify({ values: [['Alias (como lo escribe el mail)', 'Cliente (como esta en la planilla)', 'Usuario', 'Fecha']] }) });
+  }
+  const r = await fetch(base + '/values/' + encodeURIComponent(_mc.aliasTitulo + '!A:D') + ':append?valueInputOption=RAW&insertDataOption=INSERT_ROWS',
+    { method: 'POST', headers: hd, body: JSON.stringify({ values: [[alias, cliente, getMiEmail() || '', comAhora()]] }) });
+  if(r.ok) _mc.alias.set(nombreSinFormaLegal(alias), cliente);
+  return r.ok;
+}
+// Despues de guardar: si el mail decia un nombre que no estaba en la lista y elegiste un cliente, ofrece recordarlo.
+async function mcOfrecerAlias(cards){
+  const pares = [];
+  cards.forEach(c => {
+    if(c.item.estado !== 'ok' || !c.item.customer) return;
+    if(!getUnique(COL.CUSTOMER).some(x => normTar(x) === normTar(c.item.customer))) return;
+    c.candidatos.forEach(t => {
+      if(!t || clienteEnLista(t) || pares.some(p => normTar(p.alias) === normTar(t))) return;
+      pares.push({ alias: t, cliente: c.item.customer });
+    });
+  });
+  for(const p of pares){
+    const ok = await showConfirm('¿Recordar este nombre de cliente?', 'El mail decía "' + p.alias + '" y cargaste el cliente "' + p.cliente + '". Si lo recordás, la próxima vez el hub lo pone solo. Se anota en la pestaña ' + MC_HOJA_ALIAS + ' de HUB LATINUT (se crea si no existe) y lo ve todo el equipo.', { icono: '🧠', okLabel: 'Recordarlo' });
+    if(ok && !(await mcGuardarAlias(p.alias, p.cliente))) showToast('No pude anotar el nombre del cliente', 'warn');
+  }
+}
 // ── Registro compartido (pestaña MAILS_CARGA de HUB LATINUT) ──
 function mcRango(sufijo){ const t = _mc.titulo || MC_HOJA; return encodeURIComponent(t + '!' + sufijo); }
 async function mcBuscarPestana(){
@@ -12348,6 +12401,8 @@ function clienteEnLista(txt){
   const n = nombreSinFormaLegal(txt);
   if(!n) return '';
   const lista = (typeof getUnique === 'function' && COL.CUSTOMER >= 0) ? getUnique(COL.CUSTOMER) : [];
+  const alias = (typeof _mc !== 'undefined' && _mc.alias) ? _mc.alias.get(n) : '';
+  if(alias){ const hit = lista.find(c => nombreSinFormaLegal(c) === nombreSinFormaLegal(alias)); if(hit) return hit; }
   const exacto = lista.find(c => nombreSinFormaLegal(c) === n);
   if(exacto) return exacto;
   const pn = n.split(' ');
@@ -12360,6 +12415,22 @@ async function mcAsegurarXLSX(){
 
 // ── Lo que dice el mail de Argen ──
 // Lo estructurado se saca con reglas fijas (asunto y cuerpo); la IA (modelo rapido) solo ayuda con lo que cambia de forma libre: el consignatario.
+// El mail de consolidacion habla de TODOS los contenedores del aviso ("3x40 HC"), pero cada planilla es una carga. Si con las toneladas de la
+// planilla la cantidad del mail no cierra (menos de 12 o mas de 28 tn por contenedor), se sugiere la que si cierra (~22 tn cada uno) y se avisa.
+function mcContenedoresSugeridos(textoMail, tns){
+  const m = String(textoMail || '').match(/^(\d+)\s*[xX]\s*(\d+)\s*(.*)$/);
+  const tn = numeroCelda(tns);
+  const igual = { texto: textoMail || '', aviso: '', cambio: false };
+  if(!m || isNaN(tn) || tn <= 0) return igual;
+  const nMail = parseInt(m[1], 10), tipo = m[2] + (m[3] ? ' ' + m[3].trim() : '');
+  const por = tn / nMail;
+  if(por >= 12 && por <= 28) return igual;
+  const k = Math.max(1, Math.round(tn / 22));
+  if(tn / k < 12 || tn / k > 28) return igual;
+  const f = x => String(Math.round(x * 10) / 10).replace('.', ',');
+  return { texto: k + 'x' + tipo, cambio: true,
+    aviso: 'El mail dice ' + textoMail + ', pero esta planilla tiene ' + f(tn) + ' tn: por el peso serían ' + k + ' contenedor' + (k === 1 ? '' : 'es') + ' (' + f(tn / k) + ' tn cada uno). Puse ' + k + 'x' + tipo + '; revisalo.' };
+}
 function mcLeerArgenTexto(asunto, cuerpo, fechaMs){
   const o = { consol: null, contenedores: '', contratos: [], destino: '', consignatario: '', fuentes: {} };
   const mb = cuerpo.match(/Fecha de carga[^0-9]{0,8}(\d{1,2})\/(\d{1,2})\/(\d{4})/i);
@@ -12500,11 +12571,12 @@ async function mcTarjetasArgen(m, full){
     const buf = await mcAdjuntoBytes(m.id, a);
     const data = parsePlanillaDespachante(window.XLSX.read(buf, { type: 'array', cellDates: false }));
     // El contrato: el que dice el nombre de la planilla ("Ctto EA26084") o, si no, los del asunto. Va solo el numero (26084), sin las letras.
+    const sug = mcContenedoresSugeridos(tx.contenedores, data.tns);
     const mfn = a.nombre.match(/Ctto\.?\s*([A-Z]{0,3}\d{4,6})/i);
     const contratoProv = mfn ? mfn[1].replace(/\D/g, '') : [...new Set(tx.contratos.map(x => x.replace(/\D/g, '')).filter(Boolean))].join(', ');
     const fuentes = Object.assign({ vessel: 'planilla (.xlsx)', port: 'planilla (.xlsx)', eta: 'planilla (.xlsx)', product: 'planilla (.xlsx)', tns: 'planilla (.xlsx)', priceFOB: 'planilla (.xlsx)', lots: 'planilla (.xlsx)', contractProv: mfn ? 'nombre de la planilla' : 'asunto del mail' }, tx.fuentes);
     out.push(mcNuevaTarjeta({ clave: m.id + '|' + a.nombre, tipo: 'argen', negocio: 'axt', motivoNegocio: 'Argen Peanuts siempre va a AXT', archivo: a.nombre, data, mail,
-      candidatos: [consig], contractProv: contratoProv, fuentesCliente: tx.fuentes.customer || 'cuerpo del mail', consol: tx.consol ? tx.consol.iso : '', containers: tx.contenedores, fuentes, avisos: comunes.slice(),
+      candidatos: [consig], contractProv: contratoProv, fuentesCliente: tx.fuentes.customer || 'cuerpo del mail', consol: tx.consol ? tx.consol.iso : '', containers: sug.texto, fuentes: Object.assign(fuentes, sug.cambio ? { contenedores: 'por las toneladas de la planilla (el mail decía ' + tx.contenedores + ')' } : {}), avisos: comunes.slice().concat(sug.aviso ? [sug.aviso] : []),
       hints: { consignatario: consig, contratos: tx.contratos.join(', '), destino: tx.destino }, ia: { texto: tx, ia } }));
   }
   return out;
@@ -12572,17 +12644,53 @@ function mcPosibleDuplicado(c){
 
 // ── Cargar todo (buscar, leer y armar) ──
 function mcProcesado(clave){ return _mc.registro.has(clave); }
+function mcEstadoHtml(){
+  const p = _mc.progreso || { total: 0, hechos: 0, actual: [] };
+  if(_mc.cargando){
+    const pct = p.total ? Math.round(p.hechos / p.total * 100) : 0;
+    return '<div class="mc-prog"><div class="spinner" style="padding:0;justify-content:flex-start;"><div class="spin"></div> <b>' + escH(_mc.etapa || 'Trabajando…') + '</b>' + (p.total ? ' · ' + p.hechos + ' de ' + p.total + ' mails' : '') + '</div>'
+      + (p.total ? '<div class="mc-bar"><i style="width:' + pct + '%"></i></div>' : '')
+      + (p.actual.length ? '<div class="mc-ahora">Ahora: ' + p.actual.map(a => escH(String(a).slice(0, 70))).join(' · ') + '</div>' : '')
+      + '<div class="mc-ahora">Cada mail con adjuntos puede tardar un rato (se leen la planilla, el cuerpo y la proforma). Podés seguir usando el hub.</div></div>';
+  }
+  if(!_mc.ultima) return '';
+  const hora = new Date(_mc.ultima).toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' });
+  const n = _mc.errores.length;
+  return '<div class="mc-listo">✓ Búsqueda terminada a las ' + hora + ': ' + (p.total ? p.total + ' mail' + (p.total === 1 ? '' : 's') + ' leído' + (p.total === 1 ? '' : 's') : 'no había mails nuevos para leer')
+    + ' · ' + (_mc.nuevas || 0) + ' carga' + ((_mc.nuevas || 0) === 1 ? '' : 's') + ' nueva' + ((_mc.nuevas || 0) === 1 ? '' : 's') + ' para revisar' + (n ? ' · ' + n + ' aviso' + (n === 1 ? '' : 's') + ' (abajo)' : '') + '</div>';
+}
+function mcPintarEstado(){
+  const el = document.getElementById('mc-estado');
+  if(el) el.innerHTML = mcEstadoHtml();
+}
 async function mcCargarTodo(){
   if(_mc.cargando) return;
-  _mc.cargando = true; _mc.errores = [];
+  _mc.cargando = true; _mc.errores = []; _mc.nuevas = 0;
+  _mc.progreso = { total: 0, hechos: 0, actual: [] }; _mc.etapa = 'Revisando qué mails ya se cargaron…';
+  mcPintarEstado();
   try{
     if(!(await mcCargarRegistro())){ _mc.errores.push('No pude leer la hoja ' + MC_HOJA + ' de HUB LATINUT: sin ella no se pueden mostrar las cargas (podrías duplicar una).'); return; }
+    await mcCargarAlias();
+    _mc.etapa = 'Buscando los mails de carga en Gmail…'; mcPintarEstado();
     const msgs = await mcBuscarMensajes();
-    for(const m of msgs){
-      if(mcProcesado(m.id + '|*') || _mc.vistos.has(m.id)) continue;
-      try{ const t = await mcArmarTarjetas(m); _mc.cards.push(...t); _mc.vistos.add(m.id); }
-      catch(e){ console.warn('Mail de carga:', e); _mc.errores.push('No pude leer "' + m.asunto + '": ' + e.message); }
-    }
+    const pend = msgs.filter(m => !mcProcesado(m.id + '|*') && !_mc.vistos.has(m.id));
+    _mc.progreso.total = pend.length;
+    _mc.etapa = pend.length ? 'Leyendo los mails' : 'Listo';
+    mcPintarEstado();
+    // De a 3 mails a la vez (cada uno espera a Gmail y al proxy, que son lentos).
+    let k = 0;
+    const trabajar = async () => {
+      while(k < pend.length){
+        const m = pend[k++];
+        _mc.progreso.actual.push(m.asunto); mcPintarEstado();
+        try{ const t = await mcArmarTarjetas(m); _mc.cards.push(...t); _mc.vistos.add(m.id); _mc.nuevas += t.length; }
+        catch(e){ console.warn('Mail de carga:', e); _mc.errores.push('No pude leer "' + m.asunto + '": ' + e.message); }
+        _mc.progreso.hechos++; _mc.progreso.actual = _mc.progreso.actual.filter(a => a !== m.asunto);
+        _mc.pendientes = Math.max(0, pend.length - _mc.progreso.hechos) + _mc.cards.filter(c => c.item.estado !== 'ok' && !c.noCargable).length; mcBadge();
+        if(currentView === 'mails') renderBandeja();   // las cargas van apareciendo a medida que se leen
+      }
+    };
+    await Promise.all([trabajar(), trabajar(), trabajar()]);
     _mc.cards = _mc.cards.filter(c => !mcProcesado(c.clave) || c.item.estado === 'ok');
     _mc.cards.forEach(c => { if(c.item.estado !== 'ok'){ const d = mcPosibleDuplicado(c); c.duplicado = d; } });
     _mc.pendientes = _mc.cards.filter(c => c.item.estado !== 'ok' && !c.noCargable).length;
@@ -12758,7 +12866,7 @@ function renderBandeja(){
   let h = '<div class="config-section" style="max-width:100%;"><div class="config-title">Mails de carga · ' + escH(getNegocioConfig().label) + '</div>'
     + '<div class="config-desc">El hub revisa tu Gmail (los últimos ' + MC_DIAS + ' días) y deja precargadas las cargas de los mails "SOLICITUD DE EXPORTACION" de Argen Peanuts y "CARGAS NUTRIN". Cambiá lo que haga falta: <b>nada se escribe en la planilla hasta que apretás "Guardar cargas"</b>.</div>'
     + '<datalist id="lt-clientes">' + clientes.map(c => '<option value="' + escH(c) + '">').join('') + '</datalist><datalist id="lt-pols">' + pols.map(c => '<option value="' + escH(c) + '">').join('') + '</datalist>'
-    + '<div class="mc-barra"><button class="btn" onclick="mcRefrescar()">↻ Buscar mails ahora</button><span class="mc-hora">' + (_mc.cargando ? 'Buscando y leyendo los mails… (puede tardar unos segundos por cada uno)' : (hora ? 'Última búsqueda: ' + hora : '')) + '</span></div>'
+    + '<div class="mc-barra"><button class="btn" onclick="mcRefrescar()"' + (_mc.cargando ? ' disabled' : '') + '>↻ Buscar mails ahora</button></div><div id="mc-estado">' + mcEstadoHtml() + '</div>'
     + _mc.errores.map(e => '<div class="mc-aviso">⚠ ' + escH(e) + '</div>').join('');
   if(!_mc.cargando && _mc.ultima && !act.length && !otros.length && !sinNeg.length && !aparte.length) h += '<div class="mc-vacio-g">No hay mails de carga pendientes. 🎉</div>';
   h += act.map(c => mcTarjetaHtml(c, _lote.items.indexOf(c.item))).join('');
@@ -12816,6 +12924,7 @@ async function bandejaGuardar(){
     return;
   }
   await guardarLote();
+  try{ await mcOfrecerAlias(_mc.cards); }catch(e){ console.warn('Alias:', e); }
 }
 // Lo que pasa despues de escribir cada carga: se anota en el registro, en el LOG y en una nota de la carga (de que mail salio).
 async function bandejaTrasGuardar(it, fila, d){
@@ -14816,7 +14925,15 @@ const TAREAS_RAPIDAS = ['extraccion_mail', 'chat_consulta', 'clasificar_doc', 'e
 function categoriaIA(tarea){ return TAREAS_RAPIDAS.indexOf(tarea) >= 0 ? 'rapido' : 'equilibrado'; }
 function getAnthropicModel(tarea){ return MODELOS_IA[categoriaIA(tarea)][0]; }
 
-let _iaEsperas = [1500, 4000];   // pausas antes de reintentar cuando Anthropic frena (429) o esta saturado (529/5xx)
+let _iaEsperas = [1500, 4000];
+let _iaTopeMs = 150000;   // un pedido a Claude (por el proxy) que no responde en 2 minutos y medio se corta y se avisa
+// fetch con tope de tiempo: si el servidor no contesta en "ms", se corta (AbortError) en vez de quedar colgado.
+async function fetchConTope(url, opts, ms){
+  const c = typeof AbortController !== 'undefined' ? new AbortController() : null;
+  const t = c ? setTimeout(() => c.abort(), ms) : null;
+  try{ return await fetch(url, Object.assign({}, opts, c ? { signal: c.signal } : {})); }
+  finally{ if(t) clearTimeout(t); }
+}   // pausas antes de reintentar cuando Anthropic frena (429) o esta saturado (529/5xx)
 function ErrorIA(msg, tipo, status){ const e = new Error(msg); e.tipo = tipo; e.status = status; return e; }
 function mensajeErrorIA(status, tipoApi, msgApi, modelo){
   const m = String(msgApi || '');
@@ -14952,16 +15069,18 @@ async function _pedirClaude(modelo, system, content, maxTokens, tarea, detalle){
     let st, data;
     try{
       if(urlProxy){
-        const r = await fetch(urlProxy, { method: 'POST', headers: { 'Content-Type': 'text/plain' }, body: JSON.stringify({ action: 'claudeProxy2', anthropicKey: cfg.anthropicKey, body: cuerpo }) });
+        const r = await fetchConTope(urlProxy, { method: 'POST', headers: { 'Content-Type': 'text/plain' }, body: JSON.stringify({ action: 'claudeProxy2', anthropicKey: cfg.anthropicKey, body: cuerpo }) }, _iaTopeMs);
         const j = await r.json();
         st = Number(j.status) || 0; data = j.data || {};
         if(!st) throw new Error('respuesta sin estado');
       } else {
-        const r = await fetch(CLAUDE_PROXY_VIEJO, { method: 'POST', headers: { 'Content-Type': 'text/plain' }, body: JSON.stringify({ action: 'claudeProxy', anthropicKey: cfg.anthropicKey, model: modelo, prompt: content }) });
+        const r = await fetchConTope(CLAUDE_PROXY_VIEJO, { method: 'POST', headers: { 'Content-Type': 'text/plain' }, body: JSON.stringify({ action: 'claudeProxy', anthropicKey: cfg.anthropicKey, model: modelo, prompt: content }) }, _iaTopeMs);
         data = await r.json();
         st = data && data.error ? statusDeErrorAnthropic(data.error.type, data.error.message) : (data && data.content ? 200 : 502);
       }
-    }catch(e){ throw ErrorIA('No pude conectar con el proxy de Claude (Apps Script). Revisá la conexión a internet y que la URL del proxy en Configuración sea la /exec correcta.', 'red'); }
+    }catch(e){
+      if(e && e.name === 'AbortError') throw ErrorIA('El proxy de Claude tardó demasiado en responder (más de ' + Math.round(_iaTopeMs / 1000) + ' segundos) y lo corté. Probá de nuevo.', 'timeout');
+      throw ErrorIA('No pude conectar con el proxy de Claude (Apps Script). Revisá la conexión a internet y que la URL del proxy en Configuración sea la /exec correcta.', 'red'); }
     if(st === 200){
       const usd = iaRegistrarUso(modelo, data.usage, tarea, detalle);
       const texto = (data.content || []).filter(b => b && b.type === 'text').map(b => b.text).join('').trim();
