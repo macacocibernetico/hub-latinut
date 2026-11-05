@@ -394,6 +394,30 @@ body.tabla-full-on{overflow:hidden;}
 .lt-det{font-size:12px;padding:2px 8px 8px!important;border-top:none!important;}
 .lt-detfila td{border-top:none!important;}
 .lt-sub{color:var(--text3);}
+.mc-card{background:var(--bg2);border:1px solid var(--border);border-left:4px solid var(--accent);border-radius:12px;padding:14px 16px;margin-bottom:12px;}
+.mc-hecha{opacity:.7;border-left-color:var(--ok);}
+.mc-top{display:flex;gap:10px;align-items:baseline;flex-wrap:wrap;margin-bottom:8px;}
+.mc-tit{font-weight:700;font-size:15px;}
+.mc-mail{color:var(--text3);font-size:12px;flex:1;min-width:200px;}
+.mc-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px 14px;}
+.mc-k{font-size:12px;color:var(--text3);margin-bottom:2px;}
+.mc-v{font-weight:600;min-height:28px;display:flex;align-items:center;}
+.mc-vacio{color:var(--text3);font-weight:400;}
+.mc-src{display:block;font-size:11px;color:var(--text3);margin-top:2px;}
+.mc-f input,.mc-f select{width:100%;font:inherit;padding:5px 8px;border:1px solid var(--border2);border-radius:6px;background:var(--bg2);color:var(--text);}
+.mc-info{font-size:12.5px;color:var(--text2);margin-top:8px;}
+.mc-aviso{font-size:12.5px;color:var(--warn);margin-top:5px;}
+.mc-alerta{font-size:13px;font-weight:600;color:var(--danger);background:rgba(185,51,42,.08);border:1px solid rgba(185,51,42,.3);border-radius:8px;padding:6px 10px;margin-top:8px;}
+.mc-contrato{margin-top:8px;}
+.mc-det{margin-top:8px;font-size:12px;color:var(--text3);}
+.mc-det pre{white-space:pre-wrap;word-break:break-word;font-size:11px;max-height:220px;overflow:auto;background:var(--bg3);padding:8px;border-radius:6px;}
+.mc-acc{display:flex;gap:8px;margin-top:10px;}
+.mc-barra{display:flex;gap:12px;align-items:center;margin-bottom:12px;flex-wrap:wrap;}
+.mc-hora{font-size:12px;color:var(--text3);}
+.mc-bloque{background:var(--bg3);border:1px solid var(--border);border-radius:10px;padding:10px 14px;margin-bottom:12px;font-size:13px;}
+.mc-linea{margin-top:6px;}
+.mc-vacio-g{padding:30px;text-align:center;color:var(--text3);}
+@media (max-width:900px){.mc-grid{grid-template-columns:repeat(2,minmax(0,1fr));}}
 .lt-nums{display:flex;flex-wrap:wrap;gap:4px 16px;margin:2px 0;}
 .lt-nums i{font-style:normal;color:var(--text3);}
 .lt-duda{display:inline-flex;gap:4px;align-items:center;white-space:nowrap;}
@@ -935,6 +959,10 @@ tr:hover .col-acciones{background:var(--bg3);}
       <div class="nav-item" onclick="showView('nueva_carga')">
         <span class="icon">＋</span> Nueva carga
       </div>
+      <div class="nav-item" id="nav-mails" onclick="showView('mails')">
+        <span class="icon">📬</span> Mails de carga
+        <span class="nav-badge warn" id="badge-mails" style="display:none"></span>
+      </div>
     </div>
     <div class="nav-section">
       <div class="nav-label">Finanzas</div>
@@ -1145,7 +1173,7 @@ function setNegocio(n){
   document.getElementById('view-title').textContent = 'Alertas';
   // Show loading while fetching new negocio data
   document.getElementById('content').innerHTML = '<div class="spinner"><div class="spin"></div> Cargando ' + (n==='buzaram'?'Buzaram':'AXT Solutions') + '...</div>';
-  loadData();
+  return loadData();
 }
 
 function updateNegocioPill(){
@@ -1188,6 +1216,7 @@ function updateNegocioPill(){
     alertas:'Alertas',
     cargas: isBuz?'Cargas Buzaram':'Cargas AXT',
     nueva_carga: isBuz?'Nueva carga Buzaram':'Nueva carga',
+    mails:'Mails de carga',
     cobranza:'Cobranza',
     cashflow:'Calendario',
     liberaciones:'Liberaciones',
@@ -2487,6 +2516,7 @@ async function loadData(){
     document.getElementById('last-sync').textContent='Sync '+new Date().toLocaleTimeString('es-AR',{hour:'2-digit',minute:'2-digit'});
     _avisoColsCerrado = false;
     updateBadges();
+    if(!window.__sinAutoGuardado && accessToken) mcRefrescarBadge().catch(() => {});
     // Con un formulario abierto (Nueva Carga o Editar Carga) no se redibuja: se borraria lo que estas escribiendo.
     if(!formularioAbierto()) renderView(currentView);
     Promise.all([
@@ -3561,6 +3591,9 @@ function tarifasAlternativas(row){
 function cantidadContenedores(row){
   const t = (row[COL.CONTAINERS]||'').toString().trim();
   if(!t) return 1;
+  // Sin numeros de contenedor, pero con la cantidad escrita ("2x40 HC", que es como lo dice el mail): esa es la cantidad.
+  const m = t.match(/^(\d+)\s*[xX]\s*(20|40|45)/);
+  if(m && !/[A-Za-z]{4}\d{6,7}/.test(t)) return Math.max(1, parseInt(m[1], 10));
   const partes = t.split(/[,;\/\n|]+/).map(x => x.trim()).filter(Boolean);
   return partes.length || 1;
 }
@@ -4889,7 +4922,7 @@ function showView(view){
   if(view !== 'cargas') _etaOrdenFijo = null;   // al salir de la tabla, la proxima vez vuelve ordenada por ETA
   currentView=view; _editCargaAbierta = false;
   document.querySelectorAll('.nav-item').forEach(el=>el.classList.remove('active'));
-  const titles=window._viewTitles||{alertas:'Alertas',cargas:'Cargas AXT',nueva_carga:'Nueva carga',cobranza:'Cobranza',cashflow:'Calendario',liberaciones:'Liberaciones',pagares:'Pagarés',contratos:'Contratos abiertos',tarifario:'Tarifario de fletes',log:'Log de acciones',config:'Configuración'};
+  const titles=window._viewTitles||{alertas:'Alertas',cargas:'Cargas AXT',nueva_carga:'Nueva carga',mails:'Mails de carga',cobranza:'Cobranza',cashflow:'Calendario',liberaciones:'Liberaciones',pagares:'Pagarés',contratos:'Contratos abiertos',tarifario:'Tarifario de fletes',log:'Log de acciones',config:'Configuración'};
   document.getElementById('view-title').textContent=titles[view]||view;
   document.querySelectorAll('.nav-item').forEach(el=>{if(el.getAttribute('onclick')?.includes(`'${view}'`))el.classList.add('active');});
   renderView(view);
@@ -4897,7 +4930,7 @@ function showView(view){
   if(window.innerWidth<=768)closeSidebar();
 }
 function renderView(v){
-  ({alertas:renderAlertas,cargas:renderCargas,nueva_carga:renderNuevaCarga,cobranza:renderCobranza,cashflow:renderCashFlow,liberaciones:renderLiberaciones,pagares:renderPagares,contratos:renderContratos,tarifario:renderTarifario,log:renderLog,config:renderConfig}[v]||renderAlertas)();
+  ({alertas:renderAlertas,cargas:renderCargas,nueva_carga:renderNuevaCarga,mails:renderBandeja,cobranza:renderCobranza,cashflow:renderCashFlow,liberaciones:renderLiberaciones,pagares:renderPagares,contratos:renderContratos,tarifario:renderTarifario,log:renderLog,config:renderConfig}[v]||renderAlertas)();
   mostrarAvisoColumnas();
 }
 
@@ -10082,7 +10115,8 @@ function renderConfig(){
       <input class="config-input" id="cfg-anthropicKey" type="password" value="${cfg.anthropicKey||''}" placeholder="sk-ant-...">
       <div style="font-size:11px;color:var(--text3);margin-top:4px;">Obtené una en <b>console.anthropic.com</b> → cargá USD 5 de crédito → API Keys → Create Key.</div>
       <div style="font-size:11px;color:var(--text3);margin-top:6px;">Con la clave cargada el hub lee mails de despachantes, redacta tareas y <b>lee planillas en PDF de cualquier formato</b> (primero con el modelo rápido y barato, y solo si hace falta con uno más potente). Para ponerle un tope de gasto mensual: console.anthropic.com → Limits.</div>
-      <div id="ia-uso" style="font-size:11px;color:var(--text2);margin-top:6px;">${iaResumenUso()}</div>
+      <label style="display:flex;gap:8px;align-items:flex-start;font-size:12px;color:var(--text);margin-top:8px;"><input type="checkbox" id="cfg-iaSupervisa" ${cfg.iaSupervisaNutrin !== false ? 'checked' : ''} style="margin-top:3px;"><span><b>Supervisar con IA los PDF de Nutrin</b>: después de leerlos por posición, Haiku (el modelo barato) los lee por su cuenta y avisa si ve algún dato distinto. No cambia nada solo. Cuesta unas décimas de centavo de dólar por PDF.</span></label>
+      ${iaPanelHtml()}
     </div>
     <div class="config-field">
       <div class="config-label">Gemini API Key (fallback gratuito cuando Claude no tiene crédito)</div>
@@ -10108,6 +10142,7 @@ function saveConfig(){
   cfg.appsScriptUrl=document.getElementById('cfg-appsScriptUrl')?.value?.trim()||cfg.appsScriptUrl;
   const rsu=document.getElementById('cfg-resumenScriptUrl')?.value?.trim(); if(rsu!==undefined) cfg.resumenScriptUrl=rsu;
   const ak=document.getElementById('cfg-anthropicKey')?.value?.trim();if(ak) cfg.anthropicKey=ak;
+  const sv=document.getElementById('cfg-iaSupervisa'); if(sv) cfg.iaSupervisaNutrin=!!sv.checked;
   const gk=document.getElementById('cfg-geminiKey')?.value?.trim();if(gk) cfg.geminiKey=gk;
   const bsid=document.getElementById('cfg-buzaramSheetId')?.value?.trim();if(bsid) cfg.buzaramSheetId=bsid;
   const burl=document.getElementById('cfg-buzaramAppsScriptUrl')?.value?.trim();if(burl) cfg.buzaramAppsScriptUrl=burl;
@@ -11243,7 +11278,7 @@ function parsePlanillaNutrin(items){
   let product = '';
   if(/HARINA/.test(mayus)) product = 'Peanut flour';
   else if(/ACEITE/.test(mayus)) product = 'Peanut oil';
-  else if(/PASTA|PASTE/.test(mayus)) product = 'Peanut paste';
+  else if(/PASTA|PASTE/.test(mayus)) product = /VITAMIN/.test(mayus) ? 'Peanut paste with vitamins' : 'Peanut paste';
   else if(/TOSTAD|ROAST/.test(mayus)) product = 'Roasted peanuts';
   else if(/BLANCH/.test(mayus)) product = 'Blanched peanuts';
   else { product = merc.join(' ').trim(); avisos.push('no reconocí el producto "' + crudo + '": revisalo'); }
@@ -11371,27 +11406,29 @@ REGLAS:
 - "packing": si se parece a uno de esta lista, usá esa escritura: ${lista(COL.PACKING, 20) || '(sin lista)'}
 ${pistas && pistas.length ? '\nUn primer intento no pudo resolver: ' + pistas.join('; ') + '. Revisá el documento completo con especial cuidado en eso (tablas, pies de página, sellos y notas).' : ''}`;
 }
-async function pedirLecturaPdf(b64, tarea, pistas){
-  const r = await llamarClaude({ tarea, maxTokens: 1500, content: [
+async function pedirLecturaPdf(b64, tarea, pistas, detalle){
+  const r = await llamarClaude({ tarea, maxTokens: 1500, detalle, content: [
     { type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: b64 } },
     { type: 'text', text: promptLecturaPlanilla(pistas) }
   ] });
-  return { json: extraerJsonIA(r.texto), modelo: r.modelo };
+  return { json: extraerJsonIA(r.texto), modelo: r.modelo, usd: r.usd };
 }
 async function leerPdfConIA(file, buf){
   if(!cfg.anthropicKey) throw new Error('Este PDF no es una planilla de Nutrin. Para leer otros formatos con IA hace falta cargar la Anthropic API Key en Configuración.');
   if(buf.byteLength > PDF_MAX_BYTES) throw new Error('El PDF pesa más de 10 MB: es demasiado grande para leerlo con IA.');
   const b64 = bufferABase64(buf);
   showToast('🤖 Leyendo el PDF con IA…', 'info', 6000);
-  const p1 = await pedirLecturaPdf(b64, 'extraccion_pdf', null);
+  const p1 = await pedirLecturaPdf(b64, 'extraccion_pdf', null, file.name);
   let d = normalizarLecturaIA(p1.json, p1.modelo);
   const usados = [p1.modelo];
+  let costo = p1.usd;
   const pistas = faltantesLecturaIA(d).concat(dudasLecturaIA(d));
   if(!p1.json) pistas.push('no se pudo armar el JSON de la respuesta');
   if(pistas.length || d.confianza === 'baja'){
     showToast('🤖 Releyendo con un modelo más potente…', 'info', 6000);
     try{
-      const p2 = await pedirLecturaPdf(b64, 'extraccion_pdf_dificil', pistas);
+      const p2 = await pedirLecturaPdf(b64, 'extraccion_pdf_dificil', pistas, file.name);
+      costo = (costo === null || p2.usd === null) ? null : costo + p2.usd;
       const d2 = normalizarLecturaIA(p2.json, p2.modelo);
       if(faltantesLecturaIA(d2).length + dudasLecturaIA(d2).length <= pistas.length){ d = d2; usados.push(p2.modelo); }
     }catch(e){ console.warn('Segunda lectura:', e); }
@@ -11400,8 +11437,88 @@ async function leerPdfConIA(file, buf){
   d.avisos = d.avisos.concat(falta.map(x => 'no encontré ' + x), dudas);
   d.avisos.unshift('leído con IA (' + usados.join(' → ') + '): revisá cada dato antes de guardar');
   d.modelosUsados = usados;
+  d.costoUsd = costo;
   return d;
 }
+// ── SUPERVISION: la IA lee tambien los PDF de Nutrin y se compara con la lectura automatica ──
+// Por un tiempo, despues de leer un PDF de Nutrin por posicion, el modelo rapido (Haiku) lo lee por su cuenta y se comparan los datos.
+// No cambia nada solo: si ve distinto, avisa cual dato y que dice cada una, para revisarlo contra el PDF. Se apaga en Configuracion.
+const CAMPOS_SUPERVISION = [
+  ['tns', 'Toneladas', 'num'], ['priceFOB', 'Precio FCA', 'num'], ['eta', 'ETA', 'fecha'], ['etd', 'ETD', 'fecha'], ['port', 'Puerto', 'texto'],
+  ['booking', 'Booking', 'exacto'], ['vessel', 'Buque', 'texto'], ['shipping', 'Naviera', 'texto'], ['product', 'Producto', 'texto'],
+  ['packing', 'Embalaje', 'texto'], ['cNutrin', 'Contrato C-', 'exacto']
+];
+function supervisionActiva(){ return !!cfg.anthropicKey && cfg.iaSupervisaNutrin !== false; }
+// Solo se marca lo que la IA ENCONTRO y es distinto (o la automatica no encontro). Si la IA no encontro un dato, no se puede comparar.
+function compararLecturas(auto, ia){
+  const difs = [];
+  CAMPOS_SUPERVISION.forEach(([k, nombre, tipo]) => {
+    const a = String(auto[k] === undefined || auto[k] === null ? '' : auto[k]).trim();
+    const b = String(ia[k] === undefined || ia[k] === null ? '' : ia[k]).trim();
+    if(!b) return;
+    let ok;
+    if(!a) ok = false;
+    else if(tipo === 'num'){ const x = numeroCelda(a), y = numeroCelda(b); ok = !isNaN(x) && !isNaN(y) && Math.abs(x - y) < 0.005; }
+    else if(tipo === 'fecha') ok = a === b;
+    else if(tipo === 'exacto') ok = normTar(a) === normTar(b);
+    else ok = normTar(a) === normTar(b) || coincideTexto(a, b);
+    if(!ok) difs.push({ campo: nombre, auto: a, ia: b });
+  });
+  return difs;
+}
+async function supervisarNutrinConIA(file, auto){
+  if(!supervisionActiva()) return null;
+  try{
+    const buf = await file.arrayBuffer();
+    if(buf.byteLength > PDF_MAX_BYTES) return null;
+    const r = await pedirLecturaPdf(bufferABase64(buf), 'extraccion_pdf', null, file.name + ' (supervisión)');
+    if(!r.json) return { error: 'la IA no devolvió una respuesta que se pueda leer', modelo: r.modelo, usd: r.usd };
+    const ia = normalizarLecturaIA(r.json, r.modelo);
+    const difs = compararLecturas(auto, ia);
+    iaSupRegistrar(file.name, difs);
+    return { difs, modelo: r.modelo, usd: r.usd };
+  }catch(e){ console.warn('Supervisión IA:', e); return { error: e.message }; }
+}
+function textoSupervision(res){
+  if(!res) return '';
+  if(res.error) return '⚠ No pude supervisar con IA: ' + res.error + '.';
+  const costo = res.usd != null ? ' (' + fmtUsdIA(res.usd) + ')' : '';
+  if(!res.difs.length) return '🔎 La IA (' + res.modelo + ') leyó el PDF por su cuenta y confirma la lectura automática' + costo + '.';
+  return '🔎 La IA (' + res.modelo + ') leyó distinto en ' + res.difs.length + ' dato' + (res.difs.length === 1 ? '' : 's') + costo + ': ' +
+    res.difs.map(d => d.campo + ' — automática «' + (d.auto || 'no la encontró') + '», IA «' + d.ia + '»').join(' · ') + '. Revisalo contra el PDF antes de guardar.';
+}
+async function supervisarNutrinYAvisar(file, data){
+  if(!supervisionActiva()) return;
+  showToast('🔎 La IA está revisando la lectura…', 'info', 5000);
+  const res = await supervisarNutrinConIA(file, data);
+  data.supervision = res;
+  showToast(textoSupervision(res), (res && (res.error || res.difs.length)) ? 'warn' : 'ok', 16000);
+}
+async function supervisarLoteNutrin(files){
+  if(!supervisionActiva()) return;
+  const pend = _lote.items.filter(it => it.data.nutrin);
+  if(!pend.length) return;
+  showToast('🔎 La IA está revisando ' + pend.length + ' PDF de Nutrin…', 'info', 5000);
+  let sinDif = 0, conDif = 0, fallas = 0;
+  for(const it of pend){
+    const f = files.find(x => x.name === it.archivo);
+    if(!f) continue;
+    const res = await supervisarNutrinConIA(f, it.data);
+    it.data.supervision = res;
+    if(!res || res.error) fallas++; else if(res.difs.length) conDif++; else sinDif++;
+  }
+  renderLote();
+  showToast('🔎 Supervisión de la IA: ' + sinDif + ' coinciden' + (conDif ? ', ' + conDif + ' con diferencias (mirá la columna de archivo)' : '') + (fallas ? ', ' + fallas + ' sin poder revisar' : '') + '.', (conDif || fallas) ? 'warn' : 'ok', 12000);
+}
+function lineaSupervisionLote(it){
+  const r = it.data && it.data.supervision;
+  if(!r) return '';
+  const e = t => String(t).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
+  if(r.error) return '<div class="lt-err" title="' + e(r.error) + '">🔎 no se pudo supervisar</div>';
+  if(!r.difs.length) return '<div class="lt-ok">🔎 IA confirma</div>';
+  return '<div class="lt-err" title="' + e(textoSupervision(r)) + '">🔎 IA ve distinto: ' + e(r.difs.map(d => d.campo).join(', ')) + '</div>';
+}
+
 // Entrada unica para un PDF de planilla: Nutrin por posicion, cualquier otro con IA.
 async function leerPdfPlanilla(file){
   const buf = await file.arrayBuffer();
@@ -11444,9 +11561,10 @@ async function importarPdfNutrin(file){
     if(data.ia){
       aplicarExtraidosAlForm({ fecha_consolidacion: data.consolidacion, containers: (data.contenedores || []).join(', '), customer: data.customerIA });
       const falta = [!data.customerIA ? 'el Customer' : '', !data.consolidacion ? 'la consolidación' : '', !(data.contenedores || []).length ? 'los contenedores' : ''].filter(Boolean);
-      showToast('✓ PDF leído con IA (' + data.productoOriginal + ').' + (falta.length ? ' Falta cargar ' + falta.join(', ') + '.' : '') + av, data.avisos.length > 1 ? 'warn' : 'ok', 14000);
+      showToast('✓ PDF leído con IA (' + data.productoOriginal + ')' + (data.costoUsd != null ? ' · costó ' + fmtUsdIA(data.costoUsd) : '') + '.' + (falta.length ? ' Falta cargar ' + falta.join(', ') + '.' : '') + av, data.avisos.length > 1 ? 'warn' : 'ok', 14000);
     } else {
       showToast('✓ Planilla de Nutrin importada (' + data.productoOriginal + '). Falta elegir el Customer y cargar la consolidación y los contenedores.' + av, data.avisos.length ? 'warn' : 'ok', 12000);
+      await supervisarNutrinYAvisar(file, data);   // ya con el formulario cargado: la IA revisa por atras y avisa si ve algo distinto
     }
   }catch(err){
     console.error('Import PDF:', err);
@@ -11801,11 +11919,11 @@ function itemLote(archivo, data){
 }
 // Lo que se guardaria para una planilla (mismas claves que el formulario individual).
 function datosCargaLote(it){
-  const d0 = it.data;
+  const d0 = Object.assign({}, it.data, it.edit || {});
   const producto = productoSegunReglas(d0.product, it.customer, d0.port);
   const d = { tns: d0.tns, product: producto, packing: d0.packing, lots: d0.lots, pricefob: d0.priceFOB, cNutrin: d0.cNutrin, containers: it.containers,
               booking: d0.booking, shipping: d0.shipping, vessel: d0.vessel, consol: it.consol, etd: d0.etd, eta: d0.eta,
-              port: d0.port, pol: it.pol, exporter: d0.exporter, customer: it.customer };
+              port: d0.port, pol: it.pol, exporter: d0.exporter, customer: it.customer, contractProv: d0.contractProv || '' };
   const n = parseSheetNum(d0.tns), p = parseSheetNum(d0.priceFOB);
   if(!isNaN(n) && n > 0 && !isNaN(p)) d.totalProv = String(redondear2(p * n));
   const k = contratosPara(it.customer, producto, d0.port);
@@ -11880,6 +11998,7 @@ async function importarVariasPlanillas(){
       const conAvisos = _lote.items.filter(it => it.data.ia).length;
       if(conAvisos) showToast('🤖 ' + conAvisos + ' PDF leído' + (conAvisos === 1 ? '' : 's') + ' con IA: revisá bien cada dato antes de guardar.', 'warn', 9000);
       if(accessToken && cfg.anthropicKey && (document.getElementById('lt-ia') || {}).checked !== false) await completarLoteConMail();
+      await supervisarLoteNutrin(files);
     }catch(err){ console.error('Import lote:', err); alert('Error al leer las planillas: ' + err.message); }
   };
   inp.click();
@@ -11910,6 +12029,7 @@ async function completarLoteConMail(){
 }
 
 function renderLote(){
+  if(_lote.bandeja) return renderBandeja();
   const items = _lote.items;
   const clientes = getUnique(COL.CUSTOMER);
   const pols = listaPol();
@@ -11919,7 +12039,7 @@ function renderLote(){
     const dis = hecho ? ' disabled' : '';
     return `<tr id="lt-fila-${i}" class="${hecho ? 'lt-hecho' : ''}">
       <td><input type="checkbox" id="lt-${i}-incluir" ${it.incluir ? 'checked' : ''}${dis} onchange="loteCambio(${i})"></td>
-      <td class="lt-arch" title="${escH(it.archivo)}">${escH(it.archivo)}${hecho ? '<div class="lt-ok">✓ Fila ' + it.fila + '</div>' : (it.estado === 'err' ? '<div class="lt-err">no se guardó</div>' : '')}</td>
+      <td class="lt-arch" title="${escH(it.archivo)}">${escH(it.archivo)}${hecho ? '<div class="lt-ok">✓ Fila ' + it.fila + '</div>' : (it.estado === 'err' ? '<div class="lt-err">no se guardó</div>' : '')}${lineaSupervisionLote(it)}</td>
       <td>${escH(d0.lots)}</td><td>${escH(d0.product)}</td><td>${escH(d0.tns)}</td><td>${escH(d0.port)}</td><td>${escH(d0.vessel)}</td><td>${escH(d0.eta)}</td>
       <td class="lt-man"><input id="lt-${i}-customer" list="lt-clientes" value="${escH(it.customer)}" placeholder="Customer *" autocomplete="off"${dis} oninput="loteCambio(${i})"></td>
       <td class="lt-man"><input id="lt-${i}-containers" value="${escH(it.containers)}" placeholder="Containers"${dis} oninput="loteCambio(${i})"></td>
@@ -11958,6 +12078,11 @@ function loteCambio(i, soloMostrar){
   const val = id => { const e = document.getElementById('lt-' + i + '-' + id); return e ? e.value : ''; };
   if(!soloMostrar && it.estado !== 'ok'){
     it.customer = val('customer').trim(); it.containers = val('containers').trim(); it.consol = val('consol'); it.pol = val('pol').trim();
+    // Campos extra que solo tiene la bandeja de mails: se guardan aparte (it.edit) y pisan lo que vino de la planilla.
+    if(it.mail){
+      const ed = it.edit = it.edit || {};
+      [['lots', 'lots'], ['tns', 'tns'], ['pricefob', 'priceFOB'], ['contractprov', 'contractProv']].forEach(([id, k]) => { if(document.getElementById('lt-' + i + '-' + id)) ed[k] = val(id).trim(); });
+    }
     const inc = document.getElementById('lt-' + i + '-incluir'), du = document.getElementById('lt-' + i + '-duda');
     it.incluir = inc ? inc.checked !== false : true; it.duda = !!(du && du.checked);
   }
@@ -11973,6 +12098,7 @@ function loteCambio(i, soloMostrar){
   }
   const det = document.getElementById('lt-' + i + '-detalle');
   if(det) det.innerHTML = detalleContratoLote(it);
+  if(it.mail) mcActualizarAvisos(i);
   loteResumen();
 }
 // Lo mismo que se ve al cargar una sola: de que contrato sale, los numeros que toma y los avisos.
@@ -12039,12 +12165,667 @@ async function guardarLote(){
     if(!fila){ x.it.estado = 'err'; fallo = x.it.archivo; break; }
     x.it.estado = 'ok'; x.it.fila = fila; hechas++;
     if(x.it.duda) await pintarCeldas([fila], COL.PRODUCT, COLOR_VIOLETA);
+    if(x.it.mail){ try{ await bandejaTrasGuardar(x.it, fila, d); }catch(e){ console.warn('Bandeja tras guardar:', e); } }
   }
   await loadData();
   renderLote();
   if(fallo) alert('Se guardaron ' + hechas + ' y falló "' + fallo + '". Las guardadas quedan marcadas en la tabla para no repetirlas.');
   else showToast('✓ ' + hechas + ' carga' + (hechas > 1 ? 's' : '') + ' agregada' + (hechas > 1 ? 's' : ''), 'ok');
 }
+
+// ─── MAILS DE CARGA: LA BANDEJA ──────────────────────────────────────────────
+// El hub revisa tu Gmail buscando los mails que traen una carga nueva: "SOLICITUD DE EXPORTACION" (Argen Peanuts) y "CARGAS NUTRIN".
+// De cada uno lee el adjunto (la planilla del despachante, como cuando la importas a mano) Y el asunto y el cuerpo (cliente, fecha de
+// carga, contenedores, booking...), y deja la carga precargada en una tarjeta. NADA se escribe en la planilla hasta que apretas
+// "Guardar cargas": todo se puede cambiar antes. Las tarjetas usan la misma maquinaria que "Cargar varias planillas" (contrato,
+// totales, Total FCA, CAD BANK, NOP), asi que no hay reglas duplicadas.
+// Para que dos personas no carguen la misma, cada mail procesado (cargado o ignorado) se anota en la pestaña MAILS_CARGA de HUB LATINUT.
+const MC_HOJA = 'MAILS_CARGA';
+const MC_ENCABEZADOS = ['Clave', 'Fecha', 'Usuario', 'Estado', 'Negocio', 'Fila', 'Asunto', 'Detalle'];
+const MC_DIAS = 30;   // hasta cuantos dias para atras se buscan mails
+const MC_CONSULTAS = {
+  argen:  '{subject:"SOLICITUD DE EXPORTACION" subject:"SOLICITUD DE EXPORTACIÓN"} from:argenpeanuts.com.ar has:attachment',
+  nutrin: 'subject:"CARGAS NUTRIN" from:nutrin.com.ar has:attachment'
+};
+let _mc = { cards: [], vistos: new Set(), registro: new Map(), registroOk: false, titulo: null, cargando: false, ultima: 0, errores: [], pendientes: 0, lotes: [], lotesListos: false };
+
+// ── Utilidades de mail ──
+function b64urlBytes(s){
+  const b = atob(String(s || '').replace(/-/g, '+').replace(/_/g, '/'));
+  const u = new Uint8Array(b.length);
+  for(let i = 0; i < b.length; i++) u[i] = b.charCodeAt(i);
+  return u;
+}
+function b64urlTexto(s){ try{ return new TextDecoder('utf-8').decode(b64urlBytes(s)); }catch(e){ return ''; } }
+async function gmailJson(ruta){
+  const r = await fetch('https://gmail.googleapis.com/gmail/v1/users/me/' + ruta, { headers: { Authorization: 'Bearer ' + accessToken } });
+  if(!r.ok) throw new Error('Gmail respondió HTTP ' + r.status + (r.status === 401 || r.status === 403 ? ' (revisá la conexión con Google: desconectate y volvé a conectar)' : ''));
+  return r.json();
+}
+function mcCabecera(msg, nombre){
+  const h = (((msg || {}).payload || {}).headers || []).find(x => String(x.name).toLowerCase() === nombre.toLowerCase());
+  return h ? String(h.value || '') : '';
+}
+function mcPartes(p, out){
+  if(!p) return out;
+  const cuerpo = p.body || {};
+  if(p.filename && (cuerpo.attachmentId || cuerpo.data)) out.adjuntos.push({ nombre: p.filename, mime: p.mimeType || '', attachmentId: cuerpo.attachmentId || '', data: cuerpo.attachmentId ? '' : cuerpo.data, tam: cuerpo.size || 0 });
+  else if(p.mimeType === 'text/plain' && cuerpo.data) out.textos.push(b64urlTexto(cuerpo.data));
+  else if(p.mimeType === 'text/html' && cuerpo.data) out.htmls.push(b64urlTexto(cuerpo.data));
+  (p.parts || []).forEach(x => mcPartes(x, out));
+  return out;
+}
+function mcHtmlATexto(h){
+  return String(h || '').replace(/<(br|\/p|\/div|\/tr|\/li)[^>]*>/gi, '\n').replace(/<[^>]+>/g, '').replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/\n{3,}/g, '\n\n');
+}
+function mcMensaje(msg){
+  const o = mcPartes(msg.payload, { textos: [], htmls: [], adjuntos: [] });
+  let texto = o.textos.join('\n').trim();
+  if(!texto && o.htmls.length) texto = mcHtmlATexto(o.htmls.join('\n')).trim();
+  return { id: msg.id, threadId: msg.threadId, asunto: mcCabecera(msg, 'Subject'), de: mcCabecera(msg, 'From'), fechaMs: Number(msg.internalDate) || 0, texto, adjuntos: o.adjuntos };
+}
+async function mcAdjuntoBytes(msgId, a){
+  if(a.data) return b64urlBytes(a.data).buffer;
+  const j = await gmailJson('messages/' + msgId + '/attachments/' + a.attachmentId);
+  return b64urlBytes(j.data).buffer;
+}
+// Los mails se identifican por su asunto. Las respuestas y reenvios (RE:, Fwd:) se ignoran: solo cuenta el original.
+function mcTipoDeAsunto(a){
+  const s = String(a || '');
+  if(/^\s*(re|rv|fw|fwd|reenv)\s*:/i.test(s)) return '';
+  if(/SOLICITUD DE EXPORTACI[OÓ]N/i.test(s)) return 'argen';
+  if(/CARGAS NUTRIN/i.test(s)) return 'nutrin';
+  return '';
+}
+async function mcBuscarMensajes(){
+  const out = [];
+  for(const tipo of ['argen', 'nutrin']){
+    const q = MC_CONSULTAS[tipo] + ' newer_than:' + MC_DIAS + 'd';
+    const lista = await gmailJson('messages?maxResults=30&q=' + encodeURIComponent(q));
+    const ids = (lista.messages || []).map(x => x.id);
+    for(let i = 0; i < ids.length; i += 8){
+      const metas = await Promise.all(ids.slice(i, i + 8).map(id => gmailJson('messages/' + id + '?format=metadata&metadataHeaders=Subject&metadataHeaders=From')));
+      metas.forEach(m => {
+        const asunto = mcCabecera(m, 'Subject'), de = mcCabecera(m, 'From');
+        if(mcTipoDeAsunto(asunto) !== tipo) return;
+        if(tipo === 'argen' && !/argenpeanuts\.com\.ar/i.test(de)) return;
+        if(tipo === 'nutrin' && !/nutrin\.com/i.test(de)) return;
+        out.push({ id: m.id, threadId: m.threadId, tipo, asunto, de, fechaMs: Number(m.internalDate) || 0 });
+      });
+    }
+  }
+  return out;
+}
+
+// ── Registro compartido (pestaña MAILS_CARGA de HUB LATINUT) ──
+function mcRango(sufijo){ const t = _mc.titulo || MC_HOJA; return encodeURIComponent(t + '!' + sufijo); }
+async function mcBuscarPestana(){
+  const r = await fetch('https://sheets.googleapis.com/v4/spreadsheets/' + cfg.hubSheetId + '?fields=sheets.properties.title', { headers: { Authorization: 'Bearer ' + accessToken } });
+  if(!r.ok) return undefined;
+  const j = await r.json();
+  return ((j.sheets || []).map(x => ((x.properties || {}).title || '')).find(x => x.trim().toLowerCase() === MC_HOJA.toLowerCase())) || null;
+}
+// Lee quien proceso que. Si no se puede leer, NO se sigue: sin el registro se podria duplicar una carga.
+async function mcCargarRegistro(){
+  _mc.registroOk = false;
+  if(!accessToken || !cfg.hubSheetId) return false;
+  const t = await mcBuscarPestana();
+  if(t === undefined) return false;
+  if(t === null){ _mc.titulo = null; _mc.registro = new Map(); _mc.registroOk = true; return true; }   // todavia nadie proceso nada
+  _mc.titulo = t;
+  const r = await fetch('https://sheets.googleapis.com/v4/spreadsheets/' + cfg.hubSheetId + '/values/' + mcRango('A2:H'), { headers: { Authorization: 'Bearer ' + accessToken } });
+  if(!r.ok) return false;
+  const j = await r.json();
+  _mc.registro = new Map((j.values || []).filter(f => f[0]).map(f => [String(f[0]), { fecha: f[1] || '', usuario: f[2] || '', estado: f[3] || '', negocio: f[4] || '', fila: f[5] || '' }]));
+  _mc.registroOk = true;
+  return true;
+}
+async function mcAsegurarHoja(){
+  if(_mc.titulo) return true;
+  const t = await mcBuscarPestana();
+  if(t){ _mc.titulo = t; return true; }
+  const ok = await showConfirm('Crear la hoja de mails de carga',
+    'Para que nadie cargue dos veces la misma carga, los mails que cargás o ignorás se anotan en una pestaña nueva llamada ' + MC_HOJA + ' de la planilla HUB LATINUT (la misma del LOG). Se crea una sola vez.',
+    { icono: '📬', okLabel: 'Crear la hoja' });
+  if(!ok) return false;
+  const base = 'https://sheets.googleapis.com/v4/spreadsheets/' + cfg.hubSheetId;
+  const hd = { Authorization: 'Bearer ' + accessToken, 'Content-Type': 'application/json' };
+  const r1 = await fetch(base + ':batchUpdate', { method: 'POST', headers: hd, body: JSON.stringify({ requests: [{ addSheet: { properties: { title: MC_HOJA } } }] }) });
+  if(!r1.ok){ alert('No pude crear la hoja ' + MC_HOJA + ' (HTTP ' + r1.status + ').\n\nCreala a mano: en la planilla HUB LATINUT agregá una pestaña llamada ' + MC_HOJA + ' y escribí en la fila 1, de la A a la H:\n' + MC_ENCABEZADOS.join(' | ')); return false; }
+  _mc.titulo = MC_HOJA;
+  await fetch(base + '/values/' + mcRango('A1:H1') + '?valueInputOption=RAW', { method: 'PUT', headers: hd, body: JSON.stringify({ values: [MC_ENCABEZADOS] }) });
+  return true;
+}
+async function mcRegistrar(clave, estado, negocio, fila, asunto, detalle){
+  if(!(await mcAsegurarHoja())) return false;
+  const r = await fetch('https://sheets.googleapis.com/v4/spreadsheets/' + cfg.hubSheetId + '/values/' + mcRango('A:H') + ':append?valueInputOption=RAW&insertDataOption=INSERT_ROWS',
+    { method: 'POST', headers: { Authorization: 'Bearer ' + accessToken, 'Content-Type': 'application/json' }, body: JSON.stringify({ values: [[clave, comAhora(), getMiEmail() || '', estado, negocio || '', fila || '', asunto || '', detalle || '']] }) });
+  if(r.ok) _mc.registro.set(clave, { fecha: comAhora(), usuario: getMiEmail() || '', estado, negocio: negocio || '', fila: fila || '' });
+  return r.ok;
+}
+// Cuando no queda ninguna tarjeta pendiente de un mail, se marca el mail entero para no volver a leerlo.
+async function mcCerrarMailSiCorresponde(msgId, asunto){
+  if(_mc.registro.has(msgId + '|*')) return;
+  const quedan = _mc.cards.some(c => c.mail.id === msgId && !_mc.registro.has(c.clave));
+  if(!quedan) await mcRegistrar(msgId + '|*', 'completo', '', '', asunto, '');
+}
+
+// ── Fechas y textos ──
+// Una fecha dd/mm/aaaa del mail: si el año esta mal (los mails de Nutrin a veces dicen 2025) y con el año del mail queda cerca, se corrige y se avisa.
+function mcFechaPlausible(d, m, y, refMs){
+  const ref = new Date(refMs || Date.now());
+  const dif = f => (f.getTime() - ref.getTime()) / 86400000;
+  const dentro = f => dif(f) >= -10 && dif(f) <= 75;
+  let f = new Date(y, m - 1, d), corregido = false;
+  if(f.getMonth() !== m - 1) return null;
+  if(!dentro(f)){
+    for(const yy of [ref.getFullYear(), ref.getFullYear() + 1]){ const g = new Date(yy, m - 1, d); if(dentro(g)){ f = g; corregido = true; break; } }
+  }
+  const p = n => String(n).padStart(2, '0');
+  return { texto: p(f.getDate()) + '/' + p(f.getMonth() + 1) + '/' + f.getFullYear(), iso: f.getFullYear() + '-' + p(f.getMonth() + 1) + '-' + p(f.getDate()), corregido, fuera: !dentro(f), anioMail: y };
+}
+function mcSinCitas(texto){
+  const t = String(texto || '').replace(/\r/g, '');
+  const i = t.search(/\n\s*(De|From)\s*:\s.*\n\s*(Enviado|Sent|Date)\s*(el)?\s*:/i);
+  const j = t.search(/\n-{3,}\s*(Original|Forwarded|Mensaje)/i);
+  const k = [i, j].filter(x => x >= 0);
+  return (k.length ? t.slice(0, Math.min(...k)) : t).slice(0, 5000);
+}
+// Nombre de una empresa sin la forma legal (SRL, SA, INC, SPA, LTD, GMBH...): "ARSAL SRL" y "Arsal" son el mismo cliente.
+function nombreSinFormaLegal(t){
+  const FORMAS = ['SRL', 'SA', 'S', 'A', 'INC', 'LLC', 'LTD', 'LIMITED', 'SPA', 'SAS', 'GMBH', 'BV', 'NV', 'SL', 'CO', 'CORP', 'CORPORATION', 'COMPANY', 'AG', 'AB', 'OY'];
+  return normTar(t).replace(/[^A-Z0-9 ]/g, ' ').split(/\s+/).filter(w => w && FORMAS.indexOf(w) < 0).join(' ');
+}
+// El cliente del mail es uno de los que YA estan cargados si el nombre es el mismo (sin forma legal) o si las palabras de uno estan
+// todas en el otro. Si no, no se adivina: "TH WEISS" no es un cliente de la lista y salta la alerta.
+function clienteEnLista(txt){
+  const n = nombreSinFormaLegal(txt);
+  if(!n) return '';
+  const lista = (typeof getUnique === 'function' && COL.CUSTOMER >= 0) ? getUnique(COL.CUSTOMER) : [];
+  const exacto = lista.find(c => nombreSinFormaLegal(c) === n);
+  if(exacto) return exacto;
+  const pn = n.split(' ');
+  return lista.find(c => { const pc = nombreSinFormaLegal(c).split(' ').filter(Boolean); return pc.length && pc.join('').length >= 3 && (pc.every(w => pn.indexOf(w) >= 0) || pn.every(w => pc.indexOf(w) >= 0)); }) || '';
+}
+async function mcAsegurarXLSX(){
+  if(window.XLSX) return;
+  await new Promise((res, rej) => { const sc = document.createElement('script'); sc.src = 'https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js'; sc.onload = res; sc.onerror = rej; document.head.appendChild(sc); });
+}
+
+// ── Lo que dice el mail de Argen ──
+// Lo estructurado se saca con reglas fijas (asunto y cuerpo); la IA (modelo rapido) solo ayuda con lo que cambia de forma libre: el consignatario.
+function mcLeerArgenTexto(asunto, cuerpo, fechaMs){
+  const o = { consol: null, contenedores: '', contratos: [], destino: '', consignatario: '', fuentes: {} };
+  const mb = cuerpo.match(/Fecha de carga[^0-9]{0,8}(\d{1,2})\/(\d{1,2})\/(\d{4})/i);
+  const ma = asunto.match(/\(\s*carga\s+(\d{1,2})\/(\d{1,2})\/(\d{4})\s*\)/i);
+  const mf = mb || ma;
+  if(mf){ o.consol = mcFechaPlausible(+mf[1], +mf[2], +mf[3], fechaMs); o.fuentes.consol = mb ? 'cuerpo del mail' : 'asunto'; }
+  const mc = cuerpo.match(/(\d+)\s*[xX]\s*(20|40|45)\s*['’"]?\s*(HC|HQ|DV|ST|RF)?/);
+  if(mc){ o.contenedores = mc[1] + 'x' + mc[2] + (mc[3] ? ' ' + mc[3].toUpperCase() : ''); o.fuentes.contenedores = 'cuerpo del mail'; }
+  const mt = asunto.match(/CTTO\s*:?\s*([^()]+?)\s*\(/i);
+  if(mt) o.contratos = mt[1].split(/\s*[-,\/]\s*/).map(x => x.trim()).filter(Boolean);
+  const md = asunto.match(/\)\s*([^()]+?)\.?\s*$/);
+  if(md) o.destino = md[1].trim();
+  const mg = cuerpo.match(/consignatario[^:\n]{0,80}debe ser\s*:\s*\**\s*([^\n]+)/i);
+  if(mg){ o.consignatario = mg[1].replace(/\*/g, '').split(/\s+(?:VIA|VÍA|STRADA|AV\.?|CALLE|\d)/i)[0].trim(); o.fuentes.customer = 'cuerpo del mail (consignatario de CO y FITO)'; }
+  return o;
+}
+async function mcIaTextoArgen(asunto, cuerpo){
+  if(!cfg.anthropicKey) return null;
+  try{
+    const r = await llamarClaude({ tarea: 'extraccion_mail', maxTokens: 400, detalle: 'mail de carga (Argen)', content:
+`Sos un asistente de LATINUT S.A. (trading de maní, Argentina). Este es un mail de "SOLICITUD DE EXPORTACION" que Argen Peanuts le manda al despachante. Respondé ÚNICAMENTE con un JSON válido:
+{"consignatario": nombre de la empresa consignataria de los CO y FITO, SIN la dirección (o null), "notas": ["otras indicaciones del cuerpo que haya que saber para cargar o documentar la carga, frases cortas"]}
+No inventes: si no está, null o [].
+ASUNTO: ${asunto}
+CUERPO:
+${cuerpo.slice(0, 3500)}` });
+    return extraerJsonIA(r.texto);
+  }catch(e){ console.warn('IA mail Argen:', e); _mc.errores.push('La IA no pudo leer el cuerpo del mail: ' + e.message); return null; }
+}
+
+// ── Lo que dice el mail de Nutrin ──
+// El cuerpo trae, por cada planilla: "PLANILLA 4348 NU172-71/72 PROFORMA 1-3081 LOMBARD / BOOKING / OP / TRANSBORDO".
+function mcBloquesNutrin(texto){
+  const t = mcSinCitas(texto);
+  const partes = t.split(/PLANILLA\s+(?=\d)/i).slice(1);
+  const out = [];
+  partes.forEach(p => {
+    const num = (p.match(/^(\d+)/) || [])[1];
+    if(!num || out.some(b => b.planilla === num)) return;
+    const rest = p.slice(num.length);
+    const lotes = (rest.match(/^\s*([A-Z0-9][A-Z0-9\-\/]*)/i) || [])[1] || '';
+    const prof = rest.match(/PROFORMA\s+([\w\-]+)\s*([^\n]*)/i) || [];
+    out.push({ planilla: num, lotes, proforma: prof[1] || '', destinatario: (prof[2] || '').trim(),
+      booking: (rest.match(/BOOKING\s*:\s*([\w\-]+)/i) || [])[1] || '', op: (rest.match(/\bOP\s*:\s*([\w\-]+)/i) || [])[1] || '',
+      transbordo: ((rest.match(/TRANSBORDO\s*:\s*([^\n]+)/i) || [])[1] || '').trim() });
+  });
+  return out;
+}
+// "NU172-71/72" -> ["NU172-71", "NU172-72"]
+function mcCodigosLotes(lotes){
+  const m = String(lotes || '').toUpperCase().match(/^([A-Z]+\d+-)(\d+)((?:\/\d+)*)$/);
+  if(!m) return lotes ? [String(lotes).toUpperCase()] : [];
+  return [m[2]].concat(m[3].split('/').filter(Boolean)).map(n => m[1] + n);
+}
+// Lotes que manda Calidad en una respuesta: "NU172-71PA1V-0143 22-10-2026 22-04-2026 ... Neto: 21770 kg".
+function mcLeerLotesCalidad(texto){
+  const out = [];
+  const re = /(NU\d+-\d+)\s*(P[A-Z0-9]+-\d+)\s+(\d{2}-\d{2}-\d{4})\s+(\d{2}-\d{2}-\d{4})/g;
+  let m;
+  const t = String(texto || '');
+  while((m = re.exec(t))){
+    const cola = t.slice(m.index + m[0].length, m.index + m[0].length + 400);
+    const n = cola.match(/Neto\s*:\s*([\d.,]+)\s*kg/i);
+    let kg = NaN;
+    if(n){ const s = n[1]; kg = /^\d{1,3}([.,]\d{3})+$/.test(s) ? Number(s.replace(/[.,]/g, '')) : Number(s.replace(',', '.')); }
+    if(!out.some(l => l.codigo === m[1])) out.push({ codigo: m[1], lote: m[2], elaboracion: m[3], vencimiento: m[4], netoKg: kg });
+  }
+  return out;
+}
+function mcSegmentoPlanilla(texto, booking){
+  const t = String(texto || '');
+  if(!booking) return '';
+  const i = t.indexOf(booking);
+  if(i < 0) return '';
+  const ini = Math.max(t.lastIndexOf('PLANILLA', i), 0);
+  const sig = t.indexOf('PLANILLA', i);
+  return t.slice(ini, sig > i ? sig : t.length);
+}
+// Lotes de una planilla segun las respuestas del hilo (ya vienen citados dentro de cada planilla).
+async function mcLotesDeHilo(threadId, original, booking){
+  try{
+    const h = await gmailJson('threads/' + threadId + '?format=full');
+    const textos = (h.messages || []).filter(x => x.id !== original).map(x => mcMensaje(x).texto);
+    for(const tx of textos){
+      const seg = mcSegmentoPlanilla(tx, booking);
+      const lotes = mcLeerLotesCalidad(seg);
+      if(lotes.length) return lotes;
+    }
+  }catch(e){ console.warn('Lotes del hilo:', e); }
+  return [];
+}
+function mcNegocioNutrin(data){
+  const p = String(data.product || '').toLowerCase();
+  if(/flour|harina/.test(p)) return { negocio: 'buzaram', motivo: 'harina de Nutrin: siempre Buzaram' };
+  if(/paste|pasta/.test(p)) return { negocio: '', motivo: 'pasta de Nutrin: puede ir a AXT (Argen) o a Buzaram: elegí' };
+  return { negocio: 'buzaram', motivo: 'Nutrin: casi siempre va a Buzaram' };
+}
+async function mcLeerProforma(buf, nombre){
+  if(!cfg.anthropicKey) return null;
+  try{
+    const r = await llamarClaude({ tarea: 'extraccion_pdf', maxTokens: 600, detalle: nombre, content: [
+      { type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: bufferABase64(buf) } },
+      { type: 'text', text: 'Esta es una proforma invoice de una venta de maní. Respondé ÚNICAMENTE con un JSON válido: {"comprador": empresa compradora / Sold to / Bill to, "consignatario": empresa Consignee / Ship to, "proforma": número, "total_usd": número, "incoterm": condición, "destino": puerto o ciudad de destino}. No inventes: lo que no esté, null.' }
+    ] });
+    return extraerJsonIA(r.texto);
+  }catch(e){ console.warn('Proforma:', e); _mc.errores.push('No pude leer la proforma ' + nombre + ': ' + e.message); return null; }
+}
+
+// ── Armar las tarjetas ──
+function mcNuevaTarjeta(b){
+  const it = itemLote(b.archivo, b.data);
+  it.customer = ''; it.consol = b.consol || ''; it.containers = b.containers || ''; it.pol = b.pol || '';
+  it.edit = { lots: b.lots !== undefined ? b.lots : ((b.data && b.data.lots) || ''), contractProv: b.contractProv || '' };
+  it.mail = b.mail; it.clave = b.clave;
+  return { candidatos: (b.candidatos || []).filter(Boolean), fuentesCliente: b.fuentesCliente || '', clave: b.clave, tipo: b.tipo, negocio: b.negocio || '', motivoNegocio: b.motivoNegocio || '', item: it, fuentes: b.fuentes || {}, hints: b.hints || {}, avisos: b.avisos || [], ia: b.ia || null, noCargable: b.noCargable || '', mail: b.mail, lotesCalidad: b.lotesCalidad || [] };
+}
+async function mcTarjetasArgen(m, full){
+  const xl = full.adjuntos.filter(a => /\.xlsx?$/i.test(a.nombre));
+  const prefer = xl.filter(a => /planilla/i.test(a.nombre));
+  const lista = prefer.length ? prefer : xl;
+  const cuerpo = mcSinCitas(full.texto);
+  const tx = mcLeerArgenTexto(m.asunto, cuerpo, m.fechaMs);
+  const ia = await mcIaTextoArgen(m.asunto, cuerpo);
+  const consig = (ia && ia.consignatario) || tx.consignatario || '';
+  const mail = { id: m.id, threadId: m.threadId, asunto: m.asunto, fechaMs: m.fechaMs, tipo: 'argen' };
+  const comunes = [];
+  if(tx.consol && tx.consol.corregido) comunes.push('El mail decía ' + tx.consol.anioMail + ' pero lo corregí al año del mail: revisá la fecha de consolidación.');
+  if(tx.consol && tx.consol.fuera) comunes.push('La fecha de carga queda lejos de la fecha del mail: revisala.');
+  if(!consig) comunes.push('No encontré el consignatario en el mail: elegí el Customer.');
+  if(!tx.contenedores) comunes.push('No encontré la cantidad de contenedores en el cuerpo.');
+  if(ia && (ia.notas || []).length) comunes.push('El mail aclara: ' + ia.notas.join(' · '));
+  if(!lista.length){
+    return [mcNuevaTarjeta({ clave: m.id + '|sinplanilla', tipo: 'argen', negocio: 'axt', archivo: '(sin planilla)', data: {}, mail, noCargable: 'Este mail no trae la planilla del despachante (.xlsx): cargala a mano.', avisos: comunes })];
+  }
+  const out = [];
+  await mcAsegurarXLSX();
+  for(const a of lista){
+    const buf = await mcAdjuntoBytes(m.id, a);
+    const data = parsePlanillaDespachante(window.XLSX.read(buf, { type: 'array', cellDates: false }));
+    // El contrato: el que dice el nombre de la planilla ("Ctto EA26084") o, si no, los del asunto. Va solo el numero (26084), sin las letras.
+    const mfn = a.nombre.match(/Ctto\.?\s*([A-Z]{0,3}\d{4,6})/i);
+    const contratoProv = mfn ? mfn[1].replace(/\D/g, '') : [...new Set(tx.contratos.map(x => x.replace(/\D/g, '')).filter(Boolean))].join(', ');
+    const fuentes = Object.assign({ vessel: 'planilla (.xlsx)', port: 'planilla (.xlsx)', eta: 'planilla (.xlsx)', product: 'planilla (.xlsx)', tns: 'planilla (.xlsx)', priceFOB: 'planilla (.xlsx)', lots: 'planilla (.xlsx)', contractProv: mfn ? 'nombre de la planilla' : 'asunto del mail' }, tx.fuentes);
+    out.push(mcNuevaTarjeta({ clave: m.id + '|' + a.nombre, tipo: 'argen', negocio: 'axt', motivoNegocio: 'Argen Peanuts siempre va a AXT', archivo: a.nombre, data, mail,
+      candidatos: [consig], contractProv: contratoProv, fuentesCliente: tx.fuentes.customer || 'cuerpo del mail', consol: tx.consol ? tx.consol.iso : '', containers: tx.contenedores, fuentes, avisos: comunes.slice(),
+      hints: { consignatario: consig, contratos: tx.contratos.join(', '), destino: tx.destino }, ia: { texto: tx, ia } }));
+  }
+  return out;
+}
+async function mcTarjetasNutrin(m, full){
+  const cuerpo = mcSinCitas(full.texto);
+  const bloques = mcBloquesNutrin(full.texto);
+  const planillas = full.adjuntos.filter(a => /planilla/i.test(a.nombre) && /\.pdf$/i.test(a.nombre));
+  const mail = { id: m.id, threadId: m.threadId, asunto: m.asunto, fechaMs: m.fechaMs, tipo: 'nutrin' };
+  const planta = (m.asunto.match(/PLANTA\s+([A-ZÁÉÍÓÚ]+)/i) || [])[1] || '';
+  // Fecha de carga: "para el dia VIERNES 06-11-2026" del cuerpo o la del asunto
+  const mf = cuerpo.match(/(\d{2})-(\d{2})-(\d{4})/) || m.asunto.match(/(\d{2})-(\d{2})-(\d{4})/);
+  const consol = mf ? mcFechaPlausible(+mf[1], +mf[2], +mf[3], m.fechaMs) : null;
+  if(!planillas.length) return [mcNuevaTarjeta({ clave: m.id + '|sinplanilla', tipo: 'nutrin', negocio: 'buzaram', archivo: '(sin planilla)', data: {}, mail, noCargable: 'Este mail no trae la planilla del despachante en PDF: cargala a mano.' })];
+  const out = [];
+  for(const a of planillas){
+    const buf = await mcAdjuntoBytes(m.id, a);
+    const pref = a.nombre.replace(/planilla.*$/i, '').replace(/[^a-z0-9]/gi, '').toLowerCase();
+    let data;
+    try{ data = await leerPdfPlanilla({ name: a.nombre, arrayBuffer: async () => buf.slice(0) }); }
+    catch(e){ out.push(mcNuevaTarjeta({ clave: m.id + '|' + a.nombre, tipo: 'nutrin', negocio: 'buzaram', archivo: a.nombre, data: {}, mail, noCargable: 'No pude leer la planilla: ' + e.message })); continue; }
+    const bl = bloques.find(b => b.booking && b.booking === data.booking) || bloques.find(b => pref && b.lotes.replace(/[^a-z0-9]/gi, '').toLowerCase() === pref) || null;
+    const prof = full.adjuntos.find(x => /proforma/i.test(x.nombre) && x.nombre.replace(/proforma.*$/i, '').replace(/[^a-z0-9]/gi, '').toLowerCase() === pref);
+    const profData = prof ? await mcLeerProforma(await mcAdjuntoBytes(m.id, prof), prof.nombre) : null;
+    const lotesCal = bl ? await mcLotesDeHilo(m.threadId, m.id, bl.booking || data.booking) : [];
+    const codigos = bl ? mcCodigosLotes(bl.lotes) : [];
+    const avisos = [];
+    if(consol && consol.corregido) avisos.push('El mail decía ' + consol.anioMail + ': usé el año del mail para la consolidación. Revisala.');
+    if(!prof) avisos.push('No encontré la proforma adjunta para sugerir el Customer.');
+    let lots = 'A DEFINIR';
+    let notaProducto = '';
+    if(lotesCal.some(l => /^PA1V/i.test(l.lote))){
+      if(data.product !== 'Peanut paste with vitamins') avisos.push('El lote ' + lotesCal.find(l => /^PA1V/i.test(l.lote)).lote + ' es de pasta de maní con vitaminas (PA1V): pasé el producto a "Peanut paste with vitamins".');
+      data.product = 'Peanut paste with vitamins'; notaProducto = 'lote PA1V = pasta con vitaminas';
+    }
+    if(lotesCal.length){
+      lots = lotesCal.map(l => l.lote).join(', ');
+      const suma = lotesCal.reduce((s, l) => s + (isNaN(l.netoKg) ? 0 : l.netoKg), 0) / 1000;
+      const tp = numeroCelda(data.tns);
+      if(suma && !isNaN(tp) && Math.abs(suma - tp) > Math.max(0.05, tp * 0.01)) avisos.push('Los lotes de Calidad suman ' + String(Math.round(suma * 100) / 100).replace('.', ',') + ' tn netas y la planilla dice ' + data.tns + ': revisá el peso.');
+      if(codigos.length && codigos.some(c => !lotesCal.find(l => l.codigo === c))) avisos.push('Calidad todavía no mandó todos los lotes (' + codigos.join(', ') + ').');
+    }
+    if(!data.booking && bl) data.booking = bl.booking;
+    const neg = mcNegocioNutrin(data);
+    const fuentes = { vessel: 'planilla (PDF)', port: 'planilla (PDF)', eta: 'planilla (PDF)', product: notaProducto || 'planilla (PDF)', tns: 'planilla (PDF)', priceFOB: 'planilla (PDF)', lots: lotesCal.length ? 'respuesta de Calidad' : 'todavía no los mandó Calidad', contractProv: 'cuerpo del mail (lotes de la planilla)' };
+    if(consol) fuentes.consol = 'cuerpo del mail (día de carga)';
+    out.push(mcNuevaTarjeta({ clave: m.id + '|' + (bl ? 'P' + bl.planilla : a.nombre), tipo: 'nutrin', negocio: neg.negocio, motivoNegocio: neg.motivo, archivo: a.nombre, data, mail,
+      candidatos: profData ? [profData.consignatario, profData.comprador] : [], contractProv: codigos.join(', '), fuentesCliente: 'proforma', consol: consol ? consol.iso : '', lots, fuentes, avisos: avisos.concat(data.avisos || []), lotesCalidad: lotesCal,
+      hints: { planilla: bl ? bl.planilla : '', proforma: bl ? bl.proforma : '', destinatarioProforma: bl ? bl.destinatario : '', op: bl ? bl.op : '', transbordo: bl ? bl.transbordo : '', planta, consignatario: profData ? (profData.consignatario || '') : '', comprador: profData ? (profData.comprador || '') : '' },
+      ia: { proforma: profData } }));
+  }
+  return out;
+}
+async function mcArmarTarjetas(m){
+  const full = mcMensaje(await gmailJson('messages/' + m.id + '?format=full'));
+  return m.tipo === 'argen' ? mcTarjetasArgen(m, full) : mcTarjetasNutrin(m, full);
+}
+// Una carga con el mismo booking (o los mismos lotes) ya en la planilla: se avisa para no duplicarla.
+function mcPosibleDuplicado(c){
+  const d = c.item.data || {};
+  const bk = String(d.booking || '').trim();
+  if(bk){ const f = allRowsAll.find(r => String(r[COL.BOOKING] || '').trim() === bk); if(f) return 'Ya hay una carga con el booking ' + bk + ' (fila ' + f._sheetRow + ').'; }
+  return '';
+}
+
+// ── Cargar todo (buscar, leer y armar) ──
+function mcProcesado(clave){ return _mc.registro.has(clave); }
+async function mcCargarTodo(){
+  if(_mc.cargando) return;
+  _mc.cargando = true; _mc.errores = [];
+  try{
+    if(!(await mcCargarRegistro())){ _mc.errores.push('No pude leer la hoja ' + MC_HOJA + ' de HUB LATINUT: sin ella no se pueden mostrar las cargas (podrías duplicar una).'); return; }
+    const msgs = await mcBuscarMensajes();
+    for(const m of msgs){
+      if(mcProcesado(m.id + '|*') || _mc.vistos.has(m.id)) continue;
+      try{ const t = await mcArmarTarjetas(m); _mc.cards.push(...t); _mc.vistos.add(m.id); }
+      catch(e){ console.warn('Mail de carga:', e); _mc.errores.push('No pude leer "' + m.asunto + '": ' + e.message); }
+    }
+    _mc.cards = _mc.cards.filter(c => !mcProcesado(c.clave) || c.item.estado === 'ok');
+    _mc.cards.forEach(c => { if(c.item.estado !== 'ok'){ const d = mcPosibleDuplicado(c); c.duplicado = d; } });
+    _mc.pendientes = _mc.cards.filter(c => c.item.estado !== 'ok' && !c.noCargable).length;
+  }catch(e){ console.warn('Bandeja:', e); _mc.errores.push(e.message); }
+  finally{ _mc.cargando = false; _mc.ultima = Date.now(); }
+  mcBadge();
+  if(currentView === 'mails') renderBandeja();
+}
+// Solo cuenta (sin leer adjuntos ni gastar IA): cuantos mails de carga todavia nadie proceso.
+async function mcRefrescarBadge(){
+  if(!accessToken || !cfg.hubSheetId || _mc.cargando) return;
+  try{
+    if(!(await mcCargarRegistro())) return;
+    const msgs = await mcBuscarMensajes();
+    _mc.pendientes = msgs.filter(m => !mcProcesado(m.id + '|*') && ![..._mc.registro.keys()].some(k => k.indexOf(m.id + '|') === 0)).length;
+    mcBadge();
+  }catch(e){ console.warn('Badge mails:', e); }
+}
+function mcBadge(){
+  const b = document.getElementById('badge-mails');
+  if(!b) return;
+  const n = _mc.pendientes || 0;
+  b.textContent = n || ''; b.style.display = n ? '' : 'none';
+}
+
+// ── Lotes que manda Calidad para cargas ya cargadas con "A DEFINIR" ──
+async function mcBuscarLotesPendientes(){
+  _mc.lotes = []; _mc.lotesListos = false;
+  const filas = allRows.filter(r => /a definir/i.test(String(r[COL.LOTS] || '')) && String(r[COL.BOOKING] || '').trim()).slice(0, 12);
+  for(const r of filas){
+    const bk = String(r[COL.BOOKING]).trim();
+    try{
+      const lista = await gmailJson('messages?maxResults=8&q=' + encodeURIComponent('"' + bk + '" newer_than:90d'));
+      let hallados = [];
+      for(const x of (lista.messages || [])){
+        const msg = mcMensaje(await gmailJson('messages/' + x.id + '?format=full'));
+        hallados = mcLeerLotesCalidad(mcSegmentoPlanilla(msg.texto, bk));
+        if(hallados.length) break;
+      }
+      if(hallados.length) _mc.lotes.push({ row: r, booking: bk, lotes: hallados });
+    }catch(e){ console.warn('Lotes de', bk, e); }
+  }
+  _mc.lotesListos = true;
+}
+async function mcCompletarLotes(idx){
+  const x = _mc.lotes[idx];
+  if(!x || !accessToken) return;
+  const nuevo = x.lotes.map(l => l.lote).join(', ');
+  const suma = x.lotes.reduce((s, l) => s + (isNaN(l.netoKg) ? 0 : l.netoKg), 0) / 1000;
+  const ok = await showConfirm('Completar los lotes de la fila ' + x.row._sheetRow, 'Se escribe en la columna Lots: ' + nuevo + '. Hoy dice "' + (x.row[COL.LOTS] || '') + '".',
+    { icono: '📦', okLabel: 'Completar lotes', detalle: '<div>Booking ' + escH(x.booking) + '</div>' + x.lotes.map(l => '<div>• ' + escH(l.lote) + ' (contrato ' + escH(l.codigo) + ') · elaboración ' + escH(l.elaboracion) + ' · vence ' + escH(l.vencimiento) + (isNaN(l.netoKg) ? '' : ' · neto ' + l.netoKg.toLocaleString('es-AR') + ' kg') + '</div>').join('') + (suma ? '<div style="margin-top:6px;color:var(--text3);">Suman ' + String(Math.round(suma * 100) / 100).replace('.', ',') + ' tn netas; la fila dice ' + escH(x.row[COL.TNS] || '—') + '.</div>' : '') });
+  if(!ok) return;
+  let fresco;
+  try{ fresco = await releerFilasCarga([x.row._sheetRow], true); }catch(e){ alert(e.message); return; }
+  const f = fresco[x.row._sheetRow] || { valores: [] };
+  if(!/a definir/i.test(String(f.valores[COL.LOTS] || ''))){ alert('La fila ' + x.row._sheetRow + ' ya no dice "A DEFINIR" en la planilla (cambió mientras tanto). No se tocó.'); return; }
+  if(!(await writeRow({ [COL.LOTS]: nuevo }, x.row._sheetRow))){ alert('No se pudo escribir en la planilla. No se cambió nada.'); return; }
+  await appendLog({ fc: '', fcServ: '', bl: (x.row[COL.BL] || '').trim(), customer: (x.row[COL.CUSTOMER] || '').trim(), accion: 'lotes de Calidad', detalle: 'fila ' + x.row._sheetRow + ' - ' + nuevo });
+  x.row[COL.LOTS] = nuevo; _dataVersion++;
+  _mc.lotes.splice(idx, 1);
+  showToast('✓ Lotes completados en la fila ' + x.row._sheetRow, 'ok');
+  renderBandeja();
+}
+
+// ── Pantalla ──
+function mcArmarLote(){
+  // El cliente se sugiere con la lista del negocio que esta abierto (cada negocio tiene sus clientes), una sola vez por negocio.
+  _mc.cards.forEach(c => {
+    if(c.negocio !== negocioActivo || c.noCargable || c.item.estado === 'ok' || c.autoCli === negocioActivo) return;
+    c.autoCli = negocioActivo;
+    if(c.item.customer) return;
+    for(const t of c.candidatos){ const k = clienteEnLista(t); if(k){ c.item.customer = k; c.fuentes.customer = c.fuentesCliente || 'el mail'; break; } }
+  });
+  _lote = { bandeja: true, items: _mc.cards.filter(c => c.negocio === negocioActivo && !c.noCargable).map(c => c.item) };
+}
+const MC_NOMBRES = { axt: 'AXT', buzaram: 'Buzaram' };
+// Cuantos contenedores hay: por los numeros de contenedor de la celda (MSKU1234567, ...) o por la cantidad escrita ("2x40 HC").
+function mcContarContenedores(txt){
+  const t = String(txt || '').trim();
+  if(!t) return 0;
+  const nums = t.split(/[\s,;\/|]+/).filter(x => /^[A-Za-z]{4}\d{6,7}$/.test(x));
+  if(nums.length) return nums.length;
+  const m = t.match(/^(\d+)\s*[xX]\s*(20|40|45)/);
+  return m ? parseInt(m[1], 10) : 0;
+}
+// Una carga de mani ronda las 20-26 tn por contenedor: si no cierra, se avisa (faltan o sobran contenedores, o el peso esta mal).
+function mcControlContenedores(txt, tns){
+  const tn = numeroCelda(tns);
+  if(isNaN(tn) || tn <= 0) return '';
+  const n = mcContarContenedores(txt);
+  const f = x => String(Math.round(x * 10) / 10).replace('.', ',');
+  if(!n) return String(txt || '').trim() ? '' : 'Faltan los contenedores: por las ' + f(tn) + ' tn serían unos ' + Math.max(1, Math.round(tn / 22)) + '.';
+  const por = tn / n;
+  if(por > 28) return 'Son ' + f(tn) + ' tn en ' + n + ' contenedor' + (n === 1 ? '' : 'es') + ' (' + f(por) + ' tn por contenedor): parece que faltan contenedores (serían unos ' + Math.max(n + 1, Math.round(tn / 22)) + ').';
+  if(por < 12) return 'Son ' + f(tn) + ' tn en ' + n + ' contenedores (solo ' + f(por) + ' tn cada uno): ¿sobran contenedores o el peso está mal?';
+  return '';
+}
+// Avisos que dependen de lo que hay escrito AHORA en la tarjeta (se recalculan al tocar cualquier campo).
+function mcActualizarAvisos(i){
+  const it = _lote.items[i];
+  if(!it || !it.mail) return;
+  const c = _mc.cards.find(x => x.item === it);
+  if(!c) return;
+  const d = datosCargaLote(it).d;
+  const tot = document.getElementById('lt-' + i + '-totalfca');
+  if(tot) tot.textContent = d.totalProv ? Number(d.totalProv).toLocaleString('es-AR', { maximumFractionDigits: 2 }) : '—';
+  const el = document.getElementById('mc-av-' + i);
+  if(!el) return;
+  const av = [];
+  if(it.estado !== 'ok'){
+    const neg = MC_NOMBRES[negocioActivo];
+    if(!it.customer && c.candidatos.length) av.push('🔔 Cliente no reconocido: el mail dice "' + c.candidatos.join('" / "') + '" y no es ninguno de los clientes cargados de ' + neg + '. Elegí el Customer.');
+    else if(it.customer && !getUnique(COL.CUSTOMER).some(x => normTar(x) === normTar(it.customer))) av.push('🔔 "' + it.customer + '" no está entre los clientes cargados de ' + neg + ': ¿es un cliente nuevo?');
+    const cc = mcControlContenedores(it.containers, d.tns);
+    if(cc) av.push(cc);
+  }
+  el.innerHTML = av.map(a => '<div class="mc-alerta">' + escH(a) + '</div>').join('');
+}
+function mcTarjetaHtml(c, i){
+  const it = c.item, d0 = it.data || {}, hecho = it.estado === 'ok';
+  const dis = hecho ? ' disabled' : '';
+  const src = k => c.fuentes[k] ? '<span class="mc-src">' + escH(c.fuentes[k]) + '</span>' : '';
+  const campo = (etq, html, k) => '<div class="mc-f"><div class="mc-k">' + etq + '</div>' + html + (k ? src(k) : '') + '</div>';
+  const fijo = (etq, v, k) => campo(etq, '<div class="mc-v">' + (v ? escH(v) : '<span class="mc-vacio">—</span>') + '</div>', k);
+  const ed = k => (it.edit && it.edit[k] !== undefined && it.edit[k] !== null) ? it.edit[k] : ((d0 && d0[k]) || '');
+  const h = c.hints;
+  const info = [];
+  if(h.consignatario) info.push((c.tipo === 'argen' ? 'El mail dice consignatario' : 'Proforma, consignatario') + ': <b>' + escH(h.consignatario) + '</b>');
+  if(h.comprador) info.push('Proforma, comprador: <b>' + escH(h.comprador) + '</b>');
+  if(h.contratos) info.push('Contrato: ' + escH(h.contratos));
+  if(h.destino) info.push('Destino: ' + escH(h.destino));
+  if(h.planilla) info.push('Planilla ' + escH(h.planilla) + (h.proforma ? ' · proforma ' + escH(h.proforma) : '') + (h.destinatarioProforma ? ' a ' + escH(h.destinatarioProforma) : '') + (h.op ? ' · OP ' + escH(h.op) : '') + (h.transbordo ? ' · transbordo ' + escH(h.transbordo) : ''));
+  if(c.motivoNegocio) info.push(escH(c.motivoNegocio));
+  const avisos = (c.avisos || []).concat(c.duplicado ? [c.duplicado] : []);
+  const lotesCal = c.lotesCalidad.length ? '<div class="mc-info">Lotes de Calidad: ' + c.lotesCalidad.map(l => escH(l.lote) + ' (' + escH(l.codigo) + ', vence ' + escH(l.vencimiento) + (isNaN(l.netoKg) ? '' : ', neto ' + l.netoKg.toLocaleString('es-AR') + ' kg') + ')').join(' · ') + '</div>' : '';
+  return '<div class="mc-card' + (hecho ? ' mc-hecha' : '') + '" id="mc-card-' + i + '">'
+    + '<div class="mc-top"><label class="mc-inc"><input type="checkbox" id="lt-' + i + '-incluir" ' + (it.incluir ? 'checked' : '') + dis + ' onchange="loteCambio(' + i + ')"></label>'
+    + '<span class="mc-tit">' + escH(c.tipo === 'argen' ? 'Argen Peanuts' : 'Nutrin') + ' · ' + escH(d0.lots && c.tipo === 'argen' ? d0.lots : (c.hints.planilla ? 'planilla ' + c.hints.planilla : it.archivo)) + '</span>'
+    + (hecho ? '<span class="lt-ok">✓ Fila ' + it.fila + '</span>' : '') + '<span class="mc-mail">' + escH(c.mail.asunto) + '</span></div>'
+    + '<div class="mc-grid">'
+    + campo('Customer *', '<input id="lt-' + i + '-customer" list="lt-clientes" value="' + escH(it.customer) + '" placeholder="Elegí el cliente" autocomplete="off"' + dis + ' oninput="loteCambio(' + i + ')">', 'customer')
+    + campo('Consolidación', '<input id="lt-' + i + '-consol" type="date" value="' + escH(it.consol) + '"' + dis + ' onchange="loteCambio(' + i + ')">', 'consol')
+    + campo('Containers', '<input id="lt-' + i + '-containers" value="' + escH(it.containers) + '" placeholder="ej: 1x40 HC"' + dis + ' oninput="loteCambio(' + i + ')">', 'contenedores')
+    + campo('Lots', '<input id="lt-' + i + '-lots" value="' + escH(ed('lots')) + '"' + dis + ' oninput="loteCambio(' + i + ')">', 'lots')
+    + campo('Contract Proveedor', '<input id="lt-' + i + '-contractprov" value="' + escH(ed('contractProv')) + '"' + dis + ' oninput="loteCambio(' + i + ')">', 'contractProv')
+    + campo('Tns', '<input id="lt-' + i + '-tns" value="' + escH(ed('tns')) + '"' + dis + ' oninput="loteCambio(' + i + ')">', 'tns')
+    + campo('Price FCA (USD/tn)', '<input id="lt-' + i + '-pricefob" value="' + escH(ed('priceFOB')) + '"' + dis + ' oninput="loteCambio(' + i + ')">', 'priceFOB')
+    + '<div class="mc-f"><div class="mc-k">Total FCA (Price × Tns)</div><div class="mc-v" id="lt-' + i + '-totalfca">—</div></div>'
+    + campo('POL', '<input id="lt-' + i + '-pol" list="lt-pols" value="' + escH(it.pol) + '" placeholder="BUE / CHILE" autocomplete="off"' + dis + ' oninput="loteCambio(' + i + ')">', '')
+    + fijo('Producto', d0.product, 'product') + fijo('Puerto', d0.port, 'port') + fijo('ETA', d0.eta, 'eta') + fijo('Buque', d0.vessel, 'vessel') + fijo('Booking', d0.booking, '')
+    + '<div class="mc-f"><div class="mc-k">Se carga en</div><select onchange="mcCambiarNegocio(' + _mc.cards.indexOf(c) + ',this.value)"' + dis + '>'
+    + ['axt', 'buzaram'].map(n => '<option value="' + n + '"' + (c.negocio === n ? ' selected' : '') + '>' + MC_NOMBRES[n] + '</option>').join('') + '</select></div>'
+    + '<div class="mc-f"><label class="lt-duda"><input type="checkbox" id="lt-' + i + '-duda" ' + (it.duda ? 'checked' : '') + dis + ' onchange="loteCambio(' + i + ')"> ¿NOP en duda?</label></div>'
+    + '</div>'
+    + '<div id="lt-' + i + '-contrato" class="lt-contrato mc-contrato"></div><div id="lt-' + i + '-detalle" class="lt-det"></div><div id="mc-av-' + i + '"></div>'
+    + (info.length ? '<div class="mc-info">' + info.join(' · ') + '</div>' : '') + lotesCal
+    + avisos.map(a => '<div class="mc-aviso">⚠ ' + escH(a) + '</div>').join('')
+    + '<details class="mc-det"><summary>Qué leyó la IA</summary><pre>' + escH(JSON.stringify({ planilla: d0, desdeElMail: c.ia }, null, 1)) + '</pre></details>'
+    + (hecho ? '' : '<div class="mc-acc"><a class="btn" target="_blank" rel="noopener" href="https://mail.google.com/mail/u/0/#all/' + encodeURIComponent(c.mail.id) + '">Ver el mail</a><button class="btn" onclick="mcIgnorar(' + _mc.cards.indexOf(c) + ')">Ignorar</button></div>')
+    + '</div>';
+}
+function renderBandeja(){
+  const cont = document.getElementById('content');
+  if(!accessToken){ cont.innerHTML = '<div class="empty"><div class="empty-icon">📬</div><div style="margin-bottom:16px;">Conectate con Google para revisar los mails de carga.</div><button class="btn primary" onclick="handleAuth()">Conectar con Google</button></div>'; return; }
+  if(!_mc.ultima && !_mc.cargando) mcCargarTodo();
+  mcArmarLote();
+  const act = _mc.cards.filter(c => c.negocio === negocioActivo && !c.noCargable);
+  const otros = _mc.cards.filter(c => c.negocio && c.negocio !== negocioActivo && !c.noCargable && c.item.estado !== 'ok');
+  const sinNeg = _mc.cards.filter(c => !c.negocio && !c.noCargable);
+  const aparte = _mc.cards.filter(c => c.noCargable);
+  const clientes = getUnique(COL.CUSTOMER), pols = listaPol();
+  const hora = _mc.ultima ? new Date(_mc.ultima).toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' }) : '';
+  let h = '<div class="config-section" style="max-width:100%;"><div class="config-title">Mails de carga · ' + escH(getNegocioConfig().label) + '</div>'
+    + '<div class="config-desc">El hub revisa tu Gmail (los últimos ' + MC_DIAS + ' días) y deja precargadas las cargas de los mails "SOLICITUD DE EXPORTACION" de Argen Peanuts y "CARGAS NUTRIN". Cambiá lo que haga falta: <b>nada se escribe en la planilla hasta que apretás "Guardar cargas"</b>.</div>'
+    + '<datalist id="lt-clientes">' + clientes.map(c => '<option value="' + escH(c) + '">').join('') + '</datalist><datalist id="lt-pols">' + pols.map(c => '<option value="' + escH(c) + '">').join('') + '</datalist>'
+    + '<div class="mc-barra"><button class="btn" onclick="mcRefrescar()">↻ Buscar mails ahora</button><span class="mc-hora">' + (_mc.cargando ? 'Buscando y leyendo los mails… (puede tardar unos segundos por cada uno)' : (hora ? 'Última búsqueda: ' + hora : '')) + '</span></div>'
+    + _mc.errores.map(e => '<div class="mc-aviso">⚠ ' + escH(e) + '</div>').join('');
+  if(!_mc.cargando && _mc.ultima && !act.length && !otros.length && !sinNeg.length && !aparte.length) h += '<div class="mc-vacio-g">No hay mails de carga pendientes. 🎉</div>';
+  h += act.map(c => mcTarjetaHtml(c, _lote.items.indexOf(c.item))).join('');
+  if(sinNeg.length) h += '<div class="mc-bloque"><b>Elegí a qué negocio va</b> (' + sinNeg.length + '): ' + sinNeg.map(c => '<div class="mc-linea">' + escH(c.item.archivo) + ' · ' + escH(c.item.data.product || '') + ' <span class="mc-src">' + escH(c.motivoNegocio) + '</span> <button class="btn" onclick="mcCambiarNegocio(' + _mc.cards.indexOf(c) + ',\'axt\')">AXT</button> <button class="btn" onclick="mcCambiarNegocio(' + _mc.cards.indexOf(c) + ',\'buzaram\')">Buzaram</button></div>').join('') + '</div>';
+  ['axt', 'buzaram'].filter(n => n !== negocioActivo).forEach(n => {
+    const l = otros.filter(c => c.negocio === n);
+    if(l.length) h += '<div class="mc-bloque"><b>' + l.length + ' carga' + (l.length > 1 ? 's' : '') + ' va' + (l.length > 1 ? 'n' : '') + ' a ' + MC_NOMBRES[n] + ':</b> ' + l.map(c => escH(c.item.archivo)).join(' · ') + ' <button class="btn primary" onclick="mcPasarNegocio(\'' + n + '\')">Pasar a ' + MC_NOMBRES[n] + ' para revisarlas</button></div>';
+  });
+  if(aparte.length) h += '<div class="mc-bloque"><b>Para cargar a mano</b>: ' + aparte.map(c => '<div class="mc-linea">' + escH(c.mail.asunto) + ' — ' + escH(c.noCargable) + ' <button class="btn" onclick="mcIgnorar(' + _mc.cards.indexOf(c) + ')">Ignorar</button></div>').join('') + '</div>';
+  if(_mc.lotes.length) h += '<div class="mc-bloque"><b>Lotes de Calidad para completar</b> (cargas que dicen "A DEFINIR" y ya tienen lotes en un mail):' + _mc.lotes.map((x, k) => '<div class="mc-linea">Fila ' + x.row._sheetRow + ' · ' + escH((x.row[COL.CUSTOMER] || '').trim()) + ' · booking ' + escH(x.booking) + ': <b>' + x.lotes.map(l => escH(l.lote)).join(', ') + '</b> <button class="btn primary" onclick="mcCompletarLotes(' + k + ')">Completar lotes</button></div>').join('') + '</div>';
+  h += '<div class="cf-barra"><span id="lt-resumen" class="cf-faltan"></span><span style="flex:1;"></span><button class="btn primary" id="lt-guardar" onclick="bandejaGuardar()"' + (act.length ? '' : ' disabled') + '>Guardar cargas</button></div></div>';
+  cont.innerHTML = h;
+  _lote.items.forEach((_, i) => loteCambio(i, true));
+  loteResumen();
+}
+async function mcRefrescar(){
+  _mc.vistos = new Set(); _mc.cards = _mc.cards.filter(c => c.item.estado === 'ok');
+  _mc.ultima = 0; _mc.lotes = [];
+  renderBandeja();
+  await mcCargarTodo();
+  if(accessToken && !window.__sinAutoGuardado){ await mcBuscarLotesPendientes(); if(currentView === 'mails') renderBandeja(); }
+}
+function mcCambiarNegocio(k, n){
+  const c = _mc.cards[k];
+  if(!c) return;
+  c.negocio = n;
+  renderBandeja();
+}
+async function mcPasarNegocio(n){
+  const r = setNegocio(n);
+  if(r && r.then) await r;
+  showView('mails');
+}
+async function mcIgnorar(k){
+  const c = _mc.cards[k];
+  if(!c) return;
+  const ok = await showConfirm('Ignorar este mail de carga', '"' + c.mail.asunto + '" deja de aparecer en la bandeja (para vos y para el equipo). No se escribe nada en la planilla de cargas.', { icono: '🙈', okLabel: 'Ignorar' });
+  if(!ok) return;
+  if(!(await mcRegistrar(c.clave, 'ignorada', c.negocio, '', c.mail.asunto, ''))){ alert('No pude anotarlo en la hoja ' + MC_HOJA + '. No se ignoró.'); return; }
+  await mcCerrarMailSiCorresponde(c.mail.id, c.mail.asunto);
+  _mc.cards.splice(k, 1);
+  _mc.pendientes = _mc.cards.filter(x => x.item.estado !== 'ok' && !x.noCargable).length; mcBadge();
+  renderBandeja();
+}
+// Guardar: antes de escribir se vuelve a leer el registro, por si otra persona cargo alguna mientras tanto.
+async function bandejaGuardar(){
+  if(!(await mcAsegurarHoja())) return;
+  if(!(await mcCargarRegistro())){ alert('No pude leer la hoja ' + MC_HOJA + ' para confirmar que nadie cargó estas cargas antes. No se guardó nada.'); return; }
+  const ya = _mc.cards.filter(c => c.item.estado !== 'ok' && c.item.incluir && _mc.registro.has(c.clave));
+  if(ya.length){
+    ya.forEach(c => { c.item.incluir = false; });
+    alert('Estas cargas ya las procesó otra persona y las saqué de la lista:\n' + ya.map(c => '• ' + c.item.archivo + ' (' + (_mc.registro.get(c.clave).usuario || '?') + ': ' + _mc.registro.get(c.clave).estado + ')').join('\n'));
+    _mc.cards = _mc.cards.filter(c => !ya.includes(c));
+    renderBandeja();
+    return;
+  }
+  await guardarLote();
+}
+// Lo que pasa despues de escribir cada carga: se anota en el registro, en el LOG y en una nota de la carga (de que mail salio).
+async function bandejaTrasGuardar(it, fila, d){
+  await mcRegistrar(it.clave, 'cargada', negocioActivo, fila, it.mail.asunto, '');
+  await appendLog({ fc: '', fcServ: '', bl: (d.bl || '').trim(), customer: d.customer, accion: 'carga desde mail', detalle: 'fila ' + fila + ' - ' + (it.mail.tipo === 'argen' ? 'Argen' : 'Nutrin') + ' - ' + it.mail.asunto });
+  if(_comListo){
+    const quien = comNombre(comYo());
+    const nid = comNuevoId();
+    await comAgregar({ id: nid, fecha: comAhora(), autor: comYo(), negocio: comNegocio(), fila: String(fila), columna: NOTA_COL, ancla: d.booking || d.lots || '',
+      texto: 'Cargada desde el mail "' + it.mail.asunto + '" por ' + quien + '.', hilo: nid, estado: 'abierto', resueltoPor: '' }).catch(() => {});
+  }
+  await mcCerrarMailSiCorresponde(it.mail.id, it.mail.asunto);
+  _mc.pendientes = _mc.cards.filter(x => x.item.estado !== 'ok' && !x.noCargable).length; mcBadge();
+}
+// Cada 5 minutos (con el hub abierto) se vuelve a contar cuantos mails de carga hay sin procesar.
+setInterval(() => { if(!window.__sinAutoGuardado && accessToken && !document.hidden) mcRefrescarBadge(); }, 300000);
 
 // ─── ACCIONES RÁPIDAS ────────────────────────────────────────────────────────
 
@@ -14042,41 +14823,106 @@ function mensajeErrorIA(status, tipoApi, msgApi, modelo){
   if(status === 529 || status >= 500) return ErrorIA('Anthropic está saturado o con problemas ahora. Probá de nuevo en un rato.', 'saturado', status);
   return ErrorIA('Anthropic rechazó el pedido' + (m ? ': ' + m : ' (HTTP ' + status + ')') + '.', 'rechazo', status);
 }
-// Contador de uso del mes (solo en este navegador): cuantas llamadas y cuantos tokens por modelo. Sirve para ver cuanto se usa la IA.
-function iaRegistrarUso(modelo, usage){
+// Precios oficiales de Anthropic en USD por millon de tokens (https://platform.claude.com/docs/en/about-claude/pricing, al 05/11/2026).
+// Es una estimacion para llevar el rastro; el gasto real manda y se ve en console.anthropic.com. Si cambian los precios, se editan aca.
+const PRECIOS_IA = {
+  'claude-haiku-5-5':          { ent: 0.10, sal: 0.50, largo: { ent: 0.50, sal: 2.50 } },   // "largo": prompts de mas de 100.000 tokens
+  'claude-sonnet-5-5':         { ent: 2,    sal: 10 },
+  'claude-opus-5-5':           { ent: 4,    sal: 20 },
+  'claude-haiku-4-5-20251001': { ent: 1,    sal: 5 },
+  'claude-sonnet-4-6':         { ent: 3,    sal: 15 }
+};
+function iaCostoUsd(modelo, usage){
+  const p = PRECIOS_IA[modelo];
+  if(!p) return null;
+  const ent = (usage && usage.input_tokens) || 0, sal = (usage && usage.output_tokens) || 0;
+  const t = (p.largo && ent > 100000) ? p.largo : p;
+  return (ent * t.ent + sal * t.sal) / 1e6;
+}
+function fmtUsdIA(x){
+  if(x === null || x === undefined || isNaN(x)) return '—';
+  return 'US$ ' + (x < 0.1 ? x.toFixed(4) : x.toFixed(2)).replace('.', ',');
+}
+const _mesIA = () => { const d = new Date(); return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0'); };
+// Rastro de uso (solo de este navegador): totales por mes y modelo, y las ultimas 100 llamadas con su costo.
+function _iaLeerUso(){
+  let u = {}; try{ u = JSON.parse(localStorage.getItem('hub_ia_uso') || '{}') || {}; }catch(e){}
+  if(u.mes && u.modelos){   // formato anterior: un solo mes y sin dolares
+    const mod = {}; let usd = 0;
+    Object.entries(u.modelos).forEach(([m, x]) => { const c = iaCostoUsd(m, { input_tokens: x.ent, output_tokens: x.sal }) || 0; mod[m] = { n: x.n, ent: x.ent, sal: x.sal, usd: c }; usd += c; });
+    u = { meses: { [u.mes]: { modelos: mod, usd } }, llamadas: [] };
+  }
+  u.meses = u.meses || {}; u.llamadas = u.llamadas || [];
+  return u;
+}
+function iaRegistrarUso(modelo, usage, tarea, detalle){
+  const usd = iaCostoUsd(modelo, usage);
   try{
-    const mes = new Date().toISOString().slice(0, 7);
-    let u = JSON.parse(localStorage.getItem('hub_ia_uso') || '{}');
-    if(u.mes !== mes) u = { mes, modelos: {} };
-    const m = u.modelos[modelo] = u.modelos[modelo] || { n: 0, ent: 0, sal: 0 };
-    m.n++; m.ent += (usage && usage.input_tokens) || 0; m.sal += (usage && usage.output_tokens) || 0;
+    const u = _iaLeerUso(), mes = _mesIA();
+    const M = u.meses[mes] = u.meses[mes] || { modelos: {}, usd: 0 };
+    const m = M.modelos[modelo] = M.modelos[modelo] || { n: 0, ent: 0, sal: 0, usd: 0 };
+    const ent = (usage && usage.input_tokens) || 0, sal = (usage && usage.output_tokens) || 0;
+    m.n++; m.ent += ent; m.sal += sal; m.usd += usd || 0; M.usd = (M.usd || 0) + (usd || 0);
+    u.llamadas.push({ t: new Date().toISOString(), tarea: tarea || '', modelo, ent, sal, usd, detalle: detalle || '' });
+    if(u.llamadas.length > 100) u.llamadas = u.llamadas.slice(-100);
     localStorage.setItem('hub_ia_uso', JSON.stringify(u));
   }catch(e){}
+  return usd;
 }
+const _kTok = n => n >= 1000 ? (Math.round(n / 100) / 10).toLocaleString('es-AR') + ' mil' : String(n);
 function iaResumenUso(){
   try{
-    const u = JSON.parse(localStorage.getItem('hub_ia_uso') || '{}');
-    const mes = new Date().toISOString().slice(0, 7);
-    const filas = u.mes === mes ? Object.entries(u.modelos || {}) : [];
+    const M = _iaLeerUso().meses[_mesIA()];
+    const filas = M ? Object.entries(M.modelos) : [];
     if(!filas.length) return 'Este mes todavía no se usó la IA desde este navegador.';
-    const k = n => n >= 1000 ? (Math.round(n / 100) / 10).toLocaleString('es-AR') + ' mil' : String(n);
-    return 'Este mes, desde este navegador: ' + filas.map(([mod, x]) => mod + ': ' + x.n + ' llamada' + (x.n === 1 ? '' : 's') + ' (' + k(x.ent) + ' tokens de entrada, ' + k(x.sal) + ' de salida)').join(' · ') + '. El gasto en dólares lo ves en console.anthropic.com.';
+    const n = filas.reduce((a, [, x]) => a + x.n, 0);
+    return 'Este mes: <b>' + fmtUsdIA(M.usd) + '</b> en ' + n + ' llamada' + (n === 1 ? '' : 's') + '. ' +
+      filas.map(([mod, x]) => mod + ': ' + x.n + ' llamada' + (x.n === 1 ? '' : 's') + ' (' + _kTok(x.ent) + ' tokens de entrada, ' + _kTok(x.sal) + ' de salida, ' + fmtUsdIA(x.usd) + ')').join(' · ') +
+      '. Es una estimación con los precios oficiales de Anthropic y solo cuenta lo hecho desde este navegador: el gasto real lo ves en console.anthropic.com.';
   }catch(e){ return ''; }
+}
+// Supervision de los PDF de Nutrin: cuantos se revisaron, cuantos coinciden y en que campos la IA ve distinto.
+function _iaSupLeer(){ try{ return JSON.parse(localStorage.getItem('hub_ia_sup') || '{}') || {}; }catch(e){ return {}; } }
+function iaSupRegistrar(archivo, difs){
+  try{
+    const u = _iaSupLeer();
+    u.total = (u.total || 0) + 1; u.sinDif = (u.sinDif || 0) + (difs.length ? 0 : 1);
+    u.campos = u.campos || {}; difs.forEach(d => { u.campos[d.campo] = (u.campos[d.campo] || 0) + 1; });
+    u.ultimos = (u.ultimos || []).concat([{ t: new Date().toISOString(), archivo: archivo || '', difs }]).slice(-30);
+    localStorage.setItem('hub_ia_sup', JSON.stringify(u));
+  }catch(e){}
+}
+function iaPanelHtml(){
+  const e = t => String(t === undefined || t === null ? '' : t).replace(/&/g, '&amp;').replace(/</g, '&lt;');
+  const u = _iaLeerUso();
+  const prev = Object.keys(u.meses).sort().reverse().filter(m => m !== _mesIA())
+    .map(m => '<div>' + m + ': <b>' + fmtUsdIA(u.meses[m].usd) + '</b> en ' + Object.values(u.meses[m].modelos).reduce((a, x) => a + x.n, 0) + ' llamadas</div>').join('');
+  const ult = u.llamadas.slice(-15).reverse().map(c => '<tr><td>' + e(new Date(c.t).toLocaleString('es-AR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })) + '</td><td>' + e(c.tarea) + '</td><td>' + e(c.modelo) + '</td><td>' + _kTok(c.ent) + ' / ' + _kTok(c.sal) + '</td><td><b>' + fmtUsdIA(c.usd) + '</b></td><td>' + e(c.detalle) + '</td></tr>').join('');
+  const sup = _iaSupLeer();
+  const campos = Object.entries(sup.campos || {}).sort((a, b) => b[1] - a[1]).map(([k, n]) => k + ' ×' + n).join(', ');
+  const ultDif = (sup.ultimos || []).filter(x => x.difs.length).slice(-5).reverse()
+    .map(x => '<div>' + e(x.archivo) + ': ' + x.difs.map(d => e(d.campo) + ' (automática «' + e(d.auto || 'vacío') + '» · IA «' + e(d.ia) + '»)').join('; ') + '</div>').join('');
+  return '<div id="ia-uso" style="font-size:12px;color:var(--text2);margin-top:6px;">' + iaResumenUso() + '</div>' +
+    (prev || ult ? '<details style="font-size:11px;color:var(--text2);margin-top:6px;"><summary style="cursor:pointer;">Historial de gasto y últimas llamadas</summary>' + prev +
+      (ult ? '<table style="margin-top:6px;font-size:11px;"><tr><th>Cuándo</th><th>Tarea</th><th>Modelo</th><th>Tokens ent./sal.</th><th>Costo</th><th>Detalle</th></tr>' + ult + '</table>' : '') + '</details>' : '') +
+    '<div id="ia-sup" style="font-size:11px;color:var(--text2);margin-top:6px;">' + (sup.total
+      ? '🔎 Supervisión de PDF de Nutrin: <b>' + sup.total + '</b> revisado' + (sup.total === 1 ? '' : 's') + ', <b>' + sup.sinDif + '</b> sin diferencias (' + Math.round(sup.sinDif / sup.total * 100) + '%).' + (campos ? ' Campos donde la IA vio distinto: ' + campos + '.' : '') + ultDif
+      : '🔎 Supervisión de PDF de Nutrin: todavía no se revisó ninguno.') + '</div>';
 }
 // Una llamada a Claude, directo desde el navegador (el mismo camino que ya usaban las tareas): sin pasar por ningun script intermedio.
 // Reintenta sola si Anthropic frena o esta saturado, prueba el modelo anterior si el nuevo no esta disponible, y si falla dice por que en palabras.
 // content: texto, o una lista de bloques (por ejemplo un PDF + una instruccion).
-async function llamarClaude({ tarea, content, system, maxTokens }){
+async function llamarClaude({ tarea, content, system, maxTokens, detalle }){
   if(!cfg.anthropicKey) throw ErrorIA('Falta cargar la Anthropic API Key en Configuración.', 'sin_clave');
   const modelos = MODELOS_IA[categoriaIA(tarea)];
   let ultimo = null;
   for(const modelo of modelos){
-    try{ return await _pedirClaude(modelo, system, content, maxTokens || 1000); }
+    try{ return await _pedirClaude(modelo, system, content, maxTokens || 1000, tarea, detalle); }
     catch(e){ if(e && e.tipo === 'modelo'){ ultimo = e; continue; } throw e; }
   }
   throw ultimo;
 }
-async function _pedirClaude(modelo, system, content, maxTokens){
+async function _pedirClaude(modelo, system, content, maxTokens, tarea, detalle){
   const cuerpo = { model: modelo, max_tokens: maxTokens, messages: [{ role: 'user', content }] };
   if(system) cuerpo.system = system;
   for(let intento = 0; ; intento++){
@@ -14090,9 +14936,9 @@ async function _pedirClaude(modelo, system, content, maxTokens){
     }catch(e){ throw ErrorIA('No pude conectar con Anthropic. Revisá la conexión a internet.', 'red'); }
     let data = {}; try{ data = await r.json(); }catch(_){}
     if(r.ok){
-      iaRegistrarUso(modelo, data.usage);
+      const usd = iaRegistrarUso(modelo, data.usage, tarea, detalle);
       const texto = (data.content || []).filter(b => b && b.type === 'text').map(b => b.text).join('').trim();
-      return { texto, modelo, usage: data.usage || {} };
+      return { texto, modelo, usage: data.usage || {}, usd };
     }
     const st = r.status;
     if((st === 429 || st === 529 || st >= 500) && intento < _iaEsperas.length){ await _esperar(_iaEsperas[intento]); continue; }
