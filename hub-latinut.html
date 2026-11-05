@@ -10115,6 +10115,11 @@ function renderConfig(){
       <input class="config-input" id="cfg-anthropicKey" type="password" value="${cfg.anthropicKey||''}" placeholder="sk-ant-...">
       <div style="font-size:11px;color:var(--text3);margin-top:4px;">Obtené una en <b>console.anthropic.com</b> → cargá USD 5 de crédito → API Keys → Create Key.</div>
       <div style="font-size:11px;color:var(--text3);margin-top:6px;">Con la clave cargada el hub lee mails de despachantes, redacta tareas y <b>lee planillas en PDF de cualquier formato</b> (primero con el modelo rápido y barato, y solo si hace falta con uno más potente). Para ponerle un tope de gasto mensual: console.anthropic.com → Limits.</div>
+      <div class="config-field" style="margin-top:10px;">
+        <div class="config-label">URL del proxy de Claude (Apps Script)</div>
+        <input class="config-input" id="cfg-claudeProxyUrl" value="${cfg.claudeProxyUrl||''}" placeholder="https://script.google.com/macros/s/.../exec">
+        <div style="font-size:11px;color:var(--text3);margin-top:4px;">Anthropic no deja que el hub le hable directo desde el navegador, así que se pasa por un Apps Script. <b>Sin esta URL solo se pueden leer mails (texto), no PDFs.</b> Pasos de instalación: archivo <b>appscript/claude-proxy.gs</b> (pegarlo en un proyecto nuevo, implementar como aplicación web con acceso para cualquier persona, y pegar acá la URL /exec).</div>
+      </div>
       <label style="display:flex;gap:8px;align-items:flex-start;font-size:12px;color:var(--text);margin-top:8px;"><input type="checkbox" id="cfg-iaSupervisa" ${cfg.iaSupervisaNutrin !== false ? 'checked' : ''} style="margin-top:3px;"><span><b>Supervisar con IA los PDF de Nutrin</b>: después de leerlos por posición, Haiku (el modelo barato) los lee por su cuenta y avisa si ve algún dato distinto. No cambia nada solo. Cuesta unas décimas de centavo de dólar por PDF.</span></label>
       ${iaPanelHtml()}
     </div>
@@ -10143,6 +10148,7 @@ function saveConfig(){
   const rsu=document.getElementById('cfg-resumenScriptUrl')?.value?.trim(); if(rsu!==undefined) cfg.resumenScriptUrl=rsu;
   const ak=document.getElementById('cfg-anthropicKey')?.value?.trim();if(ak) cfg.anthropicKey=ak;
   const sv=document.getElementById('cfg-iaSupervisa'); if(sv) cfg.iaSupervisaNutrin=!!sv.checked;
+  const cpx=document.getElementById('cfg-claudeProxyUrl'); if(cpx) cfg.claudeProxyUrl=cpx.value.trim();
   const gk=document.getElementById('cfg-geminiKey')?.value?.trim();if(gk) cfg.geminiKey=gk;
   const bsid=document.getElementById('cfg-buzaramSheetId')?.value?.trim();if(bsid) cfg.buzaramSheetId=bsid;
   const burl=document.getElementById('cfg-buzaramAppsScriptUrl')?.value?.trim();if(burl) cfg.buzaramAppsScriptUrl=burl;
@@ -14922,25 +14928,45 @@ async function llamarClaude({ tarea, content, system, maxTokens, detalle }){
   }
   throw ultimo;
 }
+// Anthropic NO acepta llamadas directas desde una pagina web ("Disallowed CORS origin"): se pasa por un Apps Script que hace de puente.
+//  - Con la URL del proxy de Claude cargada en Configuracion (appscript/claude-proxy.gs): sirve para todo, incluidos los PDF.
+//  - Sin esa URL: solo se pueden hacer pedidos de texto, por el script que ya se usaba para leer los mails. Los PDF no.
+const CLAUDE_PROXY_VIEJO = 'https://script.google.com/macros/s/AKfycbzKFa-oSUlsqPaa5zBJ7wH6b7xiEy0qIHhHfeLta-9f5D-3axcOWUywDzLhVZ8nFuIJ/exec';
+function statusDeErrorAnthropic(tipo, msg){
+  const t = String(tipo || '');
+  if(t === 'authentication_error') return 401;
+  if(t === 'permission_error') return 403;
+  if(t === 'not_found_error') return 404;
+  if(t === 'request_too_large') return 413;
+  if(t === 'rate_limit_error') return 429;
+  if(t === 'overloaded_error') return 529;
+  if(t === 'api_error') return 500;
+  return 400;
+}
 async function _pedirClaude(modelo, system, content, maxTokens, tarea, detalle){
   const cuerpo = { model: modelo, max_tokens: maxTokens, messages: [{ role: 'user', content }] };
   if(system) cuerpo.system = system;
+  const urlProxy = String(cfg.claudeProxyUrl || '').trim();
+  if(!urlProxy && (typeof content !== 'string' || system)) throw ErrorIA('Para leer PDFs con IA falta instalar el proxy de Claude: Configuración → "URL del proxy de Claude" (los pasos están en appscript/claude-proxy.gs).', 'sin_proxy');
   for(let intento = 0; ; intento++){
-    let r;
+    let st, data;
     try{
-      r = await fetch('https://api.anthropic.com/v1/messages', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'x-api-key': cfg.anthropicKey, 'anthropic-version': '2023-06-01', 'anthropic-dangerous-direct-browser-calls': 'true' },
-        body: JSON.stringify(cuerpo)
-      });
-    }catch(e){ throw ErrorIA('No pude conectar con Anthropic. Revisá la conexión a internet.', 'red'); }
-    let data = {}; try{ data = await r.json(); }catch(_){}
-    if(r.ok){
+      if(urlProxy){
+        const r = await fetch(urlProxy, { method: 'POST', headers: { 'Content-Type': 'text/plain' }, body: JSON.stringify({ action: 'claudeProxy2', anthropicKey: cfg.anthropicKey, body: cuerpo }) });
+        const j = await r.json();
+        st = Number(j.status) || 0; data = j.data || {};
+        if(!st) throw new Error('respuesta sin estado');
+      } else {
+        const r = await fetch(CLAUDE_PROXY_VIEJO, { method: 'POST', headers: { 'Content-Type': 'text/plain' }, body: JSON.stringify({ action: 'claudeProxy', anthropicKey: cfg.anthropicKey, model: modelo, prompt: content }) });
+        data = await r.json();
+        st = data && data.error ? statusDeErrorAnthropic(data.error.type, data.error.message) : (data && data.content ? 200 : 502);
+      }
+    }catch(e){ throw ErrorIA('No pude conectar con el proxy de Claude (Apps Script). Revisá la conexión a internet y que la URL del proxy en Configuración sea la /exec correcta.', 'red'); }
+    if(st === 200){
       const usd = iaRegistrarUso(modelo, data.usage, tarea, detalle);
       const texto = (data.content || []).filter(b => b && b.type === 'text').map(b => b.text).join('').trim();
       return { texto, modelo, usage: data.usage || {}, usd };
     }
-    const st = r.status;
     if((st === 429 || st === 529 || st >= 500) && intento < _iaEsperas.length){ await _esperar(_iaEsperas[intento]); continue; }
     const er = (data && data.error) || {};
     throw mensajeErrorIA(st, er.type, er.message, modelo);
