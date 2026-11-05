@@ -12092,7 +12092,11 @@ function loteCambio(i, soloMostrar){
     // Campos extra que solo tiene la bandeja de mails: se guardan aparte (it.edit) y pisan lo que vino de la planilla.
     if(it.mail){
       const ed = it.edit = it.edit || {};
-      [['lots', 'lots'], ['tns', 'tns'], ['pricefob', 'priceFOB'], ['contractprov', 'contractProv']].forEach(([id, k]) => { if(document.getElementById('lt-' + i + '-' + id)) ed[k] = val(id).trim(); });
+      [['lots', 'lots'], ['tns', 'tns'], ['pricefob', 'priceFOB'], ['contractprov', 'contractProv'], ['etd', 'etd'], ['eta', 'eta']].forEach(([id, k]) => {
+        if(!document.getElementById('lt-' + i + '-' + id)) return;
+        const v = val(id).trim();
+        ed[k] = (id === 'etd' || id === 'eta') && v ? completarFecha(v) : v;   // "20/10" -> 20/10/2026
+      });
     }
     const inc = document.getElementById('lt-' + i + '-incluir'), du = document.getElementById('lt-' + i + '-duda');
     it.incluir = inc ? inc.checked !== false : true; it.duda = !!(du && du.checked);
@@ -12201,7 +12205,7 @@ const MC_CONSULTAS = {
 // Alias de clientes: como se llama en el mail -> como esta cargado en la planilla. Hay uno de base y el resto se va sumando desde la
 // bandeja ("¿recordar que X es IDI?"), en la pestaña ALIAS_CLIENTES de HUB LATINUT, asi lo comparte todo el equipo.
 const MC_HOJA_ALIAS = 'ALIAS_CLIENTES';
-const MC_ALIAS_BASE = { 'INGREDIENTS DISTRIBUTION': 'IDI' };
+const MC_ALIAS_BASE = { 'INGREDIENTS DISTRIBUTION': 'IDI', 'PEANUTS IMPORT AND DISTRICUTION': 'PIDCO', 'PEANUT IMPORT AND DISTRIBUTION': 'PIDCO', 'PEANUTS IMPORT AND DISTRIBUTION': 'PIDCO', 'PEANUT IMPORT AND DISTRICUTION': 'PIDCO' };
 let _mc = { alias: new Map(Object.entries(MC_ALIAS_BASE).map(([a, c]) => [nombreSinFormaLegal(a), c])), aliasTitulo: null, cards: [], vistos: new Set(), registro: new Map(), registroOk: false, titulo: null, cargando: false, ultima: 0, errores: [], pendientes: 0, lotes: [], lotesListos: false };
 
 // ── Utilidades de mail ──
@@ -12390,6 +12394,10 @@ function mcSinCitas(texto){
   const k = [i, j].filter(x => x >= 0);
   return (k.length ? t.slice(0, Math.min(...k)) : t).slice(0, 5000);
 }
+function mcSinPrefijoProducto(t){
+  const m = String(t || '').match(/^\s*[^:\n]{2,40}:\s*(\S.*)$/);
+  return m ? m[1].trim() : String(t || '').trim();
+}
 // Nombre de una empresa sin la forma legal (SRL, SA, INC, SPA, LTD, GMBH...): "ARSAL SRL" y "Arsal" son el mismo cliente.
 function nombreSinFormaLegal(t){
   const FORMAS = ['SRL', 'SA', 'S', 'A', 'INC', 'LLC', 'LTD', 'LIMITED', 'SPA', 'SAS', 'GMBH', 'BV', 'NV', 'SL', 'CO', 'CORP', 'CORPORATION', 'COMPANY', 'AG', 'AB', 'OY'];
@@ -12398,11 +12406,16 @@ function nombreSinFormaLegal(t){
 // El cliente del mail es uno de los que YA estan cargados si el nombre es el mismo (sin forma legal) o si las palabras de uno estan
 // todas en el otro. Si no, no se adivina: "TH WEISS" no es un cliente de la lista y salta la alerta.
 function clienteEnLista(txt){
-  const n = nombreSinFormaLegal(txt);
+  const n = nombreSinFormaLegal(mcSinPrefijoProducto(txt));
   if(!n) return '';
   const lista = (typeof getUnique === 'function' && COL.CUSTOMER >= 0) ? getUnique(COL.CUSTOMER) : [];
   const alias = (typeof _mc !== 'undefined' && _mc.alias) ? _mc.alias.get(n) : '';
-  if(alias){ const hit = lista.find(c => nombreSinFormaLegal(c) === nombreSinFormaLegal(alias)); if(hit) return hit; }
+  if(alias){
+    const na = nombreSinFormaLegal(alias);
+    // el cliente cargado puede llamarse igual que el alias o empezar con el (ej. "PIDCO - PEANUT IMPORT AND DISTRIBUTION COMPANY")
+    const hit = lista.find(c => nombreSinFormaLegal(c) === na) || lista.find(c => (nombreSinFormaLegal(c) + ' ').indexOf(na + ' ') === 0);
+    if(hit) return hit;
+  }
   const exacto = lista.find(c => nombreSinFormaLegal(c) === n);
   if(exacto) return exacto;
   const pn = n.split(' ');
@@ -12430,6 +12443,13 @@ function mcContenedoresSugeridos(textoMail, tns){
   const f = x => String(Math.round(x * 10) / 10).replace('.', ',');
   return { texto: k + 'x' + tipo, cambio: true,
     aviso: 'El mail dice ' + textoMail + ', pero esta planilla tiene ' + f(tn) + ' tn: por el peso serían ' + k + ' contenedor' + (k === 1 ? '' : 'es') + ' (' + f(tn / k) + ' tn cada uno). Puse ' + k + 'x' + tipo + '; revisalo.' };
+}
+// Puerto de salida (POL): si nada habla de Chile ni de una ciudad chilena, es BUE; si lo hay, CHILE. (San Antonio y Santiago a secas no cuentan:
+// hay un San Antonio en Texas y no se sabe cual es; "San Antonio, Chile" si entra porque dice Chile.)
+function mcPolDeTexto(texto){
+  const t = String(texto || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+  const m = t.match(/\b(chile|chilen[oa]s?|valparaiso|iquique|antofagasta|arica|coronel|talcahuano|lirquen|san vicente|puerto montt|punta arenas|los vilos)\b/i);
+  return m ? { pol: 'CHILE', fuente: 'el mail dice "' + m[1] + '"' } : { pol: 'BUE', fuente: 'por defecto: el mail no dice nada del POL' };
 }
 function mcLeerArgenTexto(asunto, cuerpo, fechaMs){
   const o = { consol: null, contenedores: '', contratos: [], destino: '', consignatario: '', fuentes: {} };
@@ -12554,7 +12574,7 @@ async function mcTarjetasArgen(m, full){
   const cuerpo = mcSinCitas(full.texto);
   const tx = mcLeerArgenTexto(m.asunto, cuerpo, m.fechaMs);
   const ia = await mcIaTextoArgen(m.asunto, cuerpo);
-  const consig = (ia && ia.consignatario) || tx.consignatario || '';
+  const consig = mcSinPrefijoProducto((ia && ia.consignatario) || tx.consignatario || '');
   const mail = { id: m.id, threadId: m.threadId, asunto: m.asunto, fechaMs: m.fechaMs, tipo: 'argen' };
   const comunes = [];
   if(tx.consol && tx.consol.corregido) comunes.push('El mail decía ' + tx.consol.anioMail + ' pero lo corregí al año del mail: revisá la fecha de consolidación.');
@@ -12572,11 +12592,12 @@ async function mcTarjetasArgen(m, full){
     const data = parsePlanillaDespachante(window.XLSX.read(buf, { type: 'array', cellDates: false }));
     // El contrato: el que dice el nombre de la planilla ("Ctto EA26084") o, si no, los del asunto. Va solo el numero (26084), sin las letras.
     const sug = mcContenedoresSugeridos(tx.contenedores, data.tns);
+    const polI = mcPolDeTexto(m.asunto + ' ' + cuerpo + ' ' + (data.port || ''));
     const mfn = a.nombre.match(/Ctto\.?\s*([A-Z]{0,3}\d{4,6})/i);
     const contratoProv = mfn ? mfn[1].replace(/\D/g, '') : [...new Set(tx.contratos.map(x => x.replace(/\D/g, '')).filter(Boolean))].join(', ');
     const fuentes = Object.assign({ vessel: 'planilla (.xlsx)', port: 'planilla (.xlsx)', eta: 'planilla (.xlsx)', product: 'planilla (.xlsx)', tns: 'planilla (.xlsx)', priceFOB: 'planilla (.xlsx)', lots: 'planilla (.xlsx)', contractProv: mfn ? 'nombre de la planilla' : 'asunto del mail' }, tx.fuentes);
     out.push(mcNuevaTarjeta({ clave: m.id + '|' + a.nombre, tipo: 'argen', negocio: 'axt', motivoNegocio: 'Argen Peanuts siempre va a AXT', archivo: a.nombre, data, mail,
-      candidatos: [consig], contractProv: contratoProv, fuentesCliente: tx.fuentes.customer || 'cuerpo del mail', consol: tx.consol ? tx.consol.iso : '', containers: sug.texto, fuentes: Object.assign(fuentes, sug.cambio ? { contenedores: 'por las toneladas de la planilla (el mail decía ' + tx.contenedores + ')' } : {}), avisos: comunes.slice().concat(sug.aviso ? [sug.aviso] : []),
+      candidatos: [consig], contractProv: contratoProv, fuentesCliente: tx.fuentes.customer || 'cuerpo del mail', consol: tx.consol ? tx.consol.iso : '', containers: sug.texto, pol: polI.pol, fuentes: Object.assign(fuentes, { pol: polI.fuente }, sug.cambio ? { contenedores: 'por las toneladas de la planilla (el mail decía ' + tx.contenedores + ')' } : {}), avisos: comunes.slice().concat(sug.aviso ? [sug.aviso] : []),
       hints: { consignatario: consig, contratos: tx.contratos.join(', '), destino: tx.destino }, ia: { texto: tx, ia } }));
   }
   return out;
@@ -12620,11 +12641,12 @@ async function mcTarjetasNutrin(m, full){
       if(codigos.length && codigos.some(c => !lotesCal.find(l => l.codigo === c))) avisos.push('Calidad todavía no mandó todos los lotes (' + codigos.join(', ') + ').');
     }
     if(!data.booking && bl) data.booking = bl.booking;
+    const polI = mcPolDeTexto(m.asunto + ' ' + cuerpo + ' ' + (data.port || ''));
     const neg = mcNegocioNutrin(data);
-    const fuentes = { vessel: 'planilla (PDF)', port: 'planilla (PDF)', eta: 'planilla (PDF)', product: notaProducto || 'planilla (PDF)', tns: 'planilla (PDF)', priceFOB: 'planilla (PDF)', lots: lotesCal.length ? 'respuesta de Calidad' : 'todavía no los mandó Calidad', contractProv: 'cuerpo del mail (lotes de la planilla)' };
+    const fuentes = { vessel: 'planilla (PDF)', port: 'planilla (PDF)', eta: 'planilla (PDF)', product: notaProducto || 'planilla (PDF)', tns: 'planilla (PDF)', priceFOB: 'planilla (PDF)', lots: lotesCal.length ? 'respuesta de Calidad' : 'todavía no los mandó Calidad', contractProv: 'cuerpo del mail (lotes de la planilla)', pol: polI.fuente };
     if(consol) fuentes.consol = 'cuerpo del mail (día de carga)';
     out.push(mcNuevaTarjeta({ clave: m.id + '|' + (bl ? 'P' + bl.planilla : a.nombre), tipo: 'nutrin', negocio: neg.negocio, motivoNegocio: neg.motivo, archivo: a.nombre, data, mail,
-      candidatos: profData ? [profData.consignatario, profData.comprador] : [], contractProv: codigos.join(', '), fuentesCliente: 'proforma', consol: consol ? consol.iso : '', lots, fuentes, avisos: avisos.concat(data.avisos || []), lotesCalidad: lotesCal,
+      candidatos: profData ? [profData.consignatario, profData.comprador] : [], contractProv: codigos.join(', '), fuentesCliente: 'proforma', consol: consol ? consol.iso : '', pol: polI.pol, lots, fuentes, avisos: avisos.concat(data.avisos || []), lotesCalidad: lotesCal,
       hints: { planilla: bl ? bl.planilla : '', proforma: bl ? bl.proforma : '', destinatarioProforma: bl ? bl.destinatario : '', op: bl ? bl.op : '', transbordo: bl ? bl.transbordo : '', planta, consignatario: profData ? (profData.consignatario || '') : '', comprador: profData ? (profData.comprador || '') : '' },
       ia: { proforma: profData } }));
   }
@@ -12806,6 +12828,10 @@ function mcActualizarAvisos(i){
     else if(it.customer && !getUnique(COL.CUSTOMER).some(x => normTar(x) === normTar(it.customer))) av.push('🔔 "' + it.customer + '" no está entre los clientes cargados de ' + neg + ': ¿es un cliente nuevo?');
     const cc = mcControlContenedores(it.containers, d.tns);
     if(cc) av.push(cc);
+    if(!d.etd) av.push('Falta la ETD: escribila (dd/mm/aaaa).');
+    if(!d.eta) av.push('Falta la ETA: escribila (dd/mm/aaaa).');
+    const fe = parseDate(d.etd), fa = parseDate(d.eta);
+    if(fe && fa && fe.getTime() > fa.getTime()) av.push('La ETD (' + d.etd + ') es posterior a la ETA (' + d.eta + '): revisalas.');
   }
   el.innerHTML = av.map(a => '<div class="mc-alerta">' + escH(a) + '</div>').join('');
 }
@@ -12839,8 +12865,11 @@ function mcTarjetaHtml(c, i){
     + campo('Tns', '<input id="lt-' + i + '-tns" value="' + escH(ed('tns')) + '"' + dis + ' oninput="loteCambio(' + i + ')">', 'tns')
     + campo('Price FCA (USD/tn)', '<input id="lt-' + i + '-pricefob" value="' + escH(ed('priceFOB')) + '"' + dis + ' oninput="loteCambio(' + i + ')">', 'priceFOB')
     + '<div class="mc-f"><div class="mc-k">Total FCA (Price × Tns)</div><div class="mc-v" id="lt-' + i + '-totalfca">—</div></div>'
-    + campo('POL', '<input id="lt-' + i + '-pol" list="lt-pols" value="' + escH(it.pol) + '" placeholder="BUE / CHILE" autocomplete="off"' + dis + ' oninput="loteCambio(' + i + ')">', '')
-    + fijo('Producto', d0.product, 'product') + fijo('Puerto', d0.port, 'port') + fijo('ETA', d0.eta, 'eta') + fijo('Buque', d0.vessel, 'vessel') + fijo('Booking', d0.booking, '')
+    + campo('POL', '<input id="lt-' + i + '-pol" list="lt-pols" value="' + escH(it.pol) + '" placeholder="BUE / CHILE" autocomplete="off"' + dis + ' oninput="loteCambio(' + i + ')">', 'pol')
+    + fijo('Producto', d0.product, 'product') + fijo('Puerto', d0.port, 'port')
+    + campo('ETD', '<input id="lt-' + i + '-etd" value="' + escH(ed('etd')) + '" placeholder="dd/mm/aaaa"' + dis + ' oninput="loteCambio(' + i + ')">', 'etd')
+    + campo('ETA', '<input id="lt-' + i + '-eta" value="' + escH(ed('eta')) + '" placeholder="dd/mm/aaaa"' + dis + ' oninput="loteCambio(' + i + ')">', 'eta')
+    + fijo('Buque', d0.vessel, 'vessel') + fijo('Booking', d0.booking, '')
     + '<div class="mc-f"><div class="mc-k">Se carga en</div><select onchange="mcCambiarNegocio(' + _mc.cards.indexOf(c) + ',this.value)"' + dis + '>'
     + ['axt', 'buzaram'].map(n => '<option value="' + n + '"' + (c.negocio === n ? ' selected' : '') + '>' + MC_NOMBRES[n] + '</option>').join('') + '</select></div>'
     + '<div class="mc-f"><label class="lt-duda"><input type="checkbox" id="lt-' + i + '-duda" ' + (it.duda ? 'checked' : '') + dis + ' onchange="loteCambio(' + i + ')"> ¿NOP en duda?</label></div>'
