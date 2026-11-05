@@ -1266,6 +1266,70 @@ body{background:radial-gradient(760px 420px at 86% -12%,rgba(var(--lg-a-rgb),.05
 .tabla-cargas{gap:10px;}
 @media (prefers-reduced-motion:reduce){.t-barra .t-filtros-btn,.t-btn,.vchip,.t-busq input,.t-acc{transition:none!important;}}
 @media (max-width:768px){.t-busq input{width:100%;}.t-busq{flex:1 1 100%;}}
+
+/* ═══════════════ COBRANZA — Liquid Glass (mismo sistema que Mails de carga y Cargas) ═══════════════
+   Vidrio con blur solo en las 4 tarjetas y el panel; la tabla es continua, sin efectos por fila. Curvas decorativas estaticas (SVG). */
+.cob-kpis{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:16px;margin-bottom:20px;}
+.kpi{--k:22,119,232;position:relative;overflow:hidden;min-height:150px;padding:22px 24px;border-radius:24px;display:flex;align-items:center;gap:18px;border:1px solid rgba(255,255,255,.92);background:linear-gradient(135deg,rgba(255,255,255,.86) 0%,rgba(255,255,255,.7) 55%,rgba(var(--k),.07) 100%);box-shadow:0 10px 35px rgba(45,70,125,.07),inset 0 1px 0 #fff;backdrop-filter:blur(18px) saturate(140%);-webkit-backdrop-filter:blur(18px) saturate(140%);transition:transform .18s var(--lg-ease),box-shadow .22s var(--lg-ease);}
+.kpi:hover{transform:translateY(-2px);box-shadow:0 14px 40px rgba(35,55,110,.10),inset 0 1px 0 #fff;}
+.kpi::before{content:'';position:absolute;left:0;right:0;top:0;height:46%;background:linear-gradient(180deg,rgba(255,255,255,.6),rgba(255,255,255,0));pointer-events:none;}
+.kpi-az{--k:22,119,232;}
+.kpi-na{--k:242,140,0;background:linear-gradient(135deg,rgba(255,252,247,.9) 0%,rgba(255,250,243,.72) 55%,rgba(var(--k),.08) 100%);}
+.kpi-ro{--k:239,51,64;background:linear-gradient(135deg,rgba(255,247,248,.9) 0%,rgba(255,241,243,.74) 55%,rgba(var(--k),.09) 100%);}
+.kpi-no{--k:23,43,77;}
+.kpi-deco{position:absolute;right:0;top:0;bottom:0;width:66%;height:100%;pointer-events:none;-webkit-mask-image:linear-gradient(90deg,transparent 0,#000 45%);mask-image:linear-gradient(90deg,transparent 0,#000 45%);}
+.kpi-ico{position:relative;z-index:1;flex:none;width:60px;height:60px;border-radius:50%;display:flex;align-items:center;justify-content:center;color:rgb(var(--k));background:radial-gradient(circle at 32% 26%,rgba(255,255,255,.95),rgba(var(--k),.13) 70%);border:1px solid rgba(255,255,255,.95);box-shadow:0 8px 20px rgba(var(--k),.16),inset 0 -4px 10px rgba(var(--k),.08);}
+.kpi-ico .ico{width:27px;height:27px;stroke-width:1.7;}
+.kpi-body{position:relative;z-index:1;min-width:0;}
+.kpi .stat-label{margin:0 0 4px;font-size:14.5px;font-weight:500;color:#44536E;}
+.kpi .stat-value{font-size:34px;font-weight:700;letter-spacing:-.025em;line-height:1.1;color:#14213B;}
+.kpi .stat-value.kpi-monto{font-size:clamp(24px,2.1vw,32px);}
+.kpi-na .stat-value{color:#C9650A;}
+.kpi-ro .stat-value{color:#D42B38;}
+.kpi .stat-sub{margin-top:4px;font-size:14px;color:#44536E;}
+.kpi .kpi-link{color:var(--lg-soft-ink);font-weight:600;cursor:pointer;}
+.kpi .kpi-link:hover{text-decoration:underline;}
+.cob-panel{position:relative;border-radius:26px;border:1px solid rgba(255,255,255,.95);background:rgba(255,255,255,.74);box-shadow:0 14px 40px rgba(35,55,110,.08),inset 0 1px 0 #fff;backdrop-filter:blur(18px) saturate(140%);-webkit-backdrop-filter:blur(18px) saturate(140%);overflow:hidden;margin-bottom:24px;}
+.cob-deco{position:absolute;top:0;right:0;width:58%;height:210px;pointer-events:none;-webkit-mask-image:linear-gradient(90deg,transparent 0,#000 40%);mask-image:linear-gradient(90deg,transparent 0,#000 40%);}
+.cob-panel > .table-top,.cob-panel > .cob-scroll{position:relative;z-index:1;}
+.cob-top{display:block;padding:26px 28px 14px;border-bottom:0;}
+.cob-top-fila{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;}
+.cob-tit{font-size:21px;font-weight:650;letter-spacing:-.015em;color:#14213B;}
+.cob-filtros{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-top:16px;}
+.cob-sel{height:42px;padding:0 40px 0 16px;border-radius:14px;border:1px solid rgba(255,255,255,.95);background:rgba(255,255,255,.82) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%2344536E' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E") no-repeat right 13px center/16px;box-shadow:0 1px 3px rgba(35,55,110,.08),0 0 0 1px rgba(23,43,77,.05);font:500 14px var(--font);color:var(--lg-text);-webkit-appearance:none;appearance:none;cursor:pointer;outline:none;transition:box-shadow .18s var(--lg-ease),background-color .18s;}
+.cob-sel:hover{background-color:#fff;}
+.cob-sel:focus-visible{box-shadow:0 0 0 3px rgba(var(--lg-a-rgb),.25),0 0 0 1px rgba(var(--lg-a-rgb),.6);}
+.cob-sel.on{background-color:var(--lg-soft);color:var(--lg-soft-ink);}
+.cob-ver,.cob-reset{display:inline-flex;align-items:center;height:38px;padding:0 18px;border-radius:13px;border:1px solid rgba(255,255,255,.95);background:rgba(255,255,255,.85);box-shadow:0 1px 3px rgba(35,55,110,.10),0 0 0 1px rgba(23,43,77,.05);font:600 13.5px var(--font);color:var(--lg-ink);cursor:pointer;transition:background .18s,box-shadow .18s;user-select:none;}
+.cob-ver:hover{background:#fff;box-shadow:0 4px 12px rgba(35,55,110,.12),0 0 0 1px rgba(23,43,77,.06);}
+.cob-ver.on{background:var(--lg-soft);color:var(--lg-soft-ink);}
+.cob-reset{height:42px;color:#B3262F;background:rgba(239,51,64,.08);}
+.cob-scroll{padding:0 22px 20px;}
+.cob-tabla{border-collapse:separate;border-spacing:0;width:100%;}
+.cob-tabla thead th{background:rgba(23,43,77,.05);color:#4A5A75;font-size:12px;font-weight:650;letter-spacing:.05em;padding:12px 12px;border-bottom:0;white-space:nowrap;}
+.cob-tabla thead th:first-child{border-radius:14px 0 0 14px;}
+.cob-tabla thead th:last-child{border-radius:0 14px 14px 0;}
+.cob-tabla tbody tr{border-bottom:0;transition:none;}
+.cob-tabla tbody td{height:48px;padding:0 12px;background:transparent;border-bottom:1px solid rgba(23,43,77,.06);color:#1f2c47;vertical-align:middle;}
+.cob-tabla tbody tr:last-child td{border-bottom:0;}
+.cob-panel .cob-tabla tbody tr:hover{background:transparent;}
+.cob-tabla tbody tr:hover td{background:rgba(22,119,232,.045);}
+.cob-tabla td a,.cob-tabla td[style*="var(--accent)"]{color:#1666C9;}
+.cob-tabla input[type=checkbox]{width:16px;height:16px;}
+.cob-tabla td.mono,.cob-tabla td .row-action{white-space:nowrap;}
+.cob-tabla .row-action{display:inline-flex;align-items:center;gap:7px;height:34px;padding:0 14px;border-radius:12px;border:1px solid rgba(255,255,255,.95);background:rgba(255,255,255,.88);box-shadow:0 1px 3px rgba(35,55,110,.10),0 0 0 1px rgba(23,43,77,.05);color:var(--lg-ink);font:600 13px var(--font);transition:background .15s,box-shadow .15s;}
+.cob-tabla .row-action:hover{background:#fff;box-shadow:0 4px 12px rgba(35,55,110,.12),0 0 0 1px rgba(23,43,77,.07);}
+.cob-tabla .row-action .ico{width:15px;height:15px;color:var(--lg-muted);}
+.cob-tabla .row-action .ico.fold{color:#E0A100;}
+.cob-tabla .nota-wrap{margin-top:0;}
+.cob-tabla .nota-btn{height:32px;padding:0 14px;border-radius:12px;border:1px solid #F0D58A;background:#FFF4CF;color:#6b4a00;font:600 13px var(--font);box-shadow:0 1px 2px rgba(180,130,0,.10);}
+.cob-tabla .nota-btn:hover{background:#FFEDB5;}
+#cob-bulk-bar{background:linear-gradient(180deg,var(--lg-dark2),var(--lg-dark))!important;border-radius:16px!important;box-shadow:var(--lg-sh-dark);}
+/* notebook: tarjetas algo mas compactas para que los textos no se partan */
+@media (max-width:1560px){.kpi{padding:18px 18px;gap:12px;min-height:140px;}.kpi-ico{width:48px;height:48px;}.kpi-ico .ico{width:23px;height:23px;}.kpi .stat-value{font-size:30px;}.kpi .stat-value.kpi-monto{font-size:clamp(20px,1.9vw,28px);}.kpi .stat-label{font-size:14px;}}
+@media (max-width:1280px){.cob-kpis{grid-template-columns:repeat(2,minmax(0,1fr));}}
+@media (max-width:620px){.cob-kpis{grid-template-columns:1fr;}.kpi{min-height:120px;padding:18px;}.cob-top{padding:20px 16px 10px;}.cob-tit{font-size:18px;}}
+@media (prefers-reduced-motion:reduce){.kpi,.cob-ver,.cob-sel,.cob-tabla .row-action{transition:none!important;}.kpi:hover{transform:none;}}
 </style>
 </head>
 <body>
@@ -8676,40 +8740,40 @@ function renderCobranza(filterKey, filterVal){
 
   const uniqueClientes = [...new Set(allCobRows.map(r=>(r[COL.CUSTOMER]||'').trim()).filter(Boolean))].sort();
 
-  const clienteSel = `<select onchange="renderCobranza('cliente',this.value)" style="font-size:12px;font-family:var(--mono);padding:5px 8px;border-radius:8px;border:1px solid ${cobranzaFilters.cliente?'var(--accent)':'var(--border)'};background:${cobranzaFilters.cliente?'var(--accent-light)':'var(--bg2)'};color:${cobranzaFilters.cliente?'var(--accent)':'var(--text2)'};outline:none;cursor:pointer;">
+  const clienteSel = `<select class="cob-sel${cobranzaFilters.cliente ? ' on' : ''}" aria-label="Filtrar por cliente" onchange="renderCobranza('cliente',this.value)">
     <option value="">Todos los clientes</option>
     ${uniqueClientes.map(c=>`<option value="${c}" ${cobranzaFilters.cliente===c?'selected':''}>${c}</option>`).join('')}
   </select>`;
 
-  const sortSel = `<select onchange="renderCobranza('sort',this.value)" style="font-size:12px;font-family:var(--mono);padding:5px 8px;border-radius:8px;border:1px solid var(--border);background:var(--bg2);color:var(--text2);outline:none;cursor:pointer;">
+  const sortSel = `<select class="cob-sel" aria-label="Ordenar los cobros" onchange="renderCobranza('sort',this.value)">
     <option value="cerca_hoy" ${cobranzaFilters.sort==='cerca_hoy'?'selected':''}>Más cerca de hoy</option>
     <option value="planilla" ${cobranzaFilters.sort==='planilla'?'selected':''}>Últimas ${FILAS_ULTIMAS} (como la planilla)</option>
     <option value="due_asc" ${cobranzaFilters.sort==='due_asc'?'selected':''}>Vencimiento: próximo primero</option>
     <option value="due_desc" ${cobranzaFilters.sort==='due_desc'?'selected':''}>Vencimiento: lejano primero</option>
   </select>`;
 
-  const verTodosBtn = `<span onclick="cobranzaFilters.verTodos=!cobranzaFilters.verTodos;renderCobranza();" style="font-size:12px;font-family:var(--mono);padding:5px 12px;border-radius:20px;border:1px solid ${cobranzaFilters.verTodos?'var(--accent)':'var(--border2)'};cursor:pointer;background:${cobranzaFilters.verTodos?'var(--accent-light)':'var(--bg2)'};color:${cobranzaFilters.verTodos?'var(--accent)':'var(--text3)'};">${cobranzaFilters.verTodos?'Mostrando todos':'Ver todos'}</span>`;
+  const verTodosBtn = `<span class="cob-ver${cobranzaFilters.verTodos ? ' on' : ''}" onclick="cobranzaFilters.verTodos=!cobranzaFilters.verTodos;renderCobranza();">${cobranzaFilters.verTodos?'Mostrando todos':'Ver todos'}</span>`;
 
-  const resetBtn = cobranzaFilters.cliente ? `<span onclick="cobranzaFilters.cliente='';renderCobranza();" style="font-size:12px;font-family:var(--mono);padding:5px 10px;border-radius:8px;border:1px solid var(--danger);color:var(--danger);cursor:pointer;background:var(--danger-light);">✕ Limpiar</span>` : '';
+  const resetBtn = cobranzaFilters.cliente ? `<span class="cob-reset" onclick="cobranzaFilters.cliente='';renderCobranza();">✕ Limpiar</span>` : '';
 
-  let html = `<div class="stats-row">
-    <div class="stat-card"><div class="stat-label">Cobros en vista</div><div class="stat-value">${rows.length}</div><div class="stat-sub">${cobranzaFilters.verTodos?'Todos':'Próximos 10 días'}</div></div>
-    <div class="stat-card warn-card"><div class="stat-label">Total expuesto</div><div class="stat-value" style="font-size:20px;color:var(--warn)">USD ${totalUSD.toLocaleString('es-AR',{maximumFractionDigits:0})}</div></div>
-    <div class="stat-card alert-card"><div class="stat-label">Vencidos / urgentes</div><div class="stat-value" style="color:var(--danger)">${rows.filter(r=>{const d=daysFrom(r[getCobroCol()]);return d!==null&&d<=1;}).length}</div><div class="stat-sub">≤ 1 día</div></div>
-    <div class="stat-card"><div class="stat-label">Archivados</div><div class="stat-value" style="color:var(--text3)">${archivedBLs.length}</div><div class="stat-sub" style="cursor:pointer;color:var(--accent);" onclick="renderCobranzaArchivados()">Ver archivados →</div></div>
+  let html = `<div class="stats-row cob-kpis">
+    <div class="stat-card kpi kpi-az"><svg class="kpi-deco" viewBox="0 0 260 170" preserveAspectRatio="xMaxYMid slice" aria-hidden="true"><defs><linearGradient id="kd1a" x1="0" y1="1" x2="1" y2="0"><stop offset="0" stop-color="rgb(22,119,232)" stop-opacity="0"/><stop offset=".6" stop-color="rgb(22,119,232)" stop-opacity=".16"/><stop offset="1" stop-color="#fff" stop-opacity=".7"/></linearGradient><linearGradient id="kd1b" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#fff" stop-opacity=".75"/><stop offset="1" stop-color="rgb(22,119,232)" stop-opacity=".10"/></linearGradient></defs><path d="M70 185C110 95 190 30 290 8L290 185Z" fill="url(#kd1a)"/><path d="M70 185C110 95 190 30 290 8" fill="none" stroke="#fff" stroke-opacity=".8" stroke-width="1.2"/><path d="M135 185C165 120 215 82 290 70L290 185Z" fill="url(#kd1b)"/><path d="M135 185C165 120 215 82 290 70" fill="none" stroke="#fff" stroke-opacity=".85" stroke-width="1.2"/></svg><span class="kpi-ico"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="8" cy="8" r="6"/><path d="M18.09 10.37A6 6 0 1 1 10.34 18"/><path d="M7 6h1v4"/><path d="m16.71 13.88.7.71-2.82 2.82"/></svg></span><div class="kpi-body"><div class="stat-label">Cobros en vista</div><div class="stat-value">${rows.length}</div><div class="stat-sub">${cobranzaFilters.verTodos?'Todos':'Próximos 10 días'}</div></div></div>
+    <div class="stat-card warn-card kpi kpi-na"><svg class="kpi-deco" viewBox="0 0 260 170" preserveAspectRatio="xMaxYMid slice" aria-hidden="true"><defs><linearGradient id="kd2a" x1="0" y1="1" x2="1" y2="0"><stop offset="0" stop-color="rgb(242,140,0)" stop-opacity="0"/><stop offset=".6" stop-color="rgb(242,140,0)" stop-opacity=".16"/><stop offset="1" stop-color="#fff" stop-opacity=".7"/></linearGradient><linearGradient id="kd2b" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#fff" stop-opacity=".75"/><stop offset="1" stop-color="rgb(242,140,0)" stop-opacity=".10"/></linearGradient></defs><path d="M70 185C110 95 190 30 290 8L290 185Z" fill="url(#kd2a)"/><path d="M70 185C110 95 190 30 290 8" fill="none" stroke="#fff" stroke-opacity=".8" stroke-width="1.2"/><path d="M135 185C165 120 215 82 290 70L290 185Z" fill="url(#kd2b)"/><path d="M135 185C165 120 215 82 290 70" fill="none" stroke="#fff" stroke-opacity=".85" stroke-width="1.2"/></svg><span class="kpi-ico"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 3v18h18"/><path d="M8 17v-5M13 17V8M18 17v-7"/></svg></span><div class="kpi-body"><div class="stat-label">Total expuesto</div><div class="stat-value kpi-monto">USD ${totalUSD.toLocaleString('es-AR',{maximumFractionDigits:0})}</div></div></div>
+    <div class="stat-card alert-card kpi kpi-ro"><svg class="kpi-deco" viewBox="0 0 260 170" preserveAspectRatio="xMaxYMid slice" aria-hidden="true"><defs><linearGradient id="kd3a" x1="0" y1="1" x2="1" y2="0"><stop offset="0" stop-color="rgb(239,51,64)" stop-opacity="0"/><stop offset=".6" stop-color="rgb(239,51,64)" stop-opacity=".16"/><stop offset="1" stop-color="#fff" stop-opacity=".7"/></linearGradient><linearGradient id="kd3b" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#fff" stop-opacity=".75"/><stop offset="1" stop-color="rgb(239,51,64)" stop-opacity=".10"/></linearGradient></defs><path d="M70 185C110 95 190 30 290 8L290 185Z" fill="url(#kd3a)"/><path d="M70 185C110 95 190 30 290 8" fill="none" stroke="#fff" stroke-opacity=".8" stroke-width="1.2"/><path d="M135 185C165 120 215 82 290 70L290 185Z" fill="url(#kd3b)"/><path d="M135 185C165 120 215 82 290 70" fill="none" stroke="#fff" stroke-opacity=".85" stroke-width="1.2"/></svg><span class="kpi-ico"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="m21.7 18-8-14a2 2 0 0 0-3.4 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.7-3z"/><path d="M12 9v4M12 17h.01"/></svg></span><div class="kpi-body"><div class="stat-label">Vencidos / urgentes</div><div class="stat-value">${rows.filter(r=>{const d=daysFrom(r[getCobroCol()]);return d!==null&&d<=1;}).length}</div><div class="stat-sub">≤ 1 día</div></div></div>
+    <div class="stat-card kpi kpi-no"><svg class="kpi-deco" viewBox="0 0 260 170" preserveAspectRatio="xMaxYMid slice" aria-hidden="true"><defs><linearGradient id="kd4a" x1="0" y1="1" x2="1" y2="0"><stop offset="0" stop-color="rgb(23,43,77)" stop-opacity="0"/><stop offset=".6" stop-color="rgb(23,43,77)" stop-opacity=".16"/><stop offset="1" stop-color="#fff" stop-opacity=".7"/></linearGradient><linearGradient id="kd4b" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#fff" stop-opacity=".75"/><stop offset="1" stop-color="rgb(23,43,77)" stop-opacity=".10"/></linearGradient></defs><path d="M70 185C110 95 190 30 290 8L290 185Z" fill="url(#kd4a)"/><path d="M70 185C110 95 190 30 290 8" fill="none" stroke="#fff" stroke-opacity=".8" stroke-width="1.2"/><path d="M135 185C165 120 215 82 290 70L290 185Z" fill="url(#kd4b)"/><path d="M135 185C165 120 215 82 290 70" fill="none" stroke="#fff" stroke-opacity=".85" stroke-width="1.2"/></svg><span class="kpi-ico"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><rect width="20" height="5" x="2" y="3" rx="1"/><path d="M4 8v11a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8M10 12h4"/></svg></span><div class="kpi-body"><div class="stat-label">Archivados</div><div class="stat-value">${archivedBLs.length}</div><div class="stat-sub kpi-link" onclick="renderCobranzaArchivados()">Ver archivados →</div></div></div>
   </div>
-  <div class="table-wrap">
-    <div class="table-top" style="flex-direction:column;align-items:flex-start;gap:10px;padding:14px 16px;">
-      <div style="display:flex;align-items:center;justify-content:space-between;width:100%;flex-wrap:wrap;gap:8px;">
-        <span style="font-size:14px;font-weight:600;color:var(--text);">Cobranza activa — ${rows.length} cobros</span>
+  <div class="table-wrap cob-panel"><svg class="cob-deco" viewBox="0 0 700 220" preserveAspectRatio="xMaxYMin slice" aria-hidden="true"><defs><linearGradient id="cpa" x1="0" y1="1" x2="1" y2="0"><stop offset="0" stop-color="#1677E8" stop-opacity="0"/><stop offset=".6" stop-color="#1677E8" stop-opacity=".10"/><stop offset="1" stop-color="#fff" stop-opacity=".6"/></linearGradient><linearGradient id="cpb" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#fff" stop-opacity=".7"/><stop offset="1" stop-color="#1677E8" stop-opacity=".06"/></linearGradient></defs><path d="M330 -10C420 70 560 40 720 -20L720 -10Z" fill="none"/><path d="M300 -20C380 120 560 150 720 70L720 -20Z" fill="url(#cpa)"/><path d="M300 -20C380 120 560 150 720 70" fill="none" stroke="#fff" stroke-opacity=".8" stroke-width="1.2"/><path d="M470 -20C520 80 620 100 720 60L720 -20Z" fill="url(#cpb)"/></svg>
+    <div class="table-top cob-top">
+      <div class="cob-top-fila">
+        <span class="cob-tit">Cobranza activa — ${rows.length} cobros</span>
         ${verTodosBtn}
       </div>
-      <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
+      <div class="cob-filtros">
         ${clienteSel}${sortSel}${resetBtn}
       </div>
     </div>
     <button id="cob-bulk-bar" class="bulk-bar" onclick="requestBulkReclamo()" style="background:var(--accent);color:#fff;font-weight:600;font-size:14px;cursor:pointer;border:none;font-family:var(--font);"></button>
-    <div style="overflow-x:auto;${isMobile()?'display:none;':''}"><table>
+    <div class="cob-scroll" style="overflow-x:auto;${isMobile()?'display:none;':''}"><table class="cob-tabla">
     <thead><tr><th style="width:30px"></th><th title="Uso interno: no aparece en los mails de reclamo">Negocio</th><th>Customer</th><th>BL</th><th>Invoice</th><th>Total</th><th onclick="renderCobranza('sort',cobranzaFilters.sort==='due_asc'?'due_desc':'due_asc')" style="cursor:pointer;user-select:none;">Vencimiento ${cobranzaFilters.sort==='due_asc'?'↑':cobranzaFilters.sort==='due_desc'?'↓':'↕'}</th><th>Días</th><th>Reclamos</th><th>Notas</th><th>Contacto</th><th></th><th></th></tr></thead>
     <tbody>`;
 
@@ -8760,8 +8824,8 @@ function renderCobranza(filterKey, filterVal){
       <td>${recHtml}</td>
       <td onclick="event.stopPropagation()">${notaWrapHTML(row,'celda')}</td>
       <td style="font-size:11px;color:var(--text3)">${contactDisplay}</td>
-      <td onclick="event.stopPropagation()"><button class="row-action" onclick="openMailModal(${origIdx},'reclamo_cobro')">✉ Reclamo</button></td>
-      <td onclick="event.stopPropagation()"><button class="row-action" onclick="openArchiveModal(${origIdx})" style="color:var(--text3);">📁 Archivar</button></td>
+      <td onclick="event.stopPropagation()"><button class="row-action" onclick="openMailModal(${origIdx},'reclamo_cobro')"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><rect width="20" height="16" x="2" y="4" rx="3"/><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/></svg> Reclamo</button></td>
+      <td onclick="event.stopPropagation()"><button class="row-action" onclick="openArchiveModal(${origIdx})"><svg class="ico fold" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.7-.9L9.6 3.9A2 2 0 0 0 7.9 3H4a2 2 0 0 0-2 2v13c0 1.1.9 2 2 2z"/></svg> Archivar</button></td>
     </tr>`;
   });
 
