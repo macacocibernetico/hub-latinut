@@ -947,6 +947,77 @@ tr:hover .col-acciones{background:var(--bg3);}
 .login-lock{font-size:40px;margin-bottom:16px;}
 
 
+/* ═══════════════ SISTEMA GLOBAL (componentes compartidos) ═══════════════
+   Va ANTES de los bloques de Mails, Cargas y Cobranza: esos son mas especificos y siguen ganando. Regla de estados: todo elemento con variante
+   activa/seleccionada/primaria declara tambien su :hover (fondo + texto juntos), asi un hover generico nunca los separa. */
+.stats-row{gap:14px;}
+.stat-card{background:linear-gradient(135deg,rgba(255,255,255,.88),rgba(255,255,255,.7));border:1px solid var(--lg-edge);border-radius:20px;box-shadow:var(--lg-sh1);padding:18px 20px;}
+.stat-card.alert-card{background:linear-gradient(135deg,rgba(255,248,249,.92),rgba(239,51,64,.08));border-color:rgba(239,51,64,.16);}
+.stat-card.warn-card{background:linear-gradient(135deg,rgba(255,252,247,.92),rgba(242,140,0,.10));border-color:rgba(217,142,0,.20);}
+.stat-label{font-size:13.5px;color:var(--lg-muted);font-weight:500;}
+.stat-value{font-weight:700;letter-spacing:-.02em;}
+.stat-sub{color:var(--lg-muted);}
+.btn{border-radius:var(--lg-r-btn);border:1px solid rgba(23,43,77,.09);background:rgba(255,255,255,.8);color:var(--lg-ink);font-weight:600;box-shadow:none;transition:background .18s var(--lg-ease),border-color .18s var(--lg-ease),box-shadow .2s var(--lg-ease);}
+.btn:hover{background:#fff;border-color:rgba(23,43,77,.14);box-shadow:var(--lg-sh1);color:var(--lg-ink);}
+.btn.primary,.btn.primary:hover{background:linear-gradient(180deg,var(--lg-dark2),var(--lg-dark));color:#fff;border-color:transparent;box-shadow:var(--lg-sh-dark);}
+.btn.primary:hover{background:linear-gradient(180deg,#26324f,#161f33);}
+.btn:disabled,.btn[disabled]{opacity:.5;cursor:not-allowed;box-shadow:none;}
+.row-action{border-radius:11px;border:1px solid rgba(23,43,77,.10);background:rgba(255,255,255,.88);color:var(--lg-ink);font-weight:600;transition:background .15s,box-shadow .15s;}
+.row-action:hover{background:#fff;color:var(--lg-ink);box-shadow:var(--lg-sh1);}
+.action-btn{border-radius:12px;}
+.quick-action{border-radius:10px;}
+.tag{border-radius:99px;}
+.config-section{background:linear-gradient(135deg,rgba(255,255,255,.88),rgba(255,255,255,.72));border:1px solid var(--lg-edge);border-radius:22px;box-shadow:var(--lg-sh1);padding:22px 24px;}
+.config-title{font-size:16px;font-weight:650;letter-spacing:-.01em;color:var(--lg-text);}
+.config-desc,.config-label{color:var(--lg-muted);}
+.table-wrap{background:rgba(255,255,255,.78);border:1px solid var(--lg-edge);border-radius:22px;box-shadow:var(--lg-sh1);}
+.table-wrap thead th{background:rgba(23,43,77,.045);color:#4A5A75;font-weight:650;border-bottom:0;}
+.table-wrap thead th:first-child{border-top-left-radius:14px;}
+.table-wrap thead th:last-child{border-top-right-radius:14px;}
+.table-wrap tbody tr{border-bottom:1px solid rgba(23,43,77,.06);}
+.table-wrap tbody tr:hover{background:rgba(22,119,232,.045);}
+.table-wrap td{color:#1f2c47;}
+.table-top{border-bottom:1px solid rgba(23,43,77,.06);}
+.alert-item{background:rgba(255,255,255,.82);border:1px solid rgba(23,43,77,.07);border-radius:18px;box-shadow:var(--lg-sh1);}
+.alert-item:hover{box-shadow:var(--lg-sh2);transform:none;}
+.alert-item.critical,.alert-item.warning,.alert-item.info{border-left:1px solid rgba(23,43,77,.07);}
+.alert-title{font-weight:650;}
+.section-title{color:var(--lg-muted);letter-spacing:.06em;}
+.ct-card{background:rgba(255,255,255,.82);border:1px solid rgba(23,43,77,.07);border-radius:18px;box-shadow:var(--lg-sh1);}
+.ct-chip{border-radius:99px;border:1px solid rgba(23,43,77,.09);background:rgba(255,255,255,.8);color:var(--lg-ink);font-weight:600;transition:background .15s;}
+.ct-chip:hover{background:#fff;color:var(--lg-ink);}
+.ct-chip.on,.ct-chip.on:hover{background:linear-gradient(180deg,var(--lg-dark2),var(--lg-dark));border-color:transparent;color:#fff;}
+.cf-toggle{background:rgba(23,43,77,.06);border:0;border-radius:13px;}
+.cf-toggle-btn{border-radius:10px;color:var(--lg-muted);}
+.cf-toggle-btn:hover{color:var(--lg-text);}
+.cf-toggle-btn.active,.cf-toggle-btn.active:hover{background:#fff;color:var(--lg-ink);box-shadow:var(--lg-sh1);}
+.cf-band{background:linear-gradient(135deg,rgba(255,255,255,.88),rgba(255,255,255,.7));border:1px solid var(--lg-edge);border-radius:18px;box-shadow:var(--lg-sh1);}
+.cf-band.vencido{background:linear-gradient(135deg,rgba(255,248,249,.92),rgba(239,51,64,.08));border-color:rgba(239,51,64,.16);}
+.cf-band.hoy{background:var(--lg-soft);border-color:transparent;}
+.cf-calendar-wrap{background:rgba(255,255,255,.8);border:1px solid var(--lg-edge);border-radius:22px;box-shadow:var(--lg-sh1);}
+.cf-nav-btn{border-radius:11px;background:rgba(255,255,255,.85);border-color:rgba(23,43,77,.10);}
+.cf-nav-btn:hover{background:#fff;color:var(--lg-ink);}
+.cf-day{border-color:rgba(23,43,77,.06);}
+.cf-day:hover{background:rgba(22,119,232,.045);}
+.modal-overlay,.ayuda-overlay,.confirm-overlay,.cf-detail-overlay{background:rgba(20,33,59,.32);backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);}
+.modal,.ayuda-box,.confirm-box,.cf-detail-panel{background:rgba(255,255,255,.94);border:1px solid var(--lg-edge);border-radius:24px;box-shadow:0 24px 70px rgba(35,55,110,.22),0 2px 6px rgba(35,55,110,.06);}
+.modal-header,.modal-footer{background:rgba(23,43,77,.03);border-color:rgba(23,43,77,.07);}
+.modal-title,.confirm-title{font-weight:650;letter-spacing:-.01em;}
+.modal-close,.cf-detail-close{background:rgba(23,43,77,.06);color:var(--lg-ink);}
+.modal-close:hover,.cf-detail-close:hover{background:rgba(23,43,77,.12);color:var(--lg-text);}
+.confirm-detalle{background:rgba(23,43,77,.04);border-color:rgba(23,43,77,.07);border-radius:12px;}
+.filtros-pop,.t-pop,.tabla-filtro-pop,.search-results{background:rgba(255,255,255,.95);border:1px solid var(--lg-edge);border-radius:16px;box-shadow:0 14px 40px rgba(35,55,110,.16),0 0 0 1px rgba(23,43,77,.05);backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px);}
+.nota-pop{border-radius:16px;box-shadow:0 14px 40px rgba(35,55,110,.16);}
+#toast{background:rgba(20,33,59,.94);border-radius:14px;box-shadow:0 12px 32px rgba(20,33,59,.28);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);}
+.config-input,.login-input,.mail-textarea,.mail-value{border-radius:12px;border:1px solid rgba(23,43,77,.14);background:rgba(255,255,255,.92);color:var(--lg-text);transition:border-color .15s,box-shadow .15s;}
+.config-input:focus,.login-input:focus,.mail-textarea:focus{outline:none;border-color:rgba(var(--lg-a-rgb),.6);box-shadow:0 0 0 3px rgba(var(--lg-a-rgb),.15);}
+.config-section select,.modal select,.confirm-box select,.ayuda-box select{border-radius:11px;border:1px solid rgba(23,43,77,.14);background-color:rgba(255,255,255,.92);color:var(--lg-text);}
+.config-section input:not([type=checkbox]):not([type=radio]):not([type=range]),.modal input:not([type=checkbox]):not([type=radio]):not([type=range]),.config-section textarea,.modal textarea{border-radius:12px;border:1px solid rgba(23,43,77,.14);background:rgba(255,255,255,.92);color:var(--lg-text);}
+.config-section input:focus,.config-section select:focus,.config-section textarea:focus,.modal input:focus,.modal select:focus,.modal textarea:focus{outline:none;border-color:rgba(var(--lg-a-rgb),.6);box-shadow:0 0 0 3px rgba(var(--lg-a-rgb),.15);}
+input[type=checkbox],input[type=radio]{accent-color:var(--lg-a);}
+.spinner,.empty{color:var(--lg-muted);}
+@media (prefers-reduced-motion:reduce){.btn,.row-action,.ct-chip,.config-input{transition:none!important;}}
+
 /* ═══════════════ LIQUID GLASS (rediseño visual) ═══════════════
    Capa de presentacion: no toca logica. Tokens --lg-*; el color del negocio (azul en AXT, ocre en Buzaram) sale de --lg-a-rgb.
    Los componentes nuevos (.mc-*) viven dentro de .mc-vista para no afectar a las otras pantallas; sidebar y encabezado son compartidos. */
@@ -1330,6 +1401,17 @@ body{background:radial-gradient(760px 420px at 86% -12%,rgba(var(--lg-a-rgb),.05
 @media (max-width:1280px){.cob-kpis{grid-template-columns:repeat(2,minmax(0,1fr));}}
 @media (max-width:620px){.cob-kpis{grid-template-columns:1fr;}.kpi{min-height:120px;padding:18px;}.cob-top{padding:20px 16px 10px;}.cob-tit{font-size:18px;}}
 @media (prefers-reduced-motion:reduce){.kpi,.cob-ver,.cob-sel,.cob-tabla .row-action{transition:none!important;}.kpi:hover{transform:none;}}
+
+/* ═══════════════ REGLAS DE ESTADOS (hover / activo / seleccionado) ═══════════════
+   Causa del texto blanco ilegible: un hover generico (`.nav-item:hover{background:...}`) tiene la misma especificidad que `.nav-item.active`
+   y, al venir despues, le borraba el degradado oscuro al ítem activo dejando el texto blanco sobre fondo claro. Regla del sistema: lo activo/
+   seleccionado declara tambien su variante :hover (fondo + texto + icono juntos), asi ningun hover generico puede separarlos. */
+.nav-item.active,.nav-item.active:hover{background:linear-gradient(180deg,var(--lg-dark2),var(--lg-dark));color:#fff;}
+.nav-item.active:hover{background:linear-gradient(180deg,#26324f,#161f33);}
+.nav-item.active .icon,.nav-item.active:hover .icon{color:#fff;}
+.nav-item.active .nav-badge,.nav-item.active:hover .nav-badge{box-shadow:0 0 0 2px rgba(255,255,255,.18);}
+.bottom-nav-item.active,.bottom-nav-item.active:hover{background:var(--accent-light);}
+.bottom-nav-item.active .bnav-label,.bottom-nav-item.active:hover .bnav-label{color:var(--accent);}
 </style>
 </head>
 <body>
@@ -8604,9 +8686,9 @@ async function unarchiveBL(bl){
 function daysColor(d){
   if(d === null) return 'var(--text3)';
   if(d <= 0) return 'var(--danger)';
-  if(d <= 2) return '#f97316'; // naranja
-  if(d <= 4) return '#f97316'; // naranja
-  if(d <= 10) return '#eab308'; // amarillo
+  if(d <= 2) return '#B84F0A'; // naranja (oscurecido para contraste, antes #f97316)
+  if(d <= 4) return '#B84F0A'; // naranja
+  if(d <= 10) return '#946800'; // amarillo (oscurecido para contraste, antes #eab308)
   return 'var(--ok)';
 }
 
