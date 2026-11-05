@@ -7767,7 +7767,7 @@ function renderNuevaCarga(){
     <div class="config-title">Nueva carga</div>
     <div class="config-desc">Completá los campos para agregar una nueva fila a la planilla ${getNegocioConfig().label}.</div>
     <div style="margin-bottom:16px;">
-      <button class="import-btn" onclick="triggerImportPlanilla()">📎 Importar planilla despachante (.xlsx o PDF de Nutrin)</button>
+      <button class="import-btn" onclick="triggerImportPlanilla()">📎 Importar planilla despachante (.xlsx o PDF)</button>
       <span style="font-size:11px;color:var(--text3);margin-left:10px;">Pre-completa los campos automáticamente</span>
       <button class="import-btn" style="margin-left:14px;" onclick="importarVariasPlanillas()">📎📎 Importar varias planillas a la vez</button>
     </div>
@@ -10081,6 +10081,8 @@ function renderConfig(){
       <div class="config-label">Anthropic API Key (IA avanzada — análisis de mails)</div>
       <input class="config-input" id="cfg-anthropicKey" type="password" value="${cfg.anthropicKey||''}" placeholder="sk-ant-...">
       <div style="font-size:11px;color:var(--text3);margin-top:4px;">Obtené una en <b>console.anthropic.com</b> → cargá USD 5 de crédito → API Keys → Create Key.</div>
+      <div style="font-size:11px;color:var(--text3);margin-top:6px;">Con la clave cargada el hub lee mails de despachantes, redacta tareas y <b>lee planillas en PDF de cualquier formato</b> (primero con el modelo rápido y barato, y solo si hace falta con uno más potente). Para ponerle un tope de gasto mensual: console.anthropic.com → Limits.</div>
+      <div id="ia-uso" style="font-size:11px;color:var(--text2);margin-top:6px;">${iaResumenUso()}</div>
     </div>
     <div class="config-field">
       <div class="config-label">Gemini API Key (fallback gratuito cuando Claude no tiene crédito)</div>
@@ -11269,16 +11271,186 @@ function parsePlanillaNutrin(items){
 async function leerPdfNutrin(file){
   return parsePlanillaNutrin(await textosDePdf(await file.arrayBuffer()));
 }
+
+// ── PLANILLAS EN PDF DE CUALQUIER FORMATO (lectura con IA) ──
+// Las de Nutrin siguen leyendose por la posicion de cada casillero (rapido, sin costo y sin mandar nada afuera). Cualquier otro PDF
+// (otro exportador, otro despachante, una hoja escaneada) se lee con Claude: el PDF viaja a Anthropic y vuelve un JSON con los mismos
+// datos que da la planilla Excel. Primero lo intenta el modelo rapido y barato; si no logra sacar todo (producto, toneladas, ETA, puerto)
+// o duda, relee UNA vez con el modelo equilibrado. Los datos que no estan en el PDF quedan vacios: nada se inventa.
+const PDF_MAX_BYTES = 10 * 1024 * 1024;
+function bufferABase64(buf){
+  const b = new Uint8Array(buf); let s = ''; const T = 0x8000;
+  for(let i = 0; i < b.length; i += T) s += String.fromCharCode.apply(null, b.subarray(i, i + T));
+  return btoa(s);
+}
+function fechaIA(v){
+  const t = String(v === undefined || v === null ? '' : v).trim();
+  let m = t.match(/^(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{4})$/);
+  let d, mm, y;
+  if(m){ d = +m[1]; mm = +m[2]; y = +m[3]; }
+  else if((m = t.match(/^(\d{4})-(\d{2})-(\d{2})/))){ y = +m[1]; mm = +m[2]; d = +m[3]; }
+  else return '';
+  const f = new Date(y, mm - 1, d);
+  if(f.getFullYear() !== y || f.getMonth() !== mm - 1 || f.getDate() !== d) return '';
+  return String(d).padStart(2, '0') + '/' + String(mm).padStart(2, '0') + '/' + y;
+}
+function numeroIA(v){
+  if(v === undefined || v === null || v === '') return NaN;
+  if(typeof v === 'number') return v;
+  return numeroCelda(String(v));
+}
+function ajustarALista(valor, lista){
+  const n = normTar(valor);
+  return (lista || []).find(x => normTar(x) === n) || valor;
+}
+// Convierte lo que devolvio el modelo en el mismo formato que la planilla Excel / el PDF de Nutrin.
+function normalizarLecturaIA(j, modelo){
+  j = j && typeof j === 'object' ? j : {};
+  const txt = v => (v === undefined || v === null ? '' : String(v)).trim();
+  const avisos = Array.isArray(j.avisos) ? j.avisos.map(txt).filter(Boolean) : [];
+  const lista = col => (typeof getUnique === 'function' && col >= 0 ? getUnique(col) : []);
+  let tn = numeroIA(j.tns);
+  if(!isNaN(tn) && tn > 1000){ tn = tn / 1000; avisos.push('las toneladas venían en kilos: las pasé a toneladas'); }
+  const tns = !isNaN(tn) && tn > 0 ? String(Math.round(tn * 1000) / 1000).replace('.', ',') : '';
+  const pr = numeroIA(j.price_fob_usd_tn);
+  const priceFOB = !isNaN(pr) && pr > 0 ? String(Math.round(pr * 100) / 100) : '';
+  const lotes = (Array.isArray(j.lots) ? j.lots : (j.lots ? [j.lots] : [])).map(txt).filter(Boolean);
+  const conts = (Array.isArray(j.contenedores) ? j.contenedores : (j.contenedores ? [j.contenedores] : [])).map(txt).filter(Boolean);
+  const producto = txt(j.product);
+  const clientes = lista(COL.CUSTOMER);
+  const cli = txt(j.customer);
+  const cliOk = cli ? clientes.find(c => normTar(c) === normTar(cli) || (normTar(cli).length >= 4 && (normTar(cli).indexOf(normTar(c)) >= 0 || normTar(c).indexOf(normTar(cli)) >= 0))) : '';
+  const pack = txt(j.packing).toLowerCase();
+  const d = {
+    ia: true, nutrin: false, vessel: txt(j.vessel), booking: txt(j.booking), shipping: normalizarNaviera(j.shipping),
+    port: j.port ? corregirPuerto(txt(j.port)) : '', pol: txt(j.pol) ? normalizarPol(txt(j.pol)) : '',
+    etd: fechaIA(j.etd), eta: fechaIA(j.eta), consolidacion: fechaIA(j.consolidacion),
+    incoterm: txt(j.incoterm), exporter: txt(j.exporter), lots: lotes.join(', '),
+    product: producto ? ajustarALista(producto, lista(COL.PRODUCT)) : '', productoOriginal: txt(j.product_original) || producto,
+    packing: pack ? ajustarALista(pack, lista(COL.PACKING)) : '', tns, priceFOB,
+    cNutrin: txt(j.contrato_proveedor), contenedores: conts, customerIA: cliOk || '', customerCrudo: cli,
+    confianza: ['alta', 'media', 'baja'].indexOf(txt(j.confianza).toLowerCase()) >= 0 ? txt(j.confianza).toLowerCase() : 'media',
+    avisos, modelo: modelo || ''
+  };
+  return d;
+}
+function faltantesLecturaIA(d){
+  const f = [];
+  if(!d.product) f.push('producto'); if(!d.tns) f.push('toneladas'); if(!d.eta) f.push('ETA'); if(!d.port) f.push('puerto de destino');
+  return f;
+}
+function dudasLecturaIA(d){
+  const f = [], n = numeroCelda(d.tns), p = numeroCelda(d.priceFOB);
+  if(!isNaN(n) && (n < 1 || n > 120)) f.push('las toneladas (' + d.tns + ') parecen raras para una carga');
+  if(!isNaN(p) && (p < 100 || p > 20000)) f.push('el precio (' + d.priceFOB + ' USD/tn) parece raro');
+  const a = parseDate(d.etd), b = parseDate(d.eta);
+  if(a && b && a.getTime() > b.getTime()) f.push('la ETD es posterior a la ETA');
+  return f;
+}
+function promptLecturaPlanilla(pistas){
+  const lista = (col, max) => (typeof getUnique === 'function' && col >= 0 ? getUnique(col) : []).slice(0, max || 60).join(' | ');
+  return `Te paso el PDF de una planilla o documento de despacho de UNA carga de exportación de maní (empresa: LATINUT S.A., Argentina).
+Extraé los datos y respondé ÚNICAMENTE con un JSON válido (sin markdown ni explicaciones), con exactamente estas claves:
+{
+ "vessel": buque, "booking": número de booking, "shipping": naviera o armador (MSC, Maersk, Hapag-Lloyd...),
+ "port": puerto de DESTINO / descarga (solo la ciudad, ej "Norfolk"), "pol": puerto de salida si lo dice,
+ "etd": fecha de salida "dd/mm/aaaa", "eta": fecha de llegada "dd/mm/aaaa", "consolidacion": fecha de carga o consolidación "dd/mm/aaaa",
+ "incoterm": condición de venta (FCA, FOB, CFR...), "exporter": exportador / vendedor, "customer": consignatario / comprador,
+ "lots": lista de lotes (["BL38-250030-AP", ...]) o [], "contenedores": lista de números de contenedor o [],
+ "product_original": la mercadería tal cual está escrita en el PDF, "product": la mercadería con el nombre más parecido de la lista de productos,
+ "packing": embalaje (bags, big bags, drums, flexi, boxes...), "tns": toneladas totales de la carga como NÚMERO (si el PDF las da en kilos, pasalas a toneladas),
+ "price_fob_usd_tn": precio por tonelada en USD como NÚMERO (si solo hay un total, dejalo null), "contrato_proveedor": número de contrato del proveedor (ej C-4915) o null,
+ "avisos": lista de frases cortas con lo que dudás o no encontraste, "confianza": "alta", "media" o "baja"
+}
+REGLAS:
+- No inventes nada: si un dato no está en el documento, poné null (o [] en las listas) y anotalo en "avisos".
+- Las fechas en Argentina van día/mes/año: 05/11/2026 es el 5 de noviembre. Devolvelas siempre como dd/mm/aaaa.
+- Si el documento tiene varios productos o varias cargas, extraé la primera y anotalo en "avisos".
+- "product": elegí de esta lista el que corresponda (misma mercadería, aunque esté escrita en otro idioma); si ninguno corresponde, devolvé el texto del PDF traducido al inglés: ${lista(COL.PRODUCT, 40) || '(sin lista)'}
+- "port": si el puerto se parece a uno de esta lista, usá esa escritura: ${lista(COL.PORT, 40) || '(sin lista)'}
+- "packing": si se parece a uno de esta lista, usá esa escritura: ${lista(COL.PACKING, 20) || '(sin lista)'}
+${pistas && pistas.length ? '\nUn primer intento no pudo resolver: ' + pistas.join('; ') + '. Revisá el documento completo con especial cuidado en eso (tablas, pies de página, sellos y notas).' : ''}`;
+}
+async function pedirLecturaPdf(b64, tarea, pistas){
+  const r = await llamarClaude({ tarea, maxTokens: 1500, content: [
+    { type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: b64 } },
+    { type: 'text', text: promptLecturaPlanilla(pistas) }
+  ] });
+  return { json: extraerJsonIA(r.texto), modelo: r.modelo };
+}
+async function leerPdfConIA(file, buf){
+  if(!cfg.anthropicKey) throw new Error('Este PDF no es una planilla de Nutrin. Para leer otros formatos con IA hace falta cargar la Anthropic API Key en Configuración.');
+  if(buf.byteLength > PDF_MAX_BYTES) throw new Error('El PDF pesa más de 10 MB: es demasiado grande para leerlo con IA.');
+  const b64 = bufferABase64(buf);
+  showToast('🤖 Leyendo el PDF con IA…', 'info', 6000);
+  const p1 = await pedirLecturaPdf(b64, 'extraccion_pdf', null);
+  let d = normalizarLecturaIA(p1.json, p1.modelo);
+  const usados = [p1.modelo];
+  const pistas = faltantesLecturaIA(d).concat(dudasLecturaIA(d));
+  if(!p1.json) pistas.push('no se pudo armar el JSON de la respuesta');
+  if(pistas.length || d.confianza === 'baja'){
+    showToast('🤖 Releyendo con un modelo más potente…', 'info', 6000);
+    try{
+      const p2 = await pedirLecturaPdf(b64, 'extraccion_pdf_dificil', pistas);
+      const d2 = normalizarLecturaIA(p2.json, p2.modelo);
+      if(faltantesLecturaIA(d2).length + dudasLecturaIA(d2).length <= pistas.length){ d = d2; usados.push(p2.modelo); }
+    }catch(e){ console.warn('Segunda lectura:', e); }
+  }
+  const falta = faltantesLecturaIA(d), dudas = dudasLecturaIA(d);
+  d.avisos = d.avisos.concat(falta.map(x => 'no encontré ' + x), dudas);
+  d.avisos.unshift('leído con IA (' + usados.join(' → ') + '): revisá cada dato antes de guardar');
+  d.modelosUsados = usados;
+  return d;
+}
+// Entrada unica para un PDF de planilla: Nutrin por posicion, cualquier otro con IA.
+async function leerPdfPlanilla(file){
+  const buf = await file.arrayBuffer();
+  let items = [];
+  try{ items = await textosDePdf(buf.slice(0)); }catch(e){ console.warn('Texto del PDF:', e); }
+  const todo = (items || []).map(i => String(i.s)).join(' ').toUpperCase();
+  if(todo.indexOf('PLANILLA DESPACHANTE') >= 0 && todo.indexOf('NUTRIN') >= 0) return parsePlanillaNutrin(items);
+  return await leerPdfConIA(file, buf);
+}
+// Lo que el PDF trajo ademas de la planilla (consolidacion, contenedores, cliente): se vuelca al formulario como cuando sale del mail.
+function aplicarExtraidosAlForm(x){
+  if(!x) return;
+  if(x.fecha_consolidacion){
+    const inp = document.getElementById('nc-consol');
+    if(inp){
+      const parts = String(x.fecha_consolidacion).replace(/\s*\(.*?\)/g,'').trim().split('/');
+      if(parts.length===3) inp.value = `${parts[2]}-${parts[1]}-${parts[0]}`;
+    }
+  }
+  if(x.containers){
+    const inp = document.getElementById('nc-containers');
+    if(inp) inp.value = x.containers;
+  }
+  if(x.customer){
+    const sel = document.getElementById('nc-customer-sel');
+    const inp2 = document.getElementById('nc-customer');
+    if(sel){
+      const opt = [...sel.options].find(o => o.value === x.customer);
+      if(opt){ sel.value = x.customer; if(inp2){ inp2.style.display='none'; inp2.value=x.customer; } }
+      else { sel.value='__otro__'; if(inp2){ inp2.style.display='block'; inp2.value=x.customer; } }
+    } else if(inp2){ inp2.value = x.customer; }
+  }
+}
 async function importarPdfNutrin(file){
-  showToast('Leyendo planilla de Nutrin…');
+  showToast('Leyendo el PDF…');
   try{
-    const data = await leerPdfNutrin(file);
+    const data = await leerPdfPlanilla(file);
     fillImportData(data);
     const av = data.avisos.length ? ' ⚠ ' + data.avisos.join(' · ') : '';
-    showToast('✓ Planilla de Nutrin importada (' + data.productoOriginal + '). Falta elegir el Customer y cargar la consolidación y los contenedores.' + av, data.avisos.length ? 'warn' : 'ok', 12000);
+    if(data.ia){
+      aplicarExtraidosAlForm({ fecha_consolidacion: data.consolidacion, containers: (data.contenedores || []).join(', '), customer: data.customerIA });
+      const falta = [!data.customerIA ? 'el Customer' : '', !data.consolidacion ? 'la consolidación' : '', !(data.contenedores || []).length ? 'los contenedores' : ''].filter(Boolean);
+      showToast('✓ PDF leído con IA (' + data.productoOriginal + ').' + (falta.length ? ' Falta cargar ' + falta.join(', ') + '.' : '') + av, data.avisos.length > 1 ? 'warn' : 'ok', 14000);
+    } else {
+      showToast('✓ Planilla de Nutrin importada (' + data.productoOriginal + '). Falta elegir el Customer y cargar la consolidación y los contenedores.' + av, data.avisos.length ? 'warn' : 'ok', 12000);
+    }
   }catch(err){
-    console.error('Import Nutrin:', err);
-    alert('No pude leer el PDF de Nutrin: ' + err.message);
+    console.error('Import PDF:', err);
+    alert('No pude leer el PDF: ' + err.message);
   }
 }
 
@@ -11289,7 +11461,7 @@ function triggerImportPlanilla(){
   inp.onchange = async (e) => {
     const file = e.target.files[0];
     if(!file) return;
-    if(esArchivoPdf(file)){ await importarPdfNutrin(file); return; }   // PDF = Nutrin; el Excel de Argen sigue igual
+    if(esArchivoPdf(file)){ await importarPdfNutrin(file); return; }   // PDF: Nutrin por posicion, cualquier otro con IA; el Excel de Argen sigue igual
     showToast('Leyendo planilla...');
     try{
       const buf = await file.arrayBuffer();
@@ -11320,26 +11492,7 @@ function triggerImportPlanilla(){
           mailData.loteActual = loteActual;
           const extraidos = await extraerDatosMailConClaude(mailData, camposFaltantes, clientesConocidos);
           if(extraidos){
-            if(extraidos.fecha_consolidacion){
-              const inp = document.getElementById('nc-consol');
-              if(inp){
-                const parts = extraidos.fecha_consolidacion.replace(/\s*\(.*?\)/g,'').trim().split('/');
-                if(parts.length===3) inp.value = `${parts[2]}-${parts[1]}-${parts[0]}`;
-              }
-            }
-            if(extraidos.containers){
-              const inp = document.getElementById('nc-containers');
-              if(inp) inp.value = extraidos.containers;
-            }
-            if(extraidos.customer){
-              const sel = document.getElementById('nc-customer-sel');
-              const inp2 = document.getElementById('nc-customer');
-              if(sel){
-                const opt = [...sel.options].find(o => o.value === extraidos.customer);
-                if(opt){ sel.value = extraidos.customer; if(inp2){ inp2.style.display='none'; inp2.value=extraidos.customer; } }
-                else { sel.value='__otro__'; if(inp2){ inp2.style.display='block'; inp2.value=extraidos.customer; } }
-              } else if(inp2){ inp2.value = extraidos.customer; }
-            }
+            aplicarExtraidosAlForm(extraidos);
             const completados = Object.entries(extraidos).filter(([k,v])=>v!==null).map(([k])=>k).join(', ');
             if(completados) showToast('✓ IA completó: ' + completados, 'ok');
             else showToast('✓ Planilla importada — mail encontrado pero sin datos adicionales', 'info');
@@ -11710,10 +11863,22 @@ async function importarVariasPlanillas(){
       }
       const lista = [];
       for(const f of files){
-        if(esArchivoPdf(f)) lista.push({ archivo: f.name, data: await leerPdfNutrin(f) });   // PDF de Nutrin
+        if(esArchivoPdf(f)) lista.push({ archivo: f.name, data: await leerPdfPlanilla(f) });   // PDF: Nutrin por posicion, otros con IA
         else lista.push({ archivo: f.name, wb: window.XLSX.read(await f.arrayBuffer(), { type: 'array', cellDates: false }) });
       }
       armarLote(lista);
+      // Lo que los PDF leidos con IA trajeron de mas (contenedores, consolidacion, cliente que ya esta en la lista) ya queda cargado.
+      _lote.items.forEach(it => {
+        const d = it.data;
+        if(!d.ia) return;
+        if((d.contenedores || []).length && !it.containers) it.containers = d.contenedores.join(', ');
+        if(d.consolidacion){ const p = d.consolidacion.split('/'); if(p.length === 3 && !it.consol) it.consol = p[2] + '-' + p[1] + '-' + p[0]; }
+        if(d.customerIA && !it.customer) it.customer = d.customerIA;
+        if(d.pol && !it.pol) it.pol = d.pol;
+      });
+      renderLote();
+      const conAvisos = _lote.items.filter(it => it.data.ia).length;
+      if(conAvisos) showToast('🤖 ' + conAvisos + ' PDF leído' + (conAvisos === 1 ? '' : 's') + ' con IA: revisá bien cada dato antes de guardar.', 'warn', 9000);
       if(accessToken && cfg.anthropicKey && (document.getElementById('lt-ia') || {}).checked !== false) await completarLoteConMail();
     }catch(err){ console.error('Import lote:', err); alert('Error al leer las planillas: ' + err.message); }
   };
@@ -11727,6 +11892,7 @@ async function completarLoteConMail(){
   for(let i = 0; i < _lote.items.length; i++){
     const it = _lote.items[i];
     if(it.data.nutrin) continue;   // las de Nutrin no se buscan en el mail: consolidacion y contenedores se cargan a mano
+    if(it.data.ia && it.consol && it.containers) continue;   // el PDF ya trajo todo lo que se iba a buscar en el mail
     showToast('🔍 Mail ' + (i + 1) + ' de ' + _lote.items.length + '...', 'info');
     try{
       const mail = await buscarMailDespachante(it.archivo);
@@ -13849,16 +14015,98 @@ function openDayDetail(key, dateLabel){
 }
 
 
-// ─── SELECTOR DE MODELO IA ───────────────────────────────────────────────────
-function getAnthropicModel(tarea){
-  const HAIKU   = 'claude-haiku-4-5-20251001';
-  const SONNET  = 'claude-sonnet-4-6';
-  const tareasSimplesHaiku = [
-    'extraccion_mail',    // extraer fecha/cliente de mail despachante
-    'chat_consulta',      // preguntas rápidas de datos
-    'clasificar_doc',     // clasificar tipo de documento
-  ];
-  return tareasSimplesHaiku.includes(tarea) ? HAIKU : SONNET;
+// ─── IA (ANTHROPIC): MODELOS, LLAMADA Y USO ────────────────────────────────
+// Un modelo por categoria, siempre el mas nuevo, y el mas barato que alcance para la tarea:
+//   rapido      (Haiku)  -> la rutina: leer un mail, escribir o cerrar una tarea, y el PRIMER intento de leer una planilla en PDF
+//   equilibrado (Sonnet) -> lo que pide mas criterio: releer un PDF cuando el rapido no logro sacar todos los datos
+// El modelo potente (Opus) no se usa solo: es el mas caro y nada de lo que hace el hub hoy lo necesita.
+// Cada categoria trae un modelo de respaldo: si la cuenta no tiene acceso al nuevo, se prueba el anterior.
+const MODELOS_IA = {
+  rapido:      ['claude-haiku-5-5', 'claude-haiku-4-5-20251001'],
+  equilibrado: ['claude-sonnet-5-5', 'claude-sonnet-4-6']
+};
+const TAREAS_RAPIDAS = ['extraccion_mail', 'chat_consulta', 'clasificar_doc', 'extraccion_pdf'];
+function categoriaIA(tarea){ return TAREAS_RAPIDAS.indexOf(tarea) >= 0 ? 'rapido' : 'equilibrado'; }
+function getAnthropicModel(tarea){ return MODELOS_IA[categoriaIA(tarea)][0]; }
+
+let _iaEsperas = [1500, 4000];   // pausas antes de reintentar cuando Anthropic frena (429) o esta saturado (529/5xx)
+function ErrorIA(msg, tipo, status){ const e = new Error(msg); e.tipo = tipo; e.status = status; return e; }
+function mensajeErrorIA(status, tipoApi, msgApi, modelo){
+  const m = String(msgApi || '');
+  if(status === 401) return ErrorIA('La API key de Anthropic no es válida o fue revocada. Revisala en Configuración.', 'clave', status);
+  if(status === 403) return ErrorIA('Esa API key de Anthropic no tiene permiso para esta operación.', 'permiso', status);
+  if(status === 404) return ErrorIA('El modelo ' + modelo + ' no está disponible para tu cuenta de Anthropic.', 'modelo', status);
+  if(status === 413) return ErrorIA('El archivo es demasiado grande para leerlo con IA.', 'grande', status);
+  if(status === 400 && /credit balance|billing|credits/i.test(m)) return ErrorIA('Se acabó el crédito de Anthropic. Cargá saldo en console.anthropic.com (Plans & Billing).', 'credito', status);
+  if(status === 429) return ErrorIA('Anthropic frenó los pedidos por un momento (demasiados seguidos). Probá de nuevo en un minuto.', 'limite', status);
+  if(status === 529 || status >= 500) return ErrorIA('Anthropic está saturado o con problemas ahora. Probá de nuevo en un rato.', 'saturado', status);
+  return ErrorIA('Anthropic rechazó el pedido' + (m ? ': ' + m : ' (HTTP ' + status + ')') + '.', 'rechazo', status);
+}
+// Contador de uso del mes (solo en este navegador): cuantas llamadas y cuantos tokens por modelo. Sirve para ver cuanto se usa la IA.
+function iaRegistrarUso(modelo, usage){
+  try{
+    const mes = new Date().toISOString().slice(0, 7);
+    let u = JSON.parse(localStorage.getItem('hub_ia_uso') || '{}');
+    if(u.mes !== mes) u = { mes, modelos: {} };
+    const m = u.modelos[modelo] = u.modelos[modelo] || { n: 0, ent: 0, sal: 0 };
+    m.n++; m.ent += (usage && usage.input_tokens) || 0; m.sal += (usage && usage.output_tokens) || 0;
+    localStorage.setItem('hub_ia_uso', JSON.stringify(u));
+  }catch(e){}
+}
+function iaResumenUso(){
+  try{
+    const u = JSON.parse(localStorage.getItem('hub_ia_uso') || '{}');
+    const mes = new Date().toISOString().slice(0, 7);
+    const filas = u.mes === mes ? Object.entries(u.modelos || {}) : [];
+    if(!filas.length) return 'Este mes todavía no se usó la IA desde este navegador.';
+    const k = n => n >= 1000 ? (Math.round(n / 100) / 10).toLocaleString('es-AR') + ' mil' : String(n);
+    return 'Este mes, desde este navegador: ' + filas.map(([mod, x]) => mod + ': ' + x.n + ' llamada' + (x.n === 1 ? '' : 's') + ' (' + k(x.ent) + ' tokens de entrada, ' + k(x.sal) + ' de salida)').join(' · ') + '. El gasto en dólares lo ves en console.anthropic.com.';
+  }catch(e){ return ''; }
+}
+// Una llamada a Claude, directo desde el navegador (el mismo camino que ya usaban las tareas): sin pasar por ningun script intermedio.
+// Reintenta sola si Anthropic frena o esta saturado, prueba el modelo anterior si el nuevo no esta disponible, y si falla dice por que en palabras.
+// content: texto, o una lista de bloques (por ejemplo un PDF + una instruccion).
+async function llamarClaude({ tarea, content, system, maxTokens }){
+  if(!cfg.anthropicKey) throw ErrorIA('Falta cargar la Anthropic API Key en Configuración.', 'sin_clave');
+  const modelos = MODELOS_IA[categoriaIA(tarea)];
+  let ultimo = null;
+  for(const modelo of modelos){
+    try{ return await _pedirClaude(modelo, system, content, maxTokens || 1000); }
+    catch(e){ if(e && e.tipo === 'modelo'){ ultimo = e; continue; } throw e; }
+  }
+  throw ultimo;
+}
+async function _pedirClaude(modelo, system, content, maxTokens){
+  const cuerpo = { model: modelo, max_tokens: maxTokens, messages: [{ role: 'user', content }] };
+  if(system) cuerpo.system = system;
+  for(let intento = 0; ; intento++){
+    let r;
+    try{
+      r = await fetch('https://api.anthropic.com/v1/messages', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-api-key': cfg.anthropicKey, 'anthropic-version': '2023-06-01', 'anthropic-dangerous-direct-browser-calls': 'true' },
+        body: JSON.stringify(cuerpo)
+      });
+    }catch(e){ throw ErrorIA('No pude conectar con Anthropic. Revisá la conexión a internet.', 'red'); }
+    let data = {}; try{ data = await r.json(); }catch(_){}
+    if(r.ok){
+      iaRegistrarUso(modelo, data.usage);
+      const texto = (data.content || []).filter(b => b && b.type === 'text').map(b => b.text).join('').trim();
+      return { texto, modelo, usage: data.usage || {} };
+    }
+    const st = r.status;
+    if((st === 429 || st === 529 || st >= 500) && intento < _iaEsperas.length){ await _esperar(_iaEsperas[intento]); continue; }
+    const er = (data && data.error) || {};
+    throw mensajeErrorIA(st, er.type, er.message, modelo);
+  }
+}
+// El JSON que devuelve el modelo, aunque venga envuelto en ```json o con una frase alrededor.
+function extraerJsonIA(texto){
+  const t = String(texto || '').replace(/```json|```/g, '').trim();
+  try{ return JSON.parse(t); }catch(_){}
+  const a = t.indexOf('{'), z = t.lastIndexOf('}');
+  if(a >= 0 && z > a){ try{ return JSON.parse(t.slice(a, z + 1)); }catch(_){} }
+  return null;
 }
 
 // ─── GMAIL + CLAUDE: EXTRAER DATOS DEL MAIL DEL DESPACHANTE ─────────────────
@@ -13936,31 +14184,23 @@ Respondé ÚNICAMENTE con un JSON válido sin markdown ni explicaciones.
 Si no encontrás un valor, poné null.
 Ejemplo: {"fecha_consolidacion": "15/06/2026", "containers": "2x20'", "customer": "IDI"}`;
 
-  // Llamar via AppScript proxy (evita CORS)
-  const proxyUrl = 'https://script.google.com/macros/s/AKfycbzKFa-oSUlsqPaa5zBJ7wH6b7xiEy0qIHhHfeLta-9f5D-3axcOWUywDzLhVZ8nFuIJ/exec';
-  let claudeOk = false;
+  // Claude directo (antes pasaba por un script de Google: ya no hace falta, y la clave no sale del navegador hacia ahi).
   if(cfg.anthropicKey){
     try {
-      const r = await fetch(proxyUrl, {
-        method: 'POST',
-        headers: { 'Content-Type': 'text/plain' },
-        body: JSON.stringify({ action: 'claudeProxy', anthropicKey: cfg.anthropicKey, model: getAnthropicModel('extraccion_mail'), prompt })
-      });
-      const data = await r.json();
-      const text = data.content?.[0]?.text || '';
-      if(text){
-        const parsed = JSON.parse(text.replace(/```json|```/g,'').trim());
-        if(parsed){ claudeOk = true; return parsed; }
-      }
-    } catch(e) { console.warn('Claude falló:', e); }
+      const r = await llamarClaude({ tarea: 'extraccion_mail', content: prompt, maxTokens: 400 });
+      const parsed = extraerJsonIA(r.texto);
+      if(parsed) return parsed;
+    } catch(e) {
+      console.warn('Claude falló:', e);
+      showToast('⚠ ' + e.message, 'warn', 9000);   // antes fallaba en silencio: ahora se entera de que se acabó el crédito, la clave, etc.
+    }
   }
 
-  // Fallback Gemini — siempre se intenta si Claude no devolvió datos
-  if(!claudeOk){
+  // Respaldo Gemini (solo si hay clave cargada)
+  if(cfg.geminiKey){
     showToast('Generando con IA…', 'info');
     try {
-      const GEMINI_KEY = cfg.geminiKey;
-      const gr = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-lite:generateContent?key=${GEMINI_KEY}`, {
+      const gr = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-lite:generateContent?key=${cfg.geminiKey}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }], generationConfig: { maxOutputTokens: 300 } })
@@ -14032,23 +14272,9 @@ Ejemplos:
 Responde SOLO con el texto de la tarea, sin explicaciones ni comillas.`;
 
   try {
-    const r = await fetch('https://api.anthropic.com/v1/messages', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-api-key': cfg.anthropicKey,
-        'anthropic-version': '2023-06-01',
-        'anthropic-dangerous-direct-browser-calls': 'true'
-      },
-      body: JSON.stringify({
-        model: getAnthropicModel('chat_consulta'),
-        max_tokens: 100,
-        messages: [{ role: 'user', content: prompt }]
-      })
-    });
-    const data = await r.json();
-    return data.content?.[0]?.text?.trim() || null;
-  } catch(e) { return null; }
+    const r = await llamarClaude({ tarea: 'chat_consulta', content: prompt, maxTokens: 100 });
+    return r.texto || null;
+  } catch(e) { console.warn('IA tareas:', e); showToast('⚠ ' + e.message, 'warn', 7000); return null; }
 }
 
 async function tasksDetectarCompletadas(miRespuesta, tareasPendientes){
@@ -14064,22 +14290,8 @@ Cual o cuales de estas tareas quedaron resueltas con esta respuesta?
 Responde SOLO con los numeros separados por coma (ej: "1,3") o "ninguna" si no resuelve ninguna.`;
 
   try {
-    const r = await fetch('https://api.anthropic.com/v1/messages', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-api-key': cfg.anthropicKey,
-        'anthropic-version': '2023-06-01',
-        'anthropic-dangerous-direct-browser-calls': 'true'
-      },
-      body: JSON.stringify({
-        model: getAnthropicModel('chat_consulta'),
-        max_tokens: 50,
-        messages: [{ role: 'user', content: prompt }]
-      })
-    });
-    const data = await r.json();
-    const texto = data.content?.[0]?.text?.trim() || 'ninguna';
+    const r = await llamarClaude({ tarea: 'chat_consulta', content: prompt, maxTokens: 50 });
+    const texto = r.texto || 'ninguna';
     if(texto.toLowerCase() === 'ninguna') return [];
     return texto.split(',').map(n => parseInt(n.trim()) - 1).filter(n => !isNaN(n));
   } catch(e) { return []; }
