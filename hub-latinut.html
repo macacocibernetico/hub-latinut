@@ -11844,6 +11844,7 @@ function planCambioContrato(row, k){
     if(nueva && nueva !== t(COL.FECHA_EST_COBRO)){
       cambios.push({ col: COL.FECHA_EST_COBRO, nombre: 'Fecha estimada', antes: t(COL.FECHA_EST_COBRO), despues: nueva, nota: 'según la fórmula "' + k.formulaPago + '" del contrato' });
     } else if(!f && k.formulaPago) avisos.push('La fórmula de pago "' + k.formulaPago + '" del contrato no se entiende: la fecha estimada de cobro queda como estaba.');
+    else if(!k.formulaPago && t(COL.FECHA_EST_COBRO)) avisos.push('El contrato ' + k.contrato + ' no tiene "Formula pago": la fecha estimada de cobro (' + t(COL.FECHA_EST_COBRO) + ') queda como estaba y puede ser la del contrato anterior. Revisala.');
   }
   const prod = normTar(t(COL.PRODUCT));
   if(prod && !contratoAdmiteProducto(k, prod)) avisos.push('El contrato ' + k.contrato + ' es de "' + k.producto + '" y la carga es de "' + t(COL.PRODUCT) + '": revisá que sea el correcto.');
