@@ -1419,6 +1419,13 @@ body{background:radial-gradient(760px 420px at 86% -12%,rgba(var(--lg-a-rgb),.05
 .cob-copiar:hover:not(:disabled){background:#fff;border-color:rgba(23,43,77,.12);box-shadow:var(--lg-sh1);color:var(--lg-ink);}
 .cob-copiar:disabled{background:rgba(23,43,77,.05);color:var(--lg-muted);cursor:not-allowed;}
 .cob-copiar:focus-visible{outline:2px solid rgba(var(--lg-a-rgb),.6);outline-offset:2px;}
+
+.cob-bulk{display:none;height:38px;padding:0 16px;border-radius:13px;border:0;background:linear-gradient(180deg,var(--lg-dark2),var(--lg-dark));color:#fff;font:600 13.5px var(--font);cursor:pointer;box-shadow:var(--lg-sh-dark);transition:background .18s var(--lg-ease);}
+.cob-bulk:hover{background:linear-gradient(180deg,#26324f,#161f33);color:#fff;}
+.cob-bulk:focus-visible{outline:2px solid rgba(var(--lg-a-rgb),.6);outline-offset:2px;}
+.cob-marcar{height:42px;padding:0 16px;border-radius:14px;border:1px solid rgba(255,255,255,.95);background:rgba(255,255,255,.82);box-shadow:0 1px 3px rgba(35,55,110,.08),0 0 0 1px rgba(23,43,77,.05);font:600 14px var(--font);color:var(--lg-ink);cursor:pointer;transition:background .18s,box-shadow .18s;}
+.cob-marcar:hover{background:#fff;box-shadow:0 4px 12px rgba(35,55,110,.12),0 0 0 1px rgba(23,43,77,.06);color:var(--lg-ink);}
+.cob-marcar:focus-visible{outline:2px solid rgba(var(--lg-a-rgb),.6);outline-offset:2px;}
 </style>
 </head>
 <body>
@@ -8855,15 +8862,15 @@ function renderCobranza(filterKey, filterVal){
     <div class="table-top cob-top">
       <div class="cob-top-fila">
         <span class="cob-tit">Cobranza activa — ${rows.length} cobros</span>
-        <span class="cob-top-acc"><button type="button" id="cob-copy-btn" class="cob-copiar" onclick="copiarTablaCobranza()" disabled title="Tildá los cobros que querés y copiá una tabla con invoice, monto y fecha de cobro para pegar en el mail"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2"/></svg> <span id="cob-copy-lbl">Copiar tabla</span></button>${verTodosBtn}</span>
+        <span class="cob-top-acc"><button type="button" id="cob-bulk-bar" class="cob-bulk" onclick="requestBulkReclamo()"></button><button type="button" id="cob-copy-btn" class="cob-copiar" onclick="copiarTablaCobranza()" disabled title="Tildá los cobros que querés y copiá una tabla con invoice, monto y fecha de cobro para pegar en el mail"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2"/></svg> <span id="cob-copy-lbl">Copiar tabla</span></button>${verTodosBtn}</span>
       </div>
       <div class="cob-filtros">
         ${clienteSel}${sortSel}${resetBtn}
+        <button type="button" id="cob-all-btn" class="cob-marcar" onclick="cobMarcarTodo()" title="Tilda o destilda todos los cobros que se ven ahora (los del filtro actual)">Marcar todo${rows.length ? ' (' + rows.length + ')' : ''}</button>
       </div>
     </div>
-    <button id="cob-bulk-bar" class="bulk-bar" onclick="requestBulkReclamo()" style="background:var(--accent);color:#fff;font-weight:600;font-size:14px;cursor:pointer;border:none;font-family:var(--font);"></button>
     <div class="cob-scroll" style="overflow-x:auto;${isMobile()?'display:none;':''}"><table class="cob-tabla">
-    <thead><tr><th style="width:30px"></th><th title="Uso interno: no aparece en los mails de reclamo">Negocio</th><th>Customer</th><th>BL</th><th>Invoice</th><th>Total</th><th onclick="renderCobranza('sort',cobranzaFilters.sort==='due_asc'?'due_desc':'due_asc')" style="cursor:pointer;user-select:none;">Vencimiento ${cobranzaFilters.sort==='due_asc'?'↑':cobranzaFilters.sort==='due_desc'?'↓':'↕'}</th><th>Días</th><th>Reclamos</th><th>Notas</th><th>Contacto</th><th></th><th></th></tr></thead>
+    <thead><tr><th style="width:30px"><input type="checkbox" id="cob-all-cb" aria-label="Marcar todos los cobros que se ven" onclick="cobMarcarTodo(this.checked)"></th><th title="Uso interno: no aparece en los mails de reclamo">Negocio</th><th>Customer</th><th>BL</th><th>Invoice</th><th>Total</th><th onclick="renderCobranza('sort',cobranzaFilters.sort==='due_asc'?'due_desc':'due_asc')" style="cursor:pointer;user-select:none;">Vencimiento ${cobranzaFilters.sort==='due_asc'?'↑':cobranzaFilters.sort==='due_desc'?'↓':'↕'}</th><th>Días</th><th>Reclamos</th><th>Notas</th><th>Contacto</th><th></th><th></th></tr></thead>
     <tbody>`;
 
   window._cobSelectedRows = new Set();
@@ -8879,6 +8886,9 @@ function renderCobranza(filterKey, filterVal){
     if(bar){const n=window._cobSelectedRows.size;bar.style.display=n>0?'block':'none';bar.textContent='✉ Reclamo masivo ('+n+' seleccionadas)';}
     const cbtn=document.getElementById('cob-copy-btn'), clbl=document.getElementById('cob-copy-lbl');
     if(cbtn){ cbtn.disabled=!window._cobSelectedRows.size; if(clbl) clbl.textContent=window._cobSelectedRows.size?'Copiar tabla ('+window._cobSelectedRows.size+')':'Copiar tabla'; }
+    const total=(window._cobRows||[]).length, nsel=window._cobSelectedRows.size, abtn=document.getElementById('cob-all-btn'), acb=document.getElementById('cob-all-cb');
+    if(abtn) abtn.textContent = (total && nsel === total) ? 'Desmarcar todo' : 'Marcar todo' + (total ? ' (' + total + ')' : '');
+    if(acb){ acb.checked = !!total && nsel === total; acb.indeterminate = nsel > 0 && nsel < total; }
   };
   window.requestBulkReclamo = function(){
     if(!window._cobSelectedRows.size) return;
@@ -8930,6 +8940,14 @@ function renderCobranza(filterKey, filterVal){
   document.getElementById('content').innerHTML = html;
 }
 
+// Marca (o desmarca) todos los cobros que se ven ahora, los del filtro actual. Sin argumento alterna: si ya estan todos, los desmarca.
+function cobMarcarTodo(flag){
+  const n = (window._cobRows || []).length;
+  if(!n || typeof window.toggleCobSelection !== 'function') return;
+  const sel = window._cobSelectedRows || new Set();
+  const marcar = flag === undefined ? sel.size < n : !!flag;
+  for(let i = 0; i < n; i++){ if(sel.has(i) !== marcar) window.toggleCobSelection(i); }
+}
 // Copiar los cobros tildados como una tablita (Invoice | Monto | Fecha de cobro) para pegar en un mail. Se copia como tabla HTML (Gmail la
 // respeta) y como texto con tabuladores (para pegar en una planilla o en un editor de texto). Usa los mismos datos que muestra la tabla.
 function tablaCobranzaCopiable(rows){
