@@ -12340,7 +12340,7 @@ async function mcCargarRegistro(){
   const r = await fetch('https://sheets.googleapis.com/v4/spreadsheets/' + cfg.hubSheetId + '/values/' + mcRango('A2:H'), { headers: { Authorization: 'Bearer ' + accessToken } });
   if(!r.ok) return false;
   const j = await r.json();
-  _mc.registro = new Map((j.values || []).filter(f => f[0]).map(f => [String(f[0]), { fecha: f[1] || '', usuario: f[2] || '', estado: f[3] || '', negocio: f[4] || '', fila: f[5] || '' }]));
+  _mc.registro = new Map((j.values || []).filter(f => f[0]).map(f => [String(f[0]), { fecha: f[1] || '', usuario: f[2] || '', estado: f[3] || '', negocio: f[4] || '', fila: f[5] || '', asunto: f[6] || '', detalle: f[7] || '' }]));
   _mc.registroOk = true;
   return true;
 }
@@ -12364,7 +12364,7 @@ async function mcRegistrar(clave, estado, negocio, fila, asunto, detalle){
   if(!(await mcAsegurarHoja())) return false;
   const r = await fetch('https://sheets.googleapis.com/v4/spreadsheets/' + cfg.hubSheetId + '/values/' + mcRango('A:H') + ':append?valueInputOption=RAW&insertDataOption=INSERT_ROWS',
     { method: 'POST', headers: { Authorization: 'Bearer ' + accessToken, 'Content-Type': 'application/json' }, body: JSON.stringify({ values: [[clave, comAhora(), getMiEmail() || '', estado, negocio || '', fila || '', asunto || '', detalle || '']] }) });
-  if(r.ok) _mc.registro.set(clave, { fecha: comAhora(), usuario: getMiEmail() || '', estado, negocio: negocio || '', fila: fila || '' });
+  if(r.ok) _mc.registro.set(clave, { fecha: comAhora(), usuario: getMiEmail() || '', estado, negocio: negocio || '', fila: fila || '', asunto: asunto || '', detalle: detalle || '' });
   return r.ok;
 }
 // Cuando no queda ninguna tarjeta pendiente de un mail, se marca el mail entero para no volver a leerlo.
@@ -12372,6 +12372,91 @@ async function mcCerrarMailSiCorresponde(msgId, asunto){
   if(_mc.registro.has(msgId + '|*')) return;
   const quedan = _mc.cards.some(c => c.mail.id === msgId && !_mc.registro.has(c.clave));
   if(!quedan) await mcRegistrar(msgId + '|*', 'completo', '', '', asunto, '');
+}
+
+// Una cadena (hilo de Gmail) marcada "lista" ya no se lee: ni sus mails ni los que lleguen despues en la misma cadena. Se anota en la misma pestaña
+// MAILS_CARGA con la clave "hilo|<id de la cadena>" y estado "lista" (o "reabierta" si se vuelve a abrir: la ultima fila manda).
+function mcHiloListo(threadId){
+  const r = threadId ? _mc.registro.get('hilo|' + threadId) : null;
+  return !!(r && r.estado === 'lista');
+}
+async function mcMarcarHiloLista(threadId, asunto, detalle){
+  if(!threadId || mcHiloListo(threadId)) return true;
+  return mcRegistrar('hilo|' + threadId, 'lista', '', '', asunto, detalle || '');
+}
+// Al guardar la ultima carga pendiente de una cadena, la cadena queda lista sola. (Los lotes que Calidad manda despues para cargas ya cargadas
+// no dependen de esto: se buscan por booking, ver mcBuscarLotesPendientes.)
+async function mcCerrarHiloSiCorresponde(mail){
+  if(!mail || !mail.threadId || mcHiloListo(mail.threadId)) return;
+  const quedan = _mc.cards.some(c => c.mail.threadId === mail.threadId && !_mc.registro.has(c.clave));
+  if(!quedan) await mcMarcarHiloLista(mail.threadId, mail.asunto, 'al guardar la última carga');
+}
+function mcSacarCadena(threadId){
+  _mc.cards = _mc.cards.filter(c => c.mail.threadId !== threadId || c.item.estado === 'ok');
+  _mc.pendientes = _mc.cards.filter(x => x.item.estado !== 'ok' && !x.noCargable).length; mcBadge();
+}
+async function mcMarcarLista(k){
+  const c = _mc.cards[k];
+  if(!c || !c.mail.threadId) return;
+  const n = _mc.cards.filter(x => x.mail.threadId === c.mail.threadId && x.item.estado !== 'ok').length;
+  const ok = await showConfirm('Marcar esta cadena como lista', '"' + c.mail.asunto + '": el hub no la va a leer más (ni los mails nuevos que lleguen en esa cadena), para vos y para el equipo. ' + (n > 1 ? 'Las ' + n + ' cargas pendientes de esta cadena salen de la bandeja. ' : 'Esta carga sale de la bandeja. ') + 'No se escribe nada en la planilla de cargas. Si después la necesitás, la reabrís desde Históricas.', { icono: '✅', okLabel: 'Marcar como lista' });
+  if(!ok) return;
+  if(!(await mcMarcarHiloLista(c.mail.threadId, c.mail.asunto, 'marcada a mano'))){ alert('No pude anotarlo en la hoja ' + MC_HOJA + '. No se marcó.'); return; }
+  mcSacarCadena(c.mail.threadId);
+  renderBandeja();
+}
+// "Ya cargué todo esto a mano": marca como listas todas las cadenas que hoy tienen cargas pendientes en la bandeja.
+async function mcMarcarTodoLista(){
+  const hilos = new Map();
+  _mc.cards.filter(c => c.item.estado !== 'ok' && c.mail.threadId).forEach(c => { if(!hilos.has(c.mail.threadId)) hilos.set(c.mail.threadId, c.mail.asunto); });
+  if(!hilos.size) return;
+  const ok = await showConfirm('Marcar todo lo pendiente como listo', 'Se marcan como listas ' + hilos.size + ' cadena' + (hilos.size === 1 ? '' : 's') + ' de mails y el hub deja de leerlas (para vos y para el equipo). No se escribe nada en la planilla de cargas.',
+    { icono: '✅', okLabel: 'Marcar todas como listas', detalle: [...hilos.values()].map(a => '<div>• ' + escH(a) + '</div>').join('') });
+  if(!ok) return;
+  let fallo = 0;
+  for(const [tid, asunto] of hilos){
+    if(await mcMarcarHiloLista(tid, asunto, 'marcada a mano (todo junto)')) mcSacarCadena(tid); else fallo++;
+  }
+  if(fallo) alert('No pude anotar ' + fallo + ' cadena' + (fallo === 1 ? '' : 's') + ' en la hoja ' + MC_HOJA + ': siguen en la bandeja.');
+  renderBandeja();
+}
+async function mcReabrirHilo(threadId){
+  const r = _mc.registro.get('hilo|' + threadId);
+  const ok = await showConfirm('Reabrir esta cadena', '"' + ((r && r.asunto) || threadId) + '" vuelve a leerse la próxima vez que busques mails (para todo el equipo).', { icono: '↩', okLabel: 'Reabrir' });
+  if(!ok) return;
+  if(!(await mcRegistrar('hilo|' + threadId, 'reabierta', '', '', (r && r.asunto) || '', ''))){ alert('No pude anotarlo en la hoja ' + MC_HOJA + '.'); return; }
+  await mcRefrescar();
+}
+// Panel de historicas: cadenas marcadas como listas y mails ya cargados, con buscador.
+function mcHistorico(){
+  const out = [];
+  _mc.registro.forEach((v, k) => {
+    if(k.indexOf('hilo|') === 0){ if(v.estado === 'lista') out.push({ tipo: 'hilo', id: k.slice(5), v }); }
+    else if(/\|\*$/.test(k) && v.estado === 'completo') out.push({ tipo: 'mail', id: k.slice(0, -2), v });
+  });
+  return out.reverse();
+}
+function mcHistListaHtml(q){
+  const t = String(q || '').trim().toLowerCase();
+  const todos = mcHistorico();
+  const l = todos.filter(x => !t || [x.v.asunto, x.v.usuario, x.v.detalle, x.v.fecha, x.v.negocio].join(' ').toLowerCase().indexOf(t) >= 0);
+  if(!l.length) return '<div class="mc-vacio">' + (todos.length ? 'No hay nada que coincida con "' + escH(q) + '".' : 'Todavía no hay cadenas marcadas como listas.') + '</div>';
+  return l.slice(0, 200).map(x => '<div class="mc-linea"><b>' + (x.tipo === 'hilo' ? '✅ Lista' : '📦 Cargada') + '</b> · ' + escH(x.v.asunto || '(sin asunto)')
+    + ' <span class="mc-src">' + escH((x.v.usuario || '?') + ' · ' + (x.v.fecha || '') + (x.v.detalle ? ' · ' + x.v.detalle : '')) + '</span> '
+    + '<a class="btn" target="_blank" rel="noopener" href="https://mail.google.com/mail/u/0/#all/' + encodeURIComponent(x.id) + '">Ver el mail</a>'
+    + (x.tipo === 'hilo' ? ' <button class="btn" onclick="mcReabrirHilo(\'' + escH(x.id) + '\')">Reabrir</button>' : '') + '</div>').join('')
+    + (l.length > 200 ? '<div class="mc-vacio">Se muestran 200 de ' + l.length + ': afiná la búsqueda.</div>' : '');
+}
+function mcHistFiltrar(){
+  const i = document.getElementById('mc-hist-q'), el = document.getElementById('mc-hist-lista');
+  _mc.histQ = i ? i.value : '';
+  if(el) el.innerHTML = mcHistListaHtml(_mc.histQ);
+}
+function mcToggleHist(){ _mc.hist = !_mc.hist; renderBandeja(); }
+function mcHistPanelHtml(){
+  return '<div class="mc-bloque"><b>Históricas</b> · cadenas que ya están listas y mails ya cargados (el hub no los lee)'
+    + '<div style="margin:6px 0;"><input id="mc-hist-q" value="' + escH(_mc.histQ || '') + '" placeholder="🔍 Buscar por asunto, quién la marcó o fecha" style="width:100%;max-width:420px;" oninput="mcHistFiltrar()"></div>'
+    + '<div id="mc-hist-lista">' + mcHistListaHtml(_mc.histQ) + '</div></div>';
 }
 
 // ── Fechas y textos ──
@@ -12680,7 +12765,7 @@ function mcEstadoHtml(){
   const hora = new Date(_mc.ultima).toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' });
   const n = _mc.errores.length;
   return '<div class="mc-listo">✓ Búsqueda terminada a las ' + hora + ': ' + (p.total ? p.total + ' mail' + (p.total === 1 ? '' : 's') + ' leído' + (p.total === 1 ? '' : 's') : 'no había mails nuevos para leer')
-    + ' · ' + (_mc.nuevas || 0) + ' carga' + ((_mc.nuevas || 0) === 1 ? '' : 's') + ' nueva' + ((_mc.nuevas || 0) === 1 ? '' : 's') + ' para revisar' + (n ? ' · ' + n + ' aviso' + (n === 1 ? '' : 's') + ' (abajo)' : '') + '</div>';
+    + ' · ' + (_mc.nuevas || 0) + ' carga' + ((_mc.nuevas || 0) === 1 ? '' : 's') + ' nueva' + ((_mc.nuevas || 0) === 1 ? '' : 's') + ' para revisar' + (_mc.omitidos ? ' · ' + _mc.omitidos + ' mail' + (_mc.omitidos === 1 ? '' : 's') + ' de cadenas listas sin leer' : '') + (n ? ' · ' + n + ' aviso' + (n === 1 ? '' : 's') + ' (abajo)' : '') + '</div>';
 }
 function mcPintarEstado(){
   const el = document.getElementById('mc-estado');
@@ -12688,7 +12773,7 @@ function mcPintarEstado(){
 }
 async function mcCargarTodo(){
   if(_mc.cargando) return;
-  _mc.cargando = true; _mc.errores = []; _mc.nuevas = 0;
+  _mc.cargando = true; _mc.errores = []; _mc.nuevas = 0; _mc.omitidos = 0;
   _mc.progreso = { total: 0, hechos: 0, actual: [] }; _mc.etapa = 'Revisando qué mails ya se cargaron…';
   mcPintarEstado();
   try{
@@ -12696,7 +12781,8 @@ async function mcCargarTodo(){
     await mcCargarAlias();
     _mc.etapa = 'Buscando los mails de carga en Gmail…'; mcPintarEstado();
     const msgs = await mcBuscarMensajes();
-    const pend = msgs.filter(m => !mcProcesado(m.id + '|*') && !_mc.vistos.has(m.id));
+    const pend = msgs.filter(m => !mcProcesado(m.id + '|*') && !mcHiloListo(m.threadId) && !_mc.vistos.has(m.id));
+    _mc.omitidos = msgs.filter(m => mcHiloListo(m.threadId) && !mcProcesado(m.id + '|*')).length;
     _mc.progreso.total = pend.length;
     _mc.etapa = pend.length ? 'Leyendo los mails' : 'Listo';
     mcPintarEstado();
@@ -12714,7 +12800,7 @@ async function mcCargarTodo(){
       }
     };
     await Promise.all([trabajar(), trabajar(), trabajar()]);
-    _mc.cards = _mc.cards.filter(c => !mcProcesado(c.clave) || c.item.estado === 'ok');
+    _mc.cards = _mc.cards.filter(c => c.item.estado === 'ok' || (!mcProcesado(c.clave) && !mcHiloListo(c.mail.threadId)));
     _mc.cards.forEach(c => { if(c.item.estado !== 'ok'){ const d = mcPosibleDuplicado(c); c.duplicado = d; } });
     _mc.pendientes = _mc.cards.filter(c => c.item.estado !== 'ok' && !c.noCargable).length;
   }catch(e){ console.warn('Bandeja:', e); _mc.errores.push(e.message); }
@@ -12728,7 +12814,7 @@ async function mcRefrescarBadge(){
   try{
     if(!(await mcCargarRegistro())) return;
     const msgs = await mcBuscarMensajes();
-    _mc.pendientes = msgs.filter(m => !mcProcesado(m.id + '|*') && ![..._mc.registro.keys()].some(k => k.indexOf(m.id + '|') === 0)).length;
+    _mc.pendientes = msgs.filter(m => !mcProcesado(m.id + '|*') && !mcHiloListo(m.threadId) && ![..._mc.registro.keys()].some(k => k.indexOf(m.id + '|') === 0)).length;
     mcBadge();
   }catch(e){ console.warn('Badge mails:', e); }
 }
@@ -12879,7 +12965,7 @@ function mcTarjetaHtml(c, i){
     + (info.length ? '<div class="mc-info">' + info.join(' · ') + '</div>' : '') + lotesCal
     + avisos.map(a => '<div class="mc-aviso">⚠ ' + escH(a) + '</div>').join('')
     + '<details class="mc-det"><summary>Qué leyó la IA</summary><pre>' + escH(JSON.stringify({ planilla: d0, desdeElMail: c.ia }, null, 1)) + '</pre></details>'
-    + (hecho ? '' : '<div class="mc-acc"><a class="btn" target="_blank" rel="noopener" href="https://mail.google.com/mail/u/0/#all/' + encodeURIComponent(c.mail.id) + '">Ver el mail</a><button class="btn" onclick="mcIgnorar(' + _mc.cards.indexOf(c) + ')">Ignorar</button></div>')
+    + (hecho ? '' : '<div class="mc-acc"><a class="btn" target="_blank" rel="noopener" href="https://mail.google.com/mail/u/0/#all/' + encodeURIComponent(c.mail.id) + '">Ver el mail</a><button class="btn" onclick="mcMarcarLista(' + _mc.cards.indexOf(c) + ')" title="Ya tengo todo de esta cadena: el hub no la vuelve a leer">✓ Ya tengo todo (lista)</button><button class="btn" onclick="mcIgnorar(' + _mc.cards.indexOf(c) + ')">Ignorar</button></div>')
     + '</div>';
 }
 function renderBandeja(){
@@ -12896,7 +12982,9 @@ function renderBandeja(){
   let h = '<div class="config-section" style="max-width:100%;"><div class="config-title">Mails de carga · ' + escH(getNegocioConfig().label) + '</div>'
     + '<div class="config-desc">El hub revisa tu Gmail (los últimos ' + MC_DIAS + ' días) y deja precargadas las cargas de los mails "SOLICITUD DE EXPORTACION" de Argen Peanuts y "CARGAS NUTRIN". Cambiá lo que haga falta: <b>nada se escribe en la planilla hasta que apretás "Guardar cargas"</b>.</div>'
     + '<datalist id="lt-clientes">' + clientes.map(c => '<option value="' + escH(c) + '">').join('') + '</datalist><datalist id="lt-pols">' + pols.map(c => '<option value="' + escH(c) + '">').join('') + '</datalist>'
-    + '<div class="mc-barra"><button class="btn" onclick="mcRefrescar()"' + (_mc.cargando ? ' disabled' : '') + '>↻ Buscar mails ahora</button></div><div id="mc-estado">' + mcEstadoHtml() + '</div>'
+    + '<div class="mc-barra"><button class="btn" onclick="mcRefrescar()"' + (_mc.cargando ? ' disabled' : '') + '>↻ Buscar mails ahora</button> '
+    + (_mc.cards.some(c => c.item.estado !== 'ok' && c.mail.threadId) ? '<button class="btn" onclick="mcMarcarTodoLista()" title="Las cargué todas a mano: que el hub no las lea más">✓ Marcar todo lo pendiente como listo</button> ' : '')
+    + '<button class="btn" onclick="mcToggleHist()">📚 Históricas (' + mcHistorico().filter(x => x.tipo === 'hilo').length + ')</button></div>' + (_mc.hist ? mcHistPanelHtml() : '') + '<div id="mc-estado">' + mcEstadoHtml() + '</div>'
     + _mc.errores.map(e => '<div class="mc-aviso">⚠ ' + escH(e) + '</div>').join('');
   if(!_mc.cargando && _mc.ultima && !act.length && !otros.length && !sinNeg.length && !aparte.length) h += '<div class="mc-vacio-g">No hay mails de carga pendientes. 🎉</div>';
   h += act.map(c => mcTarjetaHtml(c, _lote.items.indexOf(c.item))).join('');
@@ -12967,6 +13055,7 @@ async function bandejaTrasGuardar(it, fila, d){
       texto: 'Cargada desde el mail "' + it.mail.asunto + '" por ' + quien + '.', hilo: nid, estado: 'abierto', resueltoPor: '' }).catch(() => {});
   }
   await mcCerrarMailSiCorresponde(it.mail.id, it.mail.asunto);
+  await mcCerrarHiloSiCorresponde(it.mail);
   _mc.pendientes = _mc.cards.filter(x => x.item.estado !== 'ok' && !x.noCargable).length; mcBadge();
 }
 // Cada 5 minutos (con el hub abierto) se vuelve a contar cuantos mails de carga hay sin procesar.
