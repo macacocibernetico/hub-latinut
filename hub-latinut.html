@@ -423,21 +423,6 @@ body.tabla-full-on{overflow:hidden;}
 .mc-h .mc-asu{font-weight:600;flex:1;min-width:220px;}
 .mc-h .mc-meta{font-size:11.5px;color:var(--text3);width:100%;}
 .mc-donde{font-size:12px;color:var(--text3);margin:2px 0 10px;}
-.mc-busca{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin:0 0 6px;}
-.mc-buscar{position:relative;flex:1 1 320px;max-width:480px;}
-.mc-buscar svg{position:absolute;left:12px;top:50%;width:16px;height:16px;transform:translateY(-50%);stroke:var(--text3);fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;pointer-events:none;}
-.mc-buscar input{width:100%;height:40px;box-sizing:border-box;font:inherit;font-size:14px;color:var(--text);background:var(--bg2);border:1px solid var(--border2);border-radius:var(--radius);padding:0 38px 0 38px;transition:border-color .15s,box-shadow .15s;-webkit-appearance:none;appearance:none;}
-.mc-buscar input::placeholder{color:var(--text3);opacity:1;}
-.mc-buscar input::-webkit-search-cancel-button{-webkit-appearance:none;display:none;}
-.mc-buscar input:hover{border-color:var(--text3);}
-.mc-buscar input:focus,.mc-buscar input:focus-visible{outline:none;border-color:var(--accent);box-shadow:0 0 0 3px rgba(var(--accent-rgb),.18);}
-.mc-buscar input::selection{background:rgba(var(--accent-rgb),.25);}
-.mc-x{position:absolute;right:6px;top:50%;transform:translateY(-50%);width:28px;height:28px;display:none;align-items:center;justify-content:center;border:0;border-radius:6px;background:transparent;cursor:pointer;padding:0;}
-.mc-x svg{position:static;transform:none;width:14px;height:14px;}
-.mc-x:hover{background:var(--bg3);}
-.mc-x:focus-visible{outline:2px solid rgba(var(--accent-rgb),.6);outline-offset:1px;}
-.mc-buscar.con-texto .mc-x{display:flex;}
-.mc-cuenta{font-size:12.5px;color:var(--text3);font-variant-numeric:tabular-nums;}
 .mc-prog{background:var(--bg3);border:1px solid var(--border);border-radius:10px;padding:10px 14px;margin-bottom:12px;}
 .mc-bar{height:6px;background:var(--border);border-radius:99px;overflow:hidden;margin:8px 0;}
 .mc-bar i{display:block;height:100%;background:var(--accent);transition:width .3s;}
@@ -961,6 +946,208 @@ tr:hover .col-acciones{background:var(--bg3);}
 .login-error{font-size:13px;color:var(--danger);margin-top:10px;min-height:18px;}
 .login-lock{font-size:40px;margin-bottom:16px;}
 
+
+/* ═══════════════ LIQUID GLASS (rediseño visual) ═══════════════
+   Capa de presentacion: no toca logica. Tokens --lg-*; el color del negocio (azul en AXT, ocre en Buzaram) sale de --lg-a-rgb.
+   Los componentes nuevos (.mc-*) viven dentro de .mc-vista para no afectar a las otras pantallas; sidebar y encabezado son compartidos. */
+:root{
+  --lg-ink:#172B4D; --lg-text:#111827; --lg-muted:#56657C; --lg-bg:#FBFCFE; --lg-bg2:#F6F8FC;
+  --lg-a-rgb:22,119,232; --lg-a:rgb(var(--lg-a-rgb)); --lg-soft:#DCEBFF; --lg-soft-ink:#0F4AA3;
+  --lg-dark:#111827; --lg-dark2:#1d2740;
+  --lg-glass:rgba(255,255,255,.6); --lg-glass-hi:rgba(255,255,255,.74); --lg-edge:rgba(255,255,255,.9); --lg-line:rgba(23,43,77,.07);
+  --lg-blur:blur(24px) saturate(150%);
+  --lg-sh1:0 1px 2px rgba(23,43,77,.03),0 3px 12px rgba(40,55,100,.04);
+  --lg-sh2:0 6px 28px rgba(40,55,100,.06),0 1px 2px rgba(23,43,77,.03);
+  --lg-sh-dark:0 4px 12px rgba(17,24,39,.16),0 1px 3px rgba(17,24,39,.10);
+  --lg-r-panel:24px; --lg-r-card:18px; --lg-r-btn:13px; --lg-r-input:15px; --lg-r-icon:15px;
+  --lg-ease:cubic-bezier(.2,.7,.2,1);
+}
+body.neg-buzaram{--lg-a-rgb:176,112,16;--lg-soft:#F6E8CC;--lg-soft-ink:#7A4B06;}
+body{background:radial-gradient(900px 520px at 80% -10%,rgba(var(--lg-a-rgb),.11),transparent 62%),radial-gradient(760px 520px at 4% 105%,rgba(var(--lg-a-rgb),.07),transparent 62%),linear-gradient(180deg,var(--lg-bg),var(--lg-bg2)) fixed;}
+.ico{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round;flex-shrink:0;}
+
+/* Barra lateral */
+.sidebar{background:linear-gradient(180deg,rgba(255,255,255,.74),rgba(246,248,253,.62));backdrop-filter:var(--lg-blur);-webkit-backdrop-filter:var(--lg-blur);border-right:1px solid var(--lg-line);box-shadow:1px 0 0 rgba(255,255,255,.7) inset;}
+.logo{display:flex;align-items:center;gap:12px;padding:24px 20px 16px;border-bottom:0;}
+.logo-mark{width:34px;height:34px;flex-shrink:0;fill:none;stroke:var(--lg-ink);stroke-width:4.2;stroke-linecap:round;}
+.logo-text{font-size:19px;font-weight:700;letter-spacing:.02em;color:var(--lg-text);line-height:1.1;}
+.logo-sub{font-size:12.5px;color:var(--lg-muted);letter-spacing:0;margin-top:2px;}
+.negocio-pill{display:flex;gap:2px;margin:6px 16px 8px;padding:4px;border:0;border-radius:16px;background:rgba(23,43,77,.06);box-shadow:inset 0 1px 2px rgba(23,43,77,.07);}
+.negocio-btn{flex:1;padding:8px 8px;border:0;border-radius:12px;background:transparent;color:var(--lg-muted);font-size:13.5px;font-weight:600;transition:background .2s var(--lg-ease),color .2s var(--lg-ease),box-shadow .2s var(--lg-ease);}
+.negocio-btn:hover{background:rgba(255,255,255,.6);color:var(--lg-text);}
+.negocio-btn.on,.negocio-btn.on:hover{background:linear-gradient(180deg,var(--lg-dark2),var(--lg-dark));color:#fff;box-shadow:var(--lg-sh-dark);}
+.nav{padding:6px 0 10px;}
+.nav-section{padding:0 12px;margin-bottom:6px;}
+.nav-label{font-size:11px;font-weight:600;letter-spacing:.07em;color:var(--lg-muted);padding:14px 12px 6px;}
+.nav-item{gap:12px;padding:10px 12px;margin-bottom:2px;border-radius:14px;color:var(--lg-ink);font-size:14.5px;font-weight:500;transition:background .18s var(--lg-ease),color .18s var(--lg-ease),box-shadow .2s var(--lg-ease);}
+.nav-item .icon{width:20px;height:20px;display:inline-flex;align-items:center;justify-content:center;font-size:0;color:var(--lg-muted);transition:color .18s var(--lg-ease);}
+.nav-item .icon .ico{width:19px;height:19px;}
+.nav-item:hover{background:rgba(23,43,77,.055);color:var(--lg-text);}
+.nav-item:hover .icon{color:var(--lg-ink);}
+.nav-item.active{background:linear-gradient(180deg,var(--lg-dark2),var(--lg-dark));color:#fff;font-weight:600;box-shadow:var(--lg-sh-dark),inset 0 1px 0 rgba(255,255,255,.09);}
+.nav-item.active .icon{color:#fff;}
+.nav-badge{min-width:24px;height:22px;display:inline-flex;align-items:center;justify-content:center;padding:0 7px;border-radius:99px;font-size:12px;font-weight:700;}
+.sidebar-footer{padding:12px;border-top:0;}
+.side-card{padding:10px;border-radius:18px;background:var(--lg-glass);border:1px solid var(--lg-edge);box-shadow:var(--lg-sh1);}
+.sidebar-footer .auth-btn,.sidebar-footer .btn{margin-top:0;border-radius:13px;}
+.auth-btn{background:rgba(255,255,255,.7);border:1px solid var(--lg-line);color:var(--lg-ink);font-weight:600;}
+.auth-btn:hover{background:#fff;}
+.auth-btn.connected{background:rgba(42,125,75,.09);border-color:rgba(42,125,75,.28);color:#1b6a3c;}
+.sheet-status{margin-top:6px;padding-left:2px;color:var(--lg-muted);}
+
+/* Encabezado */
+.topbar{padding:20px 32px 14px;border-bottom:0;background:linear-gradient(180deg,rgba(245,247,252,.88),rgba(245,247,252,.55));backdrop-filter:blur(18px) saturate(140%);-webkit-backdrop-filter:blur(18px) saturate(140%);align-items:flex-start;}
+.tb-left{display:flex;align-items:center;gap:12px;min-width:0;}
+.topbar-title{font-size:32px;font-weight:700;letter-spacing:-.025em;line-height:1.12;color:var(--lg-text);}
+.topbar-sub{font-size:14.5px;color:var(--lg-muted);margin:4px 0 0;line-height:1.35;}
+.topbar-right{gap:12px;padding-top:2px;}
+.last-sync-w{display:inline-flex;align-items:center;gap:7px;color:var(--lg-muted);}
+.last-sync-w .ico{width:15px;height:15px;}
+.last-sync{font-size:13px;color:var(--lg-muted);}
+.topbar .search-bar{height:44px;width:280px;padding:0 16px;gap:10px;border-radius:16px;background:var(--lg-glass-hi);border:1px solid var(--lg-edge);box-shadow:var(--lg-sh1);color:var(--lg-muted);transition:box-shadow .2s var(--lg-ease),border-color .2s var(--lg-ease),width .25s var(--lg-ease);}
+.topbar .search-bar:focus-within{width:320px;background:#fff;border-color:rgba(var(--lg-a-rgb),.55);box-shadow:0 0 0 4px rgba(var(--lg-a-rgb),.14),var(--lg-sh1);}
+.topbar .search-bar input{font-size:14px;}
+.topbar .search-bar input::placeholder{color:var(--lg-muted);opacity:1;}
+.topbar .btn{height:44px;border-radius:16px;border:1px solid var(--lg-edge);background:var(--lg-glass-hi);box-shadow:var(--lg-sh1);color:var(--lg-ink);font-weight:600;transition:transform .18s var(--lg-ease),box-shadow .2s var(--lg-ease),background .2s var(--lg-ease);}
+.topbar .btn:hover{background:#fff;transform:translateY(-1px);}
+.topbar .ayuda-btn{width:44px;padding:0;border-radius:16px;font-size:17px;font-weight:600;color:var(--lg-muted);}
+.topbar .btn.primary{background:linear-gradient(180deg,var(--lg-dark2),var(--lg-dark));color:#fff;border-color:transparent;padding:0 20px;gap:9px;box-shadow:var(--lg-sh-dark);}
+.topbar .btn.primary:hover{background:linear-gradient(180deg,#26324f,#161f33);transform:translateY(-1px);box-shadow:0 12px 24px rgba(17,24,39,.3);}
+.topbar .btn.primary .ico{width:17px;height:17px;}
+
+/* Mails de carga */
+.mc-vista{max-width:1280px;padding-bottom:96px;}
+.mc-vista .btn{height:42px;padding:0 16px;gap:8px;border-radius:var(--lg-r-btn);border:1px solid var(--lg-edge);background:var(--lg-glass-hi);box-shadow:var(--lg-sh1);color:var(--lg-ink);font-weight:600;font-size:14px;transition:transform .18s var(--lg-ease),box-shadow .2s var(--lg-ease),background .2s var(--lg-ease);text-decoration:none;}
+.mc-vista .btn:hover{background:#fff;transform:translateY(-1px);box-shadow:0 8px 22px rgba(40,55,100,.12);}
+.mc-vista .btn:disabled{opacity:.55;transform:none;cursor:default;}
+.mc-vista .btn.primary{background:linear-gradient(180deg,var(--lg-dark2),var(--lg-dark));color:#fff;border-color:transparent;box-shadow:var(--lg-sh-dark);}
+.mc-vista .btn.primary:hover{background:linear-gradient(180deg,#26324f,#161f33);}
+.mc-vista .btn .ico{width:17px;height:17px;}
+.mc-banner{position:relative;overflow:hidden;border-radius:26px;padding:28px 32px 26px;margin:6px 0 20px;background:linear-gradient(115deg,rgba(255,255,255,.92) 0%,rgba(255,255,255,.74) 48%,rgba(var(--lg-a-rgb),.10) 100%);border:1px solid var(--lg-edge);box-shadow:var(--lg-sh2),inset 0 1px 0 rgba(255,255,255,.95);backdrop-filter:var(--lg-blur);-webkit-backdrop-filter:var(--lg-blur);}
+.mc-deco{position:absolute;top:0;right:0;bottom:0;width:62%;pointer-events:none;-webkit-mask-image:linear-gradient(90deg,transparent 0,#000 38%);mask-image:linear-gradient(90deg,transparent 0,#000 38%);}
+.mc-deco svg{width:100%;height:100%;display:block;}
+.mc-banner-in{position:relative;display:flex;gap:24px;align-items:flex-start;}
+.mc-icono{width:76px;height:76px;flex-shrink:0;border-radius:21px;display:flex;align-items:center;justify-content:center;color:#fff;background:linear-gradient(150deg,rgba(var(--lg-a-rgb),.62) 0%,rgb(var(--lg-a-rgb)) 55%,rgba(var(--lg-a-rgb),.92) 100%);box-shadow:0 14px 30px rgba(var(--lg-a-rgb),.34),inset 0 1px 0 rgba(255,255,255,.55),inset 0 -6px 12px rgba(0,0,0,.08);}
+.mc-icono .ico{width:36px;height:36px;stroke-width:1.7;}
+.mc-banner h2{font-size:22px;font-weight:700;letter-spacing:-.015em;color:var(--lg-text);margin:2px 0 8px;}
+.mc-banner p{font-size:14.5px;line-height:1.55;color:var(--lg-muted);max-width:640px;}
+.mc-banner p b{color:var(--lg-ink);font-weight:600;}
+.mc-barra{display:flex;gap:10px;flex-wrap:wrap;margin:18px 0 0;}
+.mc-hist{margin:0 0 18px;}
+.mc-hist-cab{font-size:13.5px;color:var(--lg-muted);margin:0 4px 10px;}
+.mc-hist-cab b{color:var(--lg-ink);}
+.mc-donde{font-size:13px;color:var(--lg-muted);margin:2px 0 0;}
+.mc-donde a{color:var(--lg-soft-ink);font-weight:600;}
+.mc-buscar{display:flex;align-items:center;gap:12px;height:54px;padding:0 20px;margin:0 0 14px;border-radius:20px;background:var(--lg-glass-hi);border:1px solid var(--lg-edge);box-shadow:var(--lg-sh1);color:var(--lg-muted);transition:box-shadow .2s var(--lg-ease),border-color .2s var(--lg-ease),background .2s var(--lg-ease);}
+.mc-buscar:hover{background:#fff;}
+.mc-buscar:focus-within{background:#fff;border-color:rgba(var(--lg-a-rgb),.55);box-shadow:0 0 0 4px rgba(var(--lg-a-rgb),.14),var(--lg-sh1);}
+.mc-buscar .ico{width:20px;height:20px;}
+.mc-buscar input{flex:1;min-width:0;height:100%;border:0;outline:0!important;background:transparent;font:inherit;font-size:15.5px;color:var(--lg-text);padding:0;-webkit-appearance:none;appearance:none;}
+.mc-buscar input::placeholder{color:var(--lg-muted);opacity:1;}
+.mc-buscar input::-webkit-search-cancel-button{-webkit-appearance:none;display:none;}
+.mc-buscar input::selection{background:rgba(var(--lg-a-rgb),.25);}
+.mc-x{display:none;align-items:center;justify-content:center;width:30px;height:30px;border:0;border-radius:9px;background:transparent;color:var(--lg-muted);cursor:pointer;padding:0;transition:background .15s;}
+.mc-x:hover{background:rgba(23,43,77,.07);}
+.mc-x:focus-visible{outline:2px solid rgba(var(--lg-a-rgb),.6);outline-offset:1px;}
+.mc-x .ico{width:16px;height:16px;}
+.mc-buscar.con-texto .mc-x{display:inline-flex;}
+.mc-cuenta{font-size:14px;color:var(--lg-muted);font-variant-numeric:tabular-nums;white-space:nowrap;}
+/* fila de correo / carga hecha */
+.mc-row{display:grid;grid-template-columns:52px minmax(0,1fr) auto auto;align-items:center;gap:18px;min-height:80px;padding:14px 20px;margin-bottom:10px;border-radius:20px;background:var(--lg-glass-hi);border:1px solid var(--lg-edge);box-shadow:var(--lg-sh1);transition:transform .2s var(--lg-ease),box-shadow .22s var(--lg-ease),background .2s var(--lg-ease);}
+.mc-row:hover{background:#fff;transform:translateY(-1px);box-shadow:0 10px 28px rgba(40,55,100,.11);}
+.mc-ico{width:52px;height:52px;border-radius:15px;display:flex;align-items:center;justify-content:center;background:#DDF3E6;color:#15683a;}
+.mc-ico.carga{background:var(--lg-soft);color:var(--lg-soft-ink);}
+.mc-ico .ico{width:24px;height:24px;}
+.mc-row-main{min-width:0;}
+.mc-row-t{font-size:16px;font-weight:650;color:var(--lg-text);line-height:1.3;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.mc-row-s{margin-top:4px;font-size:13px;color:var(--lg-muted);line-height:1.45;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.mc-row-s b{color:var(--lg-ink);font-weight:600;}
+.mc-row-s i{font-style:normal;opacity:.55;margin:0 4px;}
+.mc-date{padding:6px 12px;border-radius:10px;background:rgba(23,43,77,.06);color:var(--lg-muted);font-size:13px;font-weight:600;white-space:nowrap;}
+.mc-row-acc{display:flex;gap:8px;}
+.mc-vista .mc-row-acc .btn{height:40px;padding:0 14px;font-size:13.5px;}
+.mc-vacio{padding:26px;text-align:center;color:var(--lg-muted);font-size:14px;}
+/* tarjetas de cargas por revisar */
+.mc-vista .mc-card{padding:20px 22px;margin-bottom:14px;border-radius:22px;border:1px solid var(--lg-edge);background:var(--lg-glass-hi);box-shadow:var(--lg-sh1);transition:box-shadow .22s var(--lg-ease);}
+.mc-vista .mc-card:hover{box-shadow:var(--lg-sh2);}
+.mc-vista .mc-hecha{opacity:1;background:rgba(228,246,236,.8);border-color:rgba(42,125,75,.25);}
+.mc-vista .mc-tit{font-size:16px;font-weight:650;color:var(--lg-text);}
+.mc-vista .mc-mail{color:var(--lg-muted);font-size:13px;}
+.mc-vista .mc-k{font-size:12.5px;color:var(--lg-muted);font-weight:500;margin-bottom:4px;}
+.mc-vista .mc-f input,.mc-vista .mc-f select{height:40px;padding:0 12px;border-radius:var(--lg-r-btn);background:rgba(255,255,255,.92);border:1px solid rgba(23,43,77,.14);color:var(--lg-text);transition:border-color .15s,box-shadow .15s;}
+.mc-vista .mc-f input:focus,.mc-vista .mc-f select:focus{outline:none;border-color:rgba(var(--lg-a-rgb),.6);box-shadow:0 0 0 3px rgba(var(--lg-a-rgb),.15);}
+.mc-vista .mc-chip{font-size:12.5px;padding:3px 10px;border-radius:99px;background:rgba(23,43,77,.06);border:1px solid transparent;color:var(--lg-ink);}
+.mc-vista .mc-chip.cli{background:var(--lg-soft);color:var(--lg-soft-ink);border-color:transparent;}
+.mc-vista .mc-chip.falta{background:rgba(185,51,42,.09);color:#a02a22;border-color:rgba(185,51,42,.25);}
+.mc-vista .mc-chip.ok{background:rgba(42,125,75,.12);color:#15683a;}
+.mc-vista .mc-bloque,.mc-vista .mc-prog{background:var(--lg-glass);border:1px solid var(--lg-edge);border-radius:var(--lg-r-card);box-shadow:var(--lg-sh1);padding:14px 18px;margin-bottom:14px;}
+.mc-vista .mc-acc{margin-top:14px;flex-wrap:wrap;}
+.mc-vista .mc-det pre{border-radius:12px;}
+.mc-vista .mc-vacio-g{padding:44px;color:var(--lg-muted);}
+.mc-vista .mc-listo{margin:2px 4px 14px;}
+/* Guardar cargas: abajo a la derecha, siempre a la vista */
+.mc-vista .cf-barra.mc-guardar{position:fixed;right:32px;bottom:24px;left:auto;margin:0;z-index:30;max-width:min(620px,calc(100vw - 300px));padding:8px 8px 8px 20px;border-radius:20px;border:1px solid var(--lg-edge);background:var(--lg-glass-hi);backdrop-filter:var(--lg-blur);-webkit-backdrop-filter:var(--lg-blur);box-shadow:var(--lg-sh2);}
+.mc-vista .cf-barra.mc-guardar .cf-faltan{font-size:13px;color:var(--lg-muted);}
+.mc-vista .cf-barra.mc-guardar .btn.primary{height:46px;padding:0 22px;border-radius:15px;box-shadow:0 10px 22px rgba(var(--lg-a-rgb),.22),var(--lg-sh-dark);}
+@media (max-width:1024px){.mc-vista .cf-barra.mc-guardar{right:20px;max-width:calc(100vw - 220px);}}
+@media (max-width:900px){.mc-row{grid-template-columns:52px minmax(0,1fr) auto;}.mc-row-acc{grid-column:1/-1;justify-content:flex-end;}.mc-deco{opacity:.55;}}
+@media (max-width:768px){
+  .topbar{padding:12px 14px 8px;}.topbar-title{font-size:22px;}.topbar-sub{display:none;}.last-sync-w{display:none;}
+  .topbar .search-bar{width:44px;padding:0 12px;}.topbar .search-bar:focus-within{width:190px;}
+  .mc-banner{padding:20px 18px;border-radius:22px;}.mc-banner-in{gap:14px;}.mc-icono{width:56px;height:56px;border-radius:16px;}.mc-icono .ico{width:27px;height:27px;}
+  .mc-banner h2{font-size:19px;}.mc-deco{opacity:.4;width:80%;}
+  .mc-row{grid-template-columns:44px minmax(0,1fr);gap:12px;padding:12px 14px;}.mc-ico{width:44px;height:44px;border-radius:13px;}.mc-date{grid-column:2;justify-self:start;}.mc-row-acc{grid-column:1/-1;}
+  .mc-row-t,.mc-row-s{white-space:normal;}
+  .mc-vista .cf-barra.mc-guardar{left:12px;right:12px;bottom:78px;max-width:none;justify-content:space-between;}
+}
+@media (prefers-reduced-motion:reduce){.nav-item,.negocio-btn,.mc-row,.mc-vista .btn,.topbar .btn,.topbar .search-bar,.mc-buscar{transition:none!important;}.mc-row:hover,.mc-vista .btn:hover,.topbar .btn:hover{transform:none;}}
+
+/* Segunda iteracion: mas luz, menos peso. Sombras solo en el banner y en las acciones importantes. */
+body{background:radial-gradient(760px 420px at 86% -12%,rgba(var(--lg-a-rgb),.055),transparent 65%),linear-gradient(180deg,#FFFFFF,var(--lg-bg2)) fixed;}
+.sidebar{background:linear-gradient(180deg,rgba(255,255,255,.62),rgba(250,251,254,.5));border-right:1px solid rgba(23,43,77,.055);box-shadow:none;}
+.negocio-pill{background:rgba(23,43,77,.045);box-shadow:none;}
+.negocio-btn.on,.negocio-btn.on:hover{box-shadow:0 2px 6px rgba(17,24,39,.14);}
+.nav-item.active{box-shadow:0 3px 8px rgba(17,24,39,.15);}
+.nav-item:hover{background:rgba(23,43,77,.04);}
+.side-card{background:rgba(255,255,255,.55);box-shadow:none;border-color:rgba(23,43,77,.06);}
+.topbar{background:linear-gradient(180deg,rgba(255,255,255,.8),rgba(255,255,255,0));backdrop-filter:none;-webkit-backdrop-filter:none;}
+.topbar .search-bar,.topbar .btn{box-shadow:none;border-color:rgba(23,43,77,.08);background:rgba(255,255,255,.7);}
+.topbar .btn:hover{box-shadow:var(--lg-sh1);}
+.topbar .btn.primary{background:linear-gradient(180deg,var(--lg-dark2),var(--lg-dark));border-color:transparent;box-shadow:var(--lg-sh-dark);}
+.topbar .btn.primary:hover{box-shadow:0 6px 16px rgba(17,24,39,.2);}
+.mc-banner{background:linear-gradient(115deg,rgba(255,255,255,.96) 0%,rgba(255,255,255,.84) 52%,rgba(var(--lg-a-rgb),.06) 100%);border-color:rgba(255,255,255,.95);box-shadow:var(--lg-sh2),inset 0 1px 0 #fff;}
+.mc-icono{box-shadow:0 10px 24px rgba(var(--lg-a-rgb),.26),inset 0 1px 0 rgba(255,255,255,.5),inset 0 -6px 12px rgba(0,0,0,.06);}
+.mc-vista .btn{border-color:rgba(23,43,77,.08);background:rgba(255,255,255,.72);box-shadow:none;}
+.mc-vista .btn:hover{background:#fff;transform:none;box-shadow:var(--lg-sh1);}
+.mc-vista .btn.primary{background:linear-gradient(180deg,var(--lg-dark2),var(--lg-dark));border-color:transparent;box-shadow:var(--lg-sh-dark);}
+.mc-vista .btn.primary:hover{box-shadow:0 6px 16px rgba(17,24,39,.2);}
+.mc-buscar{background:rgba(255,255,255,.72);border-color:rgba(23,43,77,.07);box-shadow:none;margin-bottom:20px;}
+.mc-buscar:hover{background:rgba(255,255,255,.9);}
+.mc-row{margin-bottom:14px;padding:16px 22px;min-height:84px;background:rgba(255,255,255,.7);border:1px solid rgba(23,43,77,.055);box-shadow:0 1px 8px rgba(40,55,100,.03);}
+.mc-row:hover{background:rgba(255,255,255,.95);transform:none;box-shadow:0 3px 14px rgba(40,55,100,.06);}
+.mc-ico{background:#E3F5EA;color:#1D7443;border-radius:15px;}
+.mc-date{background:rgba(23,43,77,.045);}
+.mc-vista .mc-row-acc .btn{background:rgba(255,255,255,.85);}
+.mc-vista .mc-card{background:rgba(255,255,255,.72);border-color:rgba(23,43,77,.06);box-shadow:var(--lg-sh1);margin-bottom:18px;}
+.mc-vista .mc-card:hover{box-shadow:var(--lg-sh2);}
+.mc-vista .mc-bloque,.mc-vista .mc-prog{background:rgba(255,255,255,.6);border-color:rgba(23,43,77,.06);box-shadow:none;}
+.mc-vista .cf-barra.mc-guardar{background:rgba(255,255,255,.82);border-color:rgba(23,43,77,.07);box-shadow:var(--lg-sh2);}
+.mc-vista .cf-barra.mc-guardar .btn.primary{box-shadow:var(--lg-sh-dark);}
+
+/* Celular: encabezado compacto (el titulo no se parte) y banner en una sola columna */
+@media (max-width:768px){
+  .topbar{flex-wrap:wrap;gap:8px 10px;align-items:center;}
+  .tb-left{flex:1 1 auto;min-width:0;}
+  .topbar-title{font-size:21px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .topbar-right{gap:8px;padding-top:0;flex:0 0 auto;}
+  .topbar .btn,.topbar .search-bar{height:40px;}
+  .topbar .ayuda-btn{width:40px;}
+  .topbar .btn.primary{padding:0 12px;}
+  .topbar .btn.primary #sync-txt{display:none;}
+  .mc-banner-in{flex-direction:column;gap:14px;}
+  .mc-banner p{font-size:14px;}
+  .mc-barra .btn{flex:1 1 auto;justify-content:center;}
+}
 </style>
 </head>
 <body>
@@ -968,8 +1155,8 @@ tr:hover .col-acciones{background:var(--bg3);}
 <div class="shell">
 <aside class="sidebar" id="sidebar">
   <div class="logo">
-    <div class="logo-text">LATINUT</div>
-    <div class="logo-sub" id="negocio-label">AXT Solutions</div>
+    <svg class="logo-mark" viewBox="0 0 40 40" aria-hidden="true"><path d="M12 32 21 8"/><path d="M22 32 31 8"/></svg>
+    <div><div class="logo-text">LATINUT</div><div class="logo-sub" id="negocio-label">AXT Solutions</div></div>
   </div>
   <div class="negocio-pill">
     <button class="negocio-btn" id="pill-axt" onclick="setNegocio('axt')">AXT</button>
@@ -979,86 +1166,91 @@ tr:hover .col-acciones{background:var(--bg3);}
     <div class="nav-section">
       <div class="nav-label">Operaciones</div>
       <div class="nav-item active" onclick="showView('alertas')">
-        <span class="icon">⚡</span> Alertas
+        <span class="icon"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M13 2 3 14h9l-1 8 10-12h-9l1-8z"/></svg></span> Alertas
         <span class="nav-badge" id="badge-alertas"></span>
       </div>
       <div class="nav-item" onclick="showView('cargas')">
-        <span class="icon">📦</span> <span id="nav-cargas-label">Cargas AXT</span>
+        <span class="icon"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="m7.5 4.27 9 5.15"/><path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/><path d="m3.3 7 8.7 5 8.7-5"/><path d="M12 22V12"/></svg></span> <span id="nav-cargas-label">Cargas AXT</span>
       </div>
       <div class="nav-item" onclick="showView('nueva_carga')">
-        <span class="icon">＋</span> Nueva carga
+        <span class="icon"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg></span> Nueva carga
       </div>
       <div class="nav-item" id="nav-mails" onclick="showView('mails')">
-        <span class="icon">📬</span> Mails de carga
+        <span class="icon"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><rect width="20" height="16" x="2" y="4" rx="3"/><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/></svg></span> Mails de carga
         <span class="nav-badge warn" id="badge-mails" style="display:none"></span>
       </div>
     </div>
     <div class="nav-section">
       <div class="nav-label">Finanzas</div>
       <div class="nav-item" onclick="showView('cobranza')">
-        <span class="icon">💰</span> Cobranza
+        <span class="icon"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M3 5v14a9 3 0 0 0 18 0V5"/><path d="M3 12a9 3 0 0 0 18 0"/></svg></span> Cobranza
         <span class="nav-badge warn" id="badge-cobranza"></span>
       </div>
       <div class="nav-item" onclick="showView('cashflow')">
-        <span class="icon">📅</span> Calendario
+        <span class="icon"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><rect width="18" height="18" x="3" y="4" rx="3"/><path d="M16 2v4M8 2v4M3 10h18"/></svg></span> Calendario
       </div>
       <div class="nav-item" onclick="showView('liberaciones')">
-        <span class="icon">🔓</span> Liberaciones
+        <span class="icon"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="m19 21-7-4-7 4V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v16z"/></svg></span> Liberaciones
         <span class="nav-badge" id="badge-liberaciones"></span>
       </div>
       <div class="nav-item" id="nav-pagares" onclick="showView('pagares')">
-        <span class="icon">📄</span> Pagarés
+        <span class="icon"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/><path d="M14 2v6h6M16 13H8M16 17H8M10 9H8"/></svg></span> Pagarés
       </div>
       <div class="nav-item" id="nav-contratos" onclick="showView('contratos')">
-        <span class="icon">📑</span> Contratos
+        <span class="icon"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/><path d="M14 2v6h6"/><path d="m9 15 2 2 4-4"/></svg></span> Contratos
       </div>
       <div class="nav-item" id="nav-tarifario" onclick="showView('tarifario')">
-        <span class="icon">🚢</span> Tarifario
+        <span class="icon"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M2 21c.6.5 1.2 1 2.5 1 2.5 0 2.5-2 5-2 1.3 0 1.9.5 2.5 1 .6.5 1.2 1 2.5 1 2.5 0 2.5-2 5-2 1.3 0 1.9.5 2.5 1"/><path d="M19.4 20A11.6 11.6 0 0 0 21 14l-9-4-9 4c0 2.9.94 5.34 2.8 7.76"/><path d="M19 13V7a2 2 0 0 0-2-2H7a2 2 0 0 0-2 2v6"/><path d="M12 10v4M12 2v3"/></svg></span> Tarifario
       </div>
     </div>
     <div class="nav-section">
       <div class="nav-label">Historial</div>
       <div class="nav-item" onclick="showView('log')">
-        <span class="icon">📋</span> Log de acciones
+        <span class="icon"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><rect width="8" height="4" x="8" y="2" rx="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2M12 11h4M12 16h4M8 11h.01M8 16h.01"/></svg></span> Log de acciones
       </div>
     </div>
     <div class="nav-section">
       <div class="nav-label">Sistema</div>
       <div class="nav-item" onclick="showView('config')">
-        <span class="icon">⚙</span> Configuración
+        <span class="icon"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg></span> Configuración
       </div>
     </div>
   </nav>
   <div class="sidebar-footer">
-    <div style="margin-bottom:8px;">
-      <button id="auth-btn" class="btn auth-llamar" onclick="handleAuth()" style="width:100%;font-size:12px;">Conectar con Google</button>
-    </div>
-    <div style="font-size:11px;color:var(--text3);margin-bottom:6px;" id="auth-status-text"></div>
-    <div class="sheet-status">
-      <span class="sheet-dot" id="sheet-dot"></span>
-      <span id="sheet-status-text">Cargando...</span>
+    <div class="side-card">
+      <div style="margin-bottom:8px;">
+        <button id="auth-btn" class="btn auth-llamar" onclick="handleAuth()" style="width:100%;font-size:12px;">Conectar con Google</button>
+      </div>
+      <div style="font-size:11px;color:var(--text3);margin-bottom:6px;" id="auth-status-text"></div>
+      <div class="sheet-status">
+        <span class="sheet-dot" id="sheet-dot"></span>
+        <span id="sheet-status-text">Cargando...</span>
+      </div>
     </div>
   </div>
 </aside>
 <div class="overlay-close" id="overlay-close" onclick="closeSidebar()"></div>
 <main class="main">
   <div class="topbar">
-    <div style="display:flex;align-items:center;gap:12px;">
+    <div class="tb-left">
       <span class="mobile-toggle" onclick="toggleSidebar()">☰</span>
-      <h1 class="topbar-title" id="view-title">Alertas</h1>
+      <div>
+        <h1 class="topbar-title" id="view-title">Alertas</h1>
+        <p class="topbar-sub" id="view-sub">Lo que necesita tu atención hoy, ordenado por urgencia.</p>
+      </div>
     </div>
     <div class="topbar-right">
-      <span class="last-sync" id="last-sync">—</span>
+      <span class="last-sync-w"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 12a9 9 0 0 1 15.5-6.2L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-15.5 6.2L3 16"/><path d="M3 21v-5h5"/></svg><span class="last-sync" id="last-sync">—</span></span>
       <div style="position:relative;">
         <div class="search-bar">
-          <span style="color:var(--text3);font-size:14px;">🔍</span>
-          <input type="text" id="global-search" aria-label="Buscar en todo el hub" placeholder="Buscar BL, cliente, invoice..." 
+          <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+          <input type="text" id="global-search" aria-label="Buscar en todo el hub" placeholder="Buscar BL, cliente, invoice..."
             oninput="handleSearch(this.value)" onblur="setTimeout(()=>hideSearch(),200)">
         </div>
         <div class="search-results hidden" id="search-results"></div>
       </div>
       <button class="btn ayuda-btn" id="ayuda-btn" onclick="abrirAyuda()" title="Atajos y cosas que se pueden hacer" aria-label="Ayuda: atajos y trucos">?</button>
-      <button class="btn primary" id="sync-btn" onclick="loadData()"><span class="sync-ico" aria-hidden="true">↻</span> <span id="sync-txt">Sincronizar</span></button>
+      <button class="btn primary" id="sync-btn" onclick="loadData()"><svg class="ico sync-ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 12a9 9 0 0 1 15.5-6.2L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-15.5 6.2L3 16"/><path d="M3 21v-5h5"/></svg> <span id="sync-txt">Sincronizar</span></button>
     </div>
   </div>
   <div class="content" id="content">
@@ -1200,6 +1392,7 @@ function setNegocio(n){
   updateBottomNav('alertas');
   // Update topbar title
   document.getElementById('view-title').textContent = 'Alertas';
+  setViewSub('alertas');
   // Show loading while fetching new negocio data
   document.getElementById('content').innerHTML = '<div class="spinner"><div class="spin"></div> Cargando ' + (n==='buzaram'?'Buzaram':'AXT Solutions') + '...</div>';
   return loadData();
@@ -1210,9 +1403,8 @@ function updateNegocioPill(){
   ['axt','buzaram'].forEach(n => {
     const el = document.getElementById('pill-'+n);
     if(el){
-      el.style.background = negocioActivo===n?'var(--accent)':'var(--bg2)';
-      el.style.color = negocioActivo===n?'#fff':'var(--text3)';
-      el.style.borderColor = negocioActivo===n?'var(--accent)':'var(--border)';
+      if(el.classList) el.classList.toggle('on', negocioActivo===n);
+      if(el.setAttribute) el.setAttribute('aria-pressed', negocioActivo===n ? 'true' : 'false');
     }
   });
   // Hide pagarés for Buzaram
@@ -4944,6 +5136,9 @@ function updateBadges(){
 }
 
 // ─── VIEWS ───────────────────────────────────────────────────────────────────
+// Subtitulo de cada pantalla (debajo del titulo del encabezado).
+const _VIEW_SUBS = {alertas:'Lo que necesita tu atención hoy, ordenado por urgencia.', cargas:'Todas las cargas del negocio: seguimiento, documentos y cobros.', nueva_carga:'Cargá una operación nueva a partir de su contrato.', mails:'Gestioná y organizá los mails de tus cargas de forma rápida y eficiente.', cobranza:'Cobros estimados, vencimientos y reclamos.', cashflow:'Cobros y pagos estimados, por fecha.', liberaciones:'Cargas que llegan pronto y esperan la liberación del TELEX.', pagares:'Pagarés enviados, firmados y pendientes.', contratos:'Contratos abiertos y cerrados, con sus condiciones.', tarifario:'Tarifas de flete por puerto y naviera.', log:'Registro de lo que se hizo desde el hub.', config:'Conexiones, claves y preferencias.'};
+function setViewSub(v){ const el = document.getElementById('view-sub'); if(el) el.textContent = _VIEW_SUBS[v] || ''; }
 function showView(view){
   if(view === 'nueva_carga' && currentView !== 'nueva_carga') cargasGuardadasSesion = [];
   saveLastView(view);
@@ -4953,6 +5148,7 @@ function showView(view){
   document.querySelectorAll('.nav-item').forEach(el=>el.classList.remove('active'));
   const titles=window._viewTitles||{alertas:'Alertas',cargas:'Cargas AXT',nueva_carga:'Nueva carga',mails:'Mails de carga',cobranza:'Cobranza',cashflow:'Calendario',liberaciones:'Liberaciones',pagares:'Pagarés',contratos:'Contratos abiertos',tarifario:'Tarifario de fletes',log:'Log de acciones',config:'Configuración'};
   document.getElementById('view-title').textContent=titles[view]||view;
+  setViewSub(view);
   document.querySelectorAll('.nav-item').forEach(el=>{if(el.getAttribute('onclick')?.includes(`'${view}'`))el.classList.add('active');});
   renderView(view);
   actualizarAriaCurrent();
@@ -12487,14 +12683,27 @@ function mcHistCuenta(q){
   const { todos, l } = mcHistFiltrados(q);
   return String(q || '').trim() ? l.length + ' de ' + todos.length : todos.length + ' en total';
 }
+const MC_MESES = ['ene.', 'feb.', 'mar.', 'abr.', 'may.', 'jun.', 'jul.', 'ago.', 'sep.', 'oct.', 'nov.', 'dic.'];
+// "2026-11-05T11:22:15" -> { dia: '5 nov.', hora: '11:22' } (solo se formatea lo que ya esta anotado; si no se entiende, queda vacio)
+function mcFechaCorta(f){
+  const m = String(f || '').match(/^(\d{4})-(\d{2})-(\d{2})(?:[T ](\d{2}):(\d{2}))?/);
+  if(!m) return { dia: '', hora: '' };
+  const anio = parseInt(m[1], 10), esteAnio = new Date().getFullYear();
+  return { dia: parseInt(m[3], 10) + ' ' + MC_MESES[parseInt(m[2], 10) - 1] + (anio !== esteAnio ? ' ' + anio : ''), hora: m[4] ? m[4] + ':' + m[5] : '' };
+}
 function mcHistListaHtml(q){
   const { todos, l } = mcHistFiltrados(q);
   if(!l.length) return '<div class="mc-vacio">' + (todos.length ? 'No hay nada que coincida con "' + escH(q) + '".' : 'Todavía no hay cadenas marcadas como listas.') + '</div>';
-  return l.slice(0, 200).map(x => '<div class="mc-h"><span class="mc-chip ' + (x.tipo === 'hilo' ? 'ok' : '') + '">' + (x.tipo === 'hilo' ? '✅ Lista' : '📦 Cargada' + (x.v.fila ? ' · fila ' + escH(x.v.fila) : '')) + '</span>'
-    + '<span class="mc-asu">' + escH(x.v.asunto || '(sin asunto)') + '</span>'
-    + '<a class="btn" target="_blank" rel="noopener" href="https://mail.google.com/mail/u/0/#all/' + encodeURIComponent(x.id) + '">Ver el mail</a>'
-    + (x.tipo === 'hilo' ? '<button class="btn" onclick="mcReabrirHilo(\'' + escH(x.id) + '\')">Reabrir</button>' : '')
-    + '<span class="mc-meta">' + (x.v.detalle ? '<b>' + escH(x.v.detalle) + '</b> · ' : '') + escH((x.v.usuario || '?') + ' · ' + (x.v.fecha || '')) + '</span></div>').join('')
+  return l.slice(0, 200).map(x => {
+    const fc = mcFechaCorta(x.v.fecha), hilo = x.tipo === 'hilo';
+    const estado = hilo ? 'Lista' : 'Cargada' + (x.v.fila ? ' · fila ' + escH(x.v.fila) : '');
+    const meta = [ '<b>' + estado + '</b>', x.v.detalle ? escH(x.v.detalle) : '', escH(x.v.usuario || '?') + (fc.hora ? ' · ' + fc.hora : '') ].filter(Boolean).join('<i>·</i>');
+    return '<div class="mc-row"><span class="mc-ico' + (hilo ? '' : ' carga') + '"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><rect width="20" height="16" x="2" y="4" rx="3"/><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/></svg></span>'
+      + '<div class="mc-row-main"><div class="mc-row-t" title="' + escH(x.v.asunto || '') + '">' + escH(x.v.asunto || '(sin asunto)') + '</div><div class="mc-row-s">' + meta + '</div></div>'
+      + (fc.dia ? '<span class="mc-date">' + escH(fc.dia) + '</span>' : '<span></span>')
+      + '<div class="mc-row-acc"><a class="btn" target="_blank" rel="noopener" href="https://mail.google.com/mail/u/0/#all/' + encodeURIComponent(x.id) + '"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><rect width="20" height="16" x="2" y="4" rx="3"/><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/></svg>Ver el mail</a>'
+      + (hilo ? '<button class="btn" onclick="mcReabrirHilo(\'' + escH(x.id) + '\')"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 14 4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"/></svg>Reabrir</button>' : '') + '</div></div>';
+  }).join('')
     + (l.length > 200 ? '<div class="mc-vacio">Se muestran 200 de ' + l.length + ': afiná la búsqueda.</div>' : '');
 }
 function mcHistFiltrar(){
@@ -12512,13 +12721,12 @@ function mcHistLimpiar(){
 }
 function mcToggleHist(){ _mc.hist = !_mc.hist; renderBandeja(); }
 function mcHistPanelHtml(){
-  return '<div class="mc-bloque"><b>Históricas</b> · cadenas que ya están listas y cargas hechas desde mails (el hub no las lee)'
+  return '<div class="mc-hist"><div class="mc-hist-cab"><b>Históricas</b> · cadenas que ya están listas y cargas hechas desde mails (el hub no las lee)'
     + '<div class="mc-donde">Se anotan en la pestaña <b>' + MC_HOJA + '</b> de la planilla <b>HUB LATINUT</b> (la misma del LOG). '
-    + (cfg.hubSheetId ? '<a target="_blank" rel="noopener" href="https://docs.google.com/spreadsheets/d/' + encodeURIComponent(cfg.hubSheetId) + '/edit">Abrir la planilla</a>' : '') + '</div>'
-    + '<div class="mc-busca"><div class="mc-buscar' + (_mc.histQ ? ' con-texto' : '') + '" id="mc-hist-caja">'
-    + '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>'
+    + (cfg.hubSheetId ? '<a target="_blank" rel="noopener" href="https://docs.google.com/spreadsheets/d/' + encodeURIComponent(cfg.hubSheetId) + '/edit">Abrir la planilla</a>' : '') + '</div></div>'
+    + '<div class="mc-buscar' + (_mc.histQ ? ' con-texto' : '') + '" id="mc-hist-caja"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>'
     + '<input id="mc-hist-q" type="search" autocomplete="off" spellcheck="false" aria-label="Buscar en las históricas" value="' + escH(_mc.histQ || '') + '" placeholder="Buscar por asunto, lote, booking o quién la marcó" oninput="mcHistFiltrar()" onkeydown="if(event.key===\'Escape\'){mcHistLimpiar();}">'
-    + '<button type="button" class="mc-x" onclick="mcHistLimpiar()" aria-label="Borrar la búsqueda" title="Borrar la búsqueda"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"/></svg></button></div>'
+    + '<button type="button" class="mc-x" onclick="mcHistLimpiar()" aria-label="Borrar la búsqueda" title="Borrar la búsqueda"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"/></svg></button>'
     + '<span class="mc-cuenta" id="mc-hist-n" aria-live="polite">' + mcHistCuenta(_mc.histQ) + '</span></div>'
     + '<div id="mc-hist-lista">' + mcHistListaHtml(_mc.histQ) + '</div></div>';
 }
@@ -13043,12 +13251,14 @@ function renderBandeja(){
   const aparte = _mc.cards.filter(c => c.noCargable);
   const clientes = getUnique(COL.CUSTOMER), pols = listaPol();
   const hora = _mc.ultima ? new Date(_mc.ultima).toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' }) : '';
-  let h = '<div class="config-section" style="max-width:100%;"><div class="config-title">Mails de carga · ' + escH(getNegocioConfig().label) + '</div>'
-    + '<div class="config-desc">El hub revisa tu Gmail (los últimos ' + MC_DIAS + ' días) y deja precargadas las cargas de los mails "SOLICITUD DE EXPORTACION" de Argen Peanuts y "CARGAS NUTRIN". Cambiá lo que haga falta: <b>nada se escribe en la planilla hasta que apretás "Guardar cargas"</b>.</div>'
+  let h = '<div class="mc-vista"><section class="mc-banner"><div class="mc-deco"><svg viewBox="0 0 720 240" preserveAspectRatio="xMaxYMid slice" aria-hidden="true"><defs><radialGradient id="mcg3" cx=".78" cy=".02" r=".85"><stop offset="0" stop-color="rgb(var(--lg-a-rgb))" stop-opacity=".16"/><stop offset="1" stop-color="rgb(var(--lg-a-rgb))" stop-opacity="0"/></radialGradient><linearGradient id="mcg1" x1="0" y1="1" x2="1" y2="0"><stop offset="0" stop-color="rgb(var(--lg-a-rgb))" stop-opacity="0"/><stop offset=".6" stop-color="rgb(var(--lg-a-rgb))" stop-opacity=".15"/><stop offset="1" stop-color="#fff" stop-opacity=".6"/></linearGradient><linearGradient id="mcg2" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#fff" stop-opacity=".78"/><stop offset=".5" stop-color="rgb(var(--lg-a-rgb))" stop-opacity=".10"/><stop offset="1" stop-color="rgb(var(--lg-a-rgb))" stop-opacity=".05"/></linearGradient><linearGradient id="mcg4" x1="1" y1="0" x2="0" y2="1"><stop offset="0" stop-color="rgb(var(--lg-a-rgb))" stop-opacity=".20"/><stop offset="1" stop-color="rgb(var(--lg-a-rgb))" stop-opacity="0"/></linearGradient></defs><rect width="720" height="240" fill="url(#mcg3)"/><path d="M250 270C330 140 480 30 780 8L780 270Z" fill="url(#mcg1)"/><path d="M250 270C330 140 480 30 780 8" fill="none" stroke="#fff" stroke-opacity=".75" stroke-width="1.3"/><path d="M360 270C430 168 560 86 780 72L780 270Z" fill="url(#mcg2)"/><path d="M360 270C430 168 560 86 780 72" fill="none" stroke="#fff" stroke-opacity=".8" stroke-width="1.3"/><path d="M520 270C570 200 650 150 780 140L780 270Z" fill="url(#mcg4)" opacity=".7"/><path d="M455 270C520 190 610 128 780 112" fill="none" stroke="rgb(var(--lg-a-rgb))" stroke-opacity=".16" stroke-width="1"/></svg></div><div class="mc-banner-in"><span class="mc-icono"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><rect width="20" height="16" x="2" y="4" rx="3"/><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/></svg></span><div>'
+    + '<h2>Mails de carga · ' + escH(getNegocioConfig().label) + '</h2>'
+    + '<p>El hub revisa tu Gmail (los últimos ' + MC_DIAS + ' días) y deja precargadas las cargas de los mails "SOLICITUD DE EXPORTACION" de Argen Peanuts y "CARGAS NUTRIN". Cambiá lo que haga falta: <b>nada se escribe en la planilla hasta que apretás "Guardar cargas"</b>.</p>'
     + '<datalist id="lt-clientes">' + clientes.map(c => '<option value="' + escH(c) + '">').join('') + '</datalist><datalist id="lt-pols">' + pols.map(c => '<option value="' + escH(c) + '">').join('') + '</datalist>'
-    + '<div class="mc-barra"><button class="btn" onclick="mcRefrescar()"' + (_mc.cargando ? ' disabled' : '') + '>↻ Buscar mails ahora</button> '
-    + (_mc.cards.some(c => c.item.estado !== 'ok' && c.mail.threadId) ? '<button class="btn" onclick="mcMarcarTodoLista()" title="Las cargué todas a mano: que el hub no las lea más">✓ Marcar todo lo pendiente como listo</button> ' : '')
-    + '<button class="btn" onclick="mcToggleHist()">📚 Históricas (' + mcHistorico().filter(x => x.tipo === 'hilo').length + ')</button></div>' + (_mc.hist ? mcHistPanelHtml() : '') + '<div id="mc-estado">' + mcEstadoHtml() + '</div>'
+    + '<div class="mc-barra"><button class="btn primary" onclick="mcRefrescar()"' + (_mc.cargando ? ' disabled' : '') + '><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 12a9 9 0 0 1 15.5-6.2L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-15.5 6.2L3 16"/><path d="M3 21v-5h5"/></svg>Buscar mails ahora</button>'
+    + (_mc.cards.some(c => c.item.estado !== 'ok' && c.mail.threadId) ? '<button class="btn" onclick="mcMarcarTodoLista()" title="Las cargué todas a mano: que el hub no las lea más"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg>Marcar todo lo pendiente como listo</button>' : '')
+    + '<button class="btn" onclick="mcToggleHist()"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>Históricas (' + mcHistorico().filter(x => x.tipo === 'hilo').length + ')</button></div>'
+    + '</div></div></section>' + (_mc.hist ? mcHistPanelHtml() : '') + '<div id="mc-estado">' + mcEstadoHtml() + '</div>'
     + _mc.errores.map(e => '<div class="mc-aviso">⚠ ' + escH(e) + '</div>').join('');
   if(!_mc.cargando && _mc.ultima && !act.length && !otros.length && !sinNeg.length && !aparte.length) h += '<div class="mc-vacio-g">No hay mails de carga pendientes. 🎉</div>';
   h += act.map(c => mcTarjetaHtml(c, _lote.items.indexOf(c.item))).join('');
@@ -13059,7 +13269,7 @@ function renderBandeja(){
   });
   if(aparte.length) h += '<div class="mc-bloque"><b>Para cargar a mano</b>: ' + aparte.map(c => '<div class="mc-linea">' + escH(c.mail.asunto) + ' — ' + escH(c.noCargable) + ' <button class="btn" onclick="mcIgnorar(' + _mc.cards.indexOf(c) + ')">Ignorar</button></div>').join('') + '</div>';
   if(_mc.lotes.length) h += '<div class="mc-bloque"><b>Lotes de Calidad para completar</b> (cargas que dicen "A DEFINIR" y ya tienen lotes en un mail):' + _mc.lotes.map((x, k) => '<div class="mc-linea">Fila ' + x.row._sheetRow + ' · ' + escH((x.row[COL.CUSTOMER] || '').trim()) + ' · booking ' + escH(x.booking) + ': <b>' + x.lotes.map(l => escH(l.lote)).join(', ') + '</b> <button class="btn primary" onclick="mcCompletarLotes(' + k + ')">Completar lotes</button></div>').join('') + '</div>';
-  h += '<div class="cf-barra"><span id="lt-resumen" class="cf-faltan"></span><span style="flex:1;"></span><button class="btn primary" id="lt-guardar" onclick="bandejaGuardar()"' + (act.length ? '' : ' disabled') + '>Guardar cargas</button></div></div>';
+  h += '<div class="cf-barra mc-guardar"><span id="lt-resumen" class="cf-faltan"></span><span style="flex:1;"></span><button class="btn primary" id="lt-guardar" onclick="bandejaGuardar()"' + (act.length ? '' : ' disabled') + '><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3 4.5 6v5.5c0 4.6 3.1 8.2 7.5 9.5 4.4-1.3 7.5-4.9 7.5-9.5V6L12 3z"/><path d="m9 12 2 2 4-4"/></svg>Guardar cargas</button></div></div>';
   cont.innerHTML = h;
   _lote.items.forEach((_, i) => loteCambio(i, true));
   loteResumen();
