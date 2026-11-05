@@ -422,7 +422,22 @@ body.tabla-full-on{overflow:hidden;}
 .mc-h{display:flex;gap:6px 10px;align-items:center;flex-wrap:wrap;padding:8px 10px;background:var(--bg2);border:1px solid var(--border);border-radius:8px;margin-top:6px;}
 .mc-h .mc-asu{font-weight:600;flex:1;min-width:220px;}
 .mc-h .mc-meta{font-size:11.5px;color:var(--text3);width:100%;}
-.mc-donde{font-size:12px;color:var(--text3);margin:2px 0 8px;}
+.mc-donde{font-size:12px;color:var(--text3);margin:2px 0 10px;}
+.mc-busca{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin:0 0 6px;}
+.mc-buscar{position:relative;flex:1 1 320px;max-width:480px;}
+.mc-buscar svg{position:absolute;left:12px;top:50%;width:16px;height:16px;transform:translateY(-50%);stroke:var(--text3);fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;pointer-events:none;}
+.mc-buscar input{width:100%;height:40px;box-sizing:border-box;font:inherit;font-size:14px;color:var(--text);background:var(--bg2);border:1px solid var(--border2);border-radius:var(--radius);padding:0 38px 0 38px;transition:border-color .15s,box-shadow .15s;-webkit-appearance:none;appearance:none;}
+.mc-buscar input::placeholder{color:var(--text3);opacity:1;}
+.mc-buscar input::-webkit-search-cancel-button{-webkit-appearance:none;display:none;}
+.mc-buscar input:hover{border-color:var(--text3);}
+.mc-buscar input:focus,.mc-buscar input:focus-visible{outline:none;border-color:var(--accent);box-shadow:0 0 0 3px rgba(var(--accent-rgb),.18);}
+.mc-buscar input::selection{background:rgba(var(--accent-rgb),.25);}
+.mc-x{position:absolute;right:6px;top:50%;transform:translateY(-50%);width:28px;height:28px;display:none;align-items:center;justify-content:center;border:0;border-radius:6px;background:transparent;cursor:pointer;padding:0;}
+.mc-x svg{position:static;transform:none;width:14px;height:14px;}
+.mc-x:hover{background:var(--bg3);}
+.mc-x:focus-visible{outline:2px solid rgba(var(--accent-rgb),.6);outline-offset:1px;}
+.mc-buscar.con-texto .mc-x{display:flex;}
+.mc-cuenta{font-size:12.5px;color:var(--text3);font-variant-numeric:tabular-nums;}
 .mc-prog{background:var(--bg3);border:1px solid var(--border);border-radius:10px;padding:10px 14px;margin-bottom:12px;}
 .mc-bar{height:6px;background:var(--border);border-radius:99px;overflow:hidden;margin:8px 0;}
 .mc-bar i{display:block;height:100%;background:var(--accent);transition:width .3s;}
@@ -12463,10 +12478,17 @@ function mcHistorico(){
   });
   return out.reverse();
 }
-function mcHistListaHtml(q){
+function mcHistFiltrados(q){
   const t = String(q || '').trim().toLowerCase();
   const todos = mcHistorico();
-  const l = todos.filter(x => !t || [x.v.asunto, x.v.usuario, x.v.detalle, x.v.fecha, x.v.negocio].join(' ').toLowerCase().indexOf(t) >= 0);
+  return { todos, l: todos.filter(x => !t || [x.v.asunto, x.v.usuario, x.v.detalle, x.v.fecha, x.v.negocio].join(' ').toLowerCase().indexOf(t) >= 0) };
+}
+function mcHistCuenta(q){
+  const { todos, l } = mcHistFiltrados(q);
+  return String(q || '').trim() ? l.length + ' de ' + todos.length : todos.length + ' en total';
+}
+function mcHistListaHtml(q){
+  const { todos, l } = mcHistFiltrados(q);
   if(!l.length) return '<div class="mc-vacio">' + (todos.length ? 'No hay nada que coincida con "' + escH(q) + '".' : 'Todavía no hay cadenas marcadas como listas.') + '</div>';
   return l.slice(0, 200).map(x => '<div class="mc-h"><span class="mc-chip ' + (x.tipo === 'hilo' ? 'ok' : '') + '">' + (x.tipo === 'hilo' ? '✅ Lista' : '📦 Cargada' + (x.v.fila ? ' · fila ' + escH(x.v.fila) : '')) + '</span>'
     + '<span class="mc-asu">' + escH(x.v.asunto || '(sin asunto)') + '</span>'
@@ -12479,13 +12501,25 @@ function mcHistFiltrar(){
   const i = document.getElementById('mc-hist-q'), el = document.getElementById('mc-hist-lista');
   _mc.histQ = i ? i.value : '';
   if(el) el.innerHTML = mcHistListaHtml(_mc.histQ);
+  const n = document.getElementById('mc-hist-n'), caja = document.getElementById('mc-hist-caja');
+  if(n) n.textContent = mcHistCuenta(_mc.histQ);
+  if(caja && caja.classList) caja.classList.toggle('con-texto', !!_mc.histQ);
+}
+function mcHistLimpiar(){
+  const i = document.getElementById('mc-hist-q');
+  if(i){ i.value = ''; if(i.focus) i.focus(); }
+  mcHistFiltrar();
 }
 function mcToggleHist(){ _mc.hist = !_mc.hist; renderBandeja(); }
 function mcHistPanelHtml(){
   return '<div class="mc-bloque"><b>Históricas</b> · cadenas que ya están listas y cargas hechas desde mails (el hub no las lee)'
     + '<div class="mc-donde">Se anotan en la pestaña <b>' + MC_HOJA + '</b> de la planilla <b>HUB LATINUT</b> (la misma del LOG). '
     + (cfg.hubSheetId ? '<a target="_blank" rel="noopener" href="https://docs.google.com/spreadsheets/d/' + encodeURIComponent(cfg.hubSheetId) + '/edit">Abrir la planilla</a>' : '') + '</div>'
-    + '<div style="margin:6px 0;"><input id="mc-hist-q" value="' + escH(_mc.histQ || '') + '" placeholder="🔍 Buscar por asunto, quién la marcó o fecha" style="width:100%;max-width:420px;" oninput="mcHistFiltrar()"></div>'
+    + '<div class="mc-busca"><div class="mc-buscar' + (_mc.histQ ? ' con-texto' : '') + '" id="mc-hist-caja">'
+    + '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>'
+    + '<input id="mc-hist-q" type="search" autocomplete="off" spellcheck="false" aria-label="Buscar en las históricas" value="' + escH(_mc.histQ || '') + '" placeholder="Buscar por asunto, lote, booking o quién la marcó" oninput="mcHistFiltrar()" onkeydown="if(event.key===\'Escape\'){mcHistLimpiar();}">'
+    + '<button type="button" class="mc-x" onclick="mcHistLimpiar()" aria-label="Borrar la búsqueda" title="Borrar la búsqueda"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"/></svg></button></div>'
+    + '<span class="mc-cuenta" id="mc-hist-n" aria-live="polite">' + mcHistCuenta(_mc.histQ) + '</span></div>'
     + '<div id="mc-hist-lista">' + mcHistListaHtml(_mc.histQ) + '</div></div>';
 }
 
