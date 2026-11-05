@@ -414,6 +414,15 @@ body.tabla-full-on{overflow:hidden;}
 .mc-acc{display:flex;gap:8px;margin-top:10px;}
 .mc-barra{display:flex;gap:12px;align-items:center;margin-bottom:12px;flex-wrap:wrap;}
 .mc-hora{font-size:12px;color:var(--text3);}
+.mc-chips{display:flex;gap:6px;flex-wrap:wrap;width:100%;margin-top:2px;}
+.mc-chip{display:inline-block;font-size:12px;font-weight:600;padding:2px 9px;border-radius:99px;background:var(--bg3);border:1px solid var(--border);color:var(--text2);}
+.mc-chip.cli{background:var(--accent);border-color:var(--accent);color:#fff;}
+.mc-chip.falta{background:rgba(185,51,42,.08);border-color:rgba(185,51,42,.35);color:var(--danger);}
+.mc-chip.ok{background:rgba(46,125,50,.1);border-color:rgba(46,125,50,.35);color:var(--ok);}
+.mc-h{display:flex;gap:6px 10px;align-items:center;flex-wrap:wrap;padding:8px 10px;background:var(--bg2);border:1px solid var(--border);border-radius:8px;margin-top:6px;}
+.mc-h .mc-asu{font-weight:600;flex:1;min-width:220px;}
+.mc-h .mc-meta{font-size:11.5px;color:var(--text3);width:100%;}
+.mc-donde{font-size:12px;color:var(--text3);margin:2px 0 8px;}
 .mc-prog{background:var(--bg3);border:1px solid var(--border);border-radius:10px;padding:10px 14px;margin-bottom:12px;}
 .mc-bar{height:6px;background:var(--border);border-radius:99px;overflow:hidden;margin:8px 0;}
 .mc-bar i{display:block;height:100%;background:var(--accent);transition:width .3s;}
@@ -12374,6 +12383,24 @@ async function mcCerrarMailSiCorresponde(msgId, asunto){
   if(!quedan) await mcRegistrar(msgId + '|*', 'completo', '', '', asunto, '');
 }
 
+// Lo que identifica a una carga de un vistazo: booking, lotes (o planilla), contrato del proveedor y toneladas.
+function mcResumenPartes(c){
+  const d = Object.assign({}, (c.item && c.item.data) || {}, (c.item && c.item.edit) || {});
+  const p = [];
+  if(d.booking) p.push('Booking ' + d.booking);
+  if(d.lots) p.push('Lotes ' + d.lots); else if(c.hints && c.hints.planilla) p.push('Planilla ' + c.hints.planilla);
+  if(d.contractProv) p.push('Ctto ' + d.contractProv);
+  if(d.tns) p.push(d.tns + ' tn');
+  return p;
+}
+function mcResumenHilo(threadId){
+  return _mc.cards.filter(c => c.mail.threadId === threadId).map(c => mcResumenPartes(c).join(' · ')).filter(Boolean).join(' | ');
+}
+function mcChipsHtml(c){
+  const it = c.item;
+  const cli = it.customer ? '<span class="mc-chip cli">' + escH(it.customer) + '</span>' : '<span class="mc-chip falta">Sin cliente</span>';
+  return '<div class="mc-chips">' + cli + mcResumenPartes(c).map(x => '<span class="mc-chip">' + escH(x) + '</span>').join('') + '</div>';
+}
 // Una cadena (hilo de Gmail) marcada "lista" ya no se lee: ni sus mails ni los que lleguen despues en la misma cadena. Se anota en la misma pestaña
 // MAILS_CARGA con la clave "hilo|<id de la cadena>" y estado "lista" (o "reabierta" si se vuelve a abrir: la ultima fila manda).
 function mcHiloListo(threadId){
@@ -12389,7 +12416,7 @@ async function mcMarcarHiloLista(threadId, asunto, detalle){
 async function mcCerrarHiloSiCorresponde(mail){
   if(!mail || !mail.threadId || mcHiloListo(mail.threadId)) return;
   const quedan = _mc.cards.some(c => c.mail.threadId === mail.threadId && !_mc.registro.has(c.clave));
-  if(!quedan) await mcMarcarHiloLista(mail.threadId, mail.asunto, 'al guardar la última carga');
+  if(!quedan) await mcMarcarHiloLista(mail.threadId, mail.asunto, [mcResumenHilo(mail.threadId), '(al guardar la última carga)'].filter(Boolean).join(' '));
 }
 function mcSacarCadena(threadId){
   _mc.cards = _mc.cards.filter(c => c.mail.threadId !== threadId || c.item.estado === 'ok');
@@ -12401,7 +12428,7 @@ async function mcMarcarLista(k){
   const n = _mc.cards.filter(x => x.mail.threadId === c.mail.threadId && x.item.estado !== 'ok').length;
   const ok = await showConfirm('Marcar esta cadena como lista', '"' + c.mail.asunto + '": el hub no la va a leer más (ni los mails nuevos que lleguen en esa cadena), para vos y para el equipo. ' + (n > 1 ? 'Las ' + n + ' cargas pendientes de esta cadena salen de la bandeja. ' : 'Esta carga sale de la bandeja. ') + 'No se escribe nada en la planilla de cargas. Si después la necesitás, la reabrís desde Históricas.', { icono: '✅', okLabel: 'Marcar como lista' });
   if(!ok) return;
-  if(!(await mcMarcarHiloLista(c.mail.threadId, c.mail.asunto, 'marcada a mano'))){ alert('No pude anotarlo en la hoja ' + MC_HOJA + '. No se marcó.'); return; }
+  if(!(await mcMarcarHiloLista(c.mail.threadId, c.mail.asunto, [mcResumenHilo(c.mail.threadId), '(marcada a mano)'].filter(Boolean).join(' ')))){ alert('No pude anotarlo en la hoja ' + MC_HOJA + '. No se marcó.'); return; }
   mcSacarCadena(c.mail.threadId);
   renderBandeja();
 }
@@ -12415,7 +12442,7 @@ async function mcMarcarTodoLista(){
   if(!ok) return;
   let fallo = 0;
   for(const [tid, asunto] of hilos){
-    if(await mcMarcarHiloLista(tid, asunto, 'marcada a mano (todo junto)')) mcSacarCadena(tid); else fallo++;
+    if(await mcMarcarHiloLista(tid, asunto, [mcResumenHilo(tid), '(marcada a mano, todo junto)'].filter(Boolean).join(' '))) mcSacarCadena(tid); else fallo++;
   }
   if(fallo) alert('No pude anotar ' + fallo + ' cadena' + (fallo === 1 ? '' : 's') + ' en la hoja ' + MC_HOJA + ': siguen en la bandeja.');
   renderBandeja();
@@ -12432,7 +12459,7 @@ function mcHistorico(){
   const out = [];
   _mc.registro.forEach((v, k) => {
     if(k.indexOf('hilo|') === 0){ if(v.estado === 'lista') out.push({ tipo: 'hilo', id: k.slice(5), v }); }
-    else if(/\|\*$/.test(k) && v.estado === 'completo') out.push({ tipo: 'mail', id: k.slice(0, -2), v });
+    else if(v.estado === 'cargada' && k.indexOf('|') > 0) out.push({ tipo: 'mail', id: k.split('|')[0], v });
   });
   return out.reverse();
 }
@@ -12441,10 +12468,11 @@ function mcHistListaHtml(q){
   const todos = mcHistorico();
   const l = todos.filter(x => !t || [x.v.asunto, x.v.usuario, x.v.detalle, x.v.fecha, x.v.negocio].join(' ').toLowerCase().indexOf(t) >= 0);
   if(!l.length) return '<div class="mc-vacio">' + (todos.length ? 'No hay nada que coincida con "' + escH(q) + '".' : 'Todavía no hay cadenas marcadas como listas.') + '</div>';
-  return l.slice(0, 200).map(x => '<div class="mc-linea"><b>' + (x.tipo === 'hilo' ? '✅ Lista' : '📦 Cargada') + '</b> · ' + escH(x.v.asunto || '(sin asunto)')
-    + ' <span class="mc-src">' + escH((x.v.usuario || '?') + ' · ' + (x.v.fecha || '') + (x.v.detalle ? ' · ' + x.v.detalle : '')) + '</span> '
+  return l.slice(0, 200).map(x => '<div class="mc-h"><span class="mc-chip ' + (x.tipo === 'hilo' ? 'ok' : '') + '">' + (x.tipo === 'hilo' ? '✅ Lista' : '📦 Cargada' + (x.v.fila ? ' · fila ' + escH(x.v.fila) : '')) + '</span>'
+    + '<span class="mc-asu">' + escH(x.v.asunto || '(sin asunto)') + '</span>'
     + '<a class="btn" target="_blank" rel="noopener" href="https://mail.google.com/mail/u/0/#all/' + encodeURIComponent(x.id) + '">Ver el mail</a>'
-    + (x.tipo === 'hilo' ? ' <button class="btn" onclick="mcReabrirHilo(\'' + escH(x.id) + '\')">Reabrir</button>' : '') + '</div>').join('')
+    + (x.tipo === 'hilo' ? '<button class="btn" onclick="mcReabrirHilo(\'' + escH(x.id) + '\')">Reabrir</button>' : '')
+    + '<span class="mc-meta">' + (x.v.detalle ? '<b>' + escH(x.v.detalle) + '</b> · ' : '') + escH((x.v.usuario || '?') + ' · ' + (x.v.fecha || '')) + '</span></div>').join('')
     + (l.length > 200 ? '<div class="mc-vacio">Se muestran 200 de ' + l.length + ': afiná la búsqueda.</div>' : '');
 }
 function mcHistFiltrar(){
@@ -12454,7 +12482,9 @@ function mcHistFiltrar(){
 }
 function mcToggleHist(){ _mc.hist = !_mc.hist; renderBandeja(); }
 function mcHistPanelHtml(){
-  return '<div class="mc-bloque"><b>Históricas</b> · cadenas que ya están listas y mails ya cargados (el hub no los lee)'
+  return '<div class="mc-bloque"><b>Históricas</b> · cadenas que ya están listas y cargas hechas desde mails (el hub no las lee)'
+    + '<div class="mc-donde">Se anotan en la pestaña <b>' + MC_HOJA + '</b> de la planilla <b>HUB LATINUT</b> (la misma del LOG). '
+    + (cfg.hubSheetId ? '<a target="_blank" rel="noopener" href="https://docs.google.com/spreadsheets/d/' + encodeURIComponent(cfg.hubSheetId) + '/edit">Abrir la planilla</a>' : '') + '</div>'
     + '<div style="margin:6px 0;"><input id="mc-hist-q" value="' + escH(_mc.histQ || '') + '" placeholder="🔍 Buscar por asunto, quién la marcó o fecha" style="width:100%;max-width:420px;" oninput="mcHistFiltrar()"></div>'
     + '<div id="mc-hist-lista">' + mcHistListaHtml(_mc.histQ) + '</div></div>';
 }
@@ -12942,7 +12972,7 @@ function mcTarjetaHtml(c, i){
   return '<div class="mc-card' + (hecho ? ' mc-hecha' : '') + '" id="mc-card-' + i + '">'
     + '<div class="mc-top"><label class="mc-inc"><input type="checkbox" id="lt-' + i + '-incluir" ' + (it.incluir ? 'checked' : '') + dis + ' onchange="loteCambio(' + i + ')"></label>'
     + '<span class="mc-tit">' + escH(c.tipo === 'argen' ? 'Argen Peanuts' : 'Nutrin') + ' · ' + escH(d0.lots && c.tipo === 'argen' ? d0.lots : (c.hints.planilla ? 'planilla ' + c.hints.planilla : it.archivo)) + '</span>'
-    + (hecho ? '<span class="lt-ok">✓ Fila ' + it.fila + '</span>' : '') + '<span class="mc-mail">' + escH(c.mail.asunto) + '</span></div>'
+    + (hecho ? '<span class="lt-ok">✓ Fila ' + it.fila + '</span>' : '') + '<span class="mc-mail">' + escH(c.mail.asunto) + '</span>' + mcChipsHtml(c) + '</div>'
     + '<div class="mc-grid">'
     + campo('Customer *', '<input id="lt-' + i + '-customer" list="lt-clientes" value="' + escH(it.customer) + '" placeholder="Elegí el cliente" autocomplete="off"' + dis + ' oninput="loteCambio(' + i + ')">', 'customer')
     + campo('Consolidación', '<input id="lt-' + i + '-consol" type="date" value="' + escH(it.consol) + '"' + dis + ' onchange="loteCambio(' + i + ')">', 'consol')
@@ -13046,7 +13076,7 @@ async function bandejaGuardar(){
 }
 // Lo que pasa despues de escribir cada carga: se anota en el registro, en el LOG y en una nota de la carga (de que mail salio).
 async function bandejaTrasGuardar(it, fila, d){
-  await mcRegistrar(it.clave, 'cargada', negocioActivo, fila, it.mail.asunto, '');
+  await mcRegistrar(it.clave, 'cargada', negocioActivo, fila, it.mail.asunto, [d.booking ? 'Booking ' + d.booking : '', d.lots ? 'Lotes ' + d.lots : '', d.tns ? d.tns + ' tn' : '', d.customer || ''].filter(Boolean).join(' · '));
   await appendLog({ fc: '', fcServ: '', bl: (d.bl || '').trim(), customer: d.customer, accion: 'carga desde mail', detalle: 'fila ' + fila + ' - ' + (it.mail.tipo === 'argen' ? 'Argen' : 'Nutrin') + ' - ' + it.mail.asunto });
   if(_comListo){
     const quien = comNombre(comYo());
