@@ -9276,6 +9276,12 @@ function resumenPagare(rowIndices){
     r.avisos.push(r.sinFactura + ' carga' + (r.sinFactura>1?'s':'') + ' sin numero de factura cargado: no va a figurar en el pagare.');
   if(!r.total)
     r.avisos.push('El total de la seleccion da 0. Revisa la columna TOTAL FINAL.');
+  const ya = filas.filter(row => ['axt', 'docusign', 'firmado', 'otro'].indexOf(estadoPagare(row).key) >= 0);
+  if(ya.length)
+    r.avisos.push(ya.length + ' carga' + (ya.length > 1 ? 's' : '') + ' ya tiene' + (ya.length > 1 ? 'n' : '') + ' un pagaré hecho (' + [...new Set(ya.map(row => estadoPagare(row).label))].join(', ') + '): al generar otro quedan marcadas "En AXT" de nuevo.');
+  const noCorr = filas.filter(row => estadoPagare(row).key === 'na');
+  if(noCorr.length)
+    r.avisos.push(noCorr.length + ' carga' + (noCorr.length > 1 ? 's' : '') + ' figura' + (noCorr.length > 1 ? 'n' : '') + ' como "No corresponde" pagaré (' + [...new Set(noCorr.map(row => estadoPagare(row).motivo))].join(', ') + ').');
   return r;
 }
 
@@ -9299,8 +9305,8 @@ function limpiarPagSel(){ window._pagSel = new Set(); renderPagares(); }
 // ── Generar el pagare (el PDF lo arma el AppScript, que tiene los templates) ──
 let _ultimoPagare = null;
 
-async function generarPagareSel(){
-  const r = resumenPagare([...(window._pagSel||[])]);
+async function generarPagareSel(idxs){
+  const r = resumenPagare([...(idxs || window._pagSel || [])]);
   if(r.bloqueo){ alert(r.bloqueo); return; }
   if(!r.sheetRows.length){ alert('No encontré esas filas en la planilla. Sincronizá y probá de nuevo.'); return; }
 
@@ -9348,6 +9354,25 @@ async function generarPagareSel(){
   window._pagSel = new Set();
   showToast('Pagaré generado');
   await loadLog(); await loadData();
+  return true;
+}
+
+// Desde la vista Tabla de Cargas: con las filas tildadas, el mismo flujo de la pantalla Pagares (resumen, avisos, confirmacion, AppScript).
+// Despues ofrece abrir el pagaré generado.
+async function generarPagareDeTabla(){
+  const sel = window._selFCaGlobal ? window._selFCaGlobal() : [];
+  if(!sel.length){ showToast('Tildá las cargas que cubre el pagaré', 'info'); return false; }
+  const previo = _ultimoPagare;
+  const ok = await generarPagareSel(sel);
+  if(ok && _ultimoPagare && _ultimoPagare !== previo){
+    if(window.limpiarSelFC) window.limpiarSelFC();
+    if(_ultimoPagare.url){
+      const abrir = await showConfirm('Pagaré generado', _ultimoPagare.nombre + ' · ' + _ultimoPagare.cargas + ' carga' + (_ultimoPagare.cargas > 1 ? 's' : '') + ' · ' + usdPagare(_ultimoPagare.total) + '. Las filas quedaron marcadas "En AXT".',
+        { icono: '📄', okLabel: 'Abrir el pagaré' });
+      if(abrir) window.open(_ultimoPagare.url, '_blank');
+    }
+  }
+  return !!ok;
 }
 
 // ── Cambiar el estado ──
@@ -14030,6 +14055,7 @@ function actualizarToolbarCargas(){
     '<button class="tb-btn prim"' + dis + ' onclick="requestBulkFC()">📄 FC</button>' +
     '<button class="tb-btn"' + dis + ' onclick="bulkAvisoCliente()">📦 Aviso cliente</button>' +
     '<button class="tb-btn"' + dis + ' onclick="bulkLiberacion()">🚢 Liberación</button>' +
+    (getNegocioConfig().sinPagares ? '' : '<button class="tb-btn" onclick="generarPagareDeTabla()" title="Genera el pagaré de las cargas tildadas (te muestra el resumen y los avisos antes de generar)">📝 Pagaré</button>') +
     '<button class="tb-btn" onclick="reclamoCobroDeSeleccion()">✉ Cobro</button>' +
     '<button class="tb-btn" onclick="abrirFacturaForwarder(window._selFCaGlobal())">🚚 Factura fwd</button>' +
     '<button class="tb-btn" onclick="marcarDudaNOP(window._selFCaGlobal(),true)" title="Deja el Producto en violeta hasta saber si es NOP">❓ Duda NOP</button>' +
