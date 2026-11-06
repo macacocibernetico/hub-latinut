@@ -1426,6 +1426,13 @@ body{background:radial-gradient(760px 420px at 86% -12%,rgba(var(--lg-a-rgb),.05
 .cob-marcar{height:42px;padding:0 16px;border-radius:14px;border:1px solid rgba(255,255,255,.95);background:rgba(255,255,255,.82);box-shadow:0 1px 3px rgba(35,55,110,.08),0 0 0 1px rgba(23,43,77,.05);font:600 14px var(--font);color:var(--lg-ink);cursor:pointer;transition:background .18s,box-shadow .18s;}
 .cob-marcar:hover{background:#fff;box-shadow:0 4px 12px rgba(35,55,110,.12),0 0 0 1px rgba(23,43,77,.06);color:var(--lg-ink);}
 .cob-marcar:focus-visible{outline:2px solid rgba(var(--lg-a-rgb),.6);outline-offset:2px;}
+
+/* Colores de celda con significado (pintado, duda NOP, marca del hub, fila vista): ganan SIEMPRE sobre el fondo de fila actual, fila par, hover o
+   seleccion. El rediseño de la tabla agrego esos fondos con la misma especificidad y, al venir despues, tapaban el pintado de la celda elegida. */
+.tabla-cargas .t-grid tbody tr.vista td{background:#dcf2d8;}
+.tabla-cargas .t-grid tbody tr td.t-pint{background:var(--pin);color:#1f2933;}
+.tabla-cargas .t-grid tbody tr td.t-duda{background:#d9c9f7;color:#3b1f78;}
+.tabla-cargas .t-grid tbody tr td.t-marca{background:#ffb347;color:#3d2400;}
 </style>
 </head>
 <body>
