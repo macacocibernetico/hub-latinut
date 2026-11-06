@@ -1433,6 +1433,16 @@ body{background:radial-gradient(760px 420px at 86% -12%,rgba(var(--lg-a-rgb),.05
 .tabla-cargas .t-grid tbody tr td.t-pint{background:var(--pin);color:#1f2933;}
 .tabla-cargas .t-grid tbody tr td.t-duda{background:#d9c9f7;color:#3b1f78;}
 .tabla-cargas .t-grid tbody tr td.t-marca{background:#ffb347;color:#3d2400;}
+
+.tabla-filtro-pop{max-height:calc(100vh - 16px);overflow:auto;}
+.tfp-cond{border-bottom:1px solid var(--border);padding-bottom:8px;margin-bottom:8px;}
+.tfp-sec{font-size:12px;font-weight:600;color:var(--lg-muted);margin-bottom:4px;}
+.tfp-cond select,.tfp-cond input{width:100%;margin-bottom:5px;padding:6px 9px;border-radius:10px;border:1px solid rgba(23,43,77,.14);background:rgba(255,255,255,.95);color:var(--lg-text);font:500 13px var(--font);}
+.tfp-cond select:focus,.tfp-cond input:focus{outline:none;border-color:rgba(var(--lg-a-rgb),.6);box-shadow:0 0 0 3px rgba(var(--lg-a-rgb),.15);}
+
+/* Los comentarios y las notas se pueden elegir y copiar (nada hereda user-select:none de la tabla) */
+.com-globo,.com-globo *:not(button),.nota-pop,.nota-pop *:not(button),.nota-wrap .nota-tx,.nota-wrap .nota-meta,.nota-hilo .nota-tx,.com-texto{user-select:text;-webkit-user-select:text;}
+.com-texto,.nota-tx{cursor:text;}
 </style>
 </head>
 <body>
@@ -1659,7 +1669,7 @@ function setNegocio(n){
   cargasPage = 0;
   // La tabla es de un negocio: al cambiar se limpian sus filtros, lo pendiente
   // y las columnas con formula (son de otra planilla).
-  cargasColFiltros = {}; cargasColSort = null; cargasPend = {}; _formulaCols = null; _tablaSel = null;
+  cargasColFiltros = {}; cargasColCond = {}; cargasColSort = null; cargasPend = {}; _formulaCols = null; _tablaSel = null;
   logVerTodos = false;
   cfFiltros = [];
   cfFiltroEntidades = new Set();
@@ -6169,6 +6179,7 @@ function renderCargas(showAll, sort){
 // columnas con formula no se pueden editar.
 let cargasColFiltros = {};     // { indiceColumna: Set(valores permitidos) }
 let cargasColSort = null;      // { col, dir: 1 | -1 } — pisa al orden de arriba
+let cargasColCond = {};        // { indiceColumna: { op, a, b } } — filtro por condicion, como en Sheets (esta vacia, contiene, mayor que...)
 let cargasTablaLimite = 200;
 let cargasTablaFull = false;
 let cargasTablaIrAlFinal = true;  // la proxima vez que se dibuja, bajar hasta la ultima fila
@@ -6272,10 +6283,66 @@ async function detectarFormulasCargas(){
 function esColFormula(c){ return !!(_formulaCols && _formulaCols.has(c)); }
 
 // ── Filtro y orden por columna ──
+// Condiciones del filtro (las mismas ideas que "Filtrar por condicion" de Google Sheets): [clave, texto, cuantos valores pide]
+const COND_OPS = [
+  ['vacia', 'Está vacía', 0], ['llena', 'No está vacía', 0],
+  ['contiene', 'Texto contiene', 1], ['nocontiene', 'Texto no contiene', 1], ['empieza', 'Texto empieza con', 1], ['termina', 'Texto termina con', 1], ['exacto', 'Texto es exactamente', 1],
+  ['fanterior', 'Fecha es anterior a', 1], ['fposterior', 'Fecha es posterior a', 1], ['figual', 'Fecha es igual a', 1],
+  ['mayor', 'Mayor que', 1], ['mayorig', 'Mayor o igual que', 1], ['menor', 'Menor que', 1], ['menorig', 'Menor o igual que', 1],
+  ['igual', 'Es igual a', 1], ['distinto', 'No es igual a', 1], ['entre', 'Está entre', 2], ['noentre', 'No está entre', 2]
+];
+function condNorm(t){ return String(t === undefined || t === null ? '' : t).normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim(); }
+function condFecha(t){
+  const x = String(t === undefined || t === null ? '' : t).trim();
+  if(!x) return null;
+  const d = parseDate(typeof completarFecha === 'function' ? completarFecha(x) : x);
+  return d && !isNaN(d.getTime()) ? d : null;
+}
+const condDia = d => d.getFullYear() * 10000 + (d.getMonth() + 1) * 100 + d.getDate();
+function condCumple(valor, cond){
+  const v = String(valor === undefined || valor === null ? '' : valor).trim(), op = cond.op, a = cond.a, b = cond.b;
+  const tv = condNorm(v), ta = condNorm(a);
+  switch(op){
+    case 'vacia': return v === '';
+    case 'llena': return v !== '';
+    case 'contiene': return tv.indexOf(ta) >= 0;
+    case 'nocontiene': return tv.indexOf(ta) < 0;
+    case 'empieza': return tv.indexOf(ta) === 0;
+    case 'termina': return ta.length <= tv.length && tv.slice(tv.length - ta.length) === ta;
+    case 'exacto': return tv === ta;
+    case 'fanterior': case 'fposterior': case 'figual': {
+      const d = condFecha(v), x = condFecha(a);
+      if(!d || !x) return false;
+      const dd = condDia(d), xx = condDia(x);
+      return op === 'fanterior' ? dd < xx : op === 'fposterior' ? dd > xx : dd === xx;
+    }
+    case 'igual': case 'distinto': {
+      const n = parseSheetNum(v), x = parseSheetNum(a);
+      const eq = (v !== '' && !isNaN(n) && !isNaN(x)) ? n === x : tv === ta;
+      return op === 'igual' ? eq : !eq;
+    }
+    default: {
+      const n = parseSheetNum(v), x = parseSheetNum(a), y = parseSheetNum(b);
+      if(v === '' || isNaN(n) || isNaN(x)) return false;
+      if(op === 'mayor') return n > x; if(op === 'mayorig') return n >= x; if(op === 'menor') return n < x; if(op === 'menorig') return n <= x;
+      if(isNaN(y)) return false;
+      const dentro = n >= Math.min(x, y) && n <= Math.max(x, y);
+      return op === 'entre' ? dentro : !dentro;
+    }
+  }
+}
+function condDescribir(cond){
+  const d = COND_OPS.find(o => o[0] === cond.op); if(!d) return '';
+  return d[1].toLowerCase() + (d[2] >= 1 ? ' "' + cond.a + '"' : '') + (d[2] === 2 ? ' y "' + cond.b + '"' : '');
+}
 function aplicarFiltrosColumna(rows){
   Object.keys(cargasColFiltros).forEach(k => {
     const c = parseInt(k), ok = cargasColFiltros[k];
     rows = rows.filter(r => ok.has(valorCelda(r, c).trim()));
+  });
+  Object.keys(cargasColCond).forEach(k => {
+    const c = parseInt(k), cond = cargasColCond[k];
+    rows = rows.filter(r => condCumple(valorCelda(r, c), cond));
   });
   if(cargasColSort){
     const { col, dir } = cargasColSort;
@@ -6306,6 +6373,11 @@ function htmlFiltroColumna(c){
   return `
     <div class="tfp-tit">${esc(encabezadosCargas()[c] || colIndexToLetter(c))}</div>
     <div class="tfp-ord"><button onclick="ordenarColumna(${c},1)">Ordenar A → Z</button><button onclick="ordenarColumna(${c},-1)">Ordenar Z → A</button></div>
+    <div class="tfp-cond"><div class="tfp-sec">Filtrar por condición</div>
+      <select id="tfp-op" aria-label="Condición del filtro" onchange="condCambio()"><option value="">Ninguna</option>${COND_OPS.map(o => `<option value="${o[0]}"${cargasColCond[c] && cargasColCond[c].op === o[0] ? ' selected' : ''}>${o[1]}</option>`).join('')}</select>
+      <input id="tfp-v1" placeholder="Valor" aria-label="Valor del filtro" value="${esc(cargasColCond[c] ? cargasColCond[c].a : '')}" style="display:none;">
+      <input id="tfp-v2" placeholder="y" aria-label="Segundo valor del filtro" value="${esc(cargasColCond[c] ? cargasColCond[c].b : '')}" style="display:none;">
+    </div>
     <input class="tfp-buscar" id="tfp-buscar" placeholder="Buscar valor" oninput="filtrarListaFiltro(this.value)">
     <div class="tfp-acc"><span onclick="marcarTodosFiltro(true)">Seleccionar todo</span> · <span onclick="marcarTodosFiltro(false)">Borrar</span></div>
     <div class="tfp-lista" id="tfp-lista">${valores.map(v => `<label data-v="${esc(v.toLowerCase())}"><input type="checkbox" value="${esc(v)}" ${!activos || activos.has(v) ? 'checked' : ''}> ${v === '' ? '<i>(vacías)</i>' : esc(v)} <span>${cuenta[v]}</span></label>`).join('')}</div>
@@ -6324,10 +6396,18 @@ function abrirFiltroColumna(c, ev){
   _filtroAbierto = true;
   const btn = ev && ev.currentTarget && ev.currentTarget.getBoundingClientRect ? ev.currentTarget.getBoundingClientRect() : null;
   if(btn){
-    pop.style.top = Math.min(btn.bottom + 4, window.innerHeight - 380) + 'px';
+    pop.style.top = Math.max(8, Math.min(btn.bottom + 4, window.innerHeight - 520)) + 'px';
     pop.style.left = Math.max(8, Math.min(btn.left - 200, window.innerWidth - 290)) + 'px';
   }
+  condCambio();
   const b = document.getElementById('tfp-buscar'); if(b && b.focus) b.focus();
+}
+// Muestra el/los cuadros de valor que pide la condicion elegida.
+function condCambio(){
+  const sel = document.getElementById('tfp-op'), v1 = document.getElementById('tfp-v1'), v2 = document.getElementById('tfp-v2');
+  const def = COND_OPS.find(o => sel && o[0] === sel.value), n = def ? def[2] : 0;
+  if(v1) v1.style.display = n >= 1 ? '' : 'none';
+  if(v2) v2.style.display = n >= 2 ? '' : 'none';
 }
 function cerrarFiltroColumna(){ _filtroAbierto = false; const p = document.getElementById('tabla-filtro-pop'); if(p && p.parentNode) p.parentNode.removeChild(p); }
 function filtrarListaFiltro(q){
@@ -6336,6 +6416,13 @@ function filtrarListaFiltro(q){
 }
 function marcarTodosFiltro(v){ document.querySelectorAll('#tfp-lista input').forEach(i => { if(i.parentNode.style.display !== 'none') i.checked = v; }); }
 function aplicarFiltroColumna(c){
+  const opSel = document.getElementById('tfp-op'), op = opSel ? opSel.value : '';
+  if(op){
+    const def = COND_OPS.find(o => o[0] === op);
+    const a = (document.getElementById('tfp-v1').value || '').trim(), b = (document.getElementById('tfp-v2').value || '').trim();
+    if(def && ((def[2] >= 1 && !a) || (def[2] === 2 && !b))){ showToast('Escribí el valor para "' + def[1] + '"', 'warn'); return; }
+    cargasColCond[c] = { op, a, b };
+  } else delete cargasColCond[c];
   const inputs = [...document.querySelectorAll('#tfp-lista input')];
   const ok = new Set(inputs.filter(i => i.checked).map(i => i.value));
   if(ok.size === inputs.length) delete cargasColFiltros[c]; else cargasColFiltros[c] = ok;
@@ -6344,6 +6431,7 @@ function aplicarFiltroColumna(c){
 }
 function ordenarColumna(c, dir){ cargasColSort = { col: c, dir }; cargasTablaIrAlFinal = true; cerrarFiltroColumna(); renderCargas(); }
 function quitarFiltroColumna(c){ delete cargasColFiltros[c]; renderCargas(); }
+function quitarCondColumna(c){ delete cargasColCond[c]; renderCargas(); }
 function quitarOrdenColumna(){ cargasColSort = null; renderCargas(); }
 
 // ── Dibujo ──
@@ -6468,7 +6556,7 @@ function renderCargasTabla(rows){
   const corte = {};
   _tablaCols.forEach((c, k) => { const sig = _tablaCols[k + 1]; if(sig !== undefined && tintes[c] !== tintes[sig] && (tintes[c] || tintes[sig])) corte[c] = true; });
   const th = _tablaCols.map((c, k) => {
-    const fil = !!cargasColFiltros[c];
+    const fil = !!cargasColFiltros[c] || !!cargasColCond[c];
     const ord = cargasColSort && cargasColSort.col === c ? (cargasColSort.dir > 0 ? ' ↑' : ' ↓') : '';
     const fija = k < TABLA_FIJAS;
     return `<th data-c="${c}" class="${fija ? 'fija' : ''}${k === TABLA_FIJAS - 1 ? ' fija-ult' : ''}${esColFormula(c) ? ' formula' : ''}" style="min-width:${anchos[c]}px;max-width:${anchos[c]}px;${fija ? 'left:' + left[c] + 'px;' : ''}" title="${esc(hdr[c])} · columna ${colIndexToLetter(c)}${esColFormula(c) ? ' · tiene fórmula, no se edita desde el hub' : ''}"${tintes[c] ? ' data-t="' + tintes[c] + '"' : ''}${corte[c] ? ' data-corte="1"' : ''}>
@@ -6508,6 +6596,7 @@ function renderCargasTabla(rows){
   }).join('');
 
   const chips = Object.keys(cargasColFiltros).map(c => `<span class="t-chip" onclick="quitarFiltroColumna(${c})" title="Quitar filtro">${esc(hdr[c] || colIndexToLetter(c))}: ${cargasColFiltros[c].size} valor${cargasColFiltros[c].size === 1 ? '' : 'es'} ×</span>`).join('') +
+    Object.keys(cargasColCond).map(c => `<span class="t-chip" onclick="quitarCondColumna(${c})" title="Quitar filtro">${esc(hdr[c] || colIndexToLetter(c))} ${esc(condDescribir(cargasColCond[c]))} ×</span>`).join('') +
     (cargasColSort ? `<span class="t-chip" onclick="quitarOrdenColumna()" title="Quitar orden">Orden: ${esc(hdr[cargasColSort.col] || '')} ${cargasColSort.dir > 0 ? 'A→Z' : 'Z→A'} ×</span>` : '');
   const nPend = Object.values(cargasPend).reduce((a, o) => a + Object.keys(o).length, 0);
   if(!nPend) _avisoTabla = '';
@@ -6737,6 +6826,7 @@ function tdDeEvento(ev){ return ev.target && ev.target.closest ? ev.target.close
 function tablaMouseDown(ev){
   const td = tdDeEvento(ev);
   if(!td || td.querySelector('input') || ev.button > 0) return;
+  try{ const sl = window.getSelection ? window.getSelection() : null; if(sl && !sl.isCollapsed && sl.removeAllRanges) sl.removeAllRanges(); }catch(e){}
   const rr = parseInt(td.getAttribute('data-r')), cc = parseInt(td.getAttribute('data-c'));
   marcarCelda(rr, cc, !!ev.shiftKey);
   if(!ev.shiftKey && comAbiertosCelda(_tablaRows[rr], cc).length) abrirComentarios(rr, cc);
@@ -7174,6 +7264,17 @@ function tablaTeclado(e){
 // Copiar: las celdas elegidas, con lo que se ve (incluidos los cambios pendientes). Se puede pegar en Sheets, Excel o en otra celda.
 // Pegar: arranca en la celda de arriba a la izquierda de lo elegido. Todo queda como cambio pendiente en amarillo: nada va a la
 // planilla hasta "Revisar y guardar". Si se pega un solo valor sobre varias celdas elegidas, se repite en todas (como Sheets).
+// Hay texto elegido con el mouse fuera de la grilla (en un comentario, una nota, un cuadro...)? La grilla no deja elegir texto (user-select:none),
+// asi que si lo hay es de otra parte: copiar/cortar tienen que dejar que el navegador copie ESE texto en vez de pisarlo con las celdas elegidas.
+function _hayTextoSeleccionado(){
+  try{
+    const sel = window.getSelection ? window.getSelection() : null;
+    if(!sel || sel.isCollapsed || !sel.rangeCount) return false;
+    if(!String(sel.toString() || '').trim()) return false;
+    const g = document.getElementById('t-grid'), n = sel.anchorNode;
+    return !(g && n && g.contains && g.contains(n));
+  }catch(e){ return false; }
+}
 function _tablaEnGrilla(e){
   if(currentView !== 'cargas' || cargasVista !== 'tabla' || !_tablaSel) return false;
   const t = e && e.target;
@@ -7205,6 +7306,7 @@ function parsearTSV(txt){
 }
 function tablaCopiar(e){
   if(!_tablaEnGrilla(e)) return false;
+  if(_hayTextoSeleccionado()) return false;
   const g = rangoTabla() || { r1: _tablaSel.r, r2: _tablaSel.r, k1: _tablaCols.indexOf(_tablaSel.c), k2: _tablaCols.indexOf(_tablaSel.c) };
   if(g.k1 < 0) return false;
   const lineas = [];
@@ -11539,7 +11641,7 @@ function notaContenidoHTML(row, modo){
   }
   const abierto = _notasAbiertas.has(fila);
   const pin = (n && !abierto)
-    ? '<div class="nota-pin" onclick="notaAlternar(' + fila + ')"><div class="nota-av">' + escH((comNombre(ultima.autor)[0] || '?').toUpperCase()) + '</div><div><div class="nota-meta"><b>' + escH(comNombre(ultima.autor)) + '</b> · ' + escH(comFecha(ultima.fecha)) + '</div>' +
+    ? '<div class="nota-pin" onclick="if(!_hayTextoSeleccionado())notaAlternar(' + fila + ')"><div class="nota-av">' + escH((comNombre(ultima.autor)[0] || '?').toUpperCase()) + '</div><div><div class="nota-meta"><b>' + escH(comNombre(ultima.autor)) + '</b> · ' + escH(comFecha(ultima.fecha)) + '</div>' +
       '<div class="nota-tx">' + escH(ultima.texto.length > 180 ? ultima.texto.slice(0, 180) + '…' : ultima.texto) + '</div>' + (n > 1 ? '<div class="nota-mas">💬 ' + (n - 1) + ' nota' + (n === 2 ? '' : 's') + ' más · Ver y responder</div>' : '') + '</div></div>'
     : '';
   const boton = '<div style="margin-top:8px;"><button class="nota-btn" onclick="notaAlternar(' + fila + ')">💬 ' + (abierto ? 'Cerrar notas' : (n ? 'Notas (' + n + ')' : 'Nota')) + '</button></div>';
@@ -11553,9 +11655,11 @@ function notaWrapHTML(row, modo){
 function filaPorSheetRow(n){ return allRowsAll.find(r => r._sheetRow === n) || allRows.find(r => r._sheetRow === n) || null; }
 // Vuelve a dibujar las notas que estan en pantalla, sin tocar el resto ni lo que se esta escribiendo.
 function notasRefrescar(){
+  const sl = window.getSelection ? window.getSelection() : null;
   document.querySelectorAll('.nota-wrap').forEach(w => {
     const ta = w.querySelector ? w.querySelector('textarea') : null;
     if(ta && (ta.value || '').trim()) return;                       // no se pisa lo que alguien esta escribiendo
+    if(sl && !sl.isCollapsed && sl.anchorNode && w.contains && w.contains(sl.anchorNode)) return;   // ni lo que alguien esta eligiendo para copiar
     const row = filaPorSheetRow(parseInt(w.getAttribute('data-nota-fila'), 10));
     if(row) w.innerHTML = notaContenidoHTML(row, w.getAttribute('data-nota-modo'));
   });
