@@ -12685,7 +12685,7 @@ function itemLote(archivo, data){
 function datosCargaLote(it){
   const d0 = Object.assign({}, it.data, it.edit || {});
   const producto = productoSegunReglas(d0.product, it.customer, d0.port);
-  const d = { tns: d0.tns, product: producto, packing: d0.packing, lots: d0.lots, pricefob: d0.priceFOB, cNutrin: d0.cNutrin, containers: it.containers,
+  const d = { tns: d0.tns, product: producto, packing: d0.packing, lots: d0.lots, pricefob: d0.priceFOB, cNutrin: d0.cNutrin, containers: (it.mail && typeof mcEsCantidadContenedores === 'function' && mcEsCantidadContenedores(it.containers)) ? '' : it.containers,
               booking: d0.booking, shipping: d0.shipping, vessel: d0.vessel, consol: it.consol, etd: d0.etd, eta: d0.eta,
               port: d0.port, pol: it.pol, exporter: d0.exporter, customer: it.customer, contractProv: d0.contractProv || '' };
   const n = parseSheetNum(d0.tns), p = parseSheetNum(d0.priceFOB);
@@ -13068,6 +13068,51 @@ async function mcGuardarAlias(alias, cliente){
   return r.ok;
 }
 // Despues de guardar: si el mail decia un nombre que no estaba en la lista y elegiste un cliente, ofrece recordarlo.
+// ── Correcciones recordadas (pestaña ALIAS_CAMPOS de HUB LATINUT, compartida con el equipo) ──
+async function mcCargarCorrecciones(){
+  _mc.corr = new Map();
+  try{
+    const r0 = await fetch('https://sheets.googleapis.com/v4/spreadsheets/' + cfg.hubSheetId + '?fields=sheets.properties.title', { headers: { Authorization: 'Bearer ' + accessToken } });
+    if(!r0.ok) return;
+    const t = (((await r0.json()).sheets || []).map(x => ((x.properties || {}).title || '')).find(x => x.trim().toLowerCase() === MC_HOJA_CAMPOS.toLowerCase())) || null;
+    _mc.corrTitulo = t;
+    if(!t) return;
+    const r = await fetch('https://sheets.googleapis.com/v4/spreadsheets/' + cfg.hubSheetId + '/values/' + encodeURIComponent(t + '!A2:F'), { headers: { Authorization: 'Bearer ' + accessToken } });
+    if(!r.ok) return;
+    ((await r.json()).values || []).forEach(f => { if(f[0] && f[1] && f[2]) _mc.corr.set(mcClaveCorr(f[0], f[3], f[1]), String(f[2]).trim()); });   // la ultima fila manda
+  }catch(e){ console.warn('Correcciones recordadas:', e); }
+}
+async function mcGuardarCorreccion(k, tipo, det, corr){
+  const base = 'https://sheets.googleapis.com/v4/spreadsheets/' + cfg.hubSheetId, hd = { Authorization: 'Bearer ' + accessToken, 'Content-Type': 'application/json' };
+  if(!_mc.corrTitulo){
+    const r1 = await fetch(base + ':batchUpdate', { method: 'POST', headers: hd, body: JSON.stringify({ requests: [{ addSheet: { properties: { title: MC_HOJA_CAMPOS } } }] }) });
+    if(!r1.ok) return false;
+    _mc.corrTitulo = MC_HOJA_CAMPOS;
+    await fetch(base + '/values/' + encodeURIComponent(MC_HOJA_CAMPOS + '!A1:F1') + '?valueInputOption=RAW', { method: 'PUT', headers: hd, body: JSON.stringify({ values: [['Campo', 'Lo que dice el mail', 'Lo correcto', 'Tipo de mail', 'Usuario', 'Fecha']] }) });
+  }
+  const r = await fetch(base + '/values/' + encodeURIComponent(_mc.corrTitulo + '!A:F') + ':append?valueInputOption=RAW&insertDataOption=INSERT_ROWS',
+    { method: 'POST', headers: hd, body: JSON.stringify({ values: [[k, det, corr, tipo || '', getMiEmail() || '', comAhora()]] }) });
+  if(r.ok){ if(!_mc.corr) _mc.corr = new Map(); _mc.corr.set(mcClaveCorr(k, tipo, det), corr); }
+  return r.ok;
+}
+// Despues de guardar: si corregiste un campo que el mail trae (producto, puerto, naviera, packing, exporter), ofrece recordarlo.
+async function mcOfrecerCorrecciones(cards){
+  const pares = [];
+  cards.forEach(c => {
+    if(c.item.estado !== 'ok') return;
+    MC_CAMPOS_CORR.forEach(([k, etq]) => {
+      const det = String((c.item.data && c.item.data[k]) || '').trim(), nuevo = String((c.item.edit && c.item.edit[k]) || '').trim();
+      if(!det || !nuevo || normTar(det) === normTar(nuevo)) return;
+      const clave = mcClaveCorr(k, c.tipo, det);
+      if((_mc.corr && _mc.corr.get(clave)) === nuevo || pares.some(p => p.clave === clave)) return;
+      pares.push({ clave, k, etq, tipo: c.tipo, det, nuevo });
+    });
+  });
+  for(const p of pares){
+    const ok = await showConfirm('¿Recordar esta corrección?', 'En los mails de ' + (p.tipo === 'argen' ? 'Argen Peanuts' : 'Nutrin') + ' el ' + p.etq + ' decía "' + p.det + '" y cargaste "' + p.nuevo + '". Si lo recordás, la próxima vez el hub pone "' + p.nuevo + '" solo (lo podés seguir cambiando en la tarjeta). Se anota en la pestaña ' + MC_HOJA_CAMPOS + ' de HUB LATINUT (se crea si no existe) y lo ve todo el equipo.', { icono: '🧠', okLabel: 'Recordarlo' });
+    if(ok && !(await mcGuardarCorreccion(p.k, p.tipo, p.det, p.nuevo))) showToast('No pude anotar la corrección', 'warn');
+  }
+}
 async function mcOfrecerAlias(cards){
   const pares = [];
   cards.forEach(c => {
@@ -13405,20 +13450,38 @@ function mcCodigosLotes(lotes){
   if(!m) return lotes ? [String(lotes).toUpperCase()] : [];
   return [m[2]].concat(m[3].split('/').filter(Boolean)).map(n => m[1] + n);
 }
-// Lotes que manda Calidad en una respuesta: "NU172-71PA1V-0143 22-10-2026 22-04-2026 ... Neto: 21770 kg".
+// Lotes que manda Calidad. Dos formatos:
+//  viejo:  "NU172-71PA1V-0143 22-10-2026 22-04-2026 ... Neto: 21770 kg"
+//  nuevo:  "PA1V-0147  27/10/2026  27/04/2028" y debajo (cuando mandan los pesos) "960 Cajas x 22.68 kg en 20 pallet. Neto: 21770 kg – Bruto: 23200 kg."
+// Cada lote se lee con lo que haya entre el y el lote siguiente, asi el peso de uno nunca se le pega a otro.
+function mcNumeroKg(x){ const t = String(x || ''); return /^\d{1,3}([.,]\d{3})+$/.test(t) ? Number(t.replace(/[.,]/g, '')) : Number(t.replace(',', '.')); }
 function mcLeerLotesCalidad(texto){
-  const out = [];
-  const re = /(NU\d+-\d+)\s*(P[A-Z0-9]+-\d+)\s+(\d{2}-\d{2}-\d{4})\s+(\d{2}-\d{2}-\d{4})/g;
-  let m;
   const t = String(texto || '');
-  while((m = re.exec(t))){
-    const cola = t.slice(m.index + m[0].length, m.index + m[0].length + 400);
-    const n = cola.match(/Neto\s*:\s*([\d.,]+)\s*kg/i);
-    let kg = NaN;
-    if(n){ const s = n[1]; kg = /^\d{1,3}([.,]\d{3})+$/.test(s) ? Number(s.replace(/[.,]/g, '')) : Number(s.replace(',', '.')); }
-    if(!out.some(l => l.codigo === m[1])) out.push({ codigo: m[1], lote: m[2], elaboracion: m[3], vencimiento: m[4], netoKg: kg });
-  }
+  const re = /(?:(NU\d+-\d+)\s*)?(P[A-Z0-9]+-\d+)\s+(\d{2}[-\/]\d{2}[-\/]\d{4})\s+(\d{2}[-\/]\d{2}[-\/]\d{4})/g;
+  const hallados = []; let m;
+  while((m = re.exec(t))) hallados.push({ m, ini: m.index, fin: m.index + m[0].length });
+  const out = [];
+  hallados.forEach((h, k) => {
+    const cola = t.slice(h.fin, Math.min(h.fin + 400, k + 1 < hallados.length ? hallados[k + 1].ini : t.length));
+    const n = cola.match(/Neto\s*:\s*([\d.,]+)\s*kg/i), br = cola.match(/Bruto\s*:\s*([\d.,]+)\s*kg/i);
+    const cj = cola.match(/(\d[\d.]*)\s*Cajas\s*x\s*([\d.,]+)\s*kg(?:\s*en\s*(\d+)\s*pallets?)?/i);
+    const dato = { codigo: h.m[1] || '', lote: h.m[2], elaboracion: h.m[3], vencimiento: h.m[4],
+      netoKg: n ? mcNumeroKg(n[1]) : NaN, brutoKg: br ? mcNumeroKg(br[1]) : NaN,
+      cajas: cj ? mcNumeroKg(cj[1]) : NaN, kgCaja: cj ? mcNumeroKg(cj[2]) : NaN, pallets: cj && cj[3] ? Number(cj[3]) : NaN };
+    const previo = out.find(l => l.lote === dato.lote);
+    if(!previo) out.push(dato);
+    else if(isNaN(previo.netoKg) && !isNaN(dato.netoKg)) Object.assign(previo, dato, { codigo: previo.codigo || dato.codigo });
+  });
   return out;
+}
+// Junta lotes de varios mails de la cadena: si un lote aparece sin peso y despues con peso, queda con el peso.
+function mcFusionarLotes(acum, nuevos){
+  (nuevos || []).forEach(l => {
+    const p = acum.find(x => x.lote === l.lote);
+    if(!p) acum.push(Object.assign({}, l));
+    else if(isNaN(p.netoKg) && !isNaN(l.netoKg)) Object.assign(p, l, { codigo: p.codigo || l.codigo });
+  });
+  return acum;
 }
 function mcSegmentoPlanilla(texto, booking){
   const t = String(texto || '');
@@ -13433,12 +13496,10 @@ function mcSegmentoPlanilla(texto, booking){
 async function mcLotesDeHilo(threadId, original, booking){
   try{
     const h = await gmailJson('threads/' + threadId + '?format=full');
-    const textos = (h.messages || []).filter(x => x.id !== original).map(x => mcMensaje(x).texto);
-    for(const tx of textos){
-      const seg = mcSegmentoPlanilla(tx, booking);
-      const lotes = mcLeerLotesCalidad(seg);
-      if(lotes.length) return lotes;
-    }
+    // Todos los mails de la cadena, incluido el original: ahora los lotes vienen en el mismo mail y los pesos en una respuesta posterior.
+    const acum = [];
+    (h.messages || []).forEach(x => mcFusionarLotes(acum, mcLeerLotesCalidad(mcSegmentoPlanilla(mcMensaje(x).texto, booking))));
+    return acum;
   }catch(e){ console.warn('Lotes del hilo:', e); }
   return [];
 }
@@ -13460,12 +13521,26 @@ async function mcLeerProforma(buf, nombre){
 }
 
 // ── Armar las tarjetas ──
+// "1x40 HC" es una CANTIDAD de contenedores, no un numero: en la columna Containers va el numero (MSKU1234567), que se completa despues.
+const mcEsCantidadContenedores = t => /^\d+\s*[xX]\s*\d+/.test(String(t || '').trim());
+// Correcciones que el equipo ya hizo y pidio recordar (pestaña ALIAS_CAMPOS): campo + tipo de mail + lo que dijo el mail -> lo correcto.
+const MC_HOJA_CAMPOS = 'ALIAS_CAMPOS';
+const MC_CAMPOS_CORR = [['product', 'Producto'], ['port', 'Puerto'], ['shipping', 'Naviera'], ['packing', 'Packing'], ['exporter', 'Exporter']];
+const mcClaveCorr = (k, tipo, det) => k + '|' + (tipo || '') + '|' + normTar(det);
 function mcNuevaTarjeta(b){
   const it = itemLote(b.archivo, b.data);
-  it.customer = ''; it.consol = b.consol || ''; it.containers = b.containers || ''; it.pol = b.pol || '';
+  it.customer = ''; it.consol = b.consol || ''; it.pol = b.pol || '';
+  const cont = String(b.containers || '').trim();
+  if(mcEsCantidadContenedores(cont)){ it.containers = ''; it.contHint = cont; } else it.containers = cont;   // la cantidad es solo un dato de control
   it.edit = { lots: b.lots !== undefined ? b.lots : ((b.data && b.data.lots) || ''), contractProv: b.contractProv || '' };
   it.mail = b.mail; it.clave = b.clave;
-  return { candidatos: (b.candidatos || []).filter(Boolean), fuentesCliente: b.fuentesCliente || '', clave: b.clave, tipo: b.tipo, negocio: b.negocio || '', motivoNegocio: b.motivoNegocio || '', item: it, fuentes: b.fuentes || {}, hints: b.hints || {}, avisos: b.avisos || [], ia: b.ia || null, noCargable: b.noCargable || '', mail: b.mail, lotesCalidad: b.lotesCalidad || [] };
+  const fuentes = b.fuentes || {};
+  MC_CAMPOS_CORR.forEach(([k]) => {
+    const det = String((it.data && it.data[k]) || '').trim();
+    const hit = det && _mc.corr ? _mc.corr.get(mcClaveCorr(k, b.tipo, det)) : '';
+    if(hit){ it.edit[k] = hit; fuentes[k] = 'lo corrigió el equipo antes (el mail decía "' + det + '")'; }
+  });
+  return { candidatos: (b.candidatos || []).filter(Boolean), fuentesCliente: b.fuentesCliente || '', clave: b.clave, tipo: b.tipo, negocio: b.negocio || '', motivoNegocio: b.motivoNegocio || '', item: it, fuentes: fuentes, hints: b.hints || {}, avisos: b.avisos || [], ia: b.ia || null, noCargable: b.noCargable || '', mail: b.mail, lotesCalidad: b.lotesCalidad || [] };
 }
 async function mcTarjetasArgen(m, full){
   const xl = full.adjuntos.filter(a => /\.xlsx?$/i.test(a.nombre));
@@ -13533,12 +13608,14 @@ async function mcTarjetasNutrin(m, full){
       if(data.product !== 'Peanut paste with vitamins') avisos.push('El lote ' + lotesCal.find(l => /^PA1V/i.test(l.lote)).lote + ' es de pasta de maní con vitaminas (PA1V): pasé el producto a "Peanut paste with vitamins".');
       data.product = 'Peanut paste with vitamins'; notaProducto = 'lote PA1V = pasta con vitaminas';
     }
+    if(codigos.length && codigos.length === lotesCal.length) lotesCal.forEach((l, k) => { if(!l.codigo) l.codigo = codigos[k]; });   // el mail trae los lotes en el orden de los contratos
     if(lotesCal.length){
       lots = lotesCal.map(l => l.lote).join(', ');
       const suma = lotesCal.reduce((s, l) => s + (isNaN(l.netoKg) ? 0 : l.netoKg), 0) / 1000;
       const tp = numeroCelda(data.tns);
       if(suma && !isNaN(tp) && Math.abs(suma - tp) > Math.max(0.05, tp * 0.01)) avisos.push('Los lotes de Calidad suman ' + String(Math.round(suma * 100) / 100).replace('.', ',') + ' tn netas y la planilla dice ' + data.tns + ': revisá el peso.');
-      if(codigos.length && codigos.some(c => !lotesCal.find(l => l.codigo === c))) avisos.push('Calidad todavía no mandó todos los lotes (' + codigos.join(', ') + ').');
+      if(codigos.length && lotesCal.length < codigos.length) avisos.push('Calidad todavía no mandó todos los lotes: pasó ' + lotesCal.length + ' y la planilla tiene ' + codigos.length + ' contratos (' + codigos.join(', ') + ').');
+      else if(codigos.length && lotesCal.length > codigos.length) avisos.push('Calidad pasó ' + lotesCal.length + ' lotes y la planilla tiene ' + codigos.length + ' contratos (' + codigos.join(', ') + '): revisá cuáles son.');
     }
     if(!data.booking && bl) data.booking = bl.booking;
     const polI = mcPolDeTexto(m.asunto + ' ' + cuerpo + ' ' + (data.port || ''));
@@ -13596,6 +13673,7 @@ async function mcCargarTodo(){
   try{
     if(!(await mcCargarRegistro())){ _mc.errores.push('No pude leer la hoja ' + MC_HOJA + ' de HUB LATINUT: sin ella no se pueden mostrar las cargas (podrías duplicar una).'); return; }
     await mcCargarAlias();
+    await mcCargarCorrecciones();
     _mc.etapa = 'Buscando los mails de carga en Gmail…'; mcPintarEstado();
     const msgs = await mcBuscarMensajes();
     const pend = msgs.filter(m => !mcProcesado(m.id + '|*') && !mcHiloListo(m.threadId) && !_mc.vistos.has(m.id));
@@ -13642,25 +13720,75 @@ function mcBadge(){
   b.textContent = n || ''; b.style.display = n ? '' : 'none';
 }
 
-// ── Lotes que manda Calidad para cargas ya cargadas con "A DEFINIR" ──
+// ── Lotes que manda Calidad para cargas ya cargadas ──
+// Dos cosas: completar los que dicen "A DEFINIR" y VERIFICAR las que ya tienen lotes y peso contra lo que Calidad paso despues
+// (lotes y neto), para corroborar que lo que se cargo al principio es lo mismo.
+function mcCompararConCalidad(row, lotes){
+  const fila = String(row[COL.LOTS] || '').split(/[,;\s\/]+/).map(x => x.trim().toUpperCase()).filter(Boolean);
+  const cal = lotes.map(l => String(l.lote).toUpperCase());
+  const faltan = cal.filter(l => fila.indexOf(l) < 0), sobran = fila.filter(l => cal.indexOf(l) < 0);
+  const conPeso = lotes.filter(l => !isNaN(l.netoKg));
+  const pesosCompletos = lotes.length > 0 && conPeso.length === lotes.length;
+  const suma = conPeso.reduce((s, l) => s + l.netoKg, 0) / 1000, tp = numeroCelda(row[COL.TNS]);
+  const f = x => String(Math.round(x * 100) / 100).replace('.', ',');
+  const difs = []; let difLots = false, difTns = false;
+  if(faltan.length || sobran.length){ difLots = true; difs.push('Lots: la planilla tiene ' + (fila.join(', ') || '—') + ' y Calidad pasó ' + cal.join(', ') + '.'); }
+  if(pesosCompletos && !isNaN(tp) && Math.abs(suma - tp) > Math.max(0.05, tp * 0.01)){ difTns = true; difs.push('Tns: la planilla dice ' + (row[COL.TNS] || '—') + ' y los netos de Calidad suman ' + f(suma) + ' tn.'); }
+  return { estado: difs.length ? 'difiere' : (pesosCompletos ? 'coincide' : 'sinpesos'), difs, difLots, difTns, suma, tnsCal: f(suma), pesosCompletos, lotesCal: lotes };
+}
 async function mcBuscarLotesPendientes(){
-  _mc.lotes = []; _mc.lotesListos = false;
-  const filas = allRows.filter(r => /a definir/i.test(String(r[COL.LOTS] || '')) && String(r[COL.BOOKING] || '').trim()).slice(0, 12);
-  for(const r of filas){
-    const bk = String(r[COL.BOOKING]).trim();
+  _mc.lotes = []; _mc.verif = []; _mc.lotesListos = false;
+  const conBk = allRows.filter(r => String(r[COL.BOOKING] || '').trim());
+  const aDefinir = conBk.filter(r => /a definir/i.test(String(r[COL.LOTS] || ''))).slice(0, 12);
+  const aVerificar = conBk.filter(r => !/a definir/i.test(String(r[COL.LOTS] || '')) && String(r[COL.LOTS] || '').trim()).slice(-6);
+  for(const r of aDefinir.concat(aVerificar)){
+    const bk = String(r[COL.BOOKING]).trim(), definir = aDefinir.indexOf(r) >= 0;
     try{
       const lista = await gmailJson('messages?maxResults=8&q=' + encodeURIComponent('"' + bk + '" newer_than:90d'));
-      let hallados = [];
+      const acum = [];
       for(const x of (lista.messages || [])){
         const msg = mcMensaje(await gmailJson('messages/' + x.id + '?format=full'));
-        hallados = mcLeerLotesCalidad(mcSegmentoPlanilla(msg.texto, bk));
-        if(hallados.length) break;
+        mcFusionarLotes(acum, mcLeerLotesCalidad(mcSegmentoPlanilla(msg.texto, bk)));
+        if(acum.length && acum.every(l => !isNaN(l.netoKg))) break;   // ya estan lotes y pesos
       }
-      if(hallados.length) _mc.lotes.push({ row: r, booking: bk, lotes: hallados });
+      if(!acum.length) continue;
+      if(definir) _mc.lotes.push({ row: r, booking: bk, lotes: acum });
+      else _mc.verif.push(Object.assign({ row: r, booking: bk }, mcCompararConCalidad(r, acum)));
     }catch(e){ console.warn('Lotes de', bk, e); }
   }
   _mc.lotesListos = true;
 }
+// Poner en la fila lo que paso Calidad (solo lo que difiere), con confirmacion y sin pisar lo que haya cambiado mientras tanto.
+async function mcCorregirConCalidad(k){
+  const x = (_mc.verif || [])[k];
+  if(!x || !accessToken) return;
+  const cambios = [];
+  if(x.difLots) cambios.push({ col: COL.LOTS, nombre: 'Lots', antes: String(x.row[COL.LOTS] || ''), despues: x.lotesCal.map(l => l.lote).join(', ') });
+  if(x.difTns) cambios.push({ col: COL.TNS, nombre: 'Tns', antes: String(x.row[COL.TNS] || ''), despues: x.tnsCal });
+  if(!cambios.length) return;
+  const detalle = cambios.map(c => '<div>' + escH(c.nombre) + ': ' + escH(c.antes || '(vacío)') + ' → <b>' + escH(c.despues) + '</b></div>').join('');
+  const ok = await showConfirm('Poner lo que pasó Calidad en la fila ' + x.row._sheetRow, 'Se cambia en la planilla lo que no coincide con los lotes y pesos netos que mandó Calidad (booking ' + x.booking + ').', { icono: '🔎', okLabel: 'Corregir', detalle });
+  if(!ok) return;
+  let fresco;
+  try{ fresco = await releerFilasCarga([x.row._sheetRow], true); }catch(e){ alert(e.message); return; }
+  const f = fresco[x.row._sheetRow] || { valores: [], formulas: [] };
+  const data = {}, saltadas = [];
+  cambios.forEach(c => {
+    if(esFormulaCelda(f.formulas[c.col])) saltadas.push(c.nombre + ' tiene fórmula: no lo toco');
+    else if(String(f.valores[c.col] || '').trim() !== c.antes.trim()) saltadas.push(c.nombre + ' cambió en la planilla mientras tanto');
+    else data[c.col] = c.despues;
+  });
+  if(saltadas.length) alert('Quedó sin cambiar:\n' + saltadas.join('\n'));
+  if(!Object.keys(data).length) return;
+  if(!(await writeRow(data, x.row._sheetRow))){ alert('No se pudo escribir en la planilla. No se cambió nada.'); return; }
+  await appendLog({ fc: '', fcServ: '', bl: (x.row[COL.BL] || '').trim(), customer: (x.row[COL.CUSTOMER] || '').trim(), accion: 'verificacion con Calidad', detalle: 'fila ' + x.row._sheetRow + ' - ' + cambios.filter(c => data[c.col] !== undefined).map(c => c.nombre + ' ' + (c.antes || '(vacío)') + ' -> ' + c.despues).join(' · ') });
+  cambios.forEach(c => { if(data[c.col] !== undefined) x.row[c.col] = c.despues; });
+  _dataVersion++;
+  _mc.verif.splice(k, 1);
+  showToast('✓ Fila ' + x.row._sheetRow + ' corregida con lo de Calidad', 'ok');
+  renderBandeja();
+}
+function mcDejarAsi(k){ if(_mc.verif && _mc.verif[k]){ _mc.verif.splice(k, 1); renderBandeja(); } }
 async function mcCompletarLotes(idx){
   const x = _mc.lotes[idx];
   if(!x || !accessToken) return;
@@ -13708,7 +13836,7 @@ function mcControlContenedores(txt, tns){
   if(isNaN(tn) || tn <= 0) return '';
   const n = mcContarContenedores(txt);
   const f = x => String(Math.round(x * 10) / 10).replace('.', ',');
-  if(!n) return String(txt || '').trim() ? '' : 'Faltan los contenedores: por las ' + f(tn) + ' tn serían unos ' + Math.max(1, Math.round(tn / 22)) + '.';
+  if(!n) return String(txt || '').trim() ? '' : 'Por las ' + f(tn) + ' tn serían unos ' + Math.max(1, Math.round(tn / 22)) + ' contenedores (el número de contenedor se completa después).';
   const por = tn / n;
   if(por > 28) return 'Son ' + f(tn) + ' tn en ' + n + ' contenedor' + (n === 1 ? '' : 'es') + ' (' + f(por) + ' tn por contenedor): parece que faltan contenedores (serían unos ' + Math.max(n + 1, Math.round(tn / 22)) + ').';
   if(por < 12) return 'Son ' + f(tn) + ' tn en ' + n + ' contenedores (solo ' + f(por) + ' tn cada uno): ¿sobran contenedores o el peso está mal?';
@@ -13730,8 +13858,9 @@ function mcActualizarAvisos(i){
     const neg = MC_NOMBRES[negocioActivo];
     if(!it.customer && c.candidatos.length) av.push('🔔 Cliente no reconocido: el mail dice "' + c.candidatos.join('" / "') + '" y no es ninguno de los clientes cargados de ' + neg + '. Elegí el Customer.');
     else if(it.customer && !getUnique(COL.CUSTOMER).some(x => normTar(x) === normTar(it.customer))) av.push('🔔 "' + it.customer + '" no está entre los clientes cargados de ' + neg + ': ¿es un cliente nuevo?');
-    const cc = mcControlContenedores(it.containers, d.tns);
+    const cc = mcControlContenedores(it.containers || it.contHint, d.tns);
     if(cc) av.push(cc);
+    if(mcEsCantidadContenedores(it.containers)) av.push('"' + it.containers + '" es una cantidad: no se carga. En Containers va el número de contenedor (se completa después); podés dejarlo vacío.');
     const prod = String(d.product || '').trim();
     if(prod && !getUnique(COL.PRODUCT).some(x => normTar(x) === normTar(prod))) av.push('El producto "' + prod + '" todavía no figura en las cargas de ' + neg + ': revisá que el nombre sea el mismo que usan en la planilla.');
     if(!d.etd) av.push('Falta la ETD: escribila (dd/mm/aaaa).');
@@ -13770,7 +13899,8 @@ function mcTarjetaHtml(c, i){
     + '<div class="mc-grid">'
     + campo('Customer *', '<input id="lt-' + i + '-customer" list="lt-clientes" value="' + escH(it.customer) + '" placeholder="Elegí el cliente" autocomplete="off"' + dis + ' oninput="loteCambio(' + i + ')">', 'customer')
     + campo('Consolidación', '<input id="lt-' + i + '-consol" type="date" value="' + escH(it.consol) + '"' + dis + ' onchange="loteCambio(' + i + ')">', 'consol')
-    + campo('Containers', '<input id="lt-' + i + '-containers" value="' + escH(it.containers) + '" placeholder="ej: 1x40 HC"' + dis + ' oninput="loteCambio(' + i + ')">', 'contenedores')
+    + campo('Containers', '<input id="lt-' + i + '-containers" value="' + escH(it.containers) + '" placeholder="número/s de contenedor"' + dis + ' oninput="loteCambio(' + i + ')">'
+      + (it.contHint ? '<span class="mc-src">El mail dice ' + escH(it.contHint) + ' (es la cantidad: no se carga; el número se completa después)</span>' : ''), 'contenedores')
     + campo('Lots', '<input id="lt-' + i + '-lots" value="' + escH(ed('lots')) + '"' + dis + ' oninput="loteCambio(' + i + ')">', 'lots')
     + campo('Contract Proveedor', '<input id="lt-' + i + '-contractprov" value="' + escH(ed('contractProv')) + '"' + dis + ' oninput="loteCambio(' + i + ')">', 'contractProv')
     + campo('Tns', '<input id="lt-' + i + '-tns" value="' + escH(ed('tns')) + '"' + dis + ' oninput="loteCambio(' + i + ')">', 'tns')
@@ -13823,6 +13953,15 @@ function renderBandeja(){
   });
   if(aparte.length) h += '<div class="mc-bloque"><b>Para cargar a mano</b>: ' + aparte.map(c => '<div class="mc-linea">' + escH(c.mail.asunto) + ' — ' + escH(c.noCargable) + ' <button class="btn" onclick="mcIgnorar(' + _mc.cards.indexOf(c) + ')">Ignorar</button></div>').join('') + '</div>';
   if(_mc.lotes.length) h += '<div class="mc-bloque"><b>Lotes de Calidad para completar</b> (cargas que dicen "A DEFINIR" y ya tienen lotes en un mail):' + _mc.lotes.map((x, k) => '<div class="mc-linea">Fila ' + x.row._sheetRow + ' · ' + escH((x.row[COL.CUSTOMER] || '').trim()) + ' · booking ' + escH(x.booking) + ': <b>' + x.lotes.map(l => escH(l.lote)).join(', ') + '</b> <button class="btn primary" onclick="mcCompletarLotes(' + k + ')">Completar lotes</button></div>').join('') + '</div>';
+  if(_mc.verif && _mc.verif.length){
+    const nu = n => String(Math.round(n * 100) / 100).replace('.', ',');
+    const dif = _mc.verif.map((x, k) => [x, k]).filter(([x]) => x.estado === 'difiere'), bien = _mc.verif.map((x, k) => [x, k]).filter(([x]) => x.estado === 'coincide'), sin = _mc.verif.filter(x => x.estado === 'sinpesos');
+    h += '<div class="mc-bloque"><b>Verificación con Calidad</b> (cargas ya cargadas, contra los lotes y pesos netos que pasó Calidad)'
+      + dif.map(([x, k]) => '<div class="mc-linea">⚠ Fila ' + x.row._sheetRow + ' · ' + escH((x.row[COL.CUSTOMER] || '').trim()) + ' · booking ' + escH(x.booking) + ': ' + x.difs.map(escH).join(' ')
+        + ' <button class="btn primary" onclick="mcCorregirConCalidad(' + k + ')">Poner lo de Calidad</button> <button class="btn" onclick="mcDejarAsi(' + k + ')">Dejar así</button></div>').join('')
+      + (bien.length ? '<div class="mc-linea" style="color:var(--ok);">✓ Coinciden con Calidad (lotes y peso neto): ' + bien.map(([x]) => 'fila ' + x.row._sheetRow + ' (' + nu(x.suma) + ' tn)').join(' · ') + '</div>' : '')
+      + (sin.length ? '<div class="mc-linea" style="color:var(--text3);">Calidad todavía no mandó los pesos de: ' + sin.map(x => 'fila ' + x.row._sheetRow).join(' · ') + '</div>' : '') + '</div>';
+  }
   h += '<div class="cf-barra mc-guardar"><span id="lt-resumen" class="cf-faltan"></span><span style="flex:1;"></span><button class="btn primary" id="lt-guardar" onclick="bandejaGuardar()"' + (act.length ? '' : ' disabled') + '><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3 4.5 6v5.5c0 4.6 3.1 8.2 7.5 9.5 4.4-1.3 7.5-4.9 7.5-9.5V6L12 3z"/><path d="m9 12 2 2 4-4"/></svg>Guardar cargas</button></div></div>';
   cont.innerHTML = h;
   _lote.items.forEach((_, i) => loteCambio(i, true));
@@ -13870,7 +14009,7 @@ async function bandejaGuardar(){
     return;
   }
   await guardarLote();
-  try{ await mcOfrecerAlias(_mc.cards); }catch(e){ console.warn('Alias:', e); }
+  try{ await mcOfrecerAlias(_mc.cards); await mcOfrecerCorrecciones(_mc.cards); }catch(e){ console.warn('Alias:', e); }
 }
 // Lo que pasa despues de escribir cada carga: se anota en el registro, en el LOG y en una nota de la carga (de que mail salio).
 async function bandejaTrasGuardar(it, fila, d){
