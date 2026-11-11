@@ -1443,6 +1443,20 @@ body{background:radial-gradient(760px 420px at 86% -12%,rgba(var(--lg-a-rgb),.05
 /* Los comentarios y las notas se pueden elegir y copiar (nada hereda user-select:none de la tabla) */
 .com-globo,.com-globo *:not(button),.nota-pop,.nota-pop *:not(button),.nota-wrap .nota-tx,.nota-wrap .nota-meta,.nota-hilo .nota-tx,.com-texto{user-select:text;-webkit-user-select:text;}
 .com-texto,.nota-tx{cursor:text;}
+
+/* Pagare: cartel de "generando" (siempre visible, con segundos) y aviso con el ultimo pagare (abrir / descargar) */
+.pg-prog{position:fixed;top:84px;left:50%;transform:translateX(-50%);z-index:300;display:flex;gap:14px;align-items:center;width:max-content;max-width:min(540px,calc(100vw - 32px));padding:14px 20px;border-radius:18px;background:rgba(255,255,255,.97);border:1px solid var(--lg-edge);box-shadow:0 18px 50px rgba(35,55,110,.24),0 0 0 1px rgba(23,43,77,.07);}
+.pg-rueda{flex:none;width:26px;height:26px;border-radius:50%;border:3px solid rgba(var(--lg-a-rgb),.2);border-top-color:rgb(var(--lg-a-rgb));animation:pgGira .8s linear infinite;}
+@keyframes pgGira{to{transform:rotate(360deg);}}
+.pg-prog b{font-size:14.5px;color:var(--lg-text);}
+.pg-seg{margin-left:10px;color:var(--lg-muted);font-size:13px;font-variant-numeric:tabular-nums;}
+.pg-sub{margin-top:2px;font-size:12.5px;line-height:1.4;color:var(--lg-muted);}
+.pg-ultimo{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin:0 0 12px;padding:12px 16px;border-radius:18px;background:rgba(228,246,236,.85);border:1px solid rgba(42,125,75,.25);}
+.pg-ultimo-t{font-size:14.5px;font-weight:650;color:var(--lg-text);}
+.pg-ok{display:inline-block;margin-left:6px;padding:1px 9px;border-radius:99px;background:rgba(42,125,75,.14);color:#15683a;font-size:12px;font-weight:700;}
+.pg-ultimo-s{margin-top:3px;font-size:12.5px;color:var(--lg-muted);}
+.pg-ultimo-acc{display:flex;gap:8px;flex-wrap:wrap;align-items:center;}
+@media (prefers-reduced-motion:reduce){.pg-rueda{animation-duration:2.4s;}}
 </style>
 </head>
 <body>
@@ -6622,6 +6636,7 @@ function renderCargasTabla(rows){
         <button onclick="descartarCambiosTabla()">Descartar</button><button class="prim" onclick="guardarCambiosTabla()">Reintentar guardar</button>
       </div>
     </div>
+    ${pagareUltimoHtml()}
     ${quedan > 0 ? `<div class="t-mas"><span onclick="cargasTablaLimite+=200;renderCargas();">↑ Mostrar ${Math.min(200, quedan)} filas anteriores (quedan ${quedan})</span></div>` : ''}
     <div class="t-scroll" id="t-scroll">
       <table class="t-grid" id="t-grid" ondblclick="tablaDblClick(event)" onmousedown="tablaMouseDown(event)" onmouseover="tablaMouseOver(event)">
@@ -9303,9 +9318,70 @@ function seleccionarGrupoPagare(key){
 function limpiarPagSel(){ window._pagSel = new Set(); renderPagares(); }
 
 // ── Generar el pagare (el PDF lo arma el AppScript, que tiene los templates) ──
-let _ultimoPagare = null;
+// El ultimo pagare generado se recuerda 7 dias en este navegador: es el unico lugar donde queda el enlace para abrirlo o descargarlo.
+let _ultimoPagare = (() => {
+  try{
+    const g = JSON.parse(localStorage.getItem('hub_ultimo_pagare') || 'null');
+    return g && g.ts && Date.now() - g.ts < 7 * 86400000 ? g : null;
+  }catch(e){ return null; }
+})();
+let _pagareGenerando = false;   // un pagare a la vez: evita generar dos veces por apretar de nuevo mientras tarda
+let _pagProg = null;            // { el, iv, t0, etapa, r }: el cartel de "generando"
+function pagareProgresoIniciar(r){
+  pagareProgresoCerrar();
+  const el = document.createElement('div');
+  el.id = 'pagare-progreso'; el.className = 'pg-prog'; el.setAttribute('role', 'status'); el.setAttribute('aria-live', 'polite');
+  _pagProg = { el, t0: Date.now(), etapa: 'Generando el pagaré en Drive…', r, iv: null };
+  const pintar = () => {
+    if(!_pagProg) return;
+    const sg = Math.floor((Date.now() - _pagProg.t0) / 1000);
+    const nota = sg >= 90 ? 'Está tardando más de lo normal. No generes otro todavía: mirá la carpeta "Promissory Notes AXT - Appscript" de Drive y, si no aparece, recargá y probá de nuevo.'
+      : sg >= 40 ? 'Armar el PDF en Drive puede llevar un minuto o más. Seguí esperando.' : 'No cierres esta pestaña.';
+    el.innerHTML = '<span class="pg-rueda" aria-hidden="true"></span><div><b>' + escH(_pagProg.etapa) + '</b><span class="pg-seg">' + sg + ' s</span>'
+      + '<div class="pg-sub">Pagaré de ' + escH(r.customer) + ' · ' + r.n + ' carga' + (r.n > 1 ? 's' : '') + '. ' + nota + '</div></div>';
+  };
+  pintar();
+  if(document.body && document.body.appendChild) document.body.appendChild(el);
+  if(typeof setInterval === 'function') _pagProg.iv = setInterval(pintar, 1000);
+  _pagProg.pintar = pintar;
+}
+function pagareProgresoEtapa(txt){ if(_pagProg){ _pagProg.etapa = txt; _pagProg.pintar(); } }
+function pagareProgresoCerrar(){
+  if(!_pagProg) return;
+  if(_pagProg.iv && typeof clearInterval === 'function') clearInterval(_pagProg.iv);
+  const el = _pagProg.el;
+  if(el && el.remove) el.remove(); else if(el && el.parentNode && el.parentNode.removeChild) el.parentNode.removeChild(el);
+  _pagProg = null;
+}
+function pagareDriveId(u){
+  const m = String(u || '').match(/\/d\/([\w-]+)/) || String(u || '').match(/[?&]id=([\w-]+)/);
+  return m ? m[1] : '';
+}
+// El aviso con el ultimo pagare generado (abrir / descargar / ocultar): arriba de la tabla de Cargas y de la pantalla Pagares.
+function pagareUltimoHtml(){
+  const p = _ultimoPagare;
+  if(!p) return '';
+  const id = pagareDriveId(p.url);
+  return '<div class="pg-ultimo"><div style="min-width:0;"><div class="pg-ultimo-t">📄 ' + escH(p.nombre) + ' <span class="pg-ok">listo</span></div>'
+    + '<div class="pg-ultimo-s">' + p.cargas + ' carga' + (p.cargas === 1 ? '' : 's') + ' · ' + (p.facturas || []).length + ' factura' + ((p.facturas || []).length === 1 ? '' : 's') + ': ' + escH((p.facturas || []).join(', ') || '—') + ' · ' + usdPagare(p.total) + '</div></div>'
+    + '<div class="pg-ultimo-acc">'
+    + (p.url ? '<a href="' + escH(p.url) + '" target="_blank" rel="noopener" class="btn primary" style="text-decoration:none;">Abrir PDF ↗</a>' : '<span class="pg-ultimo-s">Está en la carpeta “Promissory Notes AXT - Appscript”</span>')
+    + (id ? '<a href="https://drive.google.com/uc?export=download&id=' + escH(id) + '" target="_blank" rel="noopener" class="btn" style="text-decoration:none;">Descargar</a>' : '')
+    + '<button type="button" class="btn" onclick="ocultarUltimoPagare()">Ocultar</button></div></div>';
+}
+function ocultarUltimoPagare(){
+  _ultimoPagare = null;
+  try{ localStorage.removeItem('hub_ultimo_pagare'); }catch(e){}
+  if(currentView === 'pagares') renderPagares(); else if(currentView === 'cargas') renderCargas();
+}
 
 async function generarPagareSel(idxs){
+  if(_pagareGenerando){ showToast('Ya se está generando un pagaré: esperá a que termine.', 'warn'); return false; }
+  _pagareGenerando = true;
+  try{ return await _generarPagareSel(idxs); }
+  finally{ _pagareGenerando = false; pagareProgresoCerrar(); }
+}
+async function _generarPagareSel(idxs){
   const r = resumenPagare([...(idxs || window._pagSel || [])]);
   if(r.bloqueo){ alert(r.bloqueo); return; }
   if(!r.sheetRows.length){ alert('No encontré esas filas en la planilla. Sincronizá y probá de nuevo.'); return; }
@@ -9323,9 +9399,11 @@ async function generarPagareSel(idxs){
     { icono:'📄', okLabel:'Generar', detalle: detalle });
   if(!ok) return;
 
+  pagareProgresoIniciar(r);
   showProgress(); showToast('Generando el pagaré…');
-  const data = await callAppScriptFilas('pagare', r.sheetRows);
-  hideProgress();
+  let data;
+  try{ data = await callAppScriptFilas('pagare', r.sheetRows); }
+  finally{ hideProgress(); }
   if(!data || !data.ok) return;
 
   // Un ok PELADO no es un pagare generado. El doGet del AppScript, cuando no
@@ -9344,7 +9422,9 @@ async function generarPagareSel(idxs){
   }
 
   _ultimoPagare = { nombre: data.nombre || ('Promissory Note - ' + r.customer),
-                    url: data.url || '', cargas: r.n, facturas: r.facturas.slice(), total: r.total };
+                    url: data.url || '', cargas: r.n, facturas: r.facturas.slice(), total: r.total, ts: Date.now() };
+  try{ localStorage.setItem('hub_ultimo_pagare', JSON.stringify(_ultimoPagare)); }catch(e){}
+  pagareProgresoEtapa('Registrando en el LOG…');
   for(const i of r.idx){
     const row = filaPorIdx(i); if(!row) continue;
     await appendLog({ fc:(row[COL.INVOICE_CLIENTE]||'').trim(), fcServ:(row[COL.INVOICE_FC_SERV]||'').trim(),
@@ -9352,8 +9432,9 @@ async function generarPagareSel(idxs){
       detalle:'Grupo de ' + r.n + ' carga' + (r.n>1?'s':'') + ' · facturas: ' + (r.facturas.join(', ')||'—') + ' · total ' + usdPagare(r.total) });
   }
   window._pagSel = new Set();
-  showToast('Pagaré generado');
+  pagareProgresoEtapa('Actualizando la planilla…');
   await loadLog(); await loadData();
+  showToast('Pagaré generado' + ' · Abrir PDF y Descargar están arriba', 'ok', 8000);
   return true;
 }
 
@@ -9366,11 +9447,8 @@ async function generarPagareDeTabla(){
   const ok = await generarPagareSel(sel);
   if(ok && _ultimoPagare && _ultimoPagare !== previo){
     if(window.limpiarSelFC) window.limpiarSelFC();
-    if(_ultimoPagare.url){
-      const abrir = await showConfirm('Pagaré generado', _ultimoPagare.nombre + ' · ' + _ultimoPagare.cargas + ' carga' + (_ultimoPagare.cargas > 1 ? 's' : '') + ' · ' + usdPagare(_ultimoPagare.total) + '. Las filas quedaron marcadas "En AXT".',
-        { icono: '📄', okLabel: 'Abrir el pagaré' });
-      if(abrir) window.open(_ultimoPagare.url, '_blank');
-    }
+    if(currentView === 'cargas') renderCargas();   // el aviso con el enlace queda arriba de la tabla
+    try{ window.scrollTo(0, 0); }catch(e){}
   }
   return !!ok;
 }
@@ -9558,21 +9636,8 @@ function renderPagares(){
     <div class="stat-card"><div class="stat-label">No corresponde</div><div class="stat-value" style="color:var(--text3)">${noCorresponde.length}</div><div class="stat-sub" style="${noCorresponde.length?'cursor:pointer;color:var(--accent);':''}" ${noCorresponde.length?'onclick="togglePagaresNA()"':''}>${noCorresponde.length?(pagaresVerNA?'Ocultar lista ↑':'Ver la lista →'):'Sin cargas marcadas'}</div></div>
   </div>`;
 
-  // ── Ultimo pagare generado en esta sesion ──
-  if(_ultimoPagare){
-    html += `<div class="table-wrap" style="border-left:3px solid var(--ok);">
-      <div style="padding:12px 16px;display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;">
-        <div>
-          <div style="font-size:14px;font-weight:600;color:var(--text);">📄 ${_ultimoPagare.nombre}</div>
-          <div style="font-size:12px;color:var(--text3);margin-top:3px;">${_ultimoPagare.cargas} carga${_ultimoPagare.cargas===1?'':'s'} · ${_ultimoPagare.facturas.length} factura${_ultimoPagare.facturas.length===1?'':'s'}: ${_ultimoPagare.facturas.join(', ')||'—'} · ${usdPagare(_ultimoPagare.total)}</div>
-        </div>
-        <div style="display:flex;gap:8px;">
-          ${_ultimoPagare.url?`<a href="${_ultimoPagare.url}" target="_blank" rel="noopener" class="btn primary" style="text-decoration:none;font-size:13px;">Abrir PDF ↗</a>`:`<span style="font-size:12px;color:var(--text3);">Está en la carpeta “Promissory Notes AXT - Appscript”</span>`}
-          <button class="btn" style="font-size:13px;" onclick="_ultimoPagare=null;renderPagares();">Ocultar</button>
-        </div>
-      </div>
-    </div>`;
-  }
+  // ── Ultimo pagare generado ──
+  html += pagareUltimoHtml();
 
   // ── Barra de acciones sobre la seleccion ──
   const sel = [...window._pagSel].filter(i => filaPorIdx(i));
@@ -12786,6 +12851,16 @@ function loteCambio(i, soloMostrar){
         ed[k] = (id === 'etd' || id === 'eta') && v ? completarFecha(v) : v;   // "20/10" -> 20/10/2026
       });
     }
+    if(it.mail){
+      const ed = it.edit = it.edit || {};
+      ['product', 'port', 'vessel', 'booking', 'shipping', 'packing', 'exporter'].forEach(k => {
+        const el = document.getElementById('lt-' + i + '-' + k);
+        const orig = el && el.getAttribute ? el.getAttribute('data-orig') : null;
+        if(orig === null || orig === undefined) return;          // no es un campo dibujado de la tarjeta
+        const v = String(el.value || '').trim();
+        if(v !== String(orig).trim()) ed[k] = v; else delete ed[k];
+      });
+    }
     const inc = document.getElementById('lt-' + i + '-incluir'), du = document.getElementById('lt-' + i + '-duda');
     it.incluir = inc ? inc.checked !== false : true; it.duda = !!(du && du.checked);
   }
@@ -13482,8 +13557,11 @@ async function mcArmarTarjetas(m){
   return m.tipo === 'argen' ? mcTarjetasArgen(m, full) : mcTarjetasNutrin(m, full);
 }
 // Una carga con el mismo booking (o los mismos lotes) ya en la planilla: se avisa para no duplicarla.
+function mcDatalist(id, col){
+  return '<datalist id="' + id + '">' + (col !== undefined && col >= 0 ? getUnique(col).map(x => '<option value="' + escH(x) + '">').join('') : '') + '</datalist>';
+}
 function mcPosibleDuplicado(c){
-  const d = c.item.data || {};
+  const d = Object.assign({}, c.item.data || {}, c.item.edit || {});
   const bk = String(d.booking || '').trim();
   if(bk){ const f = allRowsAll.find(r => String(r[COL.BOOKING] || '').trim() === bk); if(f) return 'Ya hay una carga con el booking ' + bk + ' (fila ' + f._sheetRow + ').'; }
   return '';
@@ -13654,6 +13732,8 @@ function mcActualizarAvisos(i){
     else if(it.customer && !getUnique(COL.CUSTOMER).some(x => normTar(x) === normTar(it.customer))) av.push('🔔 "' + it.customer + '" no está entre los clientes cargados de ' + neg + ': ¿es un cliente nuevo?');
     const cc = mcControlContenedores(it.containers, d.tns);
     if(cc) av.push(cc);
+    const prod = String(d.product || '').trim();
+    if(prod && !getUnique(COL.PRODUCT).some(x => normTar(x) === normTar(prod))) av.push('El producto "' + prod + '" todavía no figura en las cargas de ' + neg + ': revisá que el nombre sea el mismo que usan en la planilla.');
     if(!d.etd) av.push('Falta la ETD: escribila (dd/mm/aaaa).');
     if(!d.eta) av.push('Falta la ETA: escribila (dd/mm/aaaa).');
     const fe = parseDate(d.etd), fa = parseDate(d.eta);
@@ -13667,6 +13747,11 @@ function mcTarjetaHtml(c, i){
   const src = k => c.fuentes[k] ? '<span class="mc-src">' + escH(c.fuentes[k]) + '</span>' : '';
   const campo = (etq, html, k) => '<div class="mc-f"><div class="mc-k">' + etq + '</div>' + html + (k ? src(k) : '') + '</div>';
   const fijo = (etq, v, k) => campo(etq, '<div class="mc-v">' + (v ? escH(v) : '<span class="mc-vacio">—</span>') + '</div>', k);
+  // Campo editable de lo que se detecto: muestra lo corregido (it.edit) o, si no hay, lo detectado; data-orig guarda lo detectado para saber si se toco.
+  const campoEd = (etq, k, lista, ancho) => {
+    const h = campo(etq, '<input id="lt-' + i + '-' + k + '"' + (lista ? ' list="' + lista + '"' : '') + ' data-orig="' + escH((d0 && d0[k]) || '') + '" value="' + escH(ed(k)) + '" autocomplete="off"' + dis + ' oninput="loteCambio(' + i + ')">', k);
+    return ancho ? h.replace('<div class="mc-f">', '<div class="mc-f" style="grid-column:span 2;">') : h;
+  };
   const ed = k => (it.edit && it.edit[k] !== undefined && it.edit[k] !== null) ? it.edit[k] : ((d0 && d0[k]) || '');
   const h = c.hints;
   const info = [];
@@ -13692,10 +13777,10 @@ function mcTarjetaHtml(c, i){
     + campo('Price FCA (USD/tn)', '<input id="lt-' + i + '-pricefob" value="' + escH(ed('priceFOB')) + '"' + dis + ' oninput="loteCambio(' + i + ')">', 'priceFOB')
     + '<div class="mc-f"><div class="mc-k">Total FCA (Price × Tns)</div><div class="mc-v" id="lt-' + i + '-totalfca">—</div></div>'
     + campo('POL', '<input id="lt-' + i + '-pol" list="lt-pols" value="' + escH(it.pol) + '" placeholder="BUE / CHILE" autocomplete="off"' + dis + ' oninput="loteCambio(' + i + ')">', 'pol')
-    + fijo('Producto', d0.product, 'product') + fijo('Puerto', d0.port, 'port')
+    + campoEd('Producto', 'product', 'lt-productos', true) + campoEd('Puerto', 'port', 'lt-puertos')
     + campo('ETD', '<input id="lt-' + i + '-etd" value="' + escH(ed('etd')) + '" placeholder="dd/mm/aaaa"' + dis + ' oninput="loteCambio(' + i + ')">', 'etd')
     + campo('ETA', '<input id="lt-' + i + '-eta" value="' + escH(ed('eta')) + '" placeholder="dd/mm/aaaa"' + dis + ' oninput="loteCambio(' + i + ')">', 'eta')
-    + fijo('Buque', d0.vessel, 'vessel') + fijo('Booking', d0.booking, '')
+    + campoEd('Buque', 'vessel') + campoEd('Booking', 'booking') + campoEd('Naviera', 'shipping', 'lt-navieras') + campoEd('Packing', 'packing', 'lt-packings') + campoEd('Exporter', 'exporter', 'lt-exporters')
     + '<div class="mc-f"><div class="mc-k">Se carga en</div><select onchange="mcCambiarNegocio(' + _mc.cards.indexOf(c) + ',this.value)"' + dis + '>'
     + ['axt', 'buzaram'].map(n => '<option value="' + n + '"' + (c.negocio === n ? ' selected' : '') + '>' + MC_NOMBRES[n] + '</option>').join('') + '</select></div>'
     + '<div class="mc-f"><label class="lt-duda"><input type="checkbox" id="lt-' + i + '-duda" ' + (it.duda ? 'checked' : '') + dis + ' onchange="loteCambio(' + i + ')"> ¿NOP en duda?</label></div>'
@@ -13723,6 +13808,7 @@ function renderBandeja(){
     + '<p>Revisamos los últimos ' + MC_DIAS + ' días de Gmail y preparamos automáticamente las cargas detectadas en los correos de Argen Peanuts y NUTRIN.</p>'
     + '<div class="mc-nota"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3 4.5 6v5.5c0 4.6 3.1 8.2 7.5 9.5 4.4-1.3 7.5-4.9 7.5-9.5V6L12 3z"/><path d="m9 12 2 2 4-4"/></svg><span>Nada se guarda en la planilla hasta que hagas clic en «Guardar cargas».</span></div>'
     + '<datalist id="lt-clientes">' + clientes.map(c => '<option value="' + escH(c) + '">').join('') + '</datalist><datalist id="lt-pols">' + pols.map(c => '<option value="' + escH(c) + '">').join('') + '</datalist>'
+    + mcDatalist('lt-productos', COL.PRODUCT) + mcDatalist('lt-puertos', COL.PORT) + mcDatalist('lt-navieras', COL.SHIPPING) + mcDatalist('lt-packings', COL.PACKING) + mcDatalist('lt-exporters', COL.EXPORTER)
     + '<div class="mc-barra"><button class="btn primary" onclick="mcRefrescar()"' + (_mc.cargando ? ' disabled' : '') + '><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 12a9 9 0 0 1 15.5-6.2L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-15.5 6.2L3 16"/><path d="M3 21v-5h5"/></svg>Buscar mails ahora</button>'
     + (_mc.cards.some(c => c.item.estado !== 'ok' && c.mail.threadId) ? '<button class="btn" onclick="mcMarcarTodoLista()" title="Las cargué todas a mano: que el hub no las lea más"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg>Marcar todo lo pendiente como listo</button>' : '')
     + '<button class="btn" onclick="mcToggleHist()"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>Históricas (' + mcHistorico().filter(x => x.tipo === 'hilo').length + ')</button></div>'
