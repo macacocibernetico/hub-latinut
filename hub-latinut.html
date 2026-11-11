@@ -3300,7 +3300,7 @@ function esNumeroContrato(t){
 let contratos = [];
 // Columna donde el contrato dice la condicion de cobro ("CAD BANK", "Pagare", ...). Si dice CAD BANK, la carga sale con "CAD BANK" en Envio al cliente.
 const ALIAS_FORMA_PAGO = ['Forma de pago','Forma pago','Condicion de pago','Condicion','Condiciones de pago','Payment terms'];
-const ENVIO_CAD_BANK = 'CAD BANK';
+const ENVIO_CAD_BANK = 'BL Original';   // lo que se escribe en el TELEX de una carga con contrato CAD BANK (antes se escribia "CAD BANK")
 // En el TELEX, "BL Original" y "CAD BANK" quieren decir lo mismo para el hub: esa carga no se libera por TELEX
 // (los documentos van en papel o por el banco), asi que no genera avisos de liberacion ni cuenta como "en proceso".
 function telexNoAplica(t){ t = (t || '').toString().toLowerCase(); return t.includes('bl orig') || /cad[\s\-_.]*bank/.test(t); }
@@ -7001,7 +7001,7 @@ function editarContratoEnTabla(r, c){
         const fila = 'Fila ' + row._sheetRow;
         _avisoTabla = fila + ': contrato → ' + k.contrato + ' · ' + n + ' valor' + (n === 1 ? '' : 'es') + ' actualizados (en amarillo)';
         showToast('📑 ' + fila + ': pasó al contrato ' + k.contrato + '. Cambiaron:\n' + plan.cambios.filter(ch => !esColFormula(ch.col)).slice(0, 8).map(ch => '• ' + ch.nombre + ': ' + (ch.antes || '(vacío)') + ' → ' + ch.despues).join('\n')
-          + (plan.avisos.length ? '\n⚠ ' + plan.avisos.join('\n⚠ ') : '') + '\nQuedaron en amarillo: revisalos y guardá.', plan.avisos.length ? 'warn' : 'info', 12000);
+          + (plan.avisos.length ? '\n⚠ ' + plan.avisos.join('\n⚠ ') : '') + '\nSe guardan solos (Ctrl+Z para deshacer).', plan.avisos.length ? 'warn' : 'info', 12000);
       }
     }
     renderCargas();
@@ -7028,7 +7028,7 @@ function cargasCadBankSinTelex(){
     const k = cad.get(normTar(r[COL.CONTRACT_CLIENTE]));
     if(!k || !esCadBank(k)) return;
     const t = (r[COL.TELEX] || '').toString().trim();
-    if(/cad[\s\-_.]*bank/i.test(t)) return;
+    if(telexNoAplica(t)) return;   // ya dice BL Original (o CAD BANK, de antes)
     (t ? out.conOtro : out.vacias).push({ row: r, k, telex: t });
   });
   return out;
@@ -7039,15 +7039,15 @@ async function marcarTelexCadBank(){
   await cargarContratosCerrados();
   const c = cargasCadBankSinTelex();
   if(!c.vacias.length){
-    showToast(c.conOtro.length ? 'Las cargas CAD BANK que faltan ya tienen otra cosa en el TELEX: no las piso (' + c.conOtro.length + ').' : 'Todas las cargas con contrato CAD BANK ya dicen CAD BANK en el TELEX.', 'info', 7000);
+    showToast(c.conOtro.length ? 'Las cargas CAD BANK que faltan ya tienen otra cosa en el TELEX: no las piso (' + c.conOtro.length + ').' : 'Todas las cargas con contrato CAD BANK ya dicen BL Original en el TELEX.', 'info', 7000);
     return;
   }
   const e = t => String(t === undefined || t === null ? '' : t).replace(/&/g, '&amp;').replace(/</g, '&lt;');
   const lin = x => '<div>Fila ' + x.row._sheetRow + ' · ' + e((x.row[COL.CUSTOMER] || '').trim() || '—') + ' · BL ' + e((x.row[COL.BL] || '').trim() || '—') + ' · contrato ' + e(x.k.contrato) + (x.k.cerrado ? ' (cerrado)' : '') + (x.telex ? ' · TELEX dice «' + e(x.telex) + '»' : '') + '</div>';
-  const detalle = '<div style="margin-bottom:4px;"><b>Se escribe CAD BANK en el TELEX de ' + c.vacias.length + ':</b></div>' + c.vacias.slice(0, 25).map(lin).join('')
+  const detalle = '<div style="margin-bottom:4px;"><b>Se escribe BL Original en el TELEX de ' + c.vacias.length + ':</b></div>' + c.vacias.slice(0, 25).map(lin).join('')
     + (c.vacias.length > 25 ? '<div style="color:var(--text3);">…y ' + (c.vacias.length - 25) + ' más.</div>' : '')
     + (c.conOtro.length ? '<div style="margin-top:8px;color:var(--warn);"><b>No se tocan ' + c.conOtro.length + '</b> que ya tienen otra cosa en el TELEX:</div>' + c.conOtro.slice(0, 15).map(lin).join('') : '');
-  const ok = await showConfirm('CAD BANK en el TELEX', 'Las cargas cuyo contrato tiene Forma de pago CAD BANK quedan con "CAD BANK" en la columna TELEX. Solo se escriben las que tienen el TELEX vacío.', { icono: '🏦', okLabel: 'Escribir CAD BANK', detalle });
+  const ok = await showConfirm('BL Original en el TELEX', 'Las cargas cuyo contrato tiene Forma de pago CAD BANK quedan con "BL Original" en la columna TELEX. Solo se escriben las que tienen el TELEX vacío.', { icono: '🏦', okLabel: 'Escribir BL Original', detalle });
   if(!ok) return;
   showToast('Escribiendo...');
   let fresco;
@@ -7069,10 +7069,10 @@ async function marcarTelexCadBank(){
     if(!r.ok){ alert('No se pudo escribir en la planilla. No se cambió nada.'); return; }
     data.forEach(d => { d.x.row[COL.TELEX] = ENVIO_CAD_BANK; });
     _dataVersion++;
-    await appendLog({ fc: '', fcServ: '', bl: '', customer: '', accion: 'TELEX CAD BANK', detalle: data.length + ' carga(s): filas ' + data.map(d => d.x.row._sheetRow).join(', ') });
+    await appendLog({ fc: '', fcServ: '', bl: '', customer: '', accion: 'TELEX BL Original (CAD BANK)', detalle: data.length + ' carga(s): filas ' + data.map(d => d.x.row._sheetRow).join(', ') });
   }
   if(saltadas.length) alert('Quedaron sin cambiar:\n' + saltadas.join('\n'));
-  showToast('🏦 CAD BANK escrito en el TELEX de ' + data.length + ' carga' + (data.length === 1 ? '' : 's'), data.length ? 'ok' : 'info');
+  showToast('🏦 BL Original escrito en el TELEX de ' + data.length + ' carga' + (data.length === 1 ? '' : 's'), data.length ? 'ok' : 'info');
   if(currentView === 'cargas') renderCargas();
 }
 
@@ -7083,7 +7083,7 @@ function botonTelexCadBank(){
     cargarContratosCerrados().then(() => { if(currentView === 'cargas' && cargasCadBankSinTelex().vacias.length) renderCargas(); }).catch(() => {});
   }
   const n = cargasCadBankSinTelex().vacias.length;
-  return n ? '<button class="t-filtros-btn" onclick="marcarTelexCadBank()" title="Cargas cuyo contrato tiene Forma de pago CAD BANK y el TELEX vacío: escribe CAD BANK en el TELEX (te muestra cuáles antes)"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 21h18M5 21V10M9 21V10M15 21V10M19 21V10M2 10l10-6 10 6"/></svg> CAD BANK en TELEX (' + n + ')</button>' : '';
+  return n ? '<button class="t-filtros-btn" onclick="marcarTelexCadBank()" title="Cargas cuyo contrato tiene Forma de pago CAD BANK y el TELEX vacío: escribe BL Original en el TELEX (te muestra cuáles antes)"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 21h18M5 21V10M9 21V10M15 21V10M19 21V10M2 10l10-6 10 6"/></svg> BL Original en TELEX (' + n + ')</button>' : '';
 }
 
 // Escribir (o pegar) a mano el numero de contrato en la tabla recalcula la carga con ese contrato, igual que elegirlo de la lista:
@@ -7134,7 +7134,7 @@ function propagarProductoATabla(row, nuevoProd){
     const camb = plan.cambios.filter(c => c.col !== COL.PRODUCT && !esColFormula(c.col));
     const lineas = camb.slice(0, 5).map(c => '• ' + c.nombre + ': ' + (c.antes || '(vacío)') + ' → ' + c.despues).join('\n');
     const msg = camb.length
-      ? '🔄 ' + fila + ': el producto pasó a "' + plan.nuevo + '" y también cambiaron ' + camb.length + ' valor' + (camb.length > 1 ? 'es' : '') + ' del contrato:\n' + lineas + (camb.length > 5 ? '\n• y ' + (camb.length - 5) + ' más…' : '') + '\nQuedaron en amarillo: revisalos y guardá.'
+      ? '🔄 ' + fila + ': el producto pasó a "' + plan.nuevo + '" y también cambiaron ' + camb.length + ' valor' + (camb.length > 1 ? 'es' : '') + ' del contrato:\n' + lineas + (camb.length > 5 ? '\n• y ' + (camb.length - 5) + ' más…' : '') + '\nSe guardan solos (Ctrl+Z para deshacer).'
       : '🔄 ' + fila + ': el producto pasó a "' + plan.nuevo + '". El contrato da los mismos valores, no cambió nada más.';
     _avisoTabla = camb.length ? fila + ': producto → ' + plan.nuevo + ' · ' + camb.length + ' valor' + (camb.length > 1 ? 'es' : '') + ' del contrato actualizados (en amarillo)' : '';
     showToast(msg, 'warn', 10000);
@@ -7436,7 +7436,7 @@ function tablaPegar(e){
   // Cambiar el producto arrastra el contrato (precios, flete, totales): solo se hace con pocos para no llenar la pantalla de avisos.
   if(productos.length && productos.length <= 3) productos.forEach(p => propagarProductoATabla(p[0], p[1]));
   if(contratosPegados.length && contratosPegados.length <= 3) contratosPegados.forEach(p => propagarContratoATabla(p[0], p[1]));
-  let msg = '📋 ' + puestas + ' celda' + (puestas === 1 ? ' pegada' : 's pegadas') + ' (en amarillo: revisalas y guardá).';
+  let msg = '📋 ' + puestas + ' celda' + (puestas === 1 ? ' pegada' : 's pegadas') + '.';
   if(productos.length > 3) msg += ' Cambiaste el Producto en ' + productos.length + ' cargas: los precios del contrato no se recalcularon.';
   if(formulas) msg += ' ' + formulas + ' con fórmula no se tocaron.';
   if(fuera) msg += ' ' + fuera + ' quedaron fuera de la tabla.';
@@ -8299,7 +8299,7 @@ function aplicarContrato(prefix, i){
 
   if(caja){
     const avisos = [];
-    if(esCadBank(k)) avisos.push('Es CAD BANK: en "TELEX" se carga CAD BANK.');
+    if(esCadBank(k)) avisos.push('Es CAD BANK: en "TELEX" se carga BL Original.');
     if(k.cerrado) avisos.push('Este contrato figura como CERRADO en la hoja "Contratos cerrados". Confirmá que corresponde antes de guardar.');
     if(!tns) avisos.push('Falta cargar las Tns: los totales quedan vacíos hasta que las pongas.');
     if(isNaN(k.flete)) avisos.push('El contrato no tiene flete, así que ese campo queda en blanco.');
