@@ -13702,6 +13702,16 @@ async function mcCargarTodo(){
   finally{ _mc.cargando = false; _mc.ultima = Date.now(); }
   mcBadge();
   if(currentView === 'mails') renderBandeja();
+  mcVerificarCalidad();   // sin esperar: los lotes y pesos de Calidad de las cargas ya cargadas se miran al terminar
+}
+async function mcVerificarCalidad(){
+  if(_mc.verificando || !accessToken || window.__sinAutoGuardado) return;
+  _mc.verificando = true;
+  if(currentView === 'mails') renderBandeja();
+  try{ await mcBuscarLotesPendientes(); }
+  catch(e){ console.warn('Verificacion con Calidad:', e); _mc.errores.push('No pude verificar con Calidad: ' + e.message); }
+  finally{ _mc.verificando = false; }
+  if(currentView === 'mails') renderBandeja();
 }
 // Solo cuenta (sin leer adjuntos ni gastar IA): cuantos mails de carga todavia nadie proceso.
 async function mcRefrescarBadge(){
@@ -13739,8 +13749,9 @@ function mcCompararConCalidad(row, lotes){
 async function mcBuscarLotesPendientes(){
   _mc.lotes = []; _mc.verif = []; _mc.lotesListos = false;
   const conBk = allRows.filter(r => String(r[COL.BOOKING] || '').trim());
-  const aDefinir = conBk.filter(r => /a definir/i.test(String(r[COL.LOTS] || ''))).slice(0, 12);
+  const aDefinir = conBk.filter(r => /a definir/i.test(String(r[COL.LOTS] || ''))).slice(-12);
   const aVerificar = conBk.filter(r => !/a definir/i.test(String(r[COL.LOTS] || '')) && String(r[COL.LOTS] || '').trim()).slice(-6);
+  _mc.verifRevisadas = aDefinir.length + aVerificar.length;
   for(const r of aDefinir.concat(aVerificar)){
     const bk = String(r[COL.BOOKING]).trim(), definir = aDefinir.indexOf(r) >= 0;
     try{
@@ -13922,6 +13933,32 @@ function mcTarjetaHtml(c, i){
     + (hecho ? '' : '<div class="mc-acc"><a class="btn" target="_blank" rel="noopener" href="https://mail.google.com/mail/u/0/#all/' + encodeURIComponent(c.mail.id) + '">Ver el mail</a><button class="btn" onclick="mcMarcarLista(' + _mc.cards.indexOf(c) + ')" title="Ya tengo todo de esta cadena: el hub no la vuelve a leer">✓ Ya tengo todo (lista)</button><button class="btn" onclick="mcIgnorar(' + _mc.cards.indexOf(c) + ')">Ignorar</button></div>')
     + '</div>';
 }
+// Lo que pasó con los lotes y pesos de Calidad: completar los "A DEFINIR" y verificar lo ya cargado. Va arriba, bajo el banner.
+function mcBloquesCalidadHtml(){
+  const nu = n => String(Math.round(n * 100) / 100).replace('.', ',');
+  let h = '';
+  if(_mc.verificando){
+    h += '<div class="mc-bloque"><div class="spinner" style="padding:0;justify-content:flex-start;"><div class="spin"></div> <b>Verificando con Calidad las últimas cargas…</b> <span class="mc-src" style="display:inline;margin-left:8px;">se leen los lotes y pesos netos de los mails</span></div></div>';
+    return h;
+  }
+  if(_mc.lotes && _mc.lotes.length){
+    h += '<div class="mc-bloque"><b>Lotes de Calidad para completar</b> (cargas que dicen "A DEFINIR" y ya tienen lotes en un mail):' + _mc.lotes.map((x, k) => {
+      const completos = x.lotes.every(l => !isNaN(l.netoKg)), suma = completos ? x.lotes.reduce((t, l) => t + l.netoKg, 0) / 1000 : NaN, tp = numeroCelda(x.row[COL.TNS]);
+      const peso = isNaN(suma) ? '' : ' · neto ' + nu(suma) + ' tn ' + (isNaN(tp) ? '' : (Math.abs(suma - tp) > Math.max(0.05, tp * 0.01) ? '<span style="color:var(--warn);">⚠ la fila dice ' + escH(x.row[COL.TNS]) + ' tn</span>' : '<span style="color:var(--ok);">✓ coincide con la fila (' + escH(x.row[COL.TNS]) + ' tn)</span>'));
+      return '<div class="mc-linea">Fila ' + x.row._sheetRow + ' · ' + escH((x.row[COL.CUSTOMER] || '').trim()) + ' · booking ' + escH(x.booking) + ': <b>' + x.lotes.map(l => escH(l.lote)).join(', ') + '</b>' + peso + ' <button class="btn primary" onclick="mcCompletarLotes(' + k + ')">Completar lotes</button></div>';
+    }).join('') + '</div>';
+  }
+  if(_mc.verif && _mc.verif.length){
+    const dif = _mc.verif.map((x, k) => [x, k]).filter(([x]) => x.estado === 'difiere'), bien = _mc.verif.filter(x => x.estado === 'coincide'), sin = _mc.verif.filter(x => x.estado === 'sinpesos');
+    h += '<div class="mc-bloque"><b>Verificación con Calidad</b> (cargas ya cargadas, contra los lotes y pesos netos que pasó Calidad)'
+      + dif.map(([x, k]) => '<div class="mc-linea">⚠ Fila ' + x.row._sheetRow + ' · ' + escH((x.row[COL.CUSTOMER] || '').trim()) + ' · booking ' + escH(x.booking) + ': ' + x.difs.map(escH).join(' ')
+        + ' <button class="btn primary" onclick="mcCorregirConCalidad(' + k + ')">Poner lo de Calidad</button> <button class="btn" onclick="mcDejarAsi(' + k + ')">Dejar así</button></div>').join('')
+      + (bien.length ? '<div class="mc-linea" style="color:var(--ok);">✓ Coinciden con Calidad (lotes y peso neto): ' + bien.map(x => 'fila ' + x.row._sheetRow + ' (' + nu(x.suma) + ' tn)').join(' · ') + '</div>' : '')
+      + (sin.length ? '<div class="mc-linea" style="color:var(--text3);">Calidad todavía no mandó los pesos de: ' + sin.map(x => 'fila ' + x.row._sheetRow).join(' · ') + '</div>' : '') + '</div>';
+  }
+  if(!h && _mc.lotesListos) h = '<div class="mc-listo" style="color:var(--text3);">Verificación con Calidad: ' + (_mc.verifRevisadas ? 'revisé las últimas ' + _mc.verifRevisadas + ' carga' + (_mc.verifRevisadas === 1 ? '' : 's') + ' y no encontré mails de Calidad con lotes para ninguna (todavía).' : 'no hay cargas con booking para verificar.') + '</div>';
+  return h;
+}
 function renderBandeja(){
   const cont = document.getElementById('content');
   if(!accessToken){ cont.innerHTML = '<div class="empty"><div class="empty-icon">📬</div><div style="margin-bottom:16px;">Conectate con Google para revisar los mails de carga.</div><button class="btn primary" onclick="handleAuth()">Conectar con Google</button></div>'; return; }
@@ -13942,7 +13979,7 @@ function renderBandeja(){
     + '<div class="mc-barra"><button class="btn primary" onclick="mcRefrescar()"' + (_mc.cargando ? ' disabled' : '') + '><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 12a9 9 0 0 1 15.5-6.2L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-15.5 6.2L3 16"/><path d="M3 21v-5h5"/></svg>Buscar mails ahora</button>'
     + (_mc.cards.some(c => c.item.estado !== 'ok' && c.mail.threadId) ? '<button class="btn" onclick="mcMarcarTodoLista()" title="Las cargué todas a mano: que el hub no las lea más"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg>Marcar todo lo pendiente como listo</button>' : '')
     + '<button class="btn" onclick="mcToggleHist()"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>Históricas (' + mcHistorico().filter(x => x.tipo === 'hilo').length + ')</button></div>'
-    + '</div></section>' + (_mc.hist ? mcHistPanelHtml() : '') + '<div id="mc-estado">' + mcEstadoHtml() + '</div>'
+    + '</div></section>' + mcBloquesCalidadHtml() + (_mc.hist ? mcHistPanelHtml() : '') + '<div id="mc-estado">' + mcEstadoHtml() + '</div>'
     + _mc.errores.map(e => '<div class="mc-aviso">⚠ ' + escH(e) + '</div>').join('');
   if(!_mc.cargando && _mc.ultima && !act.length && !otros.length && !sinNeg.length && !aparte.length) h += '<div class="mc-vacio-e"><span class="mc-vacio-ico"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><rect width="20" height="16" x="2" y="4" rx="3"/><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/></svg></span><div class="mc-vacio-t">No hay mails de carga pendientes</div><div class="mc-vacio-s">Cuando detectemos nuevas cargas, aparecerán aquí para que puedas revisarlas.</div></div>';
   h += act.map(c => mcTarjetaHtml(c, _lote.items.indexOf(c.item))).join('');
@@ -13952,16 +13989,6 @@ function renderBandeja(){
     if(l.length) h += '<div class="mc-bloque"><b>' + l.length + ' carga' + (l.length > 1 ? 's' : '') + ' va' + (l.length > 1 ? 'n' : '') + ' a ' + MC_NOMBRES[n] + ':</b> ' + l.map(c => escH(c.item.archivo)).join(' · ') + ' <button class="btn primary" onclick="mcPasarNegocio(\'' + n + '\')">Pasar a ' + MC_NOMBRES[n] + ' para revisarlas</button></div>';
   });
   if(aparte.length) h += '<div class="mc-bloque"><b>Para cargar a mano</b>: ' + aparte.map(c => '<div class="mc-linea">' + escH(c.mail.asunto) + ' — ' + escH(c.noCargable) + ' <button class="btn" onclick="mcIgnorar(' + _mc.cards.indexOf(c) + ')">Ignorar</button></div>').join('') + '</div>';
-  if(_mc.lotes.length) h += '<div class="mc-bloque"><b>Lotes de Calidad para completar</b> (cargas que dicen "A DEFINIR" y ya tienen lotes en un mail):' + _mc.lotes.map((x, k) => '<div class="mc-linea">Fila ' + x.row._sheetRow + ' · ' + escH((x.row[COL.CUSTOMER] || '').trim()) + ' · booking ' + escH(x.booking) + ': <b>' + x.lotes.map(l => escH(l.lote)).join(', ') + '</b> <button class="btn primary" onclick="mcCompletarLotes(' + k + ')">Completar lotes</button></div>').join('') + '</div>';
-  if(_mc.verif && _mc.verif.length){
-    const nu = n => String(Math.round(n * 100) / 100).replace('.', ',');
-    const dif = _mc.verif.map((x, k) => [x, k]).filter(([x]) => x.estado === 'difiere'), bien = _mc.verif.map((x, k) => [x, k]).filter(([x]) => x.estado === 'coincide'), sin = _mc.verif.filter(x => x.estado === 'sinpesos');
-    h += '<div class="mc-bloque"><b>Verificación con Calidad</b> (cargas ya cargadas, contra los lotes y pesos netos que pasó Calidad)'
-      + dif.map(([x, k]) => '<div class="mc-linea">⚠ Fila ' + x.row._sheetRow + ' · ' + escH((x.row[COL.CUSTOMER] || '').trim()) + ' · booking ' + escH(x.booking) + ': ' + x.difs.map(escH).join(' ')
-        + ' <button class="btn primary" onclick="mcCorregirConCalidad(' + k + ')">Poner lo de Calidad</button> <button class="btn" onclick="mcDejarAsi(' + k + ')">Dejar así</button></div>').join('')
-      + (bien.length ? '<div class="mc-linea" style="color:var(--ok);">✓ Coinciden con Calidad (lotes y peso neto): ' + bien.map(([x]) => 'fila ' + x.row._sheetRow + ' (' + nu(x.suma) + ' tn)').join(' · ') + '</div>' : '')
-      + (sin.length ? '<div class="mc-linea" style="color:var(--text3);">Calidad todavía no mandó los pesos de: ' + sin.map(x => 'fila ' + x.row._sheetRow).join(' · ') + '</div>' : '') + '</div>';
-  }
   h += '<div class="cf-barra mc-guardar"><span id="lt-resumen" class="cf-faltan"></span><span style="flex:1;"></span><button class="btn primary" id="lt-guardar" onclick="bandejaGuardar()"' + (act.length ? '' : ' disabled') + '><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3 4.5 6v5.5c0 4.6 3.1 8.2 7.5 9.5 4.4-1.3 7.5-4.9 7.5-9.5V6L12 3z"/><path d="m9 12 2 2 4-4"/></svg>Guardar cargas</button></div></div>';
   cont.innerHTML = h;
   _lote.items.forEach((_, i) => loteCambio(i, true));
@@ -13971,8 +13998,7 @@ async function mcRefrescar(){
   _mc.vistos = new Set(); _mc.cards = _mc.cards.filter(c => c.item.estado === 'ok');
   _mc.ultima = 0; _mc.lotes = [];
   renderBandeja();
-  await mcCargarTodo();
-  if(accessToken && !window.__sinAutoGuardado){ await mcBuscarLotesPendientes(); if(currentView === 'mails') renderBandeja(); }
+  await mcCargarTodo();   // al terminar de buscar mails corre sola la verificacion con Calidad
 }
 function mcCambiarNegocio(k, n){
   const c = _mc.cards[k];
