@@ -12194,6 +12194,11 @@ function normalizarLecturaIA(j, modelo){
     confianza: ['alta', 'media', 'baja'].indexOf(txt(j.confianza).toLowerCase()) >= 0 ? txt(j.confianza).toLowerCase() : 'media',
     avisos, modelo: modelo || ''
   };
+  // De donde salio cada dato (clave del hub -> frase del PDF)
+  d.citas = {};
+  [['vessel', 'vessel'], ['booking', 'booking'], ['shipping', 'shipping'], ['port', 'port'], ['etd', 'etd'], ['eta', 'eta'], ['tns', 'tns'], ['product', 'product'], ['product', 'product_original'],
+   ['packing', 'packing'], ['priceFOB', 'price_fob_usd_tn'], ['lots', 'lots'], ['exporter', 'exporter'], ['contractProv', 'contrato_proveedor'], ['customer', 'customer']]
+    .forEach(([k, ki]) => { const c = citaIA(j, ki); if(c && !d.citas[k]) d.citas[k] = c; });
   return d;
 }
 function faltantesLecturaIA(d){
@@ -12222,10 +12227,12 @@ Extraé los datos y respondé ÚNICAMENTE con un JSON válido (sin markdown ni e
  "product_original": la mercadería tal cual está escrita en el PDF, "product": la mercadería con el nombre más parecido de la lista de productos,
  "packing": embalaje (bags, big bags, drums, flexi, boxes...), "tns": toneladas totales de la carga como NÚMERO (si el PDF las da en kilos, pasalas a toneladas),
  "price_fob_usd_tn": precio por tonelada en USD como NÚMERO (si solo hay un total, dejalo null), "contrato_proveedor": número de contrato del proveedor (ej C-4915) o null,
- "avisos": lista de frases cortas con lo que dudás o no encontraste, "confianza": "alta", "media" o "baja"
+ "avisos": lista de frases cortas con lo que dudás o no encontraste, "confianza": "alta", "media" o "baja",
+ "citas": lista de {"campo", "cita"} (ver la última regla)
 }
 REGLAS:
 - No inventes nada: si un dato no está en el documento, poné null (o [] en las listas) y anotalo en "avisos".
+-${PEDIDO_CITAS}
 - Las fechas en Argentina van día/mes/año: 05/11/2026 es el 5 de noviembre. Devolvelas siempre como dd/mm/aaaa.
 - Si el documento tiene varios productos o varias cargas, extraé la primera y anotalo en "avisos".
 - "product": elegí de esta lista el que corresponda (misma mercadería, aunque esté escrita en otro idioma); si ninguno corresponde, devolvé el texto del PDF traducido al inglés: ${lista(COL.PRODUCT, 40) || '(sin lista)'}
@@ -12234,7 +12241,7 @@ REGLAS:
 ${pistas && pistas.length ? '\nUn primer intento no pudo resolver: ' + pistas.join('; ') + '. Revisá el documento completo con especial cuidado en eso (tablas, pies de página, sellos y notas).' : ''}`;
 }
 async function pedirLecturaPdf(b64, tarea, pistas, detalle){
-  const r = await llamarClaude({ tarea, maxTokens: 1500, detalle, content: [
+  const r = await llamarClaude({ tarea, maxTokens: 3000, detalle, schema: ESQ_PLANILLA, content: [
     { type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: b64 } },
     { type: 'text', text: promptLecturaPlanilla(pistas) }
   ] });
@@ -13516,13 +13523,14 @@ function mcLeerArgenTexto(asunto, cuerpo, fechaMs){
 async function mcIaTextoArgen(asunto, cuerpo){
   if(!cfg.anthropicKey) return null;
   try{
-    const r = await llamarClaude({ tarea: 'extraccion_mail', maxTokens: 400, detalle: 'mail de carga (Argen)', content:
+    const r = await llamarClaude({ tarea: 'extraccion_mail', maxTokens: 1500, detalle: 'mail de carga (Argen)', schema: ESQ_MAIL_ARGEN, content:
 `Sos un asistente de LATINUT S.A. (trading de maní, Argentina). Este es un mail de "SOLICITUD DE EXPORTACION" que Argen Peanuts le manda al despachante. Respondé ÚNICAMENTE con un JSON válido:
 {"consignatario": nombre de la empresa consignataria de los CO y FITO, SIN la dirección (o null), "notas": ["otras indicaciones del cuerpo que haya que saber para cargar o documentar la carga, frases cortas"]}
-No inventes: si no está, null o [].
+No inventes: si no está, null o [].${PEDIDO_CITAS}
 ASUNTO: ${asunto}
 CUERPO:
-${cuerpo.slice(0, 3500)}` });
+${cuerpo.slice(0, 12000)}` });
+    if(r.cortado) _mc.errores.push('La respuesta de la IA sobre el cuerpo del mail quedó cortada: revisá el consignatario contra el mail.');
     return extraerJsonIA(r.texto);
   }catch(e){ console.warn('IA mail Argen:', e); _mc.errores.push('La IA no pudo leer el cuerpo del mail: ' + e.message); return null; }
 }
@@ -13614,9 +13622,9 @@ function mcNegocioNutrin(data){
 async function mcLeerProforma(buf, nombre){
   if(!cfg.anthropicKey) return null;
   try{
-    const r = await llamarClaude({ tarea: 'extraccion_pdf', maxTokens: 600, detalle: nombre, content: [
+    const r = await llamarClaude({ tarea: 'extraccion_pdf', maxTokens: 1500, detalle: nombre, schema: ESQ_PROFORMA, content: [
       { type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: bufferABase64(buf) } },
-      { type: 'text', text: 'Esta es una proforma invoice de una venta de maní. Respondé ÚNICAMENTE con un JSON válido: {"comprador": empresa compradora / Sold to / Bill to, "consignatario": empresa Consignee / Ship to, "proforma": número, "total_usd": número, "incoterm": condición, "destino": puerto o ciudad de destino}. No inventes: lo que no esté, null.' }
+      { type: 'text', text: 'Esta es una proforma invoice de una venta de maní. Respondé ÚNICAMENTE con un JSON válido: {"comprador": empresa compradora / Sold to / Bill to, "consignatario": empresa Consignee / Ship to, "proforma": número, "total_usd": número, "incoterm": condición, "destino": puerto o ciudad de destino}. No inventes: lo que no esté, null.' + PEDIDO_CITAS }
     ] });
     return extraerJsonIA(r.texto);
   }catch(e){ console.warn('Proforma:', e); _mc.errores.push('No pude leer la proforma ' + nombre + ': ' + e.message); return null; }
@@ -13674,7 +13682,7 @@ async function mcTarjetasArgen(m, full){
     const contratoProv = mfn ? mfn[1].replace(/\D/g, '') : [...new Set(tx.contratos.map(x => x.replace(/\D/g, '')).filter(Boolean))].join(', ');
     const fuentes = Object.assign({ vessel: 'planilla (.xlsx)', port: 'planilla (.xlsx)', eta: 'planilla (.xlsx)', product: 'planilla (.xlsx)', tns: 'planilla (.xlsx)', priceFOB: 'planilla (.xlsx)', lots: 'planilla (.xlsx)', contractProv: mfn ? 'nombre de la planilla' : 'asunto del mail' }, tx.fuentes);
     out.push(mcNuevaTarjeta({ clave: m.id + '|' + a.nombre, tipo: 'argen', negocio: 'axt', motivoNegocio: 'Argen Peanuts siempre va a AXT', archivo: a.nombre, data, mail,
-      candidatos: [consig], contractProv: contratoProv, fuentesCliente: tx.fuentes.customer || 'cuerpo del mail', consol: tx.consol ? tx.consol.iso : '', containers: sug.texto, pol: polI.pol, fuentes: Object.assign(fuentes, { pol: polI.fuente }, sug.cambio ? { contenedores: 'por las toneladas de la planilla (el mail decía ' + tx.contenedores + ')' } : {}), avisos: comunes.slice().concat(sug.aviso ? [sug.aviso] : []),
+      candidatos: [consig], contractProv: contratoProv, fuentesCliente: conCita(tx.fuentes.customer || 'cuerpo del mail', citaIA(ia, 'consignatario')), consol: tx.consol ? tx.consol.iso : '', containers: sug.texto, pol: polI.pol, fuentes: Object.assign(fuentes, { pol: polI.fuente }, sug.cambio ? { contenedores: 'por las toneladas de la planilla (el mail decía ' + tx.contenedores + ')' } : {}), avisos: comunes.slice().concat(sug.aviso ? [sug.aviso] : []),
       hints: { consignatario: consig, contratos: tx.contratos.join(', '), destino: tx.destino }, ia: { texto: tx, ia } }));
   }
   return out;
@@ -13724,8 +13732,9 @@ async function mcTarjetasNutrin(m, full){
     const neg = mcNegocioNutrin(data);
     const fuentes = { vessel: 'planilla (PDF)', port: 'planilla (PDF)', eta: 'planilla (PDF)', product: notaProducto || 'planilla (PDF)', tns: 'planilla (PDF)', priceFOB: 'planilla (PDF)', lots: lotesCal.length ? 'respuesta de Calidad' : 'todavía no los mandó Calidad', contractProv: 'cuerpo del mail (lotes de la planilla)', pol: polI.fuente };
     if(consol) fuentes.consol = 'cuerpo del mail (día de carga)';
+    if(data.citas) Object.keys(data.citas).forEach(k => { if(k !== 'customer') fuentes[k] = conCita(fuentes[k] || '', data.citas[k]); });   // planilla leida con IA: la frase de cada dato
     out.push(mcNuevaTarjeta({ clave: m.id + '|' + (bl ? 'P' + bl.planilla : a.nombre), tipo: 'nutrin', negocio: neg.negocio, motivoNegocio: neg.motivo, archivo: a.nombre, data, mail,
-      candidatos: profData ? [profData.consignatario, profData.comprador] : [], contractProv: codigos.join(', '), fuentesCliente: 'proforma', consol: consol ? consol.iso : '', pol: polI.pol, lots, fuentes, avisos: avisos.concat(data.avisos || []), lotesCalidad: lotesCal,
+      candidatos: profData ? [profData.consignatario, profData.comprador] : [], contractProv: codigos.join(', '), fuentesCliente: conCita('proforma', citaIA(profData, 'consignatario') || citaIA(profData, 'comprador')), consol: consol ? consol.iso : '', pol: polI.pol, lots, fuentes, avisos: avisos.concat(data.avisos || []), lotesCalidad: lotesCal,
       hints: { planilla: bl ? bl.planilla : '', proforma: bl ? bl.proforma : '', destinatarioProforma: bl ? bl.destinatario : '', op: bl ? bl.op : '', transbordo: bl ? bl.transbordo : '', planta, consignatario: profData ? (profData.consignatario || '') : '', comprador: profData ? (profData.comprador || '') : '' },
       ia: { proforma: profData } }));
   }
@@ -13743,7 +13752,29 @@ function mcPosibleDuplicado(c){
   const d = Object.assign({}, c.item.data || {}, c.item.edit || {});
   const bk = String(d.booking || '').trim();
   if(bk){ const f = allRowsAll.find(r => String(r[COL.BOOKING] || '').trim() === bk); if(f) return 'Ya hay una carga con el booking ' + bk + ' (fila ' + f._sheetRow + ').'; }
+  if(bk && mcOtrasVigentes()){ const o = _mc.otras.filas.find(x => x.booking.toUpperCase() === bk.toUpperCase()); if(o) return 'Ya hay una carga con el booking ' + bk + ' en ' + MC_NOMBRES[_mc.otras.negocio] + ' (fila ' + o.fila + ', ' + o.customer + ').'; }
   return '';
+}
+// Las cargas del OTRO negocio (solo booking, lotes, contenedores, cliente y toneladas): asi se avisa si la carga ya esta cargada alla.
+// Solo lee; si falla, se sigue comparando con la planilla abierta y la pantalla lo dice.
+function mcOtrasVigentes(){ return !!(_mc.otras && _mc.otras.negocio !== negocioActivo && _mc.otras.filas); }
+function mcComparaCon(){ return mcOtrasVigentes() ? 'las cargas de AXT y de Buzaram' : 'las cargas de ' + getNegocioConfig().label + ' (la planilla abierta ahora)'; }
+async function mcCargarOtroNegocio(){
+  const otro = negocioActivo === 'buzaram' ? 'axt' : 'buzaram';
+  const sid = otro === 'buzaram' ? getBuzaramCfg().sheetId : cfg.sheetId, hoja = otro === 'buzaram' ? getBuzaramCfg().sheetName : cfg.sheetName;
+  _mc.otras = null;
+  if(!accessToken || !sid || !hoja) return false;
+  try{
+    const r = await fetch('https://sheets.googleapis.com/v4/spreadsheets/' + sid + '/values/' + encodeURIComponent(hoja + '!A2:BT'), { headers: { Authorization: 'Bearer ' + accessToken } });
+    if(!r || !r.ok) throw new Error('HTTP ' + (r && r.status));
+    const v = ((await r.json()) || {}).values || [];
+    const H = (v[0] || []).map(normalizarHdr), col = n => H.indexOf(normalizarHdr(n));
+    const cB = col('Booking'), cL = col('Lots'), cC = col('Customer'), cT = col('Tns'), cK = col('Containers');
+    if(cB < 0 && cL < 0) throw new Error('no encontré las columnas Booking ni Lots');
+    const t = (row, i) => i >= 0 ? String(row[i] === undefined || row[i] === null ? '' : row[i]).trim() : '';
+    _mc.otras = { negocio: otro, filas: v.slice(2).map((row, i) => ({ fila: i + 4, booking: t(row, cB), lots: t(row, cL), customer: t(row, cC), tns: t(row, cT), containers: t(row, cK) })).filter(x => x.booking || x.lots || x.containers) };
+    return true;
+  }catch(e){ console.warn('Planilla del otro negocio:', e); _mc.otras = null; return false; }
 }
 
 // ── Cargar todo (buscar, leer y armar) ──
@@ -13776,6 +13807,7 @@ async function mcCargarTodo(){
     if(!(await mcCargarRegistro())){ _mc.errores.push('No pude leer la hoja ' + MC_HOJA + ' de HUB LATINUT: sin ella no se pueden mostrar las cargas (podrías duplicar una).'); return; }
     await mcCargarAlias();
     await mcCargarCorrecciones();
+    await mcCargarOtroNegocio();
     _mc.etapa = 'Buscando los mails de carga en Gmail…'; mcPintarEstado();
     const msgs = await mcBuscarMensajes();
     const pend = msgs.filter(m => !mcProcesado(m.id + '|*') && !mcHiloListo(m.threadId) && !_mc.vistos.has(m.id));
@@ -13955,6 +13987,47 @@ function mcControlContenedores(txt, tns){
   if(por < 12) return 'Son ' + f(tn) + ' tn en ' + n + ' contenedores (solo ' + f(por) + ' tn cada uno): ¿sobran contenedores o el peso está mal?';
   return '';
 }
+// CONTROLES AUTOMATICOS (reglas duras): cosas que no pueden estar bien, se miren como se miren.
+// Digito verificador de un numero de contenedor (norma ISO 6346): devuelve el digito que corresponde a las 4 letras + 6 numeros.
+function digitoContenedor(diez){
+  const t = String(diez || '').toUpperCase();
+  if(!/^[A-Z]{4}\d{6}$/.test(t)) return -1;
+  let suma = 0;
+  for(let i = 0; i < 10; i++){
+    let v;
+    if(i < 4){ v = t.charCodeAt(i) - 55; v += Math.floor((v - 1) / 10); }   // A=10, B=12 ... (se saltean 11, 22 y 33)
+    else v = Number(t[i]);
+    suma += v * Math.pow(2, i);
+  }
+  return suma % 11 % 10;
+}
+function numerosDeContenedor(texto){
+  return (String(texto || '').toUpperCase().match(/[A-Z]{4}[\s-]?\d{6}[\s-]?\d/g) || []).map(x => x.replace(/[\s-]/g, ''));
+}
+function mcReglasDuras(c, d){
+  const it = c.item, av = [];
+  // Contenedores
+  const txt = String(it.containers || '').trim();
+  const nums = numerosDeContenedor(txt);
+  if(txt && !mcEsCantidadContenedores(txt) && !nums.length) av.push('"' + txt + '" no tiene la forma de un número de contenedor (4 letras y 7 números, por ejemplo MSKU1234565): revisalo.');
+  nums.forEach(n => {
+    const dv = digitoContenedor(n.slice(0, 10));
+    if(dv !== Number(n[10])) av.push('El contenedor ' + n + ' está mal copiado: con esas letras y números el último dígito tendría que ser ' + dv + '.');
+    const ya = (allRowsAll || []).find(r => COL.CONTAINERS >= 0 && numerosDeContenedor(r[COL.CONTAINERS]).indexOf(n) >= 0);
+    if(ya) av.push('El contenedor ' + n + ' ya figura en la fila ' + ya._sheetRow + ' (' + String(ya[COL.CUSTOMER] || '').trim() + '). Si es otro viaje del mismo contenedor, no pasa nada.');
+    else if(mcOtrasVigentes()){ const o = _mc.otras.filas.find(x => numerosDeContenedor(x.containers).indexOf(n) >= 0); if(o) av.push('El contenedor ' + n + ' ya figura en ' + MC_NOMBRES[_mc.otras.negocio] + ', fila ' + o.fila + ' (' + o.customer + ').'); }
+  });
+  // Fechas
+  const fc = /^\d{4}-\d{2}-\d{2}$/.test(String(it.consol || '')) ? new Date(it.consol + 'T00:00:00') : null;
+  const fe = parseDate(d.etd), fa = parseDate(d.eta);
+  if(fc && fe && fc.getTime() > fe.getTime()) av.push('La consolidación (' + mcFechaLarga(it.consol) + ') es posterior a la ETD (' + d.etd + '): la carga no puede salir del puerto antes de consolidarse.');
+  if(fc && fa && !fe && fc.getTime() > fa.getTime()) av.push('La consolidación (' + mcFechaLarga(it.consol) + ') es posterior a la ETA (' + d.eta + '): revisá las fechas.');
+  // Pesos que mando Calidad
+  (c.lotesCalidad || []).forEach(l => {
+    if(!isNaN(l.netoKg) && !isNaN(l.brutoKg) && l.brutoKg < l.netoKg) av.push('Lote ' + l.lote + ': el bruto (' + l.brutoKg.toLocaleString('es-AR') + ' kg) es menor que el neto (' + l.netoKg.toLocaleString('es-AR') + ' kg).');
+  });
+  return av;
+}
 // Avisos que dependen de lo que hay escrito AHORA en la tarjeta (se recalculan al tocar cualquier campo).
 function mcActualizarAvisos(i){
   const it = _lote.items[i];
@@ -13980,6 +14053,7 @@ function mcActualizarAvisos(i){
     if(!d.eta) av.push('Falta la ETA: escribila (dd/mm/aaaa).');
     const fe = parseDate(d.etd), fa = parseDate(d.eta);
     if(fe && fa && fe.getTime() > fa.getTime()) av.push('La ETD (' + d.etd + ') es posterior a la ETA (' + d.eta + '): revisalas.');
+    mcReglasDuras(c, d).forEach(x => av.push(x));
   }
   el.innerHTML = av.map(a => '<div class="mc-alerta">' + escH(a) + '</div>').join('');
 }
@@ -14080,12 +14154,22 @@ function mcIdentidadCarga(c){
   if(porLotes && porLotes !== porBooking) razones.push('lotes repetidos en la ' + res(porLotes));
   if(!porBooking && !porLotes && porContrato) razones.push('el contrato del proveedor ya figura en la ' + res(porContrato));
   const fila = (porBooking || porLotes || porContrato || {})._sheetRow;
-  return { estado: (porBooking || porLotes) ? 'existe' : (porContrato ? 'parecida' : 'nueva'), razones, fila };
+  // Tambien en la planilla del otro negocio (si se pudo leer)
+  let enOtro = null;
+  if(mcOtrasVigentes()){
+    const ob = bk ? _mc.otras.filas.find(x => norm(x.booking) === bk) : null;
+    const ol = !ob && lotes.length ? _mc.otras.filas.find(x => { const rl = toks(x.lots); return lotes.some(l => rl.indexOf(l) >= 0); }) : null;
+    enOtro = ob || ol || null;
+    if(enOtro) razones.push('en ' + MC_NOMBRES[_mc.otras.negocio] + ' ya está: ' + (ob ? 'mismo booking ' + d.booking : 'lotes repetidos') + ' en la fila ' + enOtro.fila + ' (' + [enOtro.customer, enOtro.tns ? enOtro.tns + ' tn' : '', 'lotes ' + (enOtro.lots || '—')].filter(Boolean).join(' · ') + ')');
+  }
+  const propio = (porBooking || porLotes) ? 'existe' : (porContrato ? 'parecida' : 'nueva');
+  return { estado: propio === 'existe' ? 'existe' : (enOtro ? 'otro' : propio), razones, fila, filaOtro: enOtro ? enOtro.fila : null, negocioOtro: enOtro ? MC_NOMBRES[_mc.otras.negocio] : '' };
 }
 function mcIdChip(c){
   const i = mcIdentidadCarga(c);
   return i.estado === 'nueva' ? '<span class="mc-chip ok">Carga nueva</span>'
     : i.estado === 'existe' ? '<span class="mc-chip falta">Ya existe · fila ' + i.fila + '</span>'
+    : i.estado === 'otro' ? '<span class="mc-chip falta">Ya existe en ' + escH(i.negocioOtro) + ' · fila ' + i.filaOtro + '</span>'
     : '<span class="mc-chip aviso">Revisar · parecida a la fila ' + i.fila + '</span>';
 }
 function mcFechaLarga(iso){
@@ -14109,7 +14193,7 @@ function mcDatosHtml(c){
 function mcNegHtml(c, acciones){
   const i = mcIdentidadCarga(c), d = Object.assign({}, c.item.data || {}, c.item.edit || {});
   return '<div class="mc-neg"><div class="mc-neg-t"><b>' + escH(c.item.archivo) + '</b> · ' + escH(d.product || '') + ' ' + mcIdChip(c) + '</div>'
-    + (i.razones.length ? '<div class="mc-id-det">' + i.razones.map(escH).join(' · ') + '</div>' : '<div class="mc-id-det mc-id-ok">No hay otra carga con ese booking ni esos lotes en la planilla de ' + escH(getNegocioConfig().label) + '.</div>')
+    + (i.razones.length ? '<div class="mc-id-det">' + i.razones.map(escH).join(' · ') + '</div>' : '<div class="mc-id-det mc-id-ok">No hay otra carga con ese booking ni esos lotes en ' + escH(mcComparaCon()) + '.</div>')
     + mcDatosHtml(c) + (c.motivoNegocio ? '<div class="mc-src">' + escH(c.motivoNegocio) + '</div>' : '')
     + '<div class="mc-neg-acc"><a class="btn" target="_blank" rel="noopener" href="https://mail.google.com/mail/u/0/#all/' + encodeURIComponent(c.mail.id) + '">Ver el mail</a>' + (acciones || '') + '</div></div>';
 }
@@ -14139,13 +14223,13 @@ function renderBandeja(){
   h += act.map(c => mcTarjetaHtml(c, _lote.items.indexOf(c.item))).join('');
   if(sinNeg.length) h += '<div class="mc-bloque"><b>Elegí a qué negocio va</b> (' + sinNeg.length + ')'
     + sinNeg.map(c => mcNegHtml(c, ' <button class="btn" onclick="mcCambiarNegocio(' + _mc.cards.indexOf(c) + ',\'axt\')">AXT</button> <button class="btn" onclick="mcCambiarNegocio(' + _mc.cards.indexOf(c) + ',\'buzaram\')">Buzaram</button>')).join('')
-    + '<div class="mc-src">Se compara con las cargas de ' + escH(getNegocioConfig().label) + ' (la planilla abierta ahora).</div></div>';
+    + '<div class="mc-src">Se compara con ' + escH(mcComparaCon()) + '.</div></div>';
   ['axt', 'buzaram'].filter(n => n !== negocioActivo).forEach(n => {
     const l = otros.filter(c => c.negocio === n);
     if(l.length) h += '<div class="mc-bloque"><b>' + l.length + ' carga' + (l.length > 1 ? 's' : '') + ' va' + (l.length > 1 ? 'n' : '') + ' a ' + MC_NOMBRES[n] + '</b>'
       + l.map(c => mcNegHtml(c, '')).join('')
       + '<div class="mc-neg-acc"><button class="btn primary" onclick="mcPasarNegocio(\'' + n + '\')">Pasar a ' + MC_NOMBRES[n] + ' para revisarlas</button></div>'
-      + '<div class="mc-src">Se compara con las cargas de ' + escH(getNegocioConfig().label) + ' (la planilla abierta ahora); las de ' + MC_NOMBRES[n] + ' se ven al pasar.</div></div>';
+      + '<div class="mc-src">Se compara con ' + escH(mcComparaCon()) + '.</div></div>';
   });
   if(aparte.length) h += '<div class="mc-bloque"><b>Para cargar a mano</b>: ' + aparte.map(c => '<div class="mc-linea">' + escH(c.mail.asunto) + ' — ' + escH(c.noCargable) + ' <button class="btn" onclick="mcIgnorar(' + _mc.cards.indexOf(c) + ')">Ignorar</button></div>').join('') + '</div>';
   const porGuardar = act.filter(c => c.item.estado !== 'ok' && c.item.incluir).length;   // las ya guardadas no cuentan
@@ -16309,12 +16393,31 @@ function iaPanelHtml(){
 // Una llamada a Claude, directo desde el navegador (el mismo camino que ya usaban las tareas): sin pasar por ningun script intermedio.
 // Reintenta sola si Anthropic frena o esta saturado, prueba el modelo anterior si el nuevo no esta disponible, y si falla dice por que en palabras.
 // content: texto, o una lista de bloques (por ejemplo un PDF + una instruccion).
-async function llamarClaude({ tarea, content, system, maxTokens, detalle }){
+// MOLDES de respuesta: con "schema" la API devuelve SIEMPRE un JSON con esa forma exacta (structured outputs), en vez de texto libre.
+// Todos traen "citas": por cada dato, la frase textual del documento de donde salio, para poder revisarlo sin abrir el adjunto.
+const _esqTxt = { type: ['string', 'null'] }, _esqNum = { type: ['number', 'null'] }, _esqLista = { type: 'array', items: { type: 'string' } };
+const _esqCitas = { type: 'array', items: { type: 'object', properties: { campo: { type: 'string' }, cita: { type: 'string' } }, required: ['campo', 'cita'], additionalProperties: false } };
+function esquemaIA(props){ return { type: 'object', properties: Object.assign({}, props, { citas: _esqCitas }), required: Object.keys(props).concat(['citas']), additionalProperties: false }; }
+const ESQ_MAIL_ARGEN = esquemaIA({ consignatario: _esqTxt, notas: _esqLista });
+const ESQ_PROFORMA = esquemaIA({ comprador: _esqTxt, consignatario: _esqTxt, proforma: _esqTxt, total_usd: _esqNum, incoterm: _esqTxt, destino: _esqTxt });
+const ESQ_PLANILLA = esquemaIA({ vessel: _esqTxt, booking: _esqTxt, shipping: _esqTxt, port: _esqTxt, pol: _esqTxt, etd: _esqTxt, eta: _esqTxt, consolidacion: _esqTxt,
+  incoterm: _esqTxt, exporter: _esqTxt, customer: _esqTxt, lots: _esqLista, contenedores: _esqLista, product_original: _esqTxt, product: _esqTxt, packing: _esqTxt,
+  tns: _esqNum, price_fob_usd_tn: _esqNum, contrato_proveedor: _esqTxt, avisos: _esqLista, confianza: { type: 'string', enum: ['alta', 'media', 'baja'] } });
+const PEDIDO_CITAS = ' En "citas" poné, por cada dato que encontraste, {"campo": el nombre de la clave, "cita": la frase del documento de donde lo sacaste, copiada tal cual (máximo 120 caracteres)}. Si un dato no está, no lo cites.';
+// La cita de un campo, de una respuesta de la IA (lista "citas") o de un mapa ya armado.
+function citaIA(resp, campo){
+  if(!resp) return '';
+  const l = resp.citas;
+  if(Array.isArray(l)){ const x = l.find(c => c && c.campo === campo && c.cita); return x ? String(x.cita).trim().slice(0, 160) : ''; }
+  return l && l[campo] ? String(l[campo]).trim().slice(0, 160) : '';
+}
+function conCita(fuente, cita){ return cita ? (fuente ? fuente + ' · ' : '') + 'dice: «' + cita + '»' : fuente; }
+async function llamarClaude({ tarea, content, system, maxTokens, detalle, schema }){
   if(!cfg.anthropicKey) throw ErrorIA('Falta cargar la Anthropic API Key en Configuración.', 'sin_clave');
   const modelos = MODELOS_IA[categoriaIA(tarea)];
   let ultimo = null;
   for(const modelo of modelos){
-    try{ return await _pedirClaude(modelo, system, content, maxTokens || 1000, tarea, detalle); }
+    try{ return await _pedirClaude(modelo, system, content, maxTokens || 1000, tarea, detalle, schema); }
     catch(e){ if(e && e.tipo === 'modelo'){ ultimo = e; continue; } throw e; }
   }
   throw ultimo;
@@ -16334,10 +16437,12 @@ function statusDeErrorAnthropic(tipo, msg){
   if(t === 'api_error') return 500;
   return 400;
 }
-async function _pedirClaude(modelo, system, content, maxTokens, tarea, detalle){
+async function _pedirClaude(modelo, system, content, maxTokens, tarea, detalle, schema){
   const cuerpo = { model: modelo, max_tokens: maxTokens, messages: [{ role: 'user', content }] };
   if(system) cuerpo.system = system;
   const urlProxy = String(cfg.claudeProxyUrl || '').trim();
+  // El molde solo viaja por el proxy nuevo (el viejo manda texto suelto). Si el modelo o la cuenta no lo aceptan (error 400), se reintenta sin molde.
+  if(schema && urlProxy) cuerpo.output_config = { format: { type: 'json_schema', schema } };
   if(!urlProxy && (typeof content !== 'string' || system)) throw ErrorIA('Para leer PDFs con IA falta instalar el proxy de Claude: Configuración → "URL del proxy de Claude" (los pasos están en appscript/claude-proxy.gs).', 'sin_proxy');
   for(let intento = 0; ; intento++){
     let st, data;
@@ -16358,8 +16463,9 @@ async function _pedirClaude(modelo, system, content, maxTokens, tarea, detalle){
     if(st === 200){
       const usd = iaRegistrarUso(modelo, data.usage, tarea, detalle);
       const texto = (data.content || []).filter(b => b && b.type === 'text').map(b => b.text).join('').trim();
-      return { texto, modelo, usage: data.usage || {}, usd };
+      return { texto, modelo, usage: data.usage || {}, usd, conMolde: !!cuerpo.output_config, cortado: data.stop_reason === 'max_tokens' };
     }
+    if(st === 400 && cuerpo.output_config && /output_config|json_schema|schema|format/i.test(String(((data || {}).error || {}).message || ''))){ delete cuerpo.output_config; continue; }
     if((st === 429 || st === 529 || st >= 500) && intento < _iaEsperas.length){ await _esperar(_iaEsperas[intento]); continue; }
     const er = (data && data.error) || {};
     throw mensajeErrorIA(st, er.type, er.message, modelo);
