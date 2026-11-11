@@ -274,6 +274,7 @@ body.sin-google .mobile-toggle::after{content:'';position:absolute;top:-3px;righ
 .t-hist[open] summary::before{content:"▾ ";}
 .t-hist-n{display:inline-block;min-width:18px;padding:0 6px;margin-left:4px;border-radius:9px;background:rgba(23,43,77,.08);font-size:11.5px;text-align:center;}
 .t-hist-ult{font-weight:400;color:var(--text3);}
+.t-hist-quien{color:var(--text2);font-size:12px;}
 .t-hist ul{list-style:none;margin:8px 0 2px;padding:0;display:flex;flex-direction:column;gap:5px;max-height:240px;overflow:auto;}
 .t-hist li{display:flex;gap:10px;flex-wrap:wrap;align-items:baseline;}
 .t-hist-cuando{color:var(--text3);font-size:12px;min-width:112px;}
@@ -2006,7 +2007,7 @@ function getContactsForEmpresa(empresa){
 async function loadLog(){
   if(!cfg.hubSheetId) return;
   try{
-    const range=encodeURIComponent('LOG!A:I');
+    const range=encodeURIComponent('LOG!A:J');
     let url, headers={};
     if(accessToken){
       url=`https://sheets.googleapis.com/v4/spreadsheets/${cfg.hubSheetId}/values/${range}`;
@@ -4693,17 +4694,27 @@ function cambiosRecientes(max){
   for(let i = logRows.length - 1; i >= 0 && out.length < (max || 8); i--){
     const l = logRows[i];
     if(normalizarFuente(l[2]) !== fuente || !(l[7] || '').toString().trim()) continue;
-    out.push({ cuando: ((l[0] || '') + ' ' + (l[1] || '')).trim(), accion: (l[7] || '').toString().trim(), cliente: (l[6] || '').toString().trim(), bl: (l[5] || '').toString().trim(), detalle: (l[8] || '').toString().trim() });
+    out.push({ cuando: ((l[0] || '') + ' ' + (l[1] || '')).trim(), hora: (l[1] || '').toString().trim(), fecha: (l[0] || '').toString().trim(), accion: (l[7] || '').toString().trim(), cliente: (l[6] || '').toString().trim(), bl: (l[5] || '').toString().trim(), detalle: (l[8] || '').toString().trim(), quien: nombreDeUsuarioLog(l[9]) });
   }
   return out;
 }
+// "agustin@latinutsa.com" -> "Agustin". Los cambios anteriores a esta version no guardaban quien los hizo.
+function nombreDeUsuarioLog(v){
+  const m = String(v || '').trim().split('@')[0];
+  return m ? m.charAt(0).toUpperCase() + m.slice(1) : '';
+}
 function cambiosRecientesHtml(){
   const lista = cambiosRecientes(8);
-  if(!lista.length) return '';
   const e = t => String(t === undefined || t === null ? '' : t).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
+  if(!lista.length) return '<div class="t-hist t-hist-vacio" id="t-hist"><b>Cambios recientes</b><span class="t-hist-ult"> · todavía no hay cambios registrados</span></div>';
+  const u = lista[0];
+  const sinCeros = t => String(t).split('/').map(x => String(parseInt(x, 10))).join('/');
+  const d0 = new Date(), hoy = d0.getDate() + '/' + (d0.getMonth() + 1) + '/' + d0.getFullYear();
+  const cuando = (sinCeros(u.fecha) === hoy ? 'hoy ' : u.fecha + ' ') + u.hora;
   return '<details class="t-hist" id="t-hist"' + (_histCambiosAbierto ? ' open' : '') + ' ontoggle="_histCambiosAbierto=this.open">'
-    + '<summary>Cambios recientes <span class="t-hist-n">' + lista.length + '</span><span class="t-hist-ult"> · último: ' + e(lista[0].accion) + (lista[0].cliente ? ' · ' + e(lista[0].cliente) : '') + '</span></summary>'
+    + '<summary><b>Cambios recientes</b><span class="t-hist-ult"> · Último cambio: ' + e(u.accion) + (u.cliente ? ' · ' + e(u.cliente) : '') + ' · ' + e(cuando) + ' · ' + (u.quien ? 'por ' + e(u.quien) : 'persona no registrada') + '</span></summary>'
     + '<ul>' + lista.map(c => '<li><span class="t-hist-cuando">' + e(c.cuando) + '</span><b>' + e(c.accion) + '</b>'
+      + '<span class="t-hist-quien">' + (c.quien ? 'por ' + e(c.quien) : '') + '</span>'
       + (c.cliente || c.bl ? '<span class="t-hist-carga">' + e([c.cliente, c.bl].filter(Boolean).join(' · ')) + '</span>' : '')
       + (c.detalle ? '<span class="t-hist-det">' + e(c.detalle.slice(0, 110)) + '</span>' : '') + '</li>').join('') + '</ul></details>';
 }
@@ -5078,8 +5089,9 @@ async function appendLog(data){
   // las 12 llamadas la tenian fija en 'AXT' y las acciones de Buzaram quedaban
   // registradas como si fueran de AXT.
   const fuente=getLogFuente();
-  const values=[[fecha, hora, fuente, data.fc||'', data.fcServ||'', data.bl||'', data.customer||'', data.accion||'', data.detalle||'']];
-  const range=encodeURIComponent(`LOG!A:I`);
+  // Columna J: quien lo hizo (mail del usuario conectado), para el historial de cambios recientes.
+  const values=[[fecha, hora, fuente, data.fc||'', data.fcServ||'', data.bl||'', data.customer||'', data.accion||'', data.detalle||'', data.usuario||getMiEmail()]];
+  const range=encodeURIComponent(`LOG!A:J`);
   const url=`https://sheets.googleapis.com/v4/spreadsheets/${hubId}/values/${range}:append?valueInputOption=USER_ENTERED&insertDataOption=INSERT_ROWS`;
   await fetch(url,{
     method:'POST',
@@ -7576,7 +7588,7 @@ const AYUDA_SECCIONES = [
     [['—'], 'Lo que editás se guarda solo en la planilla, con un aviso chico que dice qué cambió. Si te equivocás, Ctrl+Z lo deshace. Si algo no se puede guardar (una fórmula, o alguien lo cambió en la planilla), te lo explica'] ] },
   { titulo: 'Colores y marcas', filas: [
     [['Pintar:'], '<span class="ayuda-sw" style="background:#ffe14d"></span><span class="ayuda-sw" style="background:#b8e0b8"></span><span class="ayuda-sw" style="background:#9fe3ea"></span><span class="ayuda-sw" style="background:#fac2db"></span><span class="ayuda-sw" style="background:#d1d1d1"></span><span class="ayuda-sw" style="background:#f59e9e"></span>Elegís celdas y tocás un color: se pinta en la planilla. <b>✕ Sin color</b> lo saca'],
-    [['Naranja ✉'], '<span class="ayuda-sw" style="background:#ffb347"></span>El hub ya envió algo (FC, aviso, telex). Para revisar qué cambió y darle el visto bueno: “Revisar marcas”'],
+    [['Naranja ✉'], '<span class="ayuda-sw" style="background:#ffb347"></span>Marca vieja de algo que el hub envió (FC, aviso, telex). Ahora el hub ya no pinta naranja: lo último que hizo se ve en “Cambios recientes”, arriba de la tabla'],
     [['Violeta ?'], '<span class="ayuda-sw" style="background:#d9c9f7"></span>Producto en duda (¿es NOP?). Con celdas de Producto elegidas: En duda / Es NOP / Es convencional'],
     [['—'], 'El naranja y el violeta no se pisan con la paleta de colores'] ] },
   { titulo: 'Comentarios', filas: [
@@ -14431,11 +14443,11 @@ function actualizarToolbarCargas(){
   const n = window._fcSelectedRows ? window._fcSelectedRows.size : 0;
   const nMarcas = Object.keys(marcasEnVista()).reduce((a, c) => a + marcasEnVista()[c].length, 0);
   if(tb.classList) tb.classList.toggle('tb-aviso', !n && cargasVista === 'tabla');
-  const btnVisto = nMarcas ? '<button class="tb-btn" onclick="marcarComoVisto()" title="Mirá qué cambió en las celdas naranjas (de las cargas tildadas, o de todas las de la tabla) y da el visto bueno">✓ Revisar ' + nMarcas + (nMarcas === 1 ? ' marca' : ' marcas') + '</button>' : '';
+  const btnVisto = '';   // ya no hay "Revisar N marcas": los cambios se ven en "Cambios recientes", arriba de la tabla
   if(!n){
     // En la tabla, sin nada tildado ni marcas, esta barra no aporta: se esconde y deja lugar a las filas.
     const enTabla = cargasVista === 'tabla';
-    tb.style.display = (enTabla && !nMarcas) ? 'none' : '';
+    tb.style.display = enTabla ? 'none' : '';
     tb.innerHTML = (enTabla ? '<svg class="ico tb-ic" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 8v5M12 16.5h.01"/></svg>' : '') + '<span style="font-size:13px;color:var(--text3);">' + (enTabla ? 'Hay celdas marcadas en naranja por el hub' : 'Tildá cargas o un embarque entero para actuar sobre ellos · Tocá una fila para ver su detalle') + '</span><span style="flex:1;"></span>' + btnVisto;
     return;
   }
