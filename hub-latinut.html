@@ -1457,6 +1457,20 @@ body{background:radial-gradient(760px 420px at 86% -12%,rgba(var(--lg-a-rgb),.05
 .pg-ultimo-s{margin-top:3px;font-size:12.5px;color:var(--lg-muted);}
 .pg-ultimo-acc{display:flex;gap:8px;flex-wrap:wrap;align-items:center;}
 @media (prefers-reduced-motion:reduce){.pg-rueda{animation-duration:2.4s;}}
+
+/* Bandeja: guardar tenue si no hay nada, y detalle para reconocer cada carga */
+.mc-vista .cf-barra.mc-guardar.mc-guardar-vacio{opacity:.6;box-shadow:none;background:rgba(255,255,255,.6);}
+.mc-vista .cf-barra.mc-guardar.mc-guardar-vacio .btn.primary,.mc-vista .cf-barra.mc-guardar.mc-guardar-vacio .btn.primary:hover{background:rgba(23,43,77,.10);color:var(--lg-muted);box-shadow:none;cursor:not-allowed;transform:none;}
+.mc-vista .mc-chip.aviso{background:rgba(217,142,0,.13);color:#8a4b00;border-color:rgba(217,142,0,.3);}
+.mc-neg{padding:14px 0;border-top:1px solid rgba(23,43,77,.08);}
+.mc-neg:first-of-type{border-top:0;}
+.mc-neg-t{display:flex;gap:10px;align-items:center;flex-wrap:wrap;font-size:15px;color:var(--lg-text);}
+.mc-id-det{margin-top:5px;font-size:12.5px;color:#8a4b00;}
+.mc-id-det.mc-id-ok{color:#15683a;}
+.mc-dl{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:10px 20px;margin:12px 0 6px;}
+.mc-dato span{display:block;font-size:12px;color:var(--lg-muted);}
+.mc-dato b{display:block;font-size:13.5px;font-weight:600;color:var(--lg-text);word-break:break-word;}
+.mc-neg-acc{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px;}
 </style>
 </head>
 <body>
@@ -12907,8 +12921,14 @@ function loteResumen(){
   const pend = _lote.items.filter(it => it.estado !== 'ok' && it.incluir);
   const faltan = pend.filter(it => faltantesLote(it).length).length;
   const hechas = _lote.items.filter(it => it.estado === 'ok').length;
-  el.textContent = (hechas ? hechas + ' guardada' + (hechas > 1 ? 's' : '') + ' · ' : '') + pend.length + ' para guardar' + (faltan ? ' · faltan datos en ' + faltan : ' · todo listo');
-  el.style.color = faltan ? 'var(--warn)' : 'var(--ok)';
+  const vacio = !pend.length;
+  el.textContent = vacio ? (hechas ? hechas + ' guardada' + (hechas > 1 ? 's' : '') + ' · no hay nada más para guardar' : 'No hay nada para guardar')
+    : (hechas ? hechas + ' guardada' + (hechas > 1 ? 's' : '') + ' · ' : '') + pend.length + ' para guardar' + (faltan ? ' · faltan datos en ' + faltan : ' · todo listo');
+  el.style.color = vacio ? 'var(--lg-muted)' : (faltan ? 'var(--warn)' : 'var(--ok)');
+  if(_lote.bandeja){   // en la bandeja el boton se apaga (y la barra queda tenue) cuando no queda nada tildado por guardar
+    const b = document.getElementById('lt-guardar');
+    if(b){ b.disabled = vacio; const bar = b.parentNode; if(bar && bar.classList) bar.classList.toggle('mc-guardar-vacio', vacio); }
+  }
 }
 
 async function guardarLote(){
@@ -13197,7 +13217,7 @@ function mcResumenHilo(threadId){
 function mcChipsHtml(c){
   const it = c.item;
   const cli = it.customer ? '<span class="mc-chip cli">' + escH(it.customer) + '</span>' : '<span class="mc-chip falta">Sin cliente</span>';
-  return '<div class="mc-chips">' + cli + mcResumenPartes(c).map(x => '<span class="mc-chip">' + escH(x) + '</span>').join('') + '</div>';
+  return '<div class="mc-chips">' + cli + mcResumenPartes(c).map(x => '<span class="mc-chip">' + escH(x) + '</span>').join('') + (it.estado === 'ok' ? '' : mcIdChip(c)) + '</div>';
 }
 // Una cadena (hilo de Gmail) marcada "lista" ya no se lee: ni sus mails ni los que lleguen despues en la misma cadena. Se anota en la misma pestaña
 // MAILS_CARGA con la clave "hilo|<id de la cadena>" y estado "lista" (o "reabierta" si se vuelve a abrir: la ultima fila manda).
@@ -13990,6 +14010,58 @@ function mcBloquesCalidadHtml(){
   if(!h && _mc.lotesListos) h = '<div class="mc-listo" style="color:var(--text3);">Verificación con Calidad: ' + (_mc.verifRevisadas ? 'revisé las últimas ' + _mc.verifRevisadas + ' carga' + (_mc.verifRevisadas === 1 ? '' : 's') + ' y no encontré mails de Calidad con lotes para ninguna (todavía).' : 'no hay cargas con booking para verificar.') + '</div>';
   return h;
 }
+// ¿Esta carga ya esta en la planilla? Se compara con las cargas abiertas ahora (las del negocio activo): mismo booking o algun lote igual = ya existe;
+// mismo contrato del proveedor = parecida (revisar).
+function mcIdentidadCarga(c){
+  const d = Object.assign({}, c.item.data || {}, c.item.edit || {});
+  const norm = x => String(x || '').trim().toUpperCase();
+  const toks = x => String(x || '').split(/[,;\s\/]+/).map(norm).filter(t => t && t !== 'A' && t !== 'DEFINIR');
+  const bk = norm(d.booking), lotes = toks(d.lots), cprov = toks(d.contractProv);
+  let porBooking = null, porLotes = null, porContrato = null;
+  (allRowsAll || []).forEach(r => {
+    if(!porBooking && bk && norm(r[COL.BOOKING]) === bk) porBooking = r;
+    if(!porLotes && lotes.length){ const rl = toks(r[COL.LOTS]); if(lotes.some(l => rl.indexOf(l) >= 0)) porLotes = r; }
+    if(!porContrato && cprov.length && COL.CONTRACT_PROVEEDOR >= 0){ const rc = toks(r[COL.CONTRACT_PROVEEDOR]); if(cprov.some(x => rc.indexOf(x) >= 0)) porContrato = r; }
+  });
+  const razones = [];
+  const res = r => 'fila ' + r._sheetRow + ' (' + [String(r[COL.CUSTOMER] || '').trim(), String(r[COL.TNS] || '').trim() ? String(r[COL.TNS]).trim() + ' tn' : '', 'lotes ' + (String(r[COL.LOTS] || '').trim() || '—')].filter(Boolean).join(' · ') + ')';
+  if(porBooking) razones.push('mismo booking ' + d.booking + ' en la ' + res(porBooking));
+  if(porLotes && porLotes !== porBooking) razones.push('lotes repetidos en la ' + res(porLotes));
+  if(!porBooking && !porLotes && porContrato) razones.push('el contrato del proveedor ya figura en la ' + res(porContrato));
+  const fila = (porBooking || porLotes || porContrato || {})._sheetRow;
+  return { estado: (porBooking || porLotes) ? 'existe' : (porContrato ? 'parecida' : 'nueva'), razones, fila };
+}
+function mcIdChip(c){
+  const i = mcIdentidadCarga(c);
+  return i.estado === 'nueva' ? '<span class="mc-chip ok">Carga nueva</span>'
+    : i.estado === 'existe' ? '<span class="mc-chip falta">Ya existe · fila ' + i.fila + '</span>'
+    : '<span class="mc-chip aviso">Revisar · parecida a la fila ' + i.fila + '</span>';
+}
+function mcFechaLarga(iso){
+  const m = String(iso || '').match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if(!m) return String(iso || '');
+  const dia = ['dom', 'lun', 'mar', 'mié', 'jue', 'vie', 'sáb'][new Date(+m[1], +m[2] - 1, +m[3]).getDay()];
+  return dia + ' ' + m[3] + '/' + m[2] + '/' + m[1];
+}
+// Todo lo que se leyo del mail y de la planilla, para reconocer la carga de un vistazo.
+function mcDatosHtml(c){
+  const it = c.item, d = Object.assign({}, it.data || {}, it.edit || {}), h = c.hints || {};
+  const filas = [
+    ['Consolidación', it.consol ? mcFechaLarga(it.consol) : ''], ['ETD', d.etd], ['ETA', d.eta],
+    ['Cliente (según el mail)', (c.candidatos || []).join(' / ')], ['Booking', d.booking], ['Lotes', d.lots], ['Contrato del proveedor', d.contractProv],
+    ['Toneladas', d.tns ? d.tns + ' tn' : ''], ['Contenedores', it.containers || (it.contHint ? it.contHint + ' (cantidad)' : '')],
+    ['Puerto', d.port], ['Buque', d.vessel], ['Naviera', d.shipping],
+    ['Planilla', [h.planilla && ('planilla ' + h.planilla), h.op && ('OP ' + h.op), h.transbordo && ('transbordo ' + h.transbordo)].filter(Boolean).join(' · ')]
+  ].filter(f => f[1]);
+  return '<div class="mc-dl">' + filas.map(f => '<div class="mc-dato"><span>' + escH(f[0]) + '</span><b>' + escH(f[1]) + '</b></div>').join('') + '</div>';
+}
+function mcNegHtml(c, acciones){
+  const i = mcIdentidadCarga(c), d = Object.assign({}, c.item.data || {}, c.item.edit || {});
+  return '<div class="mc-neg"><div class="mc-neg-t"><b>' + escH(c.item.archivo) + '</b> · ' + escH(d.product || '') + ' ' + mcIdChip(c) + '</div>'
+    + (i.razones.length ? '<div class="mc-id-det">' + i.razones.map(escH).join(' · ') + '</div>' : '<div class="mc-id-det mc-id-ok">No hay otra carga con ese booking ni esos lotes en la planilla de ' + escH(getNegocioConfig().label) + '.</div>')
+    + mcDatosHtml(c) + (c.motivoNegocio ? '<div class="mc-src">' + escH(c.motivoNegocio) + '</div>' : '')
+    + '<div class="mc-neg-acc"><a class="btn" target="_blank" rel="noopener" href="https://mail.google.com/mail/u/0/#all/' + encodeURIComponent(c.mail.id) + '">Ver el mail</a>' + (acciones || '') + '</div></div>';
+}
 function renderBandeja(){
   const cont = document.getElementById('content');
   if(!accessToken){ cont.innerHTML = '<div class="empty"><div class="empty-icon">📬</div><div style="margin-bottom:16px;">Conectate con Google para revisar los mails de carga.</div><button class="btn primary" onclick="handleAuth()">Conectar con Google</button></div>'; return; }
@@ -14014,13 +14086,19 @@ function renderBandeja(){
     + _mc.errores.map(e => '<div class="mc-aviso">⚠ ' + escH(e) + '</div>').join('');
   if(!_mc.cargando && _mc.ultima && !act.length && !otros.length && !sinNeg.length && !aparte.length) h += '<div class="mc-vacio-e"><span class="mc-vacio-ico"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><rect width="20" height="16" x="2" y="4" rx="3"/><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/></svg></span><div class="mc-vacio-t">No hay mails de carga pendientes</div><div class="mc-vacio-s">Cuando detectemos nuevas cargas, aparecerán aquí para que puedas revisarlas.</div></div>';
   h += act.map(c => mcTarjetaHtml(c, _lote.items.indexOf(c.item))).join('');
-  if(sinNeg.length) h += '<div class="mc-bloque"><b>Elegí a qué negocio va</b> (' + sinNeg.length + '): ' + sinNeg.map(c => '<div class="mc-linea">' + escH(c.item.archivo) + ' · ' + escH(c.item.data.product || '') + ' <span class="mc-src">' + escH(c.motivoNegocio) + '</span> <button class="btn" onclick="mcCambiarNegocio(' + _mc.cards.indexOf(c) + ',\'axt\')">AXT</button> <button class="btn" onclick="mcCambiarNegocio(' + _mc.cards.indexOf(c) + ',\'buzaram\')">Buzaram</button></div>').join('') + '</div>';
+  if(sinNeg.length) h += '<div class="mc-bloque"><b>Elegí a qué negocio va</b> (' + sinNeg.length + ')'
+    + sinNeg.map(c => mcNegHtml(c, ' <button class="btn" onclick="mcCambiarNegocio(' + _mc.cards.indexOf(c) + ',\'axt\')">AXT</button> <button class="btn" onclick="mcCambiarNegocio(' + _mc.cards.indexOf(c) + ',\'buzaram\')">Buzaram</button>')).join('')
+    + '<div class="mc-src">Se compara con las cargas de ' + escH(getNegocioConfig().label) + ' (la planilla abierta ahora).</div></div>';
   ['axt', 'buzaram'].filter(n => n !== negocioActivo).forEach(n => {
     const l = otros.filter(c => c.negocio === n);
-    if(l.length) h += '<div class="mc-bloque"><b>' + l.length + ' carga' + (l.length > 1 ? 's' : '') + ' va' + (l.length > 1 ? 'n' : '') + ' a ' + MC_NOMBRES[n] + ':</b> ' + l.map(c => escH(c.item.archivo)).join(' · ') + ' <button class="btn primary" onclick="mcPasarNegocio(\'' + n + '\')">Pasar a ' + MC_NOMBRES[n] + ' para revisarlas</button></div>';
+    if(l.length) h += '<div class="mc-bloque"><b>' + l.length + ' carga' + (l.length > 1 ? 's' : '') + ' va' + (l.length > 1 ? 'n' : '') + ' a ' + MC_NOMBRES[n] + '</b>'
+      + l.map(c => mcNegHtml(c, '')).join('')
+      + '<div class="mc-neg-acc"><button class="btn primary" onclick="mcPasarNegocio(\'' + n + '\')">Pasar a ' + MC_NOMBRES[n] + ' para revisarlas</button></div>'
+      + '<div class="mc-src">Se compara con las cargas de ' + escH(getNegocioConfig().label) + ' (la planilla abierta ahora); las de ' + MC_NOMBRES[n] + ' se ven al pasar.</div></div>';
   });
   if(aparte.length) h += '<div class="mc-bloque"><b>Para cargar a mano</b>: ' + aparte.map(c => '<div class="mc-linea">' + escH(c.mail.asunto) + ' — ' + escH(c.noCargable) + ' <button class="btn" onclick="mcIgnorar(' + _mc.cards.indexOf(c) + ')">Ignorar</button></div>').join('') + '</div>';
-  h += '<div class="cf-barra mc-guardar"><span id="lt-resumen" class="cf-faltan"></span><span style="flex:1;"></span><button class="btn primary" id="lt-guardar" onclick="bandejaGuardar()"' + (act.length ? '' : ' disabled') + '><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3 4.5 6v5.5c0 4.6 3.1 8.2 7.5 9.5 4.4-1.3 7.5-4.9 7.5-9.5V6L12 3z"/><path d="m9 12 2 2 4-4"/></svg>Guardar cargas</button></div></div>';
+  const porGuardar = act.filter(c => c.item.estado !== 'ok' && c.item.incluir).length;   // las ya guardadas no cuentan
+  h += '<div class="cf-barra mc-guardar' + (porGuardar ? '' : ' mc-guardar-vacio') + '"><span id="lt-resumen" class="cf-faltan"></span><span style="flex:1;"></span><button class="btn primary" id="lt-guardar" onclick="bandejaGuardar()"' + (porGuardar ? '' : ' disabled') + '><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3 4.5 6v5.5c0 4.6 3.1 8.2 7.5 9.5 4.4-1.3 7.5-4.9 7.5-9.5V6L12 3z"/><path d="m9 12 2 2 4-4"/></svg>Guardar cargas</button></div></div>';
   cont.innerHTML = h;
   _lote.items.forEach((_, i) => loteCambio(i, true));
   loteResumen();
