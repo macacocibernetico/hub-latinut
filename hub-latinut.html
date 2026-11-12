@@ -2390,15 +2390,28 @@ function armarAvisoCliente(filas){
   const vessel   = t(primera, COL.VESSEL);
   const etd      = t(primera, COL.ETD) ? fmtDate(primera[COL.ETD]) : '';
   const eta      = t(primera, COL.ETA) ? fmtDate(primera[COL.ETA]) : '';
-  const tns = filas.reduce((a, r) => { const v = parseSheetNum(r[COL.TNS]); return a + (isNaN(v)?0:v); }, 0);
+  const tns = Math.round(filas.reduce((a, r) => { const v = parseSheetNum(r[COL.TNS]); return a + (isNaN(v)?0:v); }, 0) * 1000) / 1000;   // sin restos de coma flotante (23.470000000000002)
 
-  const bloques = filas.map(r => ({
+  const porFila = filas.map(r => ({
     lote: t(r, COL.LOTS), tns: parseSheetNum(r[COL.TNS])||0, product: t(r, COL.PRODUCT),
     packing: t(r, COL.PACKING), containers: t(r, COL.CONTAINERS), bl: t(r, COL.BL),
     vessel: t(r, COL.VESSEL), port: t(r, COL.PORT),
     etd: t(r, COL.ETD) ? fmtDate(r[COL.ETD]) : '', eta: t(r, COL.ETA) ? fmtDate(r[COL.ETA]) : '',
     exporter: t(r, COL.EXPORTER) || 'Argen Peanuts'
   }));
+  // Un mismo lote partido en varias filas (por ejemplo, dividido por negocio) es UN embarque para el cliente: un solo cuadro,
+  // con las toneladas sumadas. Si algun dato difiere entre las filas (otro contenedor, otro BL...), se muestran los distintos.
+  const bloques = [];
+  porFila.forEach(f => {
+    const clave = normTar(f.lote);
+    const ya = clave ? bloques.find(b => normTar(b.lote) === clave) : null;
+    if(!ya){ bloques.push(Object.assign({}, f)); return; }
+    ya.tns = Math.round((ya.tns + f.tns) * 1000) / 1000;
+    ['product', 'packing', 'containers', 'bl', 'vessel', 'port', 'etd', 'eta', 'exporter'].forEach(k => {
+      const vals = ya[k] ? ya[k].split(' / ') : [];
+      if(f[k] && vals.indexOf(f[k]) < 0) ya[k] = vals.concat([f[k]]).join(' / ');
+    });
+  });
 
   const varias = bloques.length > 1;
   const buqueFrase = vessel ? 'La carga viaja en el buque ' + vessel + '. ' : '';
