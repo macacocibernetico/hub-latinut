@@ -7900,12 +7900,31 @@ async function writeRow(rowData, sheetRow){
 
 async function getSheetId(){
   const nc = getNegocioConfig();
-  const url = `https://sheets.googleapis.com/v4/spreadsheets/${(nc.sheetId||cfg.sheetId)}?key=${cfg.apiKey}`;
-  const r = await fetch(url);
-  const data = await r.json();
-  const sheetName = nc.sheetName || cfg.sheetName;
-  const sheet = (data.sheets||[]).find(s => s.properties.title.toLowerCase() === sheetName.toLowerCase());
-  return sheet ? sheet.properties.sheetId : null;
+  const base = 'https://sheets.googleapis.com/v4/spreadsheets/' + (nc.sheetId||cfg.sheetId);
+  const sheetName = (nc.sheetName || cfg.sheetName || '').toString();
+  window._sheetIdMotivo = '';
+  const intentos = [];
+  if(accessToken) intentos.push({ url: base + '?fields=sheets.properties', opts: { headers: { Authorization: 'Bearer ' + accessToken } } });
+  if(cfg.apiKey) intentos.push({ url: base + '?key=' + cfg.apiKey, opts: undefined });
+  if(!intentos.length) window._sheetIdMotivo = 'no hay sesión de Google ni clave de API cargadas';
+  for(const it of intentos){
+    try{
+      const r = it.opts ? await fetch(it.url, it.opts) : await fetch(it.url);
+      let data = {};
+      try{ data = await r.json(); }catch(e){}
+      if(r.ok === false || (data && data.error)){
+        const er = (data && data.error) || {};
+        const cod = er.code || r.status || 'con un error';
+        if(it.opts || !window._sheetIdMotivo) window._sheetIdMotivo = 'Google respondió ' + cod + (er.message ? ' (' + er.message + ')' : '') + (it.opts ? ((cod === 403 || cod === 404) ? ': tu cuenta de Google no tiene acceso a esta planilla (pedile al dueño permiso de edición)' : '') : ' al usar solo la clave de API: la planilla no es pública, hay que usar la sesión de Google');
+        continue;
+      }
+      const hojas = (data.sheets || []);
+      const sheet = hojas.find(x => ((x.properties || {}).title || '').trim().toLowerCase() === sheetName.trim().toLowerCase());
+      if(sheet) return sheet.properties.sheetId;
+      window._sheetIdMotivo = 'la planilla no tiene una pestaña llamada "' + sheetName + '"' + (hojas.length ? ' (tiene: ' + hojas.map(x => (x.properties || {}).title).join(', ') + ')' : '');
+    }catch(e){ window._sheetIdMotivo = 'no pude conectar con Google (' + (e && e.message) + ')'; }
+  }
+  return null;
 }
 
 async function appendRow(rowData){
@@ -7927,7 +7946,7 @@ async function appendRow(rowData){
   }
   const newRow = lastRow + 1;
   const sheetId = await getSheetId();
-  if(sheetId === null){ alert('No se pudo obtener el ID de la hoja.'); return null; }
+  if(sheetId === null){ alert('No se pudo obtener el ID de la hoja.' + (window._sheetIdMotivo ? '\n\nMotivo: ' + window._sheetIdMotivo + '.' : '') + '\n\nNo se agregó nada a la planilla.'); return null; }
   // Las columnas que en la planilla son formula (Total FC servicios, fecha de pago estimada, etc.) se miran en la
   // ultima fila ANTES de insertar: despues se copian a la fila nueva, como arrastrar la fila hacia abajo en Sheets.
   let colsFormula = [];
