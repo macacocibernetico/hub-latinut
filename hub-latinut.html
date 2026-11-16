@@ -1499,6 +1499,24 @@ body{background:radial-gradient(760px 420px at 86% -12%,rgba(var(--lg-a-rgb),.05
 .ct-fw span{padding:5px 11px;border-radius:999px;border:1px solid var(--border);font-size:12px;background:var(--bg2);}
 .ct-fw span.bien{border-color:rgba(21,104,58,.35);color:#15683a;}
 .ct-fw span.mal{border-color:rgba(217,142,0,.45);background:rgba(217,142,0,.12);color:#8a4b00;font-weight:600;}
+.mc-tabs{display:inline-flex;gap:4px;padding:4px;margin:0 0 18px;border-radius:15px;background:rgba(23,43,77,.07);}
+.mc-tab{display:inline-flex;align-items:center;gap:9px;padding:10px 20px;border:0;border-radius:11px;background:transparent;color:var(--lg-muted);font:600 14.5px var(--font);cursor:pointer;transition:background .18s var(--lg-ease),color .18s var(--lg-ease),box-shadow .2s var(--lg-ease);}
+.mc-tab:hover{background:rgba(255,255,255,.65);color:var(--lg-ink);}
+.mc-tab.on,.mc-tab.on:hover{background:#fff;color:var(--lg-ink);box-shadow:var(--lg-sh1),0 0 0 1px rgba(23,43,77,.06);}
+.mc-tab-n{min-width:22px;padding:1px 7px;border-radius:999px;background:rgba(23,43,77,.09);color:var(--lg-muted);font-size:12px;font-weight:700;text-align:center;}
+.mc-tab.on .mc-tab-n{background:rgba(23,43,77,.10);color:var(--lg-ink);}
+.mc-tab-n.hay{background:rgb(var(--lg-a-rgb));color:#fff;}
+.mc-sec-t{margin:0 4px 12px;font-size:13.5px;color:var(--lg-muted);}
+.mc-sec-t b{color:var(--lg-ink);}
+.mc-chip.auto{background:rgba(var(--lg-a-rgb),.12);color:rgb(var(--lg-a-rgb));border-color:rgba(var(--lg-a-rgb),.28);}
+.ac-tabla{width:100%;border-collapse:collapse;font-size:13.5px;}
+.ac-tabla th{text-align:left;font-size:11px;text-transform:uppercase;letter-spacing:.4px;color:var(--text3);padding:9px 12px;border-bottom:1px solid var(--border);}
+.ac-tabla td{padding:10px 12px;border-bottom:1px solid var(--border);}
+.ac-p{font-size:12px;font-weight:600;padding:3px 10px;border-radius:999px;white-space:nowrap;}
+.ac-p.ok{background:rgba(21,104,58,.12);color:#15683a;}.ac-p.med{background:rgba(217,142,0,.14);color:#8a4b00;}.ac-p.no{background:rgba(23,43,77,.07);color:var(--text3);}
+.ac-nota{font-size:12px;color:var(--text3);margin:8px 2px;}
+.ac-barra{display:flex;align-items:center;gap:10px;margin:5px 0;font-size:13px;}.ac-barra span{width:150px;color:var(--text2);}.ac-barra i{display:block;height:9px;border-radius:5px;background:rgb(var(--lg-a-rgb));opacity:.65;}.ac-barra b{font-weight:600;}
+.ac-det{font-size:12.5px;color:var(--text2);margin:6px 0 20px;}.ac-det summary{cursor:pointer;font-weight:600;}.ac-det div{margin-top:8px;line-height:1.6;}
 </style>
 </head>
 <body>
@@ -1529,6 +1547,9 @@ body{background:radial-gradient(760px 420px at 86% -12%,rgba(var(--lg-a-rgb),.05
       <div class="nav-item" id="nav-mails" onclick="showView('mails')">
         <span class="icon"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><rect width="20" height="16" x="2" y="4" rx="3"/><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/></svg></span> Mails de carga
         <span class="nav-badge warn" id="badge-mails" style="display:none"></span>
+      </div>
+      <div class="nav-item" id="nav-automatizacion" onclick="showView('automatizacion')">
+        <span class="icon"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="m12 14 4-4"/><path d="M3.34 19a10 10 0 1 1 17.32 0"/></svg></span> Automatización
       </div>
     </div>
     <div class="nav-section">
@@ -1799,6 +1820,7 @@ function updateNegocioPill(){
     contratos:'Contratos',
     tarifario:'Tarifario de fletes',
     contactos:'Contactos',
+    automatizacion:'Automatización',
     log:'Log de acciones',
     config:'Configuración'
   };
@@ -5597,7 +5619,7 @@ function updateBadges(){
 
 // ─── VIEWS ───────────────────────────────────────────────────────────────────
 // Subtitulo de cada pantalla (debajo del titulo del encabezado).
-const _VIEW_SUBS = {contactos:'La hoja CONTACTOS: a quién le llega cada mail y qué forwarders tienen sus datos cargados.', alertas:'Lo que necesita tu atención hoy, ordenado por urgencia.', cargas:'Todas las cargas del negocio: seguimiento, documentos y cobros.', nueva_carga:'Cargá una operación nueva a partir de su contrato.', mails:'Gestioná y organizá los mails de tus cargas de forma rápida y eficiente.', cobranza:'Cobros estimados, vencimientos y reclamos.', cashflow:'Cobros y pagos estimados, por fecha.', liberaciones:'Cargas que llegan pronto y esperan la liberación del TELEX.', pagares:'Pagarés enviados, firmados y pendientes.', contratos:'Contratos abiertos y cerrados, con sus condiciones.', tarifario:'Tarifas de flete por puerto y naviera.', log:'Registro de lo que se hizo desde el hub.', config:'Conexiones, claves y preferencias.'};
+const _VIEW_SUBS = {automatizacion:'Qué tan bien prepara n8n las cargas y cuándo conviene pasarlas a automático.', contactos:'La hoja CONTACTOS: a quién le llega cada mail y qué forwarders tienen sus datos cargados.', alertas:'Lo que necesita tu atención hoy, ordenado por urgencia.', cargas:'Todas las cargas del negocio: seguimiento, documentos y cobros.', nueva_carga:'Cargá una operación nueva a partir de su contrato.', mails:'Gestioná y organizá los mails de tus cargas de forma rápida y eficiente.', cobranza:'Cobros estimados, vencimientos y reclamos.', cashflow:'Cobros y pagos estimados, por fecha.', liberaciones:'Cargas que llegan pronto y esperan la liberación del TELEX.', pagares:'Pagarés enviados, firmados y pendientes.', contratos:'Contratos abiertos y cerrados, con sus condiciones.', tarifario:'Tarifas de flete por puerto y naviera.', log:'Registro de lo que se hizo desde el hub.', config:'Conexiones, claves y preferencias.'};
 function setViewSub(v){ const el = document.getElementById('view-sub'); if(el) el.textContent = _VIEW_SUBS[v] || ''; }
 function showView(view){
   if(view === 'nueva_carga' && currentView !== 'nueva_carga') cargasGuardadasSesion = [];
@@ -5606,7 +5628,7 @@ function showView(view){
   if(view !== 'cargas') _etaOrdenFijo = null;   // al salir de la tabla, la proxima vez vuelve ordenada por ETA
   currentView=view; _editCargaAbierta = false;
   document.querySelectorAll('.nav-item').forEach(el=>el.classList.remove('active'));
-  const titles=window._viewTitles||{alertas:'Alertas',cargas:'Cargas AXT',nueva_carga:'Nueva carga',mails:'Mails de carga',cobranza:'Cobranza',cashflow:'Calendario',liberaciones:'Liberaciones',pagares:'Pagarés',contratos:'Contratos abiertos',tarifario:'Tarifario de fletes',contactos:'Contactos',log:'Log de acciones',config:'Configuración'};
+  const titles=window._viewTitles||{alertas:'Alertas',cargas:'Cargas AXT',nueva_carga:'Nueva carga',mails:'Mails de carga',cobranza:'Cobranza',cashflow:'Calendario',liberaciones:'Liberaciones',pagares:'Pagarés',contratos:'Contratos abiertos',tarifario:'Tarifario de fletes',contactos:'Contactos',automatizacion:'Automatización',log:'Log de acciones',config:'Configuración'};
   document.getElementById('view-title').textContent=titles[view]||view;
   setViewSub(view);
   document.querySelectorAll('.nav-item').forEach(el=>{if(el.getAttribute('onclick')?.includes(`'${view}'`))el.classList.add('active');});
@@ -5615,7 +5637,7 @@ function showView(view){
   if(window.innerWidth<=768)closeSidebar();
 }
 function renderView(v){
-  ({alertas:renderAlertas,cargas:renderCargas,nueva_carga:renderNuevaCarga,mails:renderBandeja,cobranza:renderCobranza,cashflow:renderCashFlow,liberaciones:renderLiberaciones,pagares:renderPagares,contratos:renderContratos,tarifario:renderTarifario,contactos:renderContactos,log:renderLog,config:renderConfig}[v]||renderAlertas)();
+  ({alertas:renderAlertas,cargas:renderCargas,nueva_carga:renderNuevaCarga,mails:renderBandeja,cobranza:renderCobranza,cashflow:renderCashFlow,liberaciones:renderLiberaciones,pagares:renderPagares,contratos:renderContratos,tarifario:renderTarifario,contactos:renderContactos,automatizacion:renderAutomatizacion,log:renderLog,config:renderConfig}[v]||renderAlertas)();
   mostrarAvisoColumnas();
 }
 
@@ -13709,7 +13731,7 @@ function mcResumenHilo(threadId){
 function mcChipsHtml(c){
   const it = c.item;
   const cli = it.customer ? '<span class="mc-chip cli">' + escH(it.customer) + '</span>' : '<span class="mc-chip falta">Sin cliente</span>';
-  return '<div class="mc-chips">' + cli + mcResumenPartes(c).map(x => '<span class="mc-chip">' + escH(x) + '</span>').join('') + (it.estado === 'ok' ? '' : mcIdChip(c)) + '</div>';
+  return '<div class="mc-chips">' + cli + mcResumenPartes(c).map(x => '<span class="mc-chip">' + escH(x) + '</span>').join('') + (it.estado === 'ok' ? '' : mcIdChip(c)) + (c.auto && it.estado !== 'ok' ? mcAutoChip(c) : '') + '</div>';
 }
 // Una cadena (hilo de Gmail) marcada "lista" ya no se lee: ni sus mails ni los que lleguen despues en la misma cadena. Se anota en la misma pestaña
 // MAILS_CARGA con la clave "hilo|<id de la cadena>" y estado "lista" (o "reabierta" si se vuelve a abrir: la ultima fila manda).
@@ -13739,6 +13761,7 @@ async function mcMarcarLista(k){
   const ok = await showConfirm('Marcar esta cadena como lista', '"' + c.mail.asunto + '": el hub no la va a leer más (ni los mails nuevos que lleguen en esa cadena), para vos y para el equipo. ' + (n > 1 ? 'Las ' + n + ' cargas pendientes de esta cadena salen de la bandeja. ' : 'Esta carga sale de la bandeja. ') + 'No se escribe nada en la planilla de cargas. Si después la necesitás, la reabrís desde Históricas.', { icono: '✅', okLabel: 'Marcar como lista' });
   if(!ok) return;
   if(!(await mcMarcarHiloLista(c.mail.threadId, c.mail.asunto, [mcResumenHilo(c.mail.threadId), '(marcada a mano)'].filter(Boolean).join(' ')))){ alert('No pude anotarlo en la hoja ' + MC_HOJA + '. No se marcó.'); return; }
+  await acResolverHilo(c.mail.threadId, 'lista_manual');
   mcSacarCadena(c.mail.threadId);
   renderBandeja();
   showToast('Cadena marcada como lista. Si fue sin querer: Históricas → Reabrir.', 'info', 8000);
@@ -13753,7 +13776,7 @@ async function mcMarcarTodoLista(){
   if(!ok) return;
   let fallo = 0;
   for(const [tid, asunto] of hilos){
-    if(await mcMarcarHiloLista(tid, asunto, [mcResumenHilo(tid), '(marcada a mano, todo junto)'].filter(Boolean).join(' '))) mcSacarCadena(tid); else fallo++;
+    if(await mcMarcarHiloLista(tid, asunto, [mcResumenHilo(tid), '(marcada a mano, todo junto)'].filter(Boolean).join(' '))){ await acResolverHilo(tid, 'lista_manual'); mcSacarCadena(tid); } else fallo++;
   }
   if(fallo) alert('No pude anotar ' + fallo + ' cadena' + (fallo === 1 ? '' : 's') + ' en la hoja ' + MC_HOJA + ': siguen en la bandeja.');
   renderBandeja();
@@ -13873,8 +13896,17 @@ function mcHistLimpiar(){
   mcHistFiltrar();
 }
 function mcToggleHist(){ _mc.hist = !_mc.hist; renderBandeja(); }
+function mcVerPestana(hist){ _mc.hist = !!hist; renderBandeja(); try{ window.scrollTo(0, 0); }catch(e){} }
+// Las dos pestañas de la bandeja. La activa se ve (fondo blanco y letra fuerte) y lleva aria-selected.
+function mcTabsHtml(){
+  const pend = _mc.cards.filter(c => c.item.estado !== 'ok' && !c.noCargable).length;
+  const hist = mcHistorico().length;
+  const t = (esHist, texto, n) => { const on = !!_mc.hist === esHist;
+    return '<button type="button" role="tab" class="mc-tab' + (on ? ' on' : '') + '" aria-selected="' + (on ? 'true' : 'false') + '" onclick="mcVerPestana(' + esHist + ')">' + texto + '<span class="mc-tab-n' + (!esHist && n ? ' hay' : '') + '">' + n + '</span></button>'; };
+  return '<div class="mc-tabs" role="tablist" aria-label="Pendientes o históricas">' + t(false, 'Pendientes', pend) + t(true, 'Históricas', hist) + '</div>';
+}
 function mcHistPanelHtml(){
-  return '<div class="mc-hist"><div class="mc-hist-cab"><b>Históricas</b> · cadenas que ya están listas y cargas hechas desde mails (el hub no las lee)'
+  return '<div class="mc-hist"><div class="mc-hist-cab"><b>Históricas</b> · lo que ya está resuelto: cadenas marcadas como listas y cargas ya hechas desde mails (el hub no las vuelve a leer)'
     + '<div class="mc-donde">Se anotan en la pestaña <b>' + MC_HOJA + '</b> de la planilla <b>HUB LATINUT</b> (la misma del LOG). '
     + (cfg.hubSheetId ? '<a target="_blank" rel="noopener" href="https://docs.google.com/spreadsheets/d/' + encodeURIComponent(cfg.hubSheetId) + '/edit">Abrir la planilla</a>' : '') + '</div></div>'
     + '<div class="mc-buscar' + (_mc.histQ ? ' con-texto' : '') + '" id="mc-hist-caja"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>'
@@ -14270,6 +14302,7 @@ async function mcCargarTodo(){
     const msgs = await mcBuscarMensajes();
     await mcResolverHilos(msgs);
     await mcMigrarRegistro();
+    await acCargar();   // las cargas que dejo preparadas n8n (si la hoja no existe o falla, se sigue como siempre)
     const pend = msgs.filter(m => !mcProcesado(m.id + '|*') && !mcHiloListo(m.threadId) && !_mc.vistos.has(m.id));
     _mc.omitidos = msgs.filter(m => mcHiloListo(m.threadId) && !mcProcesado(m.id + '|*')).length;
     _mc.progreso.total = pend.length;
@@ -14281,7 +14314,7 @@ async function mcCargarTodo(){
       while(k < pend.length){
         const m = pend[k++];
         _mc.progreso.actual.push(m.asunto); mcPintarEstado();
-        try{ const t = await mcArmarTarjetas(m); _mc.cards.push(...t); _mc.vistos.add(m.id); _mc.nuevas += t.length; }
+        try{ const props = acPropuestasDeMensaje(m); const t = props.length ? props.map(p => mcTarjetaDePropuesta(m, p)) : (acTieneFilas(m) ? [] : await mcArmarTarjetas(m)); _mc.cards.push(...t); _mc.vistos.add(m.id); _mc.nuevas += t.length; }
         catch(e){ console.warn('Mail de carga:', e); _mc.errores.push('No pude leer "' + m.asunto + '": ' + e.message); }
         _mc.progreso.hechos++; _mc.progreso.actual = _mc.progreso.actual.filter(a => a !== m.asunto);
         _mc.pendientes = Math.max(0, pend.length - _mc.progreso.hechos) + _mc.cards.filter(c => c.item.estado !== 'ok' && !c.noCargable).length; mcBadge();
@@ -14421,8 +14454,10 @@ function mcArmarLote(){
   _mc.cards.forEach(c => {
     if(c.negocio !== negocioActivo || c.noCargable || c.item.estado === 'ok' || c.autoCli === negocioActivo) return;
     c.autoCli = negocioActivo;
-    if(c.item.customer) return;
-    for(const t of c.candidatos){ const k = clienteEnLista(t); if(k){ c.item.customer = k; c.fuentes.customer = c.fuentesCliente || 'el mail'; break; } }
+    if(!c.item.customer){
+      for(const t of c.candidatos){ const k = clienteEnLista(t); if(k){ c.item.customer = k; c.fuentes.customer = c.fuentesCliente || 'el mail'; break; } }
+    }
+    if(c.auto && !c.auto.inicial) c.auto.inicial = mcValoresCampos(c.item);   // lo que se le muestra a quien revisa: contra esto se mide si hubo correcciones
   });
   _lote = { bandeja: true, items: _mc.cards.filter(c => c.negocio === negocioActivo && !c.noCargable).map(c => c.item) };
 }
@@ -14676,10 +14711,13 @@ function renderBandeja(){
     + '<datalist id="lt-clientes">' + clientes.map(c => '<option value="' + escH(c) + '">').join('') + '</datalist><datalist id="lt-pols">' + pols.map(c => '<option value="' + escH(c) + '">').join('') + '</datalist>'
     + mcDatalist('lt-productos', COL.PRODUCT) + mcDatalist('lt-puertos', COL.PORT) + mcDatalist('lt-navieras', COL.SHIPPING) + mcDatalist('lt-packings', COL.PACKING) + mcDatalist('lt-exporters', COL.EXPORTER)
     + '<div class="mc-barra"><button class="btn primary" onclick="mcRefrescar()"' + (_mc.cargando ? ' disabled' : '') + '><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 12a9 9 0 0 1 15.5-6.2L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-15.5 6.2L3 16"/><path d="M3 21v-5h5"/></svg>Buscar mails ahora</button>'
-    + (_mc.cards.some(c => c.item.estado !== 'ok' && c.mail.threadId) ? '<button class="btn" onclick="mcMarcarTodoLista()" title="Las cargué todas a mano: que el hub no las lea más"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg>Marcar todo lo pendiente como listo</button>' : '')
-    + '<button class="btn" onclick="mcToggleHist()"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>Históricas (' + mcHistorico().filter(x => x.tipo === 'hilo').length + ')</button></div>'
-    + '</div></section>' + mcBloquesCalidadHtml() + (_mc.hist ? mcHistPanelHtml() : '') + '<div id="mc-estado">' + mcEstadoHtml() + '</div>'
-    + _mc.errores.map(e => '<div class="mc-aviso">⚠ ' + escH(e) + '</div>').join('');
+    + (!_mc.hist && _mc.cards.some(c => c.item.estado !== 'ok' && c.mail.threadId) ? '<button class="btn" onclick="mcMarcarTodoLista()" title="Las cargué todas a mano: que el hub no las lea más"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg>Marcar todo lo pendiente como listo</button>' : '')
+    + '</div>'
+    + '</div></section>' + mcTabsHtml()
+    + (_mc.hist ? mcHistPanelHtml()
+      : mcBloquesCalidadHtml() + '<div class="mc-sec-t"><b>Pendientes</b> · cargas detectadas en tus mails que todavía no guardaste ni marcaste como listas</div><div id="mc-estado">' + mcEstadoHtml() + '</div>'
+        + _mc.errores.map(e => '<div class="mc-aviso">⚠ ' + escH(e) + '</div>').join(''));
+  if(_mc.hist){ cont.innerHTML = h + '</div>'; return; }   // en Históricas no van las cargas pendientes ni "Guardar cargas"
   if(!_mc.cargando && _mc.ultima && !act.length && !otros.length && !sinNeg.length && !aparte.length) h += '<div class="mc-vacio-e"><span class="mc-vacio-ico"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><rect width="20" height="16" x="2" y="4" rx="3"/><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/></svg></span><div class="mc-vacio-t">No hay mails de carga pendientes</div><div class="mc-vacio-s">Cuando detectemos nuevas cargas, aparecerán aquí para que puedas revisarlas.</div></div>';
   h += act.map(c => mcTarjetaHtml(c, _lote.items.indexOf(c.item))).join('');
   if(sinNeg.length) h += '<div class="mc-bloque"><b>Elegí a qué negocio va</b> (' + sinNeg.length + ')'
@@ -14700,6 +14738,7 @@ function renderBandeja(){
   loteResumen();
 }
 async function mcRefrescar(){
+  _mc.hist = false;   // al buscar mails se vuelve a Pendientes, que es donde aparecen
   _mc.vistos = new Set(); _mc.cards = _mc.cards.filter(c => c.item.estado === 'ok');
   _mc.ultima = 0; _mc.lotes = [];
   renderBandeja();
@@ -14723,6 +14762,7 @@ async function mcIgnorar(k){
   if(!ok) return;
   if(!(await mcRegistrar(c.clave, 'ignorada', c.negocio, '', c.mail.asunto, ''))){ alert('No pude anotarlo en la hoja ' + MC_HOJA + '. No se ignoró.'); return; }
   await mcCerrarMailSiCorresponde(c.mail.id, c.mail.asunto);
+  try{ await acResolver(c, 'ignorada'); }catch(e){ console.warn('AUTO_CARGAS:', e); }
   _mc.cards.splice(k, 1);
   _mc.pendientes = _mc.cards.filter(x => x.item.estado !== 'ok' && !x.noCargable).length; mcBadge();
   renderBandeja();
@@ -14754,8 +14794,207 @@ async function bandejaTrasGuardar(it, fila, d){
   }
   await mcCerrarMailSiCorresponde(it.mail.id, it.mail.asunto);
   await mcCerrarHiloSiCorresponde(it.mail);
+  try{ await acResolver(_mc.cards.find(x => x.item === it), 'aprobada', { fila, negocio: negocioActivo, detalle: [d.booking ? 'Booking ' + d.booking : '', d.tns ? d.tns + ' tn' : '', d.customer || ''].filter(Boolean).join(' · ') }); }catch(e){ console.warn('AUTO_CARGAS:', e); }
   _mc.pendientes = _mc.cards.filter(x => x.item.estado !== 'ok' && !x.noCargable).length; mcBadge();
 }
+// ─── AUTOMATIZACION (n8n) ────────────────────────────────────────────────────
+// n8n lee los mails, extrae con IA, los controla y deja cada carga PREPARADA en la pestaña AUTO_CARGAS de HUB LATINUT. Aca no se escribe nada en las
+// cargas ni en MAILS_CARGA por eso: la carga preparada aparece en Pendientes (con la etiqueta "Preparada por n8n") y se revisa y guarda como siempre.
+// Al guardar se compara lo que se guardo con lo que se mostro y se anota en AUTO_CARGAS si quedo sin correccion o con cuales campos se corrigieron:
+// de ahi sale el tablero "Automatizacion" (cuantas salen bien solas y cuando conviene pasarlas a automatico).
+// La clave de cada fila es la misma que usa el registro compartido: "mid:<Message-ID del mail>|<archivo o planilla>". Si n8n no preparo un mail, el hub lo lee solo.
+const AC_HOJA = 'AUTO_CARGAS';
+const AC_ENCABEZADOS = ['Clave', 'Creada', 'Tipo', 'Asunto', 'Version', 'Confianza', 'Avisos', 'Propuesta', 'Estado', 'Resuelta', 'Usuario', 'Corregidos', 'Final', 'Costo_USD', 'Fila', 'Negocio', 'Detalle'];
+const AC_CAMPOS = [['customer', 'Customer'], ['product', 'Producto'], ['port', 'Puerto'], ['vessel', 'Buque'], ['booking', 'Booking'], ['shipping', 'Naviera'], ['packing', 'Packing'], ['exporter', 'Exporter'],
+  ['etd', 'ETD'], ['eta', 'ETA'], ['tns', 'Tns'], ['priceFOB', 'Price FCA'], ['lots', 'Lotes'], ['contractProv', 'Contract Proveedor'], ['pol', 'POL'], ['consol', 'Consolidación'], ['containers', 'Containers']];
+const AC_RESUELTAS = ['aprobada_sin_cambios', 'aprobada_con_cambios'];
+let _ac = { filas: [], existe: null, titulo: null, ok: false, cargando: false, intentado: false };
+function acJson(t){ try{ const o = JSON.parse(String(t || '')); return (o && typeof o === 'object') ? o : null; }catch(e){ return null; } }
+function acRango(sufijo){ return encodeURIComponent((_ac.titulo || AC_HOJA) + '!' + sufijo); }
+async function acBuscarPestana(){
+  const r = await fetch('https://sheets.googleapis.com/v4/spreadsheets/' + cfg.hubSheetId + '?fields=sheets.properties.title', { headers: { Authorization: 'Bearer ' + accessToken } });
+  if(!r.ok) return undefined;
+  const j = await r.json();
+  return ((j.sheets || []).map(x => ((x.properties || {}).title || '')).find(x => x.trim().toLowerCase() === AC_HOJA.toLowerCase())) || null;
+}
+// Lee las cargas preparadas. Si la pestaña no existe todavia: existe=false (el tablero ofrece crearla).
+async function acCargar(){
+  _ac.ok = false; _ac.intentado = true;
+  if(!accessToken || !cfg.hubSheetId) return false;
+  try{
+    const t = await acBuscarPestana();
+    if(t === undefined) return false;
+    if(t === null){ _ac.existe = false; _ac.titulo = null; _ac.filas = []; _ac.ok = true; return true; }
+    _ac.existe = true; _ac.titulo = t;
+    const r = await fetch('https://sheets.googleapis.com/v4/spreadsheets/' + cfg.hubSheetId + '/values/' + acRango('A2:Q'), { headers: { Authorization: 'Bearer ' + accessToken } });
+    if(!r.ok) return false;
+    const j = await r.json();
+    _ac.filas = (j.values || []).map((f, i) => ({ n: i + 2, clave: String(f[0] || '').trim(), creada: f[1] || '', tipo: String(f[2] || '').toLowerCase(), asunto: f[3] || '', version: f[4] || '', confianza: String(f[5] || '').toLowerCase(),
+      avisos: f[6] || '', propuesta: acJson(f[7]), estado: String(f[8] || 'propuesta').trim().toLowerCase() || 'propuesta', resuelta: f[9] || '', usuario: f[10] || '', corregidos: f[11] || '', final: acJson(f[12]),
+      costo: parseFloat(String(f[13] || '0').replace(',', '.')) || 0, fila: f[14] || '', negocio: f[15] || '', detalle: f[16] || '' })).filter(x => x.clave);
+    _ac.ok = true;
+    return true;
+  }catch(e){ console.warn('AUTO_CARGAS:', e); return false; }
+}
+async function acCrearHoja(){
+  const ok = await showConfirm('Crear la hoja de automatización', 'Se crea una pestaña nueva llamada ' + AC_HOJA + ' en la planilla HUB LATINUT (la misma del LOG y de MAILS_CARGA). n8n escribe ahí las cargas que prepara; el hub la lee y anota qué corregís, y con eso arma el tablero. No toca las cargas ni MAILS_CARGA.', { icono: '🤖', okLabel: 'Crear la hoja' });
+  if(!ok) return false;
+  const base = 'https://sheets.googleapis.com/v4/spreadsheets/' + cfg.hubSheetId, hd = { Authorization: 'Bearer ' + accessToken, 'Content-Type': 'application/json' };
+  const r1 = await fetch(base + ':batchUpdate', { method: 'POST', headers: hd, body: JSON.stringify({ requests: [{ addSheet: { properties: { title: AC_HOJA } } }] }) });
+  if(!r1.ok){ alert('No pude crear la hoja ' + AC_HOJA + ' (HTTP ' + r1.status + ').\n\nCreala a mano: en la planilla HUB LATINUT agregá una pestaña llamada ' + AC_HOJA + ' y escribí en la fila 1, de la A a la Q:\n' + AC_ENCABEZADOS.join(' | ')); return false; }
+  _ac.titulo = AC_HOJA; _ac.existe = true; _ac.filas = []; _ac.ok = true;
+  await fetch(base + '/values/' + acRango('A1:Q1') + '?valueInputOption=RAW', { method: 'PUT', headers: hd, body: JSON.stringify({ values: [AC_ENCABEZADOS] }) });
+  return true;
+}
+
+// ── Lo que se compara entre lo que se mostro y lo que se guardo ──
+function mcValoresCampos(it){
+  const d = Object.assign({}, it.data || {}, it.edit || {});
+  return { customer: it.customer || '', product: d.product || '', port: d.port || '', vessel: d.vessel || '', booking: d.booking || '', shipping: d.shipping || '', packing: d.packing || '', exporter: d.exporter || '',
+    etd: d.etd || '', eta: d.eta || '', tns: d.tns || '', priceFOB: d.priceFOB || '', lots: d.lots || '', contractProv: d.contractProv || '', pol: it.pol || '', consol: it.consol || '', containers: it.containers || '' };
+}
+// Mismo valor aunque cambie el formato: mayusculas, tildes, puntuacion, 21,77 / 21.77, 05/11/2026 / 2026-11-05, orden de los lotes.
+function acNorm(campo, v){
+  const t = String(v === undefined || v === null ? '' : v).trim();
+  if(!t) return '';
+  if(campo === 'tns' || campo === 'priceFOB'){ const n = numeroCelda(t); return isNaN(n) ? normTar(t) : String(Math.round(n * 1000) / 1000); }
+  if(campo === 'etd' || campo === 'eta' || campo === 'consol'){
+    const d = /^\d{4}-\d{2}-\d{2}$/.test(t) ? new Date(t + 'T00:00:00') : parseDate(t);
+    return d && !isNaN(d.getTime()) ? d.getFullYear() + '-' + (d.getMonth() + 1) + '-' + d.getDate() : normTar(t);
+  }
+  if(campo === 'lots' || campo === 'contractProv' || campo === 'containers') return t.split(/[,;\s\/|]+/).map(x => normTar(x)).filter(Boolean).sort().join(',');
+  return normTar(t);
+}
+function acCorregidos(ini, fin){
+  return AC_CAMPOS.filter(([k]) => acNorm(k, (ini || {})[k]) !== acNorm(k, (fin || {})[k])).map(([k, nombre]) => nombre);
+}
+
+// ── Cargas preparadas -> tarjetas de la bandeja ──
+function acPropuestasDeMensaje(m){
+  const g = mcG().gmsg.get(m.id);
+  if(!g || !_ac.ok) return [];
+  return _ac.filas.filter(f => f.estado === 'propuesta' && f.propuesta && f.clave.indexOf(g + '|') === 0);
+}
+function acTieneFilas(m){
+  const g = mcG().gmsg.get(m.id);
+  if(!g || !_ac.ok) return false;
+  return _ac.filas.some(f => f.clave.indexOf(g + '|') === 0 && ['propuesta', 'ignorada', 'lista_manual'].concat(AC_RESUELTAS, ['aprobada_sin_medir']).indexOf(f.estado) >= 0);
+}
+function mcTarjetaDePropuesta(m, p){
+  const q = p.propuesta || {}, data = q.data || {};
+  const resto = p.clave.slice(p.clave.indexOf('|') + 1);
+  const tipo = q.tipo || p.tipo || m.tipo;
+  const neg = tipo === 'argen' ? { negocio: 'axt', motivo: 'Argen Peanuts siempre va a AXT' } : mcNegocioNutrin(data);
+  const fuentes = {};
+  Object.keys(data).forEach(k => { fuentes[k] = conCita('n8n (versión ' + (p.version || '?') + ')', citaIA(q, k)); });
+  const avisos = (Array.isArray(q.avisos) ? q.avisos : []).concat(p.avisos ? String(p.avisos).split(/\s*\|\s*/).filter(Boolean) : []);
+  const c = mcNuevaTarjeta({ clave: m.id + '|' + resto, tipo, negocio: neg.negocio, motivoNegocio: neg.motivo, archivo: q.archivo || resto, data, mail: { id: m.id, threadId: m.threadId, asunto: m.asunto, fechaMs: m.fechaMs, tipo: m.tipo },
+    candidatos: q.candidatos || [], contractProv: q.contractProv || '', fuentesCliente: conCita('n8n', citaIA(q, 'customer')), consol: q.consol || '', pol: q.pol || '', containers: q.containers || '', lots: data.lots,
+    fuentes, avisos, hints: q.hints || {}, lotesCalidad: q.lotesCalidad || [], ia: { n8n: { version: p.version, confianza: p.confianza } } });
+  c.auto = { clave: p.clave, version: p.version, confianza: p.confianza || 'media', inicial: null };
+  return c;
+}
+function mcAutoChip(c){
+  const conf = c.auto.confianza === 'alta' ? 'confianza alta' : c.auto.confianza === 'baja' ? 'confianza baja' : 'confianza media';
+  return '<span class="mc-chip auto" title="La preparó n8n (versión ' + escH(c.auto.version || '?') + '). Si cambiás algo antes de guardar, queda anotado en el tablero de Automatización.">Preparada por n8n · ' + conf + '</span>';
+}
+
+// ── Anotar lo que paso con una carga preparada (una sola vez) ──
+async function acResolver(c, estado, extra){
+  if(!c || !c.auto || c.auto.resuelto || !accessToken || !cfg.hubSheetId) return false;
+  let corregidos = [], final = {}, est = estado;
+  if(estado === 'aprobada'){
+    final = mcValoresCampos(c.item);
+    if(!c.auto.inicial) est = 'aprobada_sin_medir';
+    else { corregidos = acCorregidos(c.auto.inicial, final); est = corregidos.length ? 'aprobada_con_cambios' : 'aprobada_sin_cambios'; }
+  }
+  if(!(await acCargar()) || !_ac.existe) return false;
+  const f = _ac.filas.find(x => x.clave === c.auto.clave);
+  if(!f) return false;
+  const e = extra || {};
+  const body = { valueInputOption: 'RAW', data: [
+    { range: _ac.titulo + '!I' + f.n + ':M' + f.n, values: [[est, comAhora(), getMiEmail() || '', corregidos.join(', '), JSON.stringify(final)]] },
+    { range: _ac.titulo + '!O' + f.n + ':Q' + f.n, values: [[e.fila || '', e.negocio || '', e.detalle || '']] }] };
+  const r = await fetch('https://sheets.googleapis.com/v4/spreadsheets/' + cfg.hubSheetId + '/values:batchUpdate', { method: 'POST', headers: { Authorization: 'Bearer ' + accessToken, 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+  if(r.ok) c.auto.resuelto = true;
+  return r.ok;
+}
+async function acResolverHilo(threadId, estado){
+  for(const c of _mc.cards.filter(x => x.mail.threadId === threadId && x.auto && x.item.estado !== 'ok')){
+    try{ await acResolver(c, estado); }catch(e){ console.warn('AUTO_CARGAS:', e); }
+  }
+}
+
+// ── El tablero ──
+function acEstadoGrupo(n, pct){
+  if(n >= 40 && pct >= 95) return { clase: 'ok', texto: 'Listo para probar solo' };
+  if(n < 5) return { clase: 'no', texto: 'Pocos datos todavía' };
+  if(pct >= 90) return { clase: 'med', texto: n < 40 ? 'Casi: faltan ' + (40 - n) + ' resueltas' : 'Casi: falta llegar a 95 %' };
+  return { clase: 'no', texto: 'Seguir revisando' };
+}
+function acResumen(filas, ahora){
+  ahora = ahora || new Date();
+  const fecha = x => { const d = new Date(String(x || '').replace(' ', 'T')); return isNaN(d.getTime()) ? null : d; };
+  const desde = new Date(ahora.getTime() - 30 * 86400000);
+  const res = filas.filter(f => AC_RESUELTAS.indexOf(f.estado) >= 0);
+  const mes = res.filter(f => { const d = fecha(f.resuelta); return !d || d >= desde; });
+  const sin = mes.filter(f => f.estado === 'aprobada_sin_cambios').length;
+  const pct = x => x.n ? Math.round(x.sin / x.n * 100) : 0;
+  const grupo = (etq, fn) => { const l = mes.filter(fn); const g = { etiqueta: etq, n: l.length, sin: l.filter(f => f.estado === 'aprobada_sin_cambios').length }; g.pct = pct(g); g.estado = acEstadoGrupo(g.n, g.pct); return g; };
+  const alta = f => f.confianza === 'alta';
+  const campos = {};
+  mes.forEach(f => String(f.corregidos || '').split(',').map(x => x.trim()).filter(Boolean).forEach(k => { campos[k] = (campos[k] || 0) + 1; }));
+  const lunes = d => { const x = new Date(d.getFullYear(), d.getMonth(), d.getDate()); x.setDate(x.getDate() - ((x.getDay() + 6) % 7)); return x; };
+  const sem = new Map();
+  res.forEach(f => { const d = fecha(f.resuelta); if(!d) return; const k = lunes(d).getTime(); const o = sem.get(k) || { k, n: 0, sin: 0 }; o.n++; if(f.estado === 'aprobada_sin_cambios') o.sin++; sem.set(k, o); });
+  const semanas = [...sem.values()].sort((a, b) => a.k - b.k).slice(-6).map(o => { const d = new Date(o.k); return { desde: String(d.getDate()).padStart(2, '0') + '/' + String(d.getMonth() + 1).padStart(2, '0'), n: o.n, pct: Math.round(o.sin / o.n * 100) }; });
+  const delMes = filas.filter(f => { const d = fecha(f.creada); return d && d.getFullYear() === ahora.getFullYear() && d.getMonth() === ahora.getMonth(); });
+  return { total: mes.length, sin, con: mes.length - sin, pct: pct({ n: mes.length, sin }), porAprobar: filas.filter(f => f.estado === 'propuesta').length,
+    costoMes: delMes.reduce((a, f) => a + (f.costo || 0), 0),
+    grupos: [grupo('Argen · confianza alta', f => f.tipo === 'argen' && alta(f)), grupo('Nutrin · confianza alta', f => f.tipo === 'nutrin' && alta(f)),
+      grupo('Argen · media o baja', f => f.tipo === 'argen' && !alta(f)), grupo('Nutrin · media o baja', f => f.tipo === 'nutrin' && !alta(f))],
+    campos: Object.entries(campos).sort((a, b) => b[1] - a[1]), semanas,
+    otras: { ignoradas: filas.filter(f => f.estado === 'ignorada').length, listas: filas.filter(f => f.estado === 'lista_manual').length, sinMedir: filas.filter(f => f.estado === 'aprobada_sin_medir').length } };
+}
+function renderAutomatizacion(){
+  const cont = document.getElementById('content');
+  if(!accessToken){ cont.innerHTML = '<div class="empty"><div class="empty-icon">🤖</div><div style="margin-bottom:16px;">Conectate con Google para ver el tablero de automatización.</div><button class="btn primary" onclick="handleAuth()">Conectar con Google</button></div>'; return; }
+  if(!_ac.ok && !_ac.cargando){
+    if(_ac.intentado){ cont.innerHTML = '<div class="empty"><div class="empty-icon">⚠</div><div style="margin-bottom:16px;">No pude leer la hoja ' + AC_HOJA + ' de HUB LATINUT.</div><button class="btn" onclick="acRecargar()">Reintentar</button></div>'; return; }
+    _ac.cargando = true;
+    cont.innerHTML = '<div class="spinner"><div class="spin"></div> Leyendo la hoja ' + AC_HOJA + '…</div>';
+    acCargar().then(() => { _ac.cargando = false; if(currentView === 'automatizacion') renderAutomatizacion(); });
+    return;
+  }
+  const esc = t => String(t === undefined || t === null ? '' : t).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
+  const link = cfg.hubSheetId ? '<a class="btn" target="_blank" rel="noopener" href="https://docs.google.com/spreadsheets/d/' + esc(cfg.hubSheetId) + '/edit">Abrir la hoja</a>' : '';
+  if(_ac.existe === false){
+    cont.innerHTML = '<div class="empty"><div class="empty-icon">🤖</div><div style="margin-bottom:6px;"><b>Todavía no existe la hoja ' + AC_HOJA + '.</b></div><div style="max-width:560px;margin:0 auto 16px;color:var(--text3);font-size:13px;">Es donde n8n deja las cargas que prepara y donde el hub anota qué corregís. Se crea una sola vez, en la planilla HUB LATINUT, y no toca las cargas ni MAILS_CARGA.</div><button class="btn primary" onclick="acCrearYMostrar()">Crear la hoja ' + AC_HOJA + '</button></div>';
+    return;
+  }
+  const r = acResumen(_ac.filas);
+  const usd = x => 'US$ ' + (Math.round(x * 100) / 100).toFixed(2).replace('.', ',');
+  const pill = e => '<span class="ac-p ' + e.clase + '">' + esc(e.texto) + '</span>';
+  let h = '<div class="stats-row">'
+    + '<div class="stat-card"><div class="stat-label">Sin corrección</div><div class="stat-value" style="color:var(--ok)">' + (r.total ? r.pct + ' %' : '—') + '</div><div class="stat-sub">' + r.sin + ' de ' + r.total + ' resueltas (30 días)</div></div>'
+    + '<div class="stat-card warn-card"><div class="stat-label">Con correcciones</div><div class="stat-value" style="color:var(--warn)">' + r.con + '</div><div class="stat-sub">' + (r.total ? (100 - r.pct) + ' % de las resueltas' : 'todavía ninguna') + '</div></div>'
+    + '<div class="stat-card"><div class="stat-label">Por aprobar</div><div class="stat-value">' + r.porAprobar + '</div><div class="stat-sub">preparadas, en Pendientes</div></div>'
+    + '<div class="stat-card"><div class="stat-label">Costo de IA del mes</div><div class="stat-value">' + usd(r.costoMes) + '</div><div class="stat-sub">lo que anota n8n</div></div></div>';
+  h += '<div class="section-header"><span class="section-title">¿Cuándo pasar a automático?</span></div><div class="table-wrap"><table class="ac-tabla"><thead><tr><th>Tipo y confianza</th><th>Resueltas</th><th>Sin corrección</th><th>Estado</th></tr></thead><tbody>'
+    + r.grupos.map(g => '<tr><td>' + esc(g.etiqueta) + '</td><td>' + g.n + '</td><td>' + (g.n ? g.pct + ' %' : '—') + '</td><td>' + pill(g.estado) + '</td></tr>').join('') + '</tbody></table></div>'
+    + '<div class="ac-nota">Listo para probar solo = al menos 40 resueltas en ese grupo y 95 % o más sin corrección. Cuenta lo de los últimos 30 días.</div>';
+  const maxC = r.campos.length ? r.campos[0][1] : 1;
+  h += '<div class="section-header"><span class="section-title">Qué campos corrijo más</span></div>'
+    + (r.campos.length ? r.campos.map(([k, n]) => '<div class="ac-barra"><span>' + esc(k) + '</span><i style="width:' + Math.max(6, Math.round(n / maxC * 220)) + 'px"></i><b>' + n + '</b></div>').join('') : '<div class="ac-nota">Todavía no corregiste nada.</div>');
+  if(r.semanas.length) h += '<div class="section-header"><span class="section-title">Por semana</span></div>' + r.semanas.map(w => '<div class="ac-barra"><span>Desde el ' + w.desde + '</span><i style="width:' + Math.max(6, Math.round(w.pct * 2.2)) + 'px"></i><b>' + w.pct + ' % (' + w.n + ')</b></div>').join('');
+  h += '<div class="ac-nota" style="margin-top:14px;">Fuera de la cuenta: ' + r.otras.ignoradas + ' ignorada' + (r.otras.ignoradas === 1 ? '' : 's') + ', ' + r.otras.listas + ' marcada' + (r.otras.listas === 1 ? '' : 's') + ' como lista a mano' + (r.otras.sinMedir ? ', ' + r.otras.sinMedir + ' aprobada' + (r.otras.sinMedir === 1 ? '' : 's') + ' sin poder medir' : '') + '.</div>'
+    + '<div style="display:flex;gap:8px;flex-wrap:wrap;margin:12px 0;"><button class="btn" onclick="acRecargar()">↻ Recargar</button>' + link + '</div>'
+    + '<details class="ac-det"><summary>Cómo se anota cada carga (para configurar n8n)</summary><div>Hoja <b>' + AC_HOJA + '</b>, fila 1: ' + esc(AC_ENCABEZADOS.join(' | ')) + '.<br>n8n escribe: Clave (<code>mid:&lt;Message-ID del mail&gt;|&lt;archivo o planilla&gt;</code>), Creada, Tipo (argen o nutrin), Asunto, Version, Confianza (alta, media o baja), Avisos, Propuesta (JSON) y Costo_USD, con Estado = <code>propuesta</code>. El hub completa Estado, Resuelta, Usuario, Corregidos, Final, Fila, Negocio y Detalle. Detalle en <code>docs/n8n-etapa1.md</code>.</div></details>';
+  cont.innerHTML = h;
+}
+async function acRecargar(){ _ac.ok = false; _ac.intentado = false; _ac.cargando = false; if(currentView === 'automatizacion') renderAutomatizacion(); }
+async function acCrearYMostrar(){ if(await acCrearHoja()) renderAutomatizacion(); }
+
 // Cada 5 minutos (con el hub abierto) se vuelve a contar cuantos mails de carga hay sin procesar.
 setInterval(() => { if(!window.__sinAutoGuardado && accessToken && !document.hidden) mcRefrescarBadge(); }, 300000);
 
