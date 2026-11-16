@@ -1484,6 +1484,21 @@ body{background:radial-gradient(760px 420px at 86% -12%,rgba(var(--lg-a-rgb),.05
 .mc-dato span{display:block;font-size:12px;color:var(--lg-muted);}
 .mc-dato b{display:block;font-size:13.5px;font-weight:600;color:var(--lg-text);word-break:break-word;}
 .mc-neg-acc{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px;}
+.lib-grupo-h{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:18px 0 6px;padding:10px 14px;background:var(--bg2);border:1px solid var(--border);border-left:6px solid var(--accent);border-radius:var(--radius-lg);}
+.lib-grupo-t{display:flex;flex-direction:column;gap:2px;}
+.lib-grupo-n{font-size:17px;font-weight:700;color:var(--text);}
+.lib-grupo-s{font-size:12px;color:var(--text3);}
+.lib-dest{margin:0 0 8px 6px;font-size:12px;color:var(--text3);}
+.lib-falta{margin:0 0 8px;padding:8px 12px;border-radius:10px;background:rgba(217,142,0,.12);border:1px solid rgba(217,142,0,.3);color:#8a4b00;font-size:13px;display:flex;gap:10px;align-items:center;flex-wrap:wrap;}
+.ct-tabla{width:100%;border-collapse:collapse;font-size:13px;}
+.ct-tabla th{text-align:left;font-size:11px;text-transform:uppercase;letter-spacing:.4px;color:var(--text3);padding:8px 10px;border-bottom:1px solid var(--border);}
+.ct-tabla td{padding:7px 10px;border-bottom:1px solid var(--border);vertical-align:top;}
+.ct-tabla tr.ct-emp td{background:var(--bg3);font-weight:700;}
+.ct-ok{color:var(--ok);font-weight:700;}
+.ct-fw{display:flex;gap:8px;flex-wrap:wrap;margin:0 0 14px;}
+.ct-fw span{padding:5px 11px;border-radius:999px;border:1px solid var(--border);font-size:12px;background:var(--bg2);}
+.ct-fw span.bien{border-color:rgba(21,104,58,.35);color:#15683a;}
+.ct-fw span.mal{border-color:rgba(217,142,0,.45);background:rgba(217,142,0,.12);color:#8a4b00;font-weight:600;}
 </style>
 </head>
 <body>
@@ -1547,6 +1562,9 @@ body{background:radial-gradient(760px 420px at 86% -12%,rgba(var(--lg-a-rgb),.05
     </div>
     <div class="nav-section">
       <div class="nav-label">Sistema</div>
+      <div class="nav-item" id="nav-contactos" onclick="showView('contactos')">
+        <span class="icon"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg></span> Contactos
+      </div>
       <div class="nav-item" onclick="showView('config')">
         <span class="icon"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg></span> Configuración
       </div>
@@ -1780,6 +1798,7 @@ function updateNegocioPill(){
     pagares:'Pagarés',
     contratos:'Contratos',
     tarifario:'Tarifario de fletes',
+    contactos:'Contactos',
     log:'Log de acciones',
     config:'Configuración'
   };
@@ -1904,6 +1923,29 @@ function ccAvisoHoja(){
 // Quienes van siempre en copia del pedido de liberacion de este negocio.
 function ccLiberacionHoja(){
   return contacts.filter(c => c.ccLiberacion && esDelNegocio(c)).map(c => c.email);
+}
+
+// ─── FORWARDERS ──────────────────────────────────────────────────────────────
+// El forwarder de una carga es lo que dice la columna "proveedor" de la planilla. Done Deal y Done Deal FS son razones sociales
+// de Transcargo: para el hub son un solo forwarder. Sus contactos (y los de cualquier otro forwarder) salen de la hoja CONTACTOS:
+// la columna Empresa lleva el nombre tal cual figura en "proveedor" (puede haber varios separados por "/", ej. "Transcargo / Done Deal / Done Deal FS").
+function forwarderDeFila(row){
+  const c = getNegocioConfig().PAGO_PROVEEDOR;
+  return (row && c !== null && c !== undefined && c >= 0) ? String(row[c] || '').trim() : '';
+}
+function grupoForwarder(v){
+  const k = claveForwarder(v);
+  return k === 'TRANSCARGO' ? 'DONE DEAL' : k;
+}
+function contactosDeForwarder(nombre){
+  const k = grupoForwarder(nombre);
+  if(!k) return [];
+  return contacts.filter(c => {
+    const emp = String(c.empresa || '');
+    if(k === 'DONE DEAL' && emp.toUpperCase().indexOf('TRANSCARGO') >= 0) return true;   // Done Deal = Transcargo
+    return emp.split(/[\/,]/).map(p => grupoForwarder(p)).filter(p => p.length >= 3)
+      .some(p => p === k || (k.length >= 4 && p.length >= 4 && (p.indexOf(k) >= 0 || k.indexOf(p) >= 0)));
+  });
 }
 
 // Los contactos del despachante salen SOLO de la hoja CONTACTOS: es la unica
@@ -5522,7 +5564,7 @@ function updateBadges(){
 
 // ─── VIEWS ───────────────────────────────────────────────────────────────────
 // Subtitulo de cada pantalla (debajo del titulo del encabezado).
-const _VIEW_SUBS = {alertas:'Lo que necesita tu atención hoy, ordenado por urgencia.', cargas:'Todas las cargas del negocio: seguimiento, documentos y cobros.', nueva_carga:'Cargá una operación nueva a partir de su contrato.', mails:'Gestioná y organizá los mails de tus cargas de forma rápida y eficiente.', cobranza:'Cobros estimados, vencimientos y reclamos.', cashflow:'Cobros y pagos estimados, por fecha.', liberaciones:'Cargas que llegan pronto y esperan la liberación del TELEX.', pagares:'Pagarés enviados, firmados y pendientes.', contratos:'Contratos abiertos y cerrados, con sus condiciones.', tarifario:'Tarifas de flete por puerto y naviera.', log:'Registro de lo que se hizo desde el hub.', config:'Conexiones, claves y preferencias.'};
+const _VIEW_SUBS = {contactos:'La hoja CONTACTOS: a quién le llega cada mail y qué forwarders tienen sus datos cargados.', alertas:'Lo que necesita tu atención hoy, ordenado por urgencia.', cargas:'Todas las cargas del negocio: seguimiento, documentos y cobros.', nueva_carga:'Cargá una operación nueva a partir de su contrato.', mails:'Gestioná y organizá los mails de tus cargas de forma rápida y eficiente.', cobranza:'Cobros estimados, vencimientos y reclamos.', cashflow:'Cobros y pagos estimados, por fecha.', liberaciones:'Cargas que llegan pronto y esperan la liberación del TELEX.', pagares:'Pagarés enviados, firmados y pendientes.', contratos:'Contratos abiertos y cerrados, con sus condiciones.', tarifario:'Tarifas de flete por puerto y naviera.', log:'Registro de lo que se hizo desde el hub.', config:'Conexiones, claves y preferencias.'};
 function setViewSub(v){ const el = document.getElementById('view-sub'); if(el) el.textContent = _VIEW_SUBS[v] || ''; }
 function showView(view){
   if(view === 'nueva_carga' && currentView !== 'nueva_carga') cargasGuardadasSesion = [];
@@ -5531,7 +5573,7 @@ function showView(view){
   if(view !== 'cargas') _etaOrdenFijo = null;   // al salir de la tabla, la proxima vez vuelve ordenada por ETA
   currentView=view; _editCargaAbierta = false;
   document.querySelectorAll('.nav-item').forEach(el=>el.classList.remove('active'));
-  const titles=window._viewTitles||{alertas:'Alertas',cargas:'Cargas AXT',nueva_carga:'Nueva carga',mails:'Mails de carga',cobranza:'Cobranza',cashflow:'Calendario',liberaciones:'Liberaciones',pagares:'Pagarés',contratos:'Contratos abiertos',tarifario:'Tarifario de fletes',log:'Log de acciones',config:'Configuración'};
+  const titles=window._viewTitles||{alertas:'Alertas',cargas:'Cargas AXT',nueva_carga:'Nueva carga',mails:'Mails de carga',cobranza:'Cobranza',cashflow:'Calendario',liberaciones:'Liberaciones',pagares:'Pagarés',contratos:'Contratos abiertos',tarifario:'Tarifario de fletes',contactos:'Contactos',log:'Log de acciones',config:'Configuración'};
   document.getElementById('view-title').textContent=titles[view]||view;
   setViewSub(view);
   document.querySelectorAll('.nav-item').forEach(el=>{if(el.getAttribute('onclick')?.includes(`'${view}'`))el.classList.add('active');});
@@ -5540,7 +5582,7 @@ function showView(view){
   if(window.innerWidth<=768)closeSidebar();
 }
 function renderView(v){
-  ({alertas:renderAlertas,cargas:renderCargas,nueva_carga:renderNuevaCarga,mails:renderBandeja,cobranza:renderCobranza,cashflow:renderCashFlow,liberaciones:renderLiberaciones,pagares:renderPagares,contratos:renderContratos,tarifario:renderTarifario,log:renderLog,config:renderConfig}[v]||renderAlertas)();
+  ({alertas:renderAlertas,cargas:renderCargas,nueva_carga:renderNuevaCarga,mails:renderBandeja,cobranza:renderCobranza,cashflow:renderCashFlow,liberaciones:renderLiberaciones,pagares:renderPagares,contratos:renderContratos,tarifario:renderTarifario,contactos:renderContactos,log:renderLog,config:renderConfig}[v]||renderAlertas)();
   mostrarAvisoColumnas();
 }
 
@@ -8589,17 +8631,34 @@ async function solicitarLiberacionViaAppScript(rowIdx){
 
 async function solicitarLiberacionBulkViaAppScript(rowIndices){
   if(!rowIndices.length) return;
+  // Un mail por forwarder: cada uno lleva a su gente. Si hay cargas de varios, salen varios borradores (cada uno con su confirmacion).
+  const porFwd = new Map();
+  rowIndices.forEach(ix => { const r = filaPorIdx(ix); if(!r) return; const g = grupoForwarder(forwarderDeFila(r)); if(!porFwd.has(g)) porFwd.set(g, []); porFwd.get(g).push(r._sheetRow); });
+  if(porFwd.size > 1){
+    showToast('Son cargas de ' + porFwd.size + ' forwarders: salen ' + porFwd.size + ' borradores, uno por forwarder.', 'info', 6000);
+    for(const sheetRows of porFwd.values()){
+      const idxs = sheetRows.map(sr => idxDeFila(allRowsAll.find(r => r._sheetRow === sr))).filter(i => i >= 0);   // los indices cambian al recargar la planilla
+      if(idxs.length) await _solicitarLiberacionUnForwarder(idxs);
+    }
+    return;
+  }
+  await _solicitarLiberacionUnForwarder(rowIndices);
+}
+async function _solicitarLiberacionUnForwarder(rowIndices){
   const rows=rowIndices.map(i=>filaPorIdx(i));
   const sheetRows=rows.map(r=>r._sheetRow).filter(Boolean);
   if(sheetRows.length!==rowIndices.length){alert('No se pudieron determinar todas las filas.');return;}
   const customer=(rows[0][COL.CUSTOMER]||'').trim();
   // Se calculan los destinatarios ANTES de preguntar, asi la confirmacion puede
   // mostrar a quien le va a llegar y avisar si hubo que corregir alguna direccion.
-  const rDest = destinatariosLiberacion();
+  const fwdNombre = forwarderDeFila(rows[0]);
+  const rDest = destinatariosLiberacion(fwdNombre);
   const okLibB = await showConfirm('Solicitar liberación de ' + rowIndices.length + ' cargas',
     'Se crea un borrador en tu Gmail y se marca TELEX en todas estas cargas.',
     { icono:'🚢', okLabel:'Solicitar liberación',
       detalle:'<div><span style="color:var(--text3);">Cliente:</span> <b>'+customer+'</b></div>'
+            + '<div><span style="color:var(--text3);">Forwarder:</span> <b>'+(fwdNombre ? (grupoForwarder(fwdNombre)==='DONE DEAL' ? 'Done Deal' : fwdNombre) : 'no figura en la columna proveedor')+'</b></div>'
+            + (fwdNombre ? '' : '<div style="color:var(--warn);margin-top:4px;">⚠ Esta carga no tiene forwarder cargado: el pedido sale a Transcargo (Done Deal). Completá la columna proveedor si es de otro.</div>')
             + '<div><span style="color:var(--text3);">Para:</span> '+rDest.to+'</div>'
             + '<div><span style="color:var(--text3);">CC:</span> '+(rDest.cc||'—')+'</div>'
             + rows.map(function(r){ return '<div>• BL '+((r[COL.BL]||'').trim()||'—')+' · ETA '+fmtDate(r[COL.ETA])+'</div>'; }).join('')
@@ -8749,7 +8808,9 @@ function renderLiberaciones(){
   if(!rows.length){html+=`<div class="empty"><div class="empty-icon">✓</div>Sin liberaciones pendientes.</div>`;document.getElementById('content').innerHTML=html;return;}
 
   window._libSelectedRows=new Set();
-  window._libRows=rows;
+  const grupos=agruparLiberaciones(rows);
+  window._libGrupos=grupos;
+  window._libRows=grupos.flatMap(g=>g.filas);
 
   window.toggleLibSelection=function(idx){
     if(window._libSelectedRows.has(idx)) window._libSelectedRows.delete(idx);
@@ -8780,11 +8841,24 @@ function renderLiberaciones(){
     bar.innerHTML=btns;
   }
   window.updateLibBulkBar=updateLibBulkBar;
+  window.libSeleccionarGrupo=function(gi){
+    const g=window._libGrupos[gi]; if(!g) return;
+    const idxs=g.filas.map(f=>window._libRows.indexOf(f));
+    const todas=idxs.every(i=>window._libSelectedRows.has(i));
+    idxs.forEach(i=>{ if(window._libSelectedRows.has(i)===todas) window.toggleLibSelection(i); });
+  };
+  window.libSolicitarGrupo=function(gi){
+    const g=window._libGrupos[gi]; if(!g) return;
+    const pend=g.filas.filter(r=>!(r[COL.TELEX]||'').trim());
+    if(pend.length) solicitarLiberacionBulkViaAppScript(pend.map(r=>idxDeFila(r)));
+  };
 
-  html+=`<div id="lib-bulk-bar" class="bulk-bar"></div>
-  <div class="alert-list">`;
-
-  rows.forEach((row,localIdx)=>{
+  html+=`<div id="lib-bulk-bar" class="bulk-bar"></div>`;
+  let localIdx=-1;
+  grupos.forEach((g,gi)=>{
+  html+=cabeceraGrupoLiberacion(g,gi)+`<div class="alert-list lib-lista">`;
+  g.filas.forEach((row)=>{
+    localIdx++;
     const origIdx=idxDeFila(row);
     const d=daysFrom(row[COL.ETA]);
     const dc=daysClass(d);
@@ -8835,11 +8909,93 @@ function renderLiberaciones(){
       </div>
     </div>`;
   });
-
   html+=`</div>`;
+  });
   document.getElementById('content').innerHTML=html;
 }
 
+// Las cargas por forwarder: Done Deal (y Done Deal FS) primero, despues los demas por nombre y al final las que no tienen forwarder.
+const COLORES_FWD = ['#378ADD', '#1D9E75', '#BA7517', '#7F77DD', '#D4537E', '#639922', '#D85A30'];
+function agruparLiberaciones(rows){
+  const m = new Map();
+  rows.forEach(r => {
+    const nombre = forwarderDeFila(r), k = grupoForwarder(nombre);
+    if(!m.has(k)) m.set(k, { clave: k, nombre: k === 'DONE DEAL' ? 'Done Deal' : nombre, filas: [] });
+    m.get(k).filas.push(r);
+  });
+  const g = [...m.values()];
+  g.sort((a, b) => (a.clave === 'DONE DEAL' ? -1 : b.clave === 'DONE DEAL' ? 1 : a.clave === '' ? 1 : b.clave === '' ? -1 : a.nombre.localeCompare(b.nombre, 'es')));
+  let c = 0;
+  g.forEach(x => {
+    x.color = x.clave === '' ? '#888780' : COLORES_FWD[c++ % COLORES_FWD.length];
+    x.razones = [...new Set(x.filas.map(forwarderDeFila).filter(Boolean))];
+  });
+  return g;
+}
+function cabeceraGrupoLiberacion(g, gi){
+  const esc = t => String(t === undefined || t === null ? '' : t).replace(/&/g, '&amp;').replace(/</g, '&lt;');
+  const sinSolicitar = g.filas.filter(r => !(r[COL.TELEX] || '').trim()).length;
+  const dest = destinatariosLiberacion(g.clave === '' ? '' : g.nombre);
+  const nombre = g.clave === '' ? 'Sin forwarder cargado' : g.nombre;
+  const sub = (g.razones.length > 1 ? g.razones.join(' y ') + ' · ' : '') + g.filas.length + ' carga' + (g.filas.length === 1 ? '' : 's') + (sinSolicitar ? ' · ' + sinSolicitar + ' sin solicitar' : ' · todas solicitadas')
+    + (g.clave === '' ? ' · completá la columna proveedor (mientras tanto el pedido sale a Transcargo)' : '');
+  const falta = g.clave !== '' && dest.faltantes.length
+    ? '<div class="lib-falta">⚠ ' + esc(dest.faltantes.join(' ')) + ' <button class="btn" onclick="showView(\'contactos\')">Ver contactos</button></div>' : '';
+  return '<div class="lib-grupo-h" style="border-left-color:' + g.color + ';"><div class="lib-grupo-t"><span class="lib-grupo-n">' + esc(nombre) + '</span><span class="lib-grupo-s">' + esc(sub) + '</span></div>'
+    + '<span style="flex:1"></span><button class="btn" onclick="libSeleccionarGrupo(' + gi + ')">Elegir todas</button>'
+    + (sinSolicitar ? '<button class="btn primary" onclick="libSolicitarGrupo(' + gi + ')">Solicitar liberación (' + sinSolicitar + ')</button>' : '') + '</div>'
+    + (g.clave !== '' && !dest.faltantes.length ? '<div class="lib-dest">Para: ' + esc(dest.to || '—') + ' · CC: ' + esc(dest.cc || '—') + '</div>' : '') + falta;
+}
+
+
+let contactosBusqueda = '';
+function renderContactos(){
+  const esc = t => String(t === undefined || t === null ? '' : t).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
+  // Forwarders que figuran en las cargas abiertas y si tienen contactos cargados
+  const fw = new Map();
+  allRows.forEach(r => { const n = forwarderDeFila(r); if(!n) return; const k = grupoForwarder(n); if(!fw.has(k)) fw.set(k, { nombre: k === 'DONE DEAL' ? 'Done Deal' : n, n: 0 }); fw.get(k).n++; });
+  const fws = [...fw.values()].map(x => Object.assign(x, { contactos: contactosDeForwarder(x.nombre).length }));
+  const sin = fws.filter(x => !x.contactos);
+  const empresas = new Set(contacts.map(c => c.empresa)).size;
+  let html = '<div class="stats-row">'
+    + '<div class="stat-card"><div class="stat-label">Contactos</div><div class="stat-value">' + contacts.length + '</div><div class="stat-sub">en la hoja CONTACTOS</div></div>'
+    + '<div class="stat-card"><div class="stat-label">Empresas</div><div class="stat-value">' + empresas + '</div><div class="stat-sub">clientes, forwarders y equipo</div></div>'
+    + '<div class="stat-card"><div class="stat-label">Forwarders en uso</div><div class="stat-value">' + fws.length + '</div><div class="stat-sub">en las cargas abiertas</div></div>'
+    + '<div class="stat-card ' + (sin.length ? 'alert-card' : '') + '"><div class="stat-label">Sin contactos</div><div class="stat-value" style="color:' + (sin.length ? 'var(--danger)' : 'var(--ok)') + '">' + sin.length + '</div><div class="stat-sub">' + (sin.length ? 'falta cargarlos' : 'todo cargado') + '</div></div></div>';
+  html += '<div class="section-header"><span class="section-title">Forwarders</span></div><div class="ct-fw">'
+    + (fws.length ? fws.map(x => '<span class="' + (x.contactos ? 'bien' : 'mal') + '">' + esc(x.nombre) + ' · ' + x.n + ' carga' + (x.n === 1 ? '' : 's') + ' · ' + (x.contactos ? '✓ ' + x.contactos + ' contacto' + (x.contactos === 1 ? '' : 's') : '⚠ faltan cargar sus contactos') + '</span>').join('') : '<span>Ninguna carga tiene forwarder en la columna proveedor.</span>') + '</div>';
+  if(sin.length) html += '<div class="lib-falta">⚠ Faltan los contactos de ' + sin.map(x => esc(x.nombre)).join(', ') + '. En la hoja CONTACTOS agregá una fila por persona: <b>Empresa</b> = el nombre tal cual figura en la columna proveedor, <b>Rol</b> = principal en uno solo (va en el Para) y vacío en los demás (van en copia). Después tocá "Recargar".</div>';
+  html += '<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:12px 0;">'
+    + '<input class="config-input" id="ct-buscar" style="max-width:320px;" placeholder="Buscar empresa, persona o mail" value="' + esc(contactosBusqueda) + '" oninput="contactosBusqueda=this.value;pintarTablaContactos()">'
+    + '<span style="flex:1"></span>'
+    + '<button class="btn" onclick="recargarContactos()">↻ Recargar desde la hoja</button>'
+    + (cfg.hubSheetId ? '<a class="btn" target="_blank" rel="noopener" href="https://docs.google.com/spreadsheets/d/' + esc(cfg.hubSheetId) + '/edit">Abrir la hoja en Google Sheets</a>' : '') + '</div>'
+    + '<div class="table-wrap" id="ct-tabla"></div>';
+  document.getElementById('content').innerHTML = html;
+  pintarTablaContactos();
+}
+function pintarTablaContactos(){
+  const el = document.getElementById('ct-tabla'); if(!el) return;
+  const esc = t => String(t === undefined || t === null ? '' : t).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
+  const q = normBusca(contactosBusqueda);
+  const lista = contacts.filter(c => !q || normBusca([c.empresa, c.contacto, c.email, c.rol].join(' ')).indexOf(q) >= 0);
+  if(!lista.length){ el.innerHTML = '<div class="empty"><div class="empty-icon">—</div>' + (contacts.length ? 'Ningún contacto coincide con la búsqueda.' : 'No se pudo leer la hoja CONTACTOS (o está vacía).') + '</div>'; return; }
+  const ok = v => v ? '<span class="ct-ok">✓</span>' : '';
+  const porEmpresa = new Map();
+  lista.forEach(c => { if(!porEmpresa.has(c.empresa)) porEmpresa.set(c.empresa, []); porEmpresa.get(c.empresa).push(c); });
+  let h = '<table class="ct-tabla"><thead><tr><th>Contacto</th><th>Mail</th><th>Rol</th><th>CC siempre</th><th>Contraparte</th><th>Solicitud FC</th><th>CC aviso</th><th>CC liberación</th></tr></thead><tbody>';
+  [...porEmpresa.keys()].sort((a, b) => a.localeCompare(b, 'es')).forEach(emp => {
+    h += '<tr class="ct-emp"><td colspan="8">' + esc(emp || '(sin empresa)') + '</td></tr>';
+    porEmpresa.get(emp).forEach(c => { h += '<tr><td>' + esc(c.contacto || '—') + '</td><td>' + esc(c.email) + '</td><td>' + esc(c.rol) + '</td><td>' + ok(c.ccSiempre) + '</td><td>' + esc(c.contraparte) + '</td><td>' + ok(c.solicitudFC) + '</td><td>' + ok(c.ccAviso) + '</td><td>' + ok(c.ccLiberacion) + '</td></tr>'; });
+  });
+  el.innerHTML = h + '</tbody></table>';
+}
+async function recargarContactos(){
+  showToast('Leyendo la hoja CONTACTOS…', 'info', 3000);
+  await loadContacts();
+  if(currentView === 'contactos') renderContactos();
+  showToast('✓ ' + contacts.length + ' contactos leídos de la hoja', 'ok');
+}
 
 let cobranzaFilters = { cliente: '', sort: 'due_asc', verTodos: false };
 let archivedBLs = JSON.parse(localStorage.getItem('hub_archived_bls')||'[]');
@@ -11068,8 +11224,10 @@ function buildMailBody(mailType,d,lang){
 // Para y CC de una solicitud de liberacion, segun el negocio activo.
 // En Buzaram, Yael va en Para junto al despachante (igual que hace el AppScript de
 // Buzaram); en AXT, Pedro va en copia. La casilla del equipo siempre en CC.
-function destinatariosLiberacion(){
+function destinatariosLiberacion(forwarder){
   const nc=getNegocioConfig();
+  const fwd=String(forwarder||'').trim();
+  const nomF=fwd||'Transcargo';
   // La contraparte sale de la hoja (columna Contraparte). Si no esta cargada,
   // se avisa mas abajo en vez de caer en una direccion escrita en el codigo.
   const cp=contraparteDeHoja()||{};
@@ -11077,7 +11235,7 @@ function destinatariosLiberacion(){
   // Todos los contactos del despachante. El principal va en Para y EL RESTO EN COPIA.
   // Antes solo se usaba el principal y los demas se descartaban en silencio, asi que
   // Araceli no aparecia aunque estuviera cargada en la hoja CONTACTOS.
-  const despContactos = contacts.filter(c => (c.empresa||'').toUpperCase().indexOf('TRANSCARGO') >= 0);
+  const despContactos = fwd ? contactosDeForwarder(fwd) : contacts.filter(c => (c.empresa||'').toUpperCase().indexOf('TRANSCARGO') >= 0);
   const principalDesp = despContactos.filter(c => (c.rol||'').toLowerCase().indexOf('principal') >= 0)[0] || despContactos[0];
   // Sin fallback a una direccion escrita en el codigo: si el despachante no esta
   // en la hoja, el hub lo dice en vez de mandarle a una direccion que quiza ya
@@ -11105,10 +11263,10 @@ function destinatariosLiberacion(){
 
   // Con la hoja como unica fuente, lo que hay que vigilar es que no falte nadie.
   const faltantes = [];
-  if(!despContactos.length) faltantes.push('No hay ningún contacto de Transcargo cargado en la hoja CONTACTOS.');
-  else if(!principalDesp)   faltantes.push('Ningún contacto de Transcargo está marcado como principal.');
+  if(!despContactos.length) faltantes.push(fwd ? 'Faltan cargar los contactos de ' + fwd + ' en la hoja CONTACTOS (una fila por persona, con Empresa = "' + fwd + '" y una marcada como principal).' : 'No hay ningún contacto de Transcargo cargado en la hoja CONTACTOS.');
+  else if(!principalDesp)   faltantes.push('Ningún contacto de ' + nomF + ' está marcado como principal.');
   if(!cp.email) faltantes.push('Nadie de ' + empresaDelNegocio() + ' tiene "Para" o "CC" en la columna Contraparte.');
-  return { to: to, cc: ccFinal.join(', '), contraparte: cp.nombre||'', faltantes: faltantes };
+  return { to: to, cc: ccFinal.join(', '), contraparte: cp.nombre||'', faltantes: faltantes, forwarder: nomF };
 }
 
 // Aviso para la confirmacion cuando la hoja CONTACTOS esta incompleta.
@@ -11151,7 +11309,7 @@ function openBulkMailModal(rowIndices, mailType){
     return `Exporter: ${exp}\nBL: ${bl}\nBooking: ${booking}\nContainer(s): ${containers}\nBuque: ${vessel}\nPuerto: ${port}\nETA: ${eta}`;
   }).join('\n\n');
 
-  const rLib=destinatariosLiberacion();
+  const rLib=destinatariosLiberacion(forwarderDeFila(rows[0]));
 
   const subject=`Solicitud de liberaciónes - ${exporter} - ${negocioActivo==='buzaram'?'Buzaram':'AXT'} - ETA ${etaStr}`;
   const body=`Estimado/a,\n\nSolicitamos la liberación de los siguientes embarques:\n\n${lines}\n\n@${rLib.contraparte||'la contraparte'} Por favor, dar el ok para proceder con la liberación.\n\nQuedamos a la espera de confirmación.`;
@@ -11205,7 +11363,7 @@ function openMailModal(rowIdx, mailType){
   document.getElementById('modal-title').textContent='Borrador — '+mailType.replace(/_/g,' ');
   let toStr, ccStr;
   if(mailType==='solicitar_liberacion'){
-    const r=destinatariosLiberacion();
+    const r=destinatariosLiberacion(forwarderDeFila(row));
     toStr=r.to; ccStr=r.cc;
   } else if(mailType==='reclamo_cobro'){
     const contactInfo=getContactsForEmpresa(d.customer);
