@@ -13402,6 +13402,15 @@ function mcTipoDeAsunto(a){
   if(/CARGAS NUTRIN/i.test(s)) return 'nutrin';
   return '';
 }
+async function mcEsPrimeroDeSuCadena(m){
+  if(!_mc.primerMail) _mc.primerMail = new Map();
+  if(!_mc.primerMail.has(m.threadId)){
+    let primero = '';
+    try{ const h = await gmailJson('threads/' + m.threadId + '?format=minimal'); const ms = h.messages || []; primero = ms.length ? ms[0].id : ''; }catch(e){ console.warn('Primer mail de la cadena:', e); }
+    _mc.primerMail.set(m.threadId, primero);
+  }
+  return _mc.primerMail.get(m.threadId) === m.id;
+}
 async function mcBuscarMensajes(){
   const out = [];
   for(const tipo of ['argen', 'nutrin']){
@@ -13409,14 +13418,20 @@ async function mcBuscarMensajes(){
     const lista = await gmailJson('messages?maxResults=30&q=' + encodeURIComponent(q));
     const ids = (lista.messages || []).map(x => x.id);
     for(let i = 0; i < ids.length; i += 8){
-      const metas = await Promise.all(ids.slice(i, i + 8).map(id => gmailJson('messages/' + id + '?format=metadata&metadataHeaders=Subject&metadataHeaders=From')));
-      metas.forEach(m => {
+      const metas = await Promise.all(ids.slice(i, i + 8).map(id => gmailJson('messages/' + id + '?format=metadata&metadataHeaders=Subject&metadataHeaders=From&metadataHeaders=Message-ID')));
+      for(const m of metas){
+        mcAnotarGid(m);
         const asunto = mcCabecera(m, 'Subject'), de = mcCabecera(m, 'From');
-        if(mcTipoDeAsunto(asunto) !== tipo) return;
-        if(tipo === 'argen' && !/argenpeanuts\.com\.ar/i.test(de)) return;
-        if(tipo === 'nutrin' && !/nutrin\.com/i.test(de)) return;
+        let t = mcTipoDeAsunto(asunto);
+        if(!t && /^\s*(re|rv|fw|fwd|reenv)\s*:/i.test(asunto)){
+          const limpio = asunto.replace(/^(\s*(re|rv|fw|fwd|reenv)\s*:\s*)+/i, '');
+          if(mcTipoDeAsunto(limpio) === tipo && await mcEsPrimeroDeSuCadena(m)) t = tipo;
+        }
+        if(t !== tipo) continue;
+        if(tipo === 'argen' && !/argenpeanuts\.com\.ar/i.test(de)) continue;
+        if(tipo === 'nutrin' && !/nutrin\.com/i.test(de)) continue;
         out.push({ id: m.id, threadId: m.threadId, tipo, asunto, de, fechaMs: Number(m.internalDate) || 0 });
-      });
+      }
     }
   }
   return out;
@@ -13509,6 +13524,121 @@ async function mcOfrecerAlias(cards){
     if(ok && !(await mcGuardarAlias(p.alias, p.cliente))) showToast('No pude anotar el nombre del cliente', 'warn');
   }
 }
+// ── Identificadores que valen para todo el equipo ──
+function mcG(){
+  if(!_mc.gmsg){ _mc.gmsg = new Map(); _mc.gthr = new Map(); _mc.mthr = new Map(); _mc.gthrIntentado = new Set(); }
+  return _mc;
+}
+// "<CAF123@mail.gmail.com>" -> "mid:CAF123@mail.gmail.com" (vacio si el mail no trae Message-ID)
+function mcGid(h){
+  const t = String(h || '').replace(/[<>\s]/g, '');
+  return t ? 'mid:' + t.replace(/[^A-Za-z0-9@._\-=+$%!#&*~^\/:;?]/g, '_') : '';
+}
+// Anota el Message-ID de un mail leido de Gmail (con su cabecera Message-ID).
+function mcAnotarGid(m){
+  if(!m || !m.id) return;
+  const g = mcGid(mcCabecera(m, 'Message-ID'));
+  if(!g) return;
+  mcG().gmsg.set(m.id, g);
+  if(m.threadId) _mc.mthr.set(m.id, m.threadId);
+}
+// Clave con la que se anota en la hoja: "<id de mail>|resto" o "hilo|<id de cadena>" pasados a Message-ID. Vacio si todavia no se sabe el Message-ID.
+function mcClaveGlobal(clave){
+  mcG();
+  const k = String(clave || ''), i = k.indexOf('|');
+  if(i < 0) return '';
+  const cab = k.slice(0, i), resto = k.slice(i + 1);
+  if(cab === 'hilo'){ const g = _mc.gthr.get(resto); return g ? 'hilo|' + g : ''; }
+  const g = _mc.gmsg.get(cab);
+  return g ? g + '|' + resto : '';
+}
+// Lo que dice el registro de una clave (con ids de ESTA casilla): lo anotado con el Message-ID o, si no, lo viejo. Si hay las dos, la mas nueva.
+function mcRegGet(clave){
+  const g = mcClaveGlobal(clave);
+  const a = g ? _mc.registro.get(g) : null, b = _mc.registro.get(clave) || null;
+  if(a && b) return String(a.fecha || '') >= String(b.fecha || '') ? a : b;
+  return a || b || null;
+}
+// Todo lo anotado de un mail (sin importar si esta con el Message-ID o con el id viejo): [[resto de la clave, fila]]
+function mcRegDeMensaje(msgId){
+  mcG();
+  const g = _mc.gmsg.get(msgId), por = new Map();
+  _mc.registro.forEach((v, k) => {
+    let resto = null;
+    if(g && k.indexOf(g + '|') === 0) resto = k.slice(g.length + 1);
+    else if(k.indexOf(msgId + '|') === 0) resto = k.slice(msgId.length + 1);
+    if(resto === null) return;
+    const antes = por.get(resto);
+    if(!antes || String(v.fecha || '') >= String(antes.fecha || '')) por.set(resto, v);
+  });
+  return [...por.entries()];
+}
+// Lee una cadena y anota los Message-ID de todos sus mails; devuelve los ids (de esta casilla) de sus mails.
+async function mcLeerHiloGids(threadId){
+  mcG();
+  const h = await gmailJson('threads/' + threadId + '?format=metadata&metadataHeaders=Message-ID');
+  const ms = h.messages || [];
+  ms.forEach(m => mcAnotarGid(Object.assign({ threadId }, m)));
+  const raiz = ms.length ? _mc.gmsg.get(ms[0].id) : '';
+  if(raiz) _mc.gthr.set(threadId, raiz);
+  return ms.map(m => m.id);
+}
+async function mcAsegurarGidsHilo(threadId){
+  mcG();
+  if(!threadId || _mc.gthr.has(threadId) || _mc.gthrIntentado.has(threadId)) return;
+  _mc.gthrIntentado.add(threadId);
+  try{ await mcLeerHiloGids(threadId); }catch(e){ console.warn('Message-ID de la cadena:', e); }
+}
+async function mcEnLotes(lista, n, fn){
+  let k = 0;
+  const w = async () => { while(k < lista.length){ const x = lista[k++]; try{ await fn(x); }catch(e){} } };
+  await Promise.all(Array.from({ length: Math.min(n, lista.length) }, w));
+}
+// Antes de mirar el registro hace falta saber el Message-ID de cada cadena que llego.
+async function mcResolverHilos(msgs){
+  mcG();
+  const tids = [...new Set((msgs || []).map(m => m.threadId).filter(Boolean))].filter(t => !_mc.gthr.has(t));
+  await mcEnLotes(tids, 6, t => mcAsegurarGidsHilo(t));
+}
+// De un id compartido ("mid:...") al id de esta casilla: { msgId, threadId }, o null si ese mail no esta en el Gmail de quien pregunta.
+async function mcLocalDeGlobal(gid){
+  mcG();
+  for(const [t, g] of _mc.gthr) if(g === gid) return { threadId: t };
+  for(const [m, g] of _mc.gmsg) if(g === gid) return { msgId: m, threadId: _mc.mthr.get(m) || null };
+  try{
+    const l = await gmailJson('messages?maxResults=1&q=' + encodeURIComponent('rfc822msgid:' + String(gid).slice(4)));
+    const x = (l.messages || [])[0];
+    if(!x) return null;
+    await mcAsegurarGidsHilo(x.threadId);
+    return { msgId: x.id, threadId: x.threadId };
+  }catch(e){ return null; }
+}
+// Una sola vez por sesion: lo que YO anote con los ids viejos de Gmail se republica con el Message-ID (misma fecha, mismo usuario y mismo detalle),
+// para que el resto del equipo lo vea. Las filas de otras personas no se tocan (sus ids no son de mi casilla).
+async function mcMigrarRegistro(){
+  mcG();
+  if(_mc.migrado || !accessToken) return;
+  const yo = (getMiEmail() || '').toLowerCase();
+  if(!yo) return;
+  _mc.migrado = true;
+  const esNuevo = k => /^(hilo\|)?mid:/.test(k);
+  const propias = [];
+  _mc.registro.forEach((v, k) => { if(!esNuevo(k) && k.indexOf('|') > 0 && String(v.usuario || '').toLowerCase() === yo) propias.push([k, v]); });
+  if(!propias.length) return;
+  const hilos = new Set(), mails = new Set();
+  propias.forEach(([k]) => { if(k.indexOf('hilo|') === 0) hilos.add(k.slice(5)); else mails.add(k.split('|')[0]); });
+  await mcEnLotes([...hilos].filter(t => !_mc.gthr.has(t)).slice(0, 150), 6, t => mcAsegurarGidsHilo(t));
+  await mcEnLotes([...mails].filter(m => !_mc.gmsg.has(m)).slice(0, 150), 6, async m => { mcAnotarGid(await gmailJson('messages/' + m + '?format=metadata&metadataHeaders=Message-ID')); });
+  const filas = [];
+  propias.forEach(([k, v]) => { const g = mcClaveGlobal(k); if(!g || _mc.registro.has(g)) return; filas.push([g, v.fecha, v.usuario, v.estado, v.negocio, v.fila, v.asunto, v.detalle]); });
+  if(!filas.length) return;
+  try{
+    if(!(await mcAsegurarHoja())) return;
+    const r = await fetch('https://sheets.googleapis.com/v4/spreadsheets/' + cfg.hubSheetId + '/values/' + mcRango('A:H') + ':append?valueInputOption=RAW&insertDataOption=INSERT_ROWS',
+      { method: 'POST', headers: { Authorization: 'Bearer ' + accessToken, 'Content-Type': 'application/json' }, body: JSON.stringify({ values: filas.map(f => f.map(x => x === undefined || x === null ? '' : x)) }) });
+    if(r.ok) filas.forEach(f => _mc.registro.set(f[0], { fecha: f[1] || '', usuario: f[2] || '', estado: f[3] || '', negocio: f[4] || '', fila: f[5] || '', asunto: f[6] || '', detalle: f[7] || '' }));
+  }catch(e){ console.warn('Republicar el registro:', e); _mc.migrado = false; }
+}
 // ── Registro compartido (pestaña MAILS_CARGA de HUB LATINUT) ──
 function mcRango(sufijo){ const t = _mc.titulo || MC_HOJA; return encodeURIComponent(t + '!' + sufijo); }
 async function mcBuscarPestana(){
@@ -13550,9 +13680,10 @@ async function mcAsegurarHoja(){
 }
 async function mcRegistrar(clave, estado, negocio, fila, asunto, detalle){
   if(!(await mcAsegurarHoja())) return false;
+  const kw = mcClaveGlobal(clave) || clave;   // con el Message-ID (lo ve todo el equipo); si todavia no se sabe, con el id de Gmail como antes
   const r = await fetch('https://sheets.googleapis.com/v4/spreadsheets/' + cfg.hubSheetId + '/values/' + mcRango('A:H') + ':append?valueInputOption=RAW&insertDataOption=INSERT_ROWS',
-    { method: 'POST', headers: { Authorization: 'Bearer ' + accessToken, 'Content-Type': 'application/json' }, body: JSON.stringify({ values: [[clave, comAhora(), getMiEmail() || '', estado, negocio || '', fila || '', asunto || '', detalle || '']] }) });
-  if(r.ok) _mc.registro.set(clave, { fecha: comAhora(), usuario: getMiEmail() || '', estado, negocio: negocio || '', fila: fila || '', asunto: asunto || '', detalle: detalle || '' });
+    { method: 'POST', headers: { Authorization: 'Bearer ' + accessToken, 'Content-Type': 'application/json' }, body: JSON.stringify({ values: [[kw, comAhora(), getMiEmail() || '', estado, negocio || '', fila || '', asunto || '', detalle || '']] }) });
+  if(r.ok) _mc.registro.set(kw, { fecha: comAhora(), usuario: getMiEmail() || '', estado, negocio: negocio || '', fila: fila || '', asunto: asunto || '', detalle: detalle || '' });
   return r.ok;
 }
 // Cuando no queda ninguna tarjeta pendiente de un mail, se marca el mail entero para no volver a leerlo.
@@ -13583,7 +13714,7 @@ function mcChipsHtml(c){
 // Una cadena (hilo de Gmail) marcada "lista" ya no se lee: ni sus mails ni los que lleguen despues en la misma cadena. Se anota en la misma pestaña
 // MAILS_CARGA con la clave "hilo|<id de la cadena>" y estado "lista" (o "reabierta" si se vuelve a abrir: la ultima fila manda).
 function mcHiloListo(threadId){
-  const r = threadId ? _mc.registro.get('hilo|' + threadId) : null;
+  const r = threadId ? mcRegGet('hilo|' + threadId) : null;
   return !!(r && r.estado === 'lista');
 }
 async function mcMarcarHiloLista(threadId, asunto, detalle){
@@ -13632,12 +13763,14 @@ async function mcMarcarTodoLista(){
 // la tarjeta avisa que el booking ya existe). Todo se anota en MAILS_CARGA ("reabierta"), asi que vale para el equipo.
 async function mcReescanearCadena(threadId, asunto){
   let ids = [];
-  try{ const h = await gmailJson('threads/' + threadId + '?format=minimal'); ids = (h.messages || []).map(x => x.id); }
+  try{ ids = await mcLeerHiloGids(threadId); }
   catch(e){ alert('No pude leer esa cadena en Gmail: ' + e.message + '. No se cambió nada.'); return false; }
   if(!(await mcRegistrar('hilo|' + threadId, 'reabierta', '', '', asunto || '', 'reabierta a mano'))){ alert('No pude anotarlo en la hoja ' + MC_HOJA + '. No se reabrió.'); return false; }
-  for(const [k, v] of [..._mc.registro.entries()]){
-    if(k.indexOf('hilo|') === 0 || v.estado === 'reabierta') continue;
-    if(ids.some(id => k.indexOf(id + '|') === 0)) await mcRegistrar(k, 'reabierta', '', '', v.asunto || asunto || '', 'reabierta a mano (estaba: ' + v.estado + ')');
+  for(const id of ids){
+    for(const [resto, v] of mcRegDeMensaje(id)){
+      if(v.estado === 'reabierta') continue;
+      await mcRegistrar(id + '|' + resto, 'reabierta', '', '', v.asunto || asunto || '', 'reabierta a mano (estaba: ' + v.estado + ')');
+    }
   }
   _mc.hist = false;                        // se cierra el panel de Historicas para que se vea lo que vuelve
   await mcRefrescar();
@@ -13648,17 +13781,30 @@ async function mcReescanearCadena(threadId, asunto){
   else showToast('Reabrí la cadena pero no encontré cargas para revisar. Puede ser que el mail tenga más de ' + MC_DIAS + ' días, que no traiga la planilla o que la lectura haya fallado (mirá los avisos de la bandeja).', 'warn', 12000);
   return n > 0;
 }
-async function mcReabrirHilo(threadId){
-  const r = _mc.registro.get('hilo|' + threadId);
+const MC_NO_ESTA_EN_MI_GMAIL = 'Ese mail no está en tu Gmail (puede que le haya llegado solo a otra persona, o que sea más viejo): no se puede reabrir desde acá. Pedile a quien lo marcó que lo reabra.';
+async function mcReabrirHilo(id){
+  let threadId = id;
+  if(String(id).indexOf('mid:') === 0){   // marcada con el Message-ID: se busca la cadena en MI Gmail
+    const loc = await mcLocalDeGlobal(id);
+    if(!loc || !loc.threadId){ alert(MC_NO_ESTA_EN_MI_GMAIL); return; }
+    threadId = loc.threadId;
+  }
+  const r = mcRegGet('hilo|' + threadId);
   const ok = await showConfirm('Reabrir y escanear de nuevo', '"' + ((r && r.asunto) || threadId) + '" se vuelve a leer AHORA desde cero, aunque ya la hayas cargado, ignorado o marcado como lista. Sus cargas vuelven a la bandeja (si ya estaba cargada, te avisa que el booking ya existe). Vale para todo el equipo.', { icono: '↩', okLabel: 'Reabrir y escanear' });
   if(!ok) return;
   await mcReescanearCadena(threadId, (r && r.asunto) || '');
 }
 // Lo mismo, desde una carga hecha o un mail ignorado de Historicas (se busca la cadena a partir del mail).
-async function mcReabrirMail(msgId){
+async function mcReabrirMail(id){
+  let msgId = id;
+  if(String(id).indexOf('mid:') === 0){
+    const loc = await mcLocalDeGlobal(id);
+    if(!loc || !loc.msgId){ alert(MC_NO_ESTA_EN_MI_GMAIL); return; }
+    msgId = loc.msgId;
+  }
   let m;
   try{ m = await gmailJson('messages/' + msgId + '?format=minimal'); }catch(e){ alert('No pude leer ese mail en Gmail: ' + e.message); return; }
-  const filas = [..._mc.registro.entries()].filter(([k]) => k.indexOf(msgId + '|') === 0 && k.indexOf('|*') < 0);
+  const filas = mcRegDeMensaje(msgId).filter(([resto]) => resto !== '*');
   const asunto = (filas[0] && filas[0][1].asunto) || '';
   const ok = await showConfirm('Escanear de nuevo este mail', '"' + (asunto || msgId) + '" se vuelve a leer AHORA desde cero, aunque ya la hayas cargado o ignorado. Sus cargas vuelven a la bandeja (si ya estaba cargada, te avisa que el booking ya existe).', { icono: '↩', okLabel: 'Escanear de nuevo' });
   if(!ok) return;
@@ -13667,7 +13813,15 @@ async function mcReabrirMail(msgId){
 // Panel de historicas: cadenas marcadas como listas y mails ya cargados, con buscador.
 function mcHistorico(){
   const out = [];
+  const yo = (getMiEmail() || '').toLowerCase();
   _mc.registro.forEach((v, k) => {
+    const nuevo = /^(hilo\|)?mid:/.test(k);
+    if(!nuevo){
+      // Con ids viejos de Gmail: solo sirve en la casilla de quien lo anoto. Si ya se republico con el Message-ID, se muestra esa.
+      const g = mcClaveGlobal(k);
+      if(g && _mc.registro.has(g)) return;
+      if(!g && String(v.usuario || '').toLowerCase() !== yo) return;
+    }
     if(k.indexOf('hilo|') === 0){ if(v.estado === 'lista') out.push({ tipo: 'hilo', id: k.slice(5), v }); }
     else if((v.estado === 'cargada' || v.estado === 'ignorada') && k.indexOf('|') > 0) out.push({ tipo: v.estado === 'ignorada' ? 'ignorada' : 'mail', id: k.split('|')[0], v });
   });
@@ -13700,7 +13854,7 @@ function mcHistListaHtml(q){
     return '<div class="mc-row"><span class="mc-ico' + (hilo ? '' : ' carga') + '"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><rect width="20" height="16" x="2" y="4" rx="3"/><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/></svg></span>'
       + '<div class="mc-row-main"><div class="mc-row-t" title="' + escH(x.v.asunto || '') + '">' + escH(x.v.asunto || '(sin asunto)') + '</div><div class="mc-row-s">' + meta + '</div></div>'
       + (fc.dia ? '<span class="mc-date">' + escH(fc.dia) + '</span>' : '<span></span>')
-      + '<div class="mc-row-acc"><a class="btn" target="_blank" rel="noopener" href="https://mail.google.com/mail/u/0/#all/' + encodeURIComponent(x.id) + '"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><rect width="20" height="16" x="2" y="4" rx="3"/><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/></svg>Ver el mail</a>'
+      + '<div class="mc-row-acc"><a class="btn" target="_blank" rel="noopener" href="https://mail.google.com/mail/u/0/#' + (String(x.id).indexOf('mid:') === 0 ? 'search/' + encodeURIComponent('rfc822msgid:' + String(x.id).slice(4)) : 'all/' + encodeURIComponent(x.id)) + '"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><rect width="20" height="16" x="2" y="4" rx="3"/><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/></svg>Ver el mail</a>'
       + (hilo ? '<button class="btn" onclick="mcReabrirHilo(\'' + escH(x.id) + '\')"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 14 4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"/></svg>Reabrir</button>' : '<button class="btn" onclick="mcReabrirMail(\'' + escH(x.id) + '\')" title="Vuelve a leer este mail desde cero">Escanear de nuevo</button>') + '</div></div>';
   }).join('')
     + (l.length > 200 ? '<div class="mc-vacio">Se muestran 200 de ' + l.length + ': afiná la búsqueda.</div>' : '');
@@ -14082,7 +14236,7 @@ async function mcCargarOtroNegocio(){
 }
 
 // ── Cargar todo (buscar, leer y armar) ──
-function mcProcesado(clave){ const r = _mc.registro.get(clave); return !!r && r.estado !== 'reabierta'; }
+function mcProcesado(clave){ const r = mcRegGet(clave); return !!r && r.estado !== 'reabierta'; }
 function mcEstadoHtml(){
   const p = _mc.progreso || { total: 0, hechos: 0, actual: [] };
   if(_mc.cargando){
@@ -14114,6 +14268,8 @@ async function mcCargarTodo(){
     await mcCargarOtroNegocio();
     _mc.etapa = 'Buscando los mails de carga en Gmail…'; mcPintarEstado();
     const msgs = await mcBuscarMensajes();
+    await mcResolverHilos(msgs);
+    await mcMigrarRegistro();
     const pend = msgs.filter(m => !mcProcesado(m.id + '|*') && !mcHiloListo(m.threadId) && !_mc.vistos.has(m.id));
     _mc.omitidos = msgs.filter(m => mcHiloListo(m.threadId) && !mcProcesado(m.id + '|*')).length;
     _mc.progreso.total = pend.length;
@@ -14157,7 +14313,8 @@ async function mcRefrescarBadge(){
   try{
     if(!(await mcCargarRegistro())) return;
     const msgs = await mcBuscarMensajes();
-    _mc.pendientes = msgs.filter(m => !mcProcesado(m.id + '|*') && !mcHiloListo(m.threadId) && ![..._mc.registro.entries()].some(([k, v]) => v.estado !== 'reabierta' && k.indexOf(m.id + '|') === 0)).length;
+    await mcResolverHilos(msgs);
+    _mc.pendientes = msgs.filter(m => !mcProcesado(m.id + '|*') && !mcHiloListo(m.threadId) && !mcRegDeMensaje(m.id).some(([resto, v]) => v.estado !== 'reabierta')).length;
     mcBadge();
   }catch(e){ console.warn('Badge mails:', e); }
 }
@@ -14577,7 +14734,7 @@ async function bandejaGuardar(){
   const ya = _mc.cards.filter(c => c.item.estado !== 'ok' && c.item.incluir && mcProcesado(c.clave));
   if(ya.length){
     ya.forEach(c => { c.item.incluir = false; });
-    alert('Estas cargas ya las procesó otra persona y las saqué de la lista:\n' + ya.map(c => '• ' + c.item.archivo + ' (' + (_mc.registro.get(c.clave).usuario || '?') + ': ' + _mc.registro.get(c.clave).estado + ')').join('\n'));
+    alert('Estas cargas ya las procesó otra persona y las saqué de la lista:\n' + ya.map(c => '• ' + c.item.archivo + ' (' + ((mcRegGet(c.clave) || {}).usuario || '?') + ': ' + ((mcRegGet(c.clave) || {}).estado || '') + ')').join('\n'));
     _mc.cards = _mc.cards.filter(c => !ya.includes(c));
     renderBandeja();
     return;
