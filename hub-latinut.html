@@ -14688,7 +14688,8 @@ function mcDatosHtml(c){
 }
 function mcNegHtml(c, acciones){
   const i = mcIdentidadCarga(c), d = Object.assign({}, c.item.data || {}, c.item.edit || {});
-  return '<div class="mc-neg"><div class="mc-neg-t"><b>' + escH(c.item.archivo) + '</b> · ' + escH(d.product || '') + ' ' + mcIdChip(c) + '</div>'
+  return '<div class="mc-neg"><div class="mc-neg-t"><b>' + escH(c.item.archivo) + '</b> · ' + escH(d.product || '') + ' ' + mcIdChip(c) + (c.auto ? ' ' + mcAutoChip(c) : '') + '</div>'
+    + (c.auto && (c.avisos || []).length ? '<div class="mc-id-det">Avisos de n8n: ' + c.avisos.map(escH).join(' · ') + '</div>' : '')
     + (i.razones.length ? '<div class="mc-id-det">' + i.razones.map(escH).join(' · ') + '</div>' : '<div class="mc-id-det mc-id-ok">No hay otra carga con ese booking ni esos lotes en ' + escH(mcComparaCon()) + '.</div>')
     + mcDatosHtml(c) + (c.motivoNegocio ? '<div class="mc-src">' + escH(c.motivoNegocio) + '</div>' : '')
     + '<div class="mc-neg-acc"><a class="btn" target="_blank" rel="noopener" href="https://mail.google.com/mail/u/0/#all/' + encodeURIComponent(c.mail.id) + '">Ver el mail</a>' + (acciones || '') + '</div></div>';
