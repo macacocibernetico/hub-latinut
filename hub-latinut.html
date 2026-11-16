@@ -3599,8 +3599,13 @@ function redondear2(x){ return Math.round(x * 100) / 100; }
 // Cada contrato dice cuando se cobra: "ETD +60", "ETA +0", "ETA -7". Es la ETD o la ETA de la carga mas o menos
 // N dias corridos. Va SOLO en la columna "Fecha estimada"; "Fecha de cobro" (el cobro real) siempre es manual y nunca se toca,
 // aunque la carga ya la tenga cargada (la estimada se actualiza igual).
+// "AOMP25-0478/0483" y "AOMP25–0478 / 0483" (guion largo, espacios) son el mismo contrato. "-TR" al final sigue siendo OTRO contrato.
+function claveContrato(v){
+  return normTar(v).replace(/[\u2010-\u2015\u2212\uFE63\uFF0D]/g, '-').replace(/\s+/g, '');
+}
 function parsearFormulaPago(txt){
-  const m = (txt || '').toString().trim().match(/^(ETD|ETA)\s*([+\-\u2212])\s*(\d{1,4})$/i);
+  const t = (txt || '').toString().replace(/[\u2010-\u2015\u2212\uFE63\uFF0D]/g, '-').replace(/[\u00a0\u2007\u202f]/g, ' ').trim();   // guiones raros -> "-", espacios raros -> " "
+  const m = t.match(/^(ETD|ETA)\s*([+\-])\s*(\d{1,4})\s*(?:d[ií]as?|d)?\.?$/i);
   if(!m) return null;
   return { base: m[1].toUpperCase(), dias: parseInt(m[3], 10) * (m[2] === '+' ? 1 : -1) };
 }
@@ -3651,7 +3656,7 @@ async function cargarFormulasCerradas(forzar){
     }
     if(hdr < 0) return falla('sin_encabezado', 'en "' + hoja + '" no encontré las columnas Contrato y Formula pago en las primeras 15 filas');
     for(let i = hdr + 1; i < filas.length; i++){
-      const num = normTar((filas[i] || [])[cc]);
+      const num = claveContrato((filas[i] || [])[cc]);
       const txt = ((filas[i] || [])[cf] || '').toString().trim();
       if(num && (txt || !mapa.has(num))) mapa.set(num, txt);   // tambien se anotan los que no tienen formula, para poder avisarlo
     }
@@ -3662,9 +3667,9 @@ async function cargarFormulasCerradas(forzar){
 }
 // Devuelve { texto, origen, motivo }: motivo explica, cuando no hay formula, que paso (para avisarlo y no fallar en silencio).
 async function formulaPagoDeContrato(numero){
-  const n = normTar(numero);
+  const n = claveContrato(numero);
   if(!n) return { texto: '', origen: '', motivo: '' };
-  const k = contratos.find(x => normTar(x.contrato) === n);
+  const k = contratos.find(x => claveContrato(x.contrato) === n);
   if(k && k.formulaPago) return { texto: k.formulaPago, origen: 'abiertos', motivo: '' };
   let cer = await cargarFormulasCerradas();
   if(!cer.has(n) && _formulasCerradasInfo.estado === 'ok' && Date.now() - _formulasCerradasT > 60000) cer = await cargarFormulasCerradas(true);
@@ -3809,33 +3814,60 @@ const feClave = (row, actual, nueva) => negocioActivo + ':' + (row._sheetRow || 
 const MS_DIA = 86400000;
 // Las cargas activas cuya fecha estimada NO coincide con la formula de su contrato.
 async function calcularFechasDistintas(){
-  const out = [], mem = feMemoria();
+  const out = [], mem = feMemoria(), noRev = [];
   for(const row of allRows){
     const actual = valorVisible(row, COL.FECHA_EST_COBRO).trim();
     if(!actual || actual === '-') continue;                       // las vacias las completa "Rellenar"
     const numero = valorVisible(row, COL.CONTRACT_CLIENTE).trim();
     if(!numero) continue;
-    const { texto, origen } = await formulaPagoDeContrato(numero);
+    const { texto, origen, motivo } = await formulaPagoDeContrato(numero);
     const formula = parsearFormulaPago(texto);
-    if(!formula) continue;                                        // sin formula o que no se entiende: no hay con que comparar
+    if(!formula){                                                 // sin formula o que no se entiende: no hay con que comparar, pero se avisa
+      noRev.push({ row, numero, motivo: texto ? 'la fórmula "' + texto + '" no se entiende (tiene que ser ETD o ETA ±días)' : (motivo || 'el contrato no tiene fórmula de pago') });
+      continue;
+    }
     const etd = valorVisible(row, COL.ETD), eta = valorVisible(row, COL.ETA);
     const nueva = fechaDesdeFormulaPago(formula, etd, eta);
-    if(!nueva) continue;
+    if(!nueva){ noRev.push({ row, numero, motivo: 'a la carga le falta la ' + formula.base }); continue; }
     const da = parseDate(actual), dn = parseDate(nueva);
     if(da && dn && da.getTime() === dn.getTime()) continue;       // coincide (aunque este escrita 9/1/2026 o 09/01/2026)
     const dif = da && dn ? Math.round((da.getTime() - dn.getTime()) / MS_DIA) : null;
     out.push({ row, numero, texto, origen, actual, nueva, dif, vista: !!mem[feClave(row, actual, nueva)],
       nota: 'Calculada: ' + explicarCalculoFecha(formula, etd, eta) + ' · contrato ' + numero + ' (fórmula "' + texto + '")' });
   }
+  out.noRevisadas = noRev;
   return out;
 }
-let _feLista = [], _feSel = {};
+// Contratos con un numero parecido en las hojas (para encontrar un error de tipeo o de formato).
+function contratosParecidos(numero){
+  const nucleo = v => claveContrato(v).replace(/[^A-Z0-9]/g, '');
+  const c = nucleo(numero); if(!c) return [];
+  const clave = claveContrato(numero), nombres = new Map();
+  (contratos || []).forEach(k => { if(k.contrato) nombres.set(claveContrato(k.contrato), k.contrato); });
+  if(_formulasCerradas) _formulasCerradas.forEach((v, key) => { if(!nombres.has(key)) nombres.set(key, key); });
+  return [...nombres.entries()].filter(([key, nom]) => { const o = nucleo(nom); return key !== clave && o && (o.indexOf(c) === 0 || c.indexOf(o) === 0); }).map(([k, nom]) => nom).slice(0, 4);
+}
+// Las cargas que no se pudieron comparar, agrupadas por contrato y motivo.
+function feNoRevisadasHTML(){
+  const esc = t => String(t === undefined || t === null ? '' : t).replace(/&/g, '&amp;').replace(/</g, '&lt;');
+  const m = new Map();
+  (_feNo || []).forEach(x => { const k = x.numero + '|' + x.motivo; if(!m.has(k)) m.set(k, { numero: x.numero, motivo: x.motivo, n: 0 }); m.get(k).n++; });
+  if(!m.size) return '';
+  return '<div class="fe-no" style="margin:10px 0;padding:10px 12px;border-radius:10px;background:rgba(217,142,0,.12);border:1px solid rgba(217,142,0,.3);color:#8a4b00;font-size:13px;"><b>No pude revisar ' + _feNo.length + ' carga' + (_feNo.length === 1 ? '' : 's') + ':</b>'
+    + [...m.values()].map(x => { const par = /no aparece/.test(x.motivo) ? contratosParecidos(x.numero) : [];
+      return '<div style="margin-top:4px;">• <b>' + esc(x.numero) + '</b> (' + x.n + ' carga' + (x.n === 1 ? '' : 's') + '): ' + esc(x.motivo) + (par.length ? '. ¿Será ' + par.map(esc).join(' o ') + '?' : '') + '</div>'; }).join('') + '</div>';
+}
+let _feLista = [], _feSel = {}, _feNo = [];
 async function revisarFechasEstimadas(){
   if(!_colEstCobroOk()){ showToast('Esta planilla no tiene la columna "Fecha estimada" para revisar.', 'info'); return; }
   showToast('Revisando las fechas estimadas de cobro…', 'info', 2500);
   _feLista = await calcularFechasDistintas();
+  _feNo = _feLista.noRevisadas || [];
   _feSel = {};
-  if(!_feLista.length){ showToast('✓ Todas las fechas estimadas de cobro coinciden con la fórmula de su contrato.', 'ok'); return; }
+  if(!_feLista.length){
+    if(_feNo.length){ await showConfirm('Revisión de fechas estimadas', 'Las que se pudieron comparar coinciden con la fórmula de su contrato, pero hay cargas que no se pudieron revisar.', { icono: 'ℹ️', okLabel: 'Entendido', detalle: feNoRevisadasHTML() }); return; }
+    showToast('✓ Todas las fechas estimadas de cobro coinciden con la fórmula de su contrato.', 'ok'); return;
+  }
   abrirRevisionFechas();
 }
 function cerrarRevisionFechas(){
@@ -3880,6 +3912,7 @@ function feTablaHTML(){
     + '<div class="fe-tools"><button class="btn" onclick="feTodas(\'formula\')">Todas a la fórmula</button><button class="btn" onclick="feTodas(\'dejar\')">Todas: dejar así</button><span style="flex:1"></span>'
     + (vistas ? '<label class="fe-sub"><input type="checkbox" id="fe-ver-vistas" onchange="feVerVistas()"> Ver también las que ya dejé así (' + vistas + ')</label>' : '') + '</div>'
     + '<div class="fe-sc"><table class="fe-tab"><thead><tr><th>Fila</th><th>Cliente · BL</th><th>Contrato</th><th>Fórmula</th><th>Hoy dice</th><th>Daría la fórmula</th><th>Diferencia</th><th>¿Qué hacemos?</th></tr></thead><tbody>' + fil + '</tbody></table></div>'
+    + feNoRevisadasHTML()
     + '<div class="fe-pie"><span id="fe-resumen" class="fe-sub"></span><span style="flex:1"></span><button class="btn" onclick="cerrarRevisionFechas()">Cancelar</button><button class="btn primary" id="fe-aplicar" onclick="feAplicar()">Aplicar</button></div>';
 }
 function abrirRevisionFechas(){
@@ -11119,6 +11152,13 @@ function renderConfig(){
     <div class="config-save"><button class="btn primary" onclick="saveConfig()">Guardar y conectar</button></div>
   </div>
   <div class="config-section">
+    <div class="config-title">Compartir con el equipo</div>
+    <div class="config-desc">Genera un link para que tus compañeros abran el hub con todo ya cargado (planillas, scripts y permisos de Google). Cada uno entra igual con su propia cuenta de Google. Usa lo que está guardado arriba.</div>
+    <label style="display:flex;gap:8px;align-items:flex-start;font-size:12px;color:var(--text);margin-top:8px;"><input type="checkbox" id="cfg-comp-anthropic" style="margin-top:3px;"><span>Incluir también mi clave de Anthropic (para que usen la IA). <b style="color:var(--warn);">Cuidado:</b> da acceso a tu cuenta de Anthropic y gasta de tu crédito. Por defecto NO va; si la incluís, mandá el link solo por un canal privado.</span></label>
+    <div class="config-save"><button class="btn primary" onclick="generarEnlaceEquipo()">Generar link</button></div>
+    <div id="cfg-comp-res"></div>
+  </div>
+  <div class="config-section">
     <div class="config-title">Alertas</div>
     <div class="config-field"><div class="config-label">Días previos al ETA para alertar</div>
       <input class="config-input" id="cfg-dias" type="number" value="${cfg.alerta_dias}" min="1" max="30" style="width:80px;"></div>
@@ -11144,6 +11184,80 @@ function saveConfig(){
   localStorage.setItem(CFG_KEY,JSON.stringify(cfg));
   initGoogleAuth();
   loadData();
+}
+
+// ─── COMPARTIR LA CONFIGURACION CON EL EQUIPO ────────────────────────────────
+// La configuracion vive en el navegador de cada persona. Este link lleva lo necesario para que un companero abra el hub con todo cargado
+// (planillas, scripts, permisos de Google). Va en la parte del link despues del "#": no viaja al servidor y se borra de la barra al abrirlo.
+// Al abrirlo se pide confirmacion mostrando que se va a cargar, y solo se aceptan valores con la forma esperada (un link ajeno no puede
+// apuntar los scripts a otro servidor). La clave de Anthropic NO va salvo que se tilde a proposito.
+const URL_HUB_PUBLICADO = 'https://macacocibernetico.github.io/hub-latinut/hub-latinut.html';
+const _ID_PLANILLA = /^[A-Za-z0-9_-]{20,80}$/, _URL_SCRIPT = /^https:\/\/script\.google(?:usercontent)?\.com\/[^\s"'<>]{5,400}$/;
+const CFG_COMPARTIR = {
+  sheetId: _ID_PLANILLA, hubSheetId: _ID_PLANILLA, buzaramSheetId: _ID_PLANILLA, sheetName: /^[^\n\r<>]{1,60}$/,
+  apiKey: /^AIza[0-9A-Za-z_\-]{30,60}$/, clientId: /^[0-9]+-[a-z0-9]+\.apps\.googleusercontent\.com$/,
+  appsScriptUrl: _URL_SCRIPT, resumenScriptUrl: _URL_SCRIPT, buzaramAppsScriptUrl: _URL_SCRIPT, claudeProxyUrl: _URL_SCRIPT,
+  anthropicKey: /^sk-ant-[A-Za-z0-9_\-]{20,200}$/
+};
+const CFG_NOMBRES = { sheetId: 'Planilla AXT', sheetName: 'Pestaña de cargas', hubSheetId: 'Planilla HUB (LOG y contactos)', buzaramSheetId: 'Planilla Buzaram',
+  apiKey: 'Google API Key', clientId: 'Google Client ID', appsScriptUrl: 'URL AppScript', resumenScriptUrl: 'URL AppScript del resumen diario',
+  buzaramAppsScriptUrl: 'URL AppScript Buzaram', claudeProxyUrl: 'URL del proxy de Claude', anthropicKey: 'Clave de Anthropic', alerta_dias: 'Días de alerta' };
+function configParaCompartir(conAnthropic){
+  const out = {};
+  ['sheetId','sheetName','apiKey','clientId','hubSheetId','buzaramSheetId','appsScriptUrl','resumenScriptUrl','buzaramAppsScriptUrl','claudeProxyUrl'].forEach(k => { const v = String(cfg[k] || '').trim(); if(v) out[k] = v; });
+  if(cfg.alerta_dias) out.alerta_dias = cfg.alerta_dias;
+  if(conAnthropic && cfg.anthropicKey) out.anthropicKey = String(cfg.anthropicKey).trim();
+  return out;
+}
+function enlaceDeConfig(conAnthropic){
+  const b64 = btoa(unescape(encodeURIComponent(JSON.stringify(configParaCompartir(conAnthropic))))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+  const base = (typeof location !== 'undefined' && /github\.io$/.test(location.hostname || '')) ? location.href.split('#')[0].split('?')[0] : URL_HUB_PUBLICADO;
+  return base + '#cfg=' + b64;
+}
+// Devuelve { valores, rechazados } con solo lo que tiene la forma esperada, o { error: true }.
+function leerConfigDeEnlace(hash){
+  const m = /^#cfg=([A-Za-z0-9_\-]+)$/.exec(hash || '');
+  if(!m) return null;
+  try{
+    let b = m[1].replace(/-/g, '+').replace(/_/g, '/'); while(b.length % 4) b += '=';
+    const o = JSON.parse(decodeURIComponent(escape(atob(b))));
+    if(!o || typeof o !== 'object' || Array.isArray(o)) return { error: true };
+    const valores = {}, rechazados = [];
+    Object.keys(CFG_COMPARTIR).forEach(k => { if(o[k] === undefined) return; const v = String(o[k]).trim(); if(CFG_COMPARTIR[k].test(v)) valores[k] = v; else rechazados.push(k); });
+    if(o.alerta_dias !== undefined){ const n = parseInt(o.alerta_dias, 10); if(n >= 1 && n <= 30) valores.alerta_dias = n; }
+    return { valores, rechazados };
+  }catch(e){ return { error: true }; }
+}
+async function importarConfigDeEnlace(){
+  if(typeof location === 'undefined' || !/^#cfg=/.test(location.hash || '')) return false;
+  const r = leerConfigDeEnlace(location.hash);
+  try{ history.replaceState(null, '', location.pathname + location.search); }catch(e){}   // la configuracion no queda en la barra ni en el historial
+  if(!r || r.error || !Object.keys(r.valores).length){ showToast('El link de configuración no es válido o está incompleto. Pedile uno nuevo a quien te lo mandó.', 'err', 9000); return false; }
+  const cambios = Object.keys(r.valores).filter(k => String(cfg[k] === undefined ? '' : cfg[k]) !== String(r.valores[k]));
+  if(!cambios.length){ showToast('Tu configuración ya coincide con la del link.', 'info'); return false; }
+  const esc = t => String(t).replace(/&/g, '&amp;').replace(/</g, '&lt;');
+  const secreto = k => k === 'apiKey' || k === 'anthropicKey';
+  const ok = await showConfirm('Cargar la configuración del link', 'Alguien del equipo te compartió la configuración del hub. Si no esperabas este link, cancelá. Después tenés que conectar con Google para ver los datos.',
+    { icono: '🔗', okLabel: 'Cargar configuración', detalle: cambios.map(k => '<div>• <b>' + esc(CFG_NOMBRES[k] || k) + '</b>: ' + (secreto(k) ? '•••• (clave)' : esc(String(r.valores[k]).slice(0, 70))) + (cfg[k] ? ' <span style="color:var(--warn);">(reemplaza la que tenés)</span>' : '') + '</div>').join('')
+      + (r.rechazados.length ? '<div style="margin-top:6px;color:var(--warn);">No se cargan por tener un formato raro: ' + r.rechazados.map(k => esc(CFG_NOMBRES[k] || k)).join(', ') + '.</div>' : '') });
+  if(!ok) return false;
+  Object.assign(cfg, r.valores);
+  try{ localStorage.setItem(CFG_KEY, JSON.stringify(cfg)); }catch(e){}
+  showToast('✓ Configuración cargada. Tocá "Conectar con Google" para empezar.', 'ok', 9000);
+  return true;
+}
+function generarEnlaceEquipo(){
+  const el = document.getElementById('cfg-comp-res'); if(!el) return;
+  if(!cfg.sheetId || !cfg.apiKey){ el.innerHTML = '<div style="color:var(--warn);font-size:12px;margin-top:8px;">Primero guardá la configuración de arriba (planilla y Google API Key): el link se arma con lo que está guardado.</div>'; return; }
+  const conA = !!(document.getElementById('cfg-comp-anthropic') || {}).checked;
+  const link = enlaceDeConfig(conA);
+  el.innerHTML = '<div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap;"><input class="config-input" id="cfg-comp-link" readonly style="flex:1;min-width:260px;" value="' + link + '" onclick="this.select()"><button class="btn primary" onclick="copiarEnlaceEquipo()">Copiar link</button></div>'
+    + '<div style="font-size:11px;color:var(--text3);margin-top:6px;">Incluye: planillas, scripts y Google API Key' + (conA ? ', <b style="color:var(--warn);">y tu clave de Anthropic</b>' : '') + '. Al abrirlo, el hub les muestra qué va a cargar y les pide confirmar. Cada uno entra igual con su propia cuenta de Google.</div>';
+}
+async function copiarEnlaceEquipo(){
+  const i = document.getElementById('cfg-comp-link'); if(!i) return;
+  try{ await navigator.clipboard.writeText(i.value); showToast('✓ Link copiado', 'ok'); }
+  catch(e){ try{ i.select(); document.execCommand('copy'); showToast('✓ Link copiado', 'ok'); }catch(e2){ showToast('No pude copiarlo solo: seleccionalo y copialo a mano.', 'warn'); } }
 }
 
 function showConfigPrompt(){
@@ -17453,7 +17567,8 @@ document.addEventListener('keydown', e => {
 });
 
 // ─── INIT ────────────────────────────────────────────────────────────────────
-window.onload=()=>{
+window.onload=async()=>{
+  try{ await importarConfigDeEnlace(); }catch(e){ console.warn('Config del link:', e); }
   if(!accessToken && document.body.classList) document.body.classList.add('sin-google');
   updateNegocioPill();
   // Restore last view
