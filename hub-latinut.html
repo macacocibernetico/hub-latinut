@@ -17888,10 +17888,13 @@ async function driveGetFolderForRow(row){
   const anio = etd ? String(etd.getFullYear()) : String(new Date().getFullYear());
   const lote = (row[COL.LOTS] || row[COL.NEGOCIO] || '').trim();
 
-  if(!lote) throw new Error('Sin lote');
+  if(!lote && negocioActivo === 'buzaram') throw new Error('Sin lote');
 
   if(negocioActivo !== 'buzaram'){
-    const url = getAppScriptURL() + '?accion=getLoteUrl&lote=' + encodeURIComponent(lote) + '&producto=' + encodeURIComponent(producto) + '&anio=' + anio;
+    // Las cargas a Italia van a Italia \ CLIENTE \ CONTRATO: el Apps Script lo decide con el cliente, el puerto y el contrato (y no necesita lote).
+    const url = getAppScriptURL() + '?accion=getLoteUrl&lote=' + encodeURIComponent(lote) + '&producto=' + encodeURIComponent(producto) + '&anio=' + anio
+      + '&cliente=' + encodeURIComponent((row[COL.CUSTOMER] || '').toString().trim()) + '&puerto=' + encodeURIComponent((row[COL.PORT] || '').toString().trim())
+      + '&contrato=' + encodeURIComponent((row[COL.CONTRACT_CLIENTE] || '').toString().trim());
     const r = await fetch(url);
     const data = await r.json();
     if(!data.ok) throw new Error(data.error || 'Error en AppScript Drive');
