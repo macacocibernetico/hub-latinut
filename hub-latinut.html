@@ -3529,8 +3529,10 @@ async function cargarContratosCerrados(forzar){
       fcServ: col('FC Servicios','FC Servicio','Fc Serv','Servicios'), formulaPago: col('Formula pago','Formula de pago'),
       formaPago: col(...ALIAS_FORMA_PAGO)
     };
-    const faltan = ['importador','producto','puerto'].filter(k => c[k] < 0);
-    if(faltan.length){ _contratosCerrInfo = 'a "' + hoja + '" le faltan las columnas: ' + faltan.join(', '); _contratosCerr = lista; _contratosCerrClave = sid; return lista; }
+    // El puerto no es indispensable: un contrato cerrado sin puerto sirve para cualquiera (se muestra para elegir) y asi igual se lee su forma de pago (CAD BANK).
+    if(c.puerto < 0) c.puerto = col('Puerto destino','Puerto de destino','Destino puerto','Port of destination','Destination','Puerto/s');
+    const faltan = ['importador','producto'].filter(k => c[k] < 0);
+    if(faltan.length){ _contratosCerrInfo = 'a "' + hoja + '" le faltan las columnas: ' + faltan.join(', ') + ' (encabezados que vi: ' + (filas[hdr] || []).map(x => String(x).trim()).filter(Boolean).join(' | ') + ')'; _contratosCerr = lista; _contratosCerrClave = sid; return lista; }
     const g = (fila, i) => i >= 0 ? (fila[i] || '').toString().trim() : '';
     for(let i = hdr + 1; i < filas.length; i++){
       const f = filas[i];
