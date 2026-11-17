@@ -5614,7 +5614,7 @@ function updateBadges(){
   const cobros=allRows.filter(r=>{const d=daysFrom(r[getCobroCol()]);return d!==null&&d<=14;}).length;
   const bC=document.getElementById('badge-cobranza');
   bC.textContent=cobros||'';bC.style.display=cobros?'':'none';
-  const libs=allRows.concat(filasCerradas()).filter(r=>{const d=daysFrom(r[COL.ETA]);const t=(r[COL.TELEX]||'').trim().toLowerCase();return d!==null&&d>=0&&d<=7&&t!=='si'&&!telexNoAplica(t);}).length;
+  const libs=allRows.concat(filasCerradas()).filter(entraEnLiberaciones).length;
   const bL=document.getElementById('badge-liberaciones');
   if(bL){bL.textContent=libs||'';bL.style.display=libs?'':'none';}
 }
@@ -8868,15 +8868,19 @@ async function marcarLiberadoBulk(rowIndices){
 async function marcarPedroOk(rowIdx){ await marcarPedroOkBulk([rowIdx]); }
 async function marcarLiberado(rowIdx){ await marcarLiberadoBulk([rowIdx]); }
 
+// Una carga esta en el panel de liberaciones si: (a) le faltan 7 dias o menos para llegar y todavia no tiene TELEX, o (b) la liberacion ya se PIDIO
+// (TELEX con algo que no es SI ni "no aplica") y falta recibirla, aunque la ETA este lejos (las cargas a Italia se piden con semanas de anticipacion)
+// o ya haya pasado (hasta 45 dias). Antes solo entraban las de ETA en los proximos 7 dias y lo pedido desaparecia del panel.
+function entraEnLiberaciones(r){
+  const t=(r[COL.TELEX]||'').trim().toLowerCase();
+  if(t==='si'||telexNoAplica(t)) return false;
+  const d=daysFrom(r[COL.ETA]);
+  if(t) return d===null||d>=-45;
+  return d!==null&&d>=0&&d<=7;
+}
 function renderLiberaciones(){
-  const rows=allRows.concat(filasCerradas()).filter(r=>{
-    const d=daysFrom(r[COL.ETA]);
-    if(d===null||d<0||d>7) return false;
-    const t=(r[COL.TELEX]||'').trim().toLowerCase();
-    if(telexNoAplica(t)) return false;
-    if(t==='si') return false;
-    return true;
-  }).sort((a,b)=>(daysFrom(a[COL.ETA])||999)-(daysFrom(b[COL.ETA])||999));
+  const orden=r=>{ const d=daysFrom(r[COL.ETA]); return d===null?9999:d; };
+  const rows=allRows.concat(filasCerradas()).filter(entraEnLiberaciones).sort((a,b)=>orden(a)-orden(b));
 
   const nc=getNegocioConfig();
   const label=nc.label;
