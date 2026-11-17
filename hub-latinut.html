@@ -528,6 +528,44 @@ body.t-redim{cursor:col-resize;user-select:none;}
 .tfp-pie button.prim{background:var(--accent);border-color:var(--accent);color:#fff;}
 .panel-carga{position:fixed;top:0;right:0;bottom:0;width:400px;max-width:94vw;background:var(--bg2);border-left:1px solid var(--border);box-shadow:var(--shadow-lg);z-index:60;transform:translateX(105%);transition:transform .2s ease;overflow-y:auto;padding:18px 20px;}
 .panel-carga.open{transform:none;}
+/* VISTA DOCUMENTOS (lo que n8n lee de los mails) */
+.doc-sec{font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--text3);margin:16px 0 8px;}
+.doc-card{background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius-lg);padding:12px 14px;margin-bottom:10px;}
+.doc-card.doc-rev{border-left:3px solid var(--warn);}
+.doc-card.doc-mal{border-left:3px solid var(--danger);}
+.doc-top{display:flex;gap:10px;align-items:baseline;flex-wrap:wrap;}
+.doc-tit{font-weight:700;font-size:14px;}
+.doc-tit a{color:var(--accent);text-decoration:none;}
+.doc-tit a:hover{text-decoration:underline;}
+.doc-sub{color:var(--text3);font-size:12.5px;}
+.doc-prog{margin-left:auto;font-size:12px;font-weight:700;color:var(--text3);font-variant-numeric:tabular-nums;}
+.doc-prog.ok{color:var(--ok);}
+.doc-tag{font-size:11px;font-weight:700;background:var(--warn-light);color:#7a4800;border-radius:99px;padding:1px 8px;}
+.doc-motivo{background:var(--warn-light);border-radius:8px;padding:7px 10px;font-size:12.5px;color:var(--text2);margin:8px 0;line-height:1.45;}
+.doc-acc,.doc-pie{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:8px;font-size:12.5px;color:var(--text3);}
+.doc-dato{background:var(--accent-light);border-radius:8px;padding:2px 8px;color:var(--text2);}
+.doc-chips{display:flex;gap:5px;flex-wrap:wrap;margin:8px 0;}
+.dc{font-size:12px;border-radius:6px;padding:2px 8px;font-weight:600;border:1px solid transparent;text-decoration:none;white-space:nowrap;}
+.dc small{font-weight:400;}
+a.dc:hover{text-decoration:underline;}
+.dc-ok{background:var(--ok-light);color:var(--ok);}
+.dc-pl{background:transparent;color:var(--ok);border-color:var(--ok-light);}
+.dc-no{background:var(--bg3);color:var(--text3);border-color:var(--border);}
+.dc-na{color:var(--text3);border:1px dashed var(--border2);font-weight:400;}
+.dc-mal{background:var(--danger-light);color:var(--danger);}
+.dc-otro{background:var(--bg2);color:var(--text2);border-color:var(--border);font-weight:400;}
+.doc-barra{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:10px;}
+.doc-barra .chip-f{border:1px solid var(--border2);border-radius:99px;padding:4px 12px;background:var(--bg2);font:600 13px var(--font);color:var(--text2);cursor:pointer;}
+.doc-barra .chip-f.on{background:var(--accent);border-color:var(--accent);color:#fff;}
+.doc-buscar{border:1px solid var(--border2);border-radius:8px;padding:6px 10px;font:inherit;width:260px;max-width:100%;background:var(--bg2);}
+.doc-asig{margin-top:10px;}
+.doc-cand{border:1px solid var(--border);border-radius:10px;padding:8px 11px;margin:6px 0;display:flex;gap:10px;align-items:center;flex-wrap:wrap;}
+.doc-tabla{width:100%;border-collapse:collapse;font-size:12.5px;margin:8px 0;}
+.doc-tabla th,.doc-tabla td{padding:5px 8px;border-bottom:1px solid var(--border);text-align:left;}
+.doc-tabla th{background:var(--bg3);color:var(--text3);font-weight:600;}
+.doc-tabla tr.x td{background:var(--danger-light);}
+@media (max-width:640px){.doc-buscar{width:100%;}.doc-prog{margin-left:0;}}
+
 .panel-carga .pc-row{display:flex;justify-content:space-between;gap:10px;padding:5px 0;border-bottom:1px solid var(--border);font-size:13px;}
 .panel-carga .pc-row span:first-child{color:var(--text3);}
 .panel-carga .pc-acc{display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:14px;}
@@ -1565,6 +1603,10 @@ body{background:radial-gradient(760px 420px at 86% -12%,rgba(var(--lg-a-rgb),.05
         <span class="icon"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="m19 21-7-4-7 4V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v16z"/></svg></span> Liberaciones
         <span class="nav-badge" id="badge-liberaciones"></span>
       </div>
+      <div class="nav-item" id="nav-documentos" onclick="showView('documentos')">
+        <span class="icon"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/><path d="M14 2v6h6"/><path d="M8 13h8M8 17h5"/></svg></span> Documentos
+        <span class="nav-badge warn" id="badge-documentos"></span>
+      </div>
       <div class="nav-item" id="nav-pagares" onclick="showView('pagares')">
         <span class="icon"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/><path d="M14 2v6h6M16 13H8M16 17H8M10 9H8"/></svg></span> Pagarés
       </div>
@@ -1816,6 +1858,7 @@ function updateNegocioPill(){
     cobranza:'Cobranza',
     cashflow:'Calendario',
     liberaciones:'Liberaciones',
+    documentos:'Documentos',
     pagares:'Pagarés',
     contratos:'Contratos',
     tarifario:'Tarifario de fletes',
@@ -3158,6 +3201,7 @@ async function loadData(){
       cargarColoresUsuario().catch(e => console.warn('colores:', e))
     ]).then(() => { if(currentView === 'cargas' && !formularioAbierto()) renderCargas(); });
     cargarComentarios().then(() => { if(currentView === 'cargas' && cargasVista === 'tabla') comPintar(); notasRefrescar(); }).catch(e => console.warn('comentarios:', e));
+    cargarDocumentos().then(() => { updateBadges(); if(currentView === 'documentos' && !formularioAbierto()) renderDocumentos(); }).catch(e => console.warn('documentos:', e));
   }catch(e){hideProgress();setSheetStatus('err','Error de conexión');console.error(e);}
 }
 
@@ -5617,11 +5661,13 @@ function updateBadges(){
   const libs=allRows.concat(filasCerradas()).filter(entraEnLiberaciones).length;
   const bL=document.getElementById('badge-liberaciones');
   if(bL){bL.textContent=libs||'';bL.style.display=libs?'':'none';}
+  const bD=document.getElementById('badge-documentos');
+  if(bD){const nd=docsCantidadPendiente();bD.textContent=nd||'';bD.style.display=nd?'':'none';}
 }
 
 // ─── VIEWS ───────────────────────────────────────────────────────────────────
 // Subtitulo de cada pantalla (debajo del titulo del encabezado).
-const _VIEW_SUBS = {automatizacion:'Qué tan bien prepara n8n las cargas y cuándo conviene pasarlas a automático.', contactos:'La hoja CONTACTOS: a quién le llega cada mail y qué forwarders tienen sus datos cargados.', alertas:'Lo que necesita tu atención hoy, ordenado por urgencia.', cargas:'Todas las cargas del negocio: seguimiento, documentos y cobros.', nueva_carga:'Cargá una operación nueva a partir de su contrato.', mails:'Gestioná y organizá los mails de tus cargas de forma rápida y eficiente.', cobranza:'Cobros estimados, vencimientos y reclamos.', cashflow:'Cobros y pagos estimados, por fecha.', liberaciones:'Cargas que llegan pronto y esperan la liberación del TELEX.', pagares:'Pagarés enviados, firmados y pendientes.', contratos:'Contratos abiertos y cerrados, con sus condiciones.', tarifario:'Tarifas de flete por puerto y naviera.', log:'Registro de lo que se hizo desde el hub.', config:'Conexiones, claves y preferencias.'};
+const _VIEW_SUBS = {automatizacion:'Qué tan bien prepara n8n las cargas y cuándo conviene pasarlas a automático.', contactos:'La hoja CONTACTOS: a quién le llega cada mail y qué forwarders tienen sus datos cargados.', alertas:'Lo que necesita tu atención hoy, ordenado por urgencia.', cargas:'Todas las cargas del negocio: seguimiento, documentos y cobros.', nueva_carga:'Cargá una operación nueva a partir de su contrato.', mails:'Gestioná y organizá los mails de tus cargas de forma rápida y eficiente.', cobranza:'Cobros estimados, vencimientos y reclamos.', cashflow:'Cobros y pagos estimados, por fecha.', liberaciones:'Cargas que llegan pronto y esperan la liberación del TELEX.', documentos:'Lo que llegó por mail de cada carga (BL, facturas, certificados): qué falta y qué necesita que lo mires.', pagares:'Pagarés enviados, firmados y pendientes.', contratos:'Contratos abiertos y cerrados, con sus condiciones.', tarifario:'Tarifas de flete por puerto y naviera.', log:'Registro de lo que se hizo desde el hub.', config:'Conexiones, claves y preferencias.'};
 function setViewSub(v){ const el = document.getElementById('view-sub'); if(el) el.textContent = _VIEW_SUBS[v] || ''; }
 function showView(view){
   if(view === 'nueva_carga' && currentView !== 'nueva_carga') cargasGuardadasSesion = [];
@@ -5630,7 +5676,7 @@ function showView(view){
   if(view !== 'cargas') _etaOrdenFijo = null;   // al salir de la tabla, la proxima vez vuelve ordenada por ETA
   currentView=view; _editCargaAbierta = false;
   document.querySelectorAll('.nav-item').forEach(el=>el.classList.remove('active'));
-  const titles=window._viewTitles||{alertas:'Alertas',cargas:'Cargas AXT',nueva_carga:'Nueva carga',mails:'Mails de carga',cobranza:'Cobranza',cashflow:'Calendario',liberaciones:'Liberaciones',pagares:'Pagarés',contratos:'Contratos abiertos',tarifario:'Tarifario de fletes',contactos:'Contactos',automatizacion:'Automatización',log:'Log de acciones',config:'Configuración'};
+  const titles=window._viewTitles||{alertas:'Alertas',cargas:'Cargas AXT',nueva_carga:'Nueva carga',mails:'Mails de carga',cobranza:'Cobranza',cashflow:'Calendario',liberaciones:'Liberaciones',documentos:'Documentos',pagares:'Pagarés',contratos:'Contratos abiertos',tarifario:'Tarifario de fletes',contactos:'Contactos',automatizacion:'Automatización',log:'Log de acciones',config:'Configuración'};
   document.getElementById('view-title').textContent=titles[view]||view;
   setViewSub(view);
   document.querySelectorAll('.nav-item').forEach(el=>{if(el.getAttribute('onclick')?.includes(`'${view}'`))el.classList.add('active');});
@@ -5639,7 +5685,7 @@ function showView(view){
   if(window.innerWidth<=768)closeSidebar();
 }
 function renderView(v){
-  ({alertas:renderAlertas,cargas:renderCargas,nueva_carga:renderNuevaCarga,mails:renderBandeja,cobranza:renderCobranza,cashflow:renderCashFlow,liberaciones:renderLiberaciones,pagares:renderPagares,contratos:renderContratos,tarifario:renderTarifario,contactos:renderContactos,automatizacion:renderAutomatizacion,log:renderLog,config:renderConfig}[v]||renderAlertas)();
+  ({alertas:renderAlertas,cargas:renderCargas,nueva_carga:renderNuevaCarga,mails:renderBandeja,cobranza:renderCobranza,cashflow:renderCashFlow,liberaciones:renderLiberaciones,documentos:renderDocumentos,pagares:renderPagares,contratos:renderContratos,tarifario:renderTarifario,contactos:renderContactos,automatizacion:renderAutomatizacion,log:renderLog,config:renderConfig}[v]||renderAlertas)();
   mostrarAvisoColumnas();
 }
 
@@ -11812,6 +11858,327 @@ async function resumenOperativo(enviar){
   }
 }
 
+// ─── DOCUMENTOS DE LAS CARGAS ────────────────────────────────────────────────
+// Lo que n8n lee de los mails (BL, facturas, packing, certificados...). n8n deja cada documento en la pestaña DOCUMENTOS de la
+// planilla HUB LATINUT: de qué carga es, qué anotó en la planilla y el link al PDF en Drive. Esta vista muestra SIEMPRE un solo
+// negocio (el activo). Lo que todavía no tiene carga (y por lo tanto tampoco negocio) aparece en los dos, y al asignarlo solo se
+// pueden elegir cargas del negocio que se está mirando: el negocio sale de la carga elegida, nunca de una adivinanza.
+// Desde acá el hub solo escribe en DOCUMENTOS (asignar, descartar, resuelto), siempre con confirmación; el resto lo hace n8n.
+const HOJA_DOCUMENTOS = 'DOCUMENTOS';
+let _docs = [], _docsListo = false, _docsError = '', _docsCargando = false;
+let _docsFiltro = 'faltantes', _docsBusca = '', _docsAsignar = -1, _docsBuscaCarga = '';
+const DOC_TIPOS = { bl: 'BL', fc_proveedor: 'FC proveedor', fc_axt: 'FC AXT', fc_axt_serv: 'FC servicios', packing: 'Packing list', origen: 'Origen',
+  fito: 'Fito', isf: 'ISF', jla: 'Análisis JLA', seguro: 'Seguro', shipping: 'Shipping advice', aviso_salida: 'Aviso de salida', proforma: 'Proforma', planilla: 'Planilla despachante' };
+const DOC_PUERTOS_EEUU = ['norfolk', 'new york', 'newark', 'savannah', 'charleston', 'baltimore', 'philadelphia', 'boston', 'miami', 'port everglades', 'jacksonville',
+  'houston', 'new orleans', 'los angeles', 'long beach', 'oakland', 'seattle', 'tacoma', 'usa', 'estados unidos'];
+const DOC_PUERTOS_ITALIA = ['livorno', 'leghorn', 'genova', 'genoa', 'la spezia', 'spezia', 'salerno', 'napoli', 'naples', 'venezia', 'venice', 'trieste', 'ravenna',
+  'savona', 'ancona', 'civitavecchia', 'gioia tauro', 'vado ligure', 'bari', 'taranto', 'palermo', 'catania', 'cagliari', 'italia', 'italy'];
+const DOC_SIN_SET = ['ignorado', 'descartado', 'reemplazada'];
+
+function docNegocioDeTexto(t){ t = String(t || '').trim().toUpperCase(); return t === 'AXT' ? 'axt' : t === 'BUZARAM' ? 'buzaram' : ''; }
+function docTextoDeNegocio(n){ return n === 'buzaram' ? 'Buzaram' : 'AXT'; }
+function docDeFila(f, rn){
+  let extra = {};
+  try { extra = f[16] ? JSON.parse(f[16]) : {}; } catch(e){ extra = {}; }
+  return { clave: f[0] || '', fechaMail: f[1] || '', procesado: f[2] || '', negocio: docNegocioDeTexto(f[3]),
+    filas: String(f[4] || '').split(/[^0-9]+/).map(Number).filter(n => n > 0),
+    lotes: f[5] || '', tipo: f[6] || '', numero: f[7] || '', nombre: f[8] || '', remitente: f[9] || '', asunto: f[10] || '',
+    estado: String(f[11] || '').trim().toLowerCase(), detalle: f[12] || '', via: f[13] || '', anotado: f[14] || '', drive: f[15] || '',
+    servicios: !!extra.servicios, controles: Array.isArray(extra.controles) ? extra.controles : [], _rn: rn };
+}
+async function cargarDocumentos(){
+  if(!accessToken || !cfg.hubSheetId) return;
+  const r = await fetch('https://sheets.googleapis.com/v4/spreadsheets/' + cfg.hubSheetId + '/values/' + encodeURIComponent(HOJA_DOCUMENTOS + '!A2:Q'),
+    { headers: { Authorization: 'Bearer ' + accessToken } });
+  if(r.status === 400 || r.status === 404){ _docsListo = false; _docs = []; _docsError = 'Todavía no existe la pestaña ' + HOJA_DOCUMENTOS + ' en la planilla HUB LATINUT (la crea n8n).'; return; }
+  if(!r.ok){ _docsError = 'No pude leer la pestaña ' + HOJA_DOCUMENTOS + ' (HTTP ' + r.status + ').'; return; }
+  const j = await r.json();
+  _docsListo = true; _docsError = '';
+  _docs = (j.values || []).map((f, i) => docDeFila(f, i + 2)).filter(d => d.clave);
+}
+
+// ── Qué documentos forman el set de una carga ──
+// BL, FC del proveedor, packing, origen y fito siempre. AXT: además la FC al cliente y la de servicios si la carga tiene Price serv.
+// ISF solo si va a EE.UU., análisis JLA solo si va a Italia, seguro solo si es CIF.
+function docsSetDeCarga(row){
+  const port = String(row[COL.PORT] || '').toLowerCase(), inco = String(row[COL.INCOTERM] || '').toUpperCase();
+  const axt = negocioActivo !== 'buzaram';
+  const set = [{ k: 'bl' }, { k: 'fc_proveedor' }];
+  if(axt){
+    set.push({ k: 'fc_axt' });
+    const serv = parseSheetNum(row[COL.PRICE_SERV]);
+    set.push(!isNaN(serv) && serv > 0 ? { k: 'fc_axt_serv' } : { k: 'fc_axt_serv', na: 'no lleva' });
+  }
+  set.push({ k: 'packing' }, { k: 'origen' }, { k: 'fito' });
+  set.push(DOC_PUERTOS_EEUU.some(p => port.indexOf(p) >= 0) ? { k: 'isf' } : { k: 'isf', na: 'solo EE.UU.' });
+  if(DOC_PUERTOS_ITALIA.some(p => port.indexOf(p) >= 0)) set.push({ k: 'jla' });
+  if(/\bCIF\b/.test(inco)) set.push({ k: 'seguro' });
+  return set;
+}
+function docsDeCarga(row){
+  const n = row && row._sheetRow;
+  if(!n) return [];
+  return _docs.filter(d => d.negocio === negocioActivo && d.filas.indexOf(n) >= 0 && DOC_SIN_SET.indexOf(d.estado) < 0);
+}
+// Una FC de AXT es "de servicios" si n8n lo leyo asi o si su numero es el de Invoice Serv de la carga.
+function docTipoEfectivo(d, row){
+  if(d.tipo !== 'fc_axt') return d.tipo;
+  if(d.servicios) return 'fc_axt_serv';
+  const s = String(row[COL.INVOICE_FC_SERV] || '').trim();
+  return s && s === String(d.numero).trim() ? 'fc_axt_serv' : 'fc_axt';
+}
+const docLinkSeguro = u => /^https:\/\/(drive|docs)\.google\.com\//.test(String(u || '')) ? String(u) : '';
+// Estado de cada documento del set: ok (llego, con su PDF), mal (llego y no coincide), planilla (el dato esta en la planilla pero
+// el PDF no paso por n8n: cargas de antes), no (falta), na (esta carga no lo lleva).
+function docsEstadoCarga(row){
+  const docs = docsDeCarga(row), set = docsSetDeCarga(row);
+  const enPlanilla = { bl: COL.BL, fc_proveedor: COL.INVOICE_PROVEEDOR, fc_axt: COL.INVOICE_CLIENTE, fc_axt_serv: COL.INVOICE_FC_SERV };
+  const valor = c => (c !== undefined && c !== null && c >= 0) ? String(row[c] || '').trim() : '';
+  const todoSi = valor(COL.DOCUMENTOS).toUpperCase() === 'SI';
+  const usados = new Set();
+  const chips = set.map(s => {
+    if(s.na) return { k: s.k, estado: 'na', nota: s.na };
+    const ds = docs.filter(d => docTipoEfectivo(d, row) === s.k);
+    ds.forEach(d => usados.add(d));
+    const bueno = ds.filter(d => d.estado !== 'no_coincide').sort((a, b) => (b.drive ? 1 : 0) - (a.drive ? 1 : 0))[0];
+    if(bueno) return { k: s.k, estado: 'ok', link: docLinkSeguro(bueno.drive), num: bueno.numero };
+    const mal = ds.find(d => d.estado === 'no_coincide');
+    if(mal) return { k: s.k, estado: 'mal', link: docLinkSeguro(mal.drive), num: mal.numero };
+    const pl = valor(enPlanilla[s.k]);
+    if(pl && pl !== '-' && pl !== '--') return { k: s.k, estado: 'planilla', num: pl };
+    if(todoSi) return { k: s.k, estado: 'planilla' };
+    return { k: s.k, estado: 'no' };
+  });
+  const otros = docs.filter(d => !usados.has(d)).map(d => ({ k: docTipoEfectivo(d, row), estado: 'otro', link: docLinkSeguro(d.drive), num: d.numero }));
+  const req = chips.filter(c => c.estado !== 'na'), hay = req.filter(c => c.estado === 'ok' || c.estado === 'planilla');
+  return { chips, otros, total: req.length, hay: hay.length, completa: hay.length === req.length, docs };
+}
+function docChip(c){
+  const lab = DOC_TIPOS[c.k] || c.k, num = c.num ? ' <small>· ' + escaparHtml(String(c.num)) + '</small>' : '';
+  if(c.estado === 'na') return '<span class="dc dc-na">' + lab + ' <small>(' + escaparHtml(c.nota) + ')</small></span>';
+  if(c.estado === 'no') return '<span class="dc dc-no" title="Todavía no llegó">' + lab + '</span>';
+  if(c.estado === 'planilla') return '<span class="dc dc-pl" title="Está anotado en la planilla, pero el PDF no pasó por n8n">' + lab + num + '</span>';
+  const cls = c.estado === 'mal' ? 'dc-mal' : c.estado === 'otro' ? 'dc-otro' : 'dc-ok';
+  const tit = c.estado === 'mal' ? 'Llegó pero no coincide con lo pedido' : 'Llegó';
+  return c.link ? '<a class="dc ' + cls + '" href="' + escaparHtml(c.link) + '" target="_blank" rel="noopener" title="' + tit + ' · abrir el PDF en Drive">' + lab + num + '</a>'
+                : '<span class="dc ' + cls + '" title="' + tit + ' (todavía sin link de Drive)">' + lab + num + '</span>';
+}
+
+// ── Listas ──
+function docsParaRevisar(){
+  return _docs.filter(d => (d.estado === 'revisar' || d.estado === 'asignado') && (d.negocio === negocioActivo || !d.negocio));
+}
+function docsNoCoinciden(){ return _docs.filter(d => d.estado === 'no_coincide' && d.negocio === negocioActivo); }
+function docsCantidadPendiente(){ return _docsListo ? docsParaRevisar().filter(d => d.estado === 'revisar').length + docsNoCoinciden().length : 0; }
+// Cargas del set: las de los ultimos 90 dias de ETD (y las que todavia no tienen ETD), mas las mas viejas que tienen
+// documentos registrados y todavia les falta alguno.
+function docsCargasListadas(){
+  const hoy = Date.now(), LIM = 90 * 864e5;
+  return allRowsAll.filter(r => {
+    const d = parseDate(r[COL.ETD]);
+    if(d ? hoy - d.getTime() <= LIM : allRows.indexOf(r) >= 0) return true;
+    return docsDeCarga(r).length > 0 && !docsEstadoCarga(r).completa;
+  }).sort((a, b) => ((parseDate(b[COL.ETD]) || new Date(8.64e15)).getTime() - (parseDate(a[COL.ETD]) || new Date(8.64e15)).getTime()) || ((b._sheetRow || 0) - (a._sheetRow || 0)));
+}
+function docsTextoCarga(r){
+  return [r[COL.CUSTOMER], r[COL.PRODUCT], r[COL.LOTS], r[COL.BL], r[COL.BOOKING], r[COL.CONTAINERS], r[COL.PORT], r._sheetRow].map(x => String(x || '')).join(' ').toLowerCase();
+}
+
+// ── Pantalla ──
+function renderDocumentos(){
+  const cont = document.getElementById('content');
+  if(!accessToken){ cont.innerHTML = '<div class="empty"><div class="empty-icon">🔒</div>Conectate con Google para ver los documentos.</div>'; return; }
+  if(!_docsListo){
+    cont.innerHTML = _docsError ? '<div class="empty"><div class="empty-icon">📄</div>' + escaparHtml(_docsError) + '</div>'
+                                : '<div class="empty"><div class="empty-icon">⏳</div>Leyendo los documentos…</div>';
+    if(!_docsCargando && !_docsError){
+      _docsCargando = true;
+      cargarDocumentos().catch(e => { _docsError = 'No pude leer los documentos: ' + e.message; })
+        .then(() => { _docsCargando = false; updateBadges(); if(currentView === 'documentos') renderDocumentos(); });
+    }
+    return;
+  }
+  const lab = docTextoDeNegocio(negocioActivo);
+  const rev = docsParaRevisar(), mal = docsNoCoinciden();
+  window._docsVista = rev.concat(mal);
+  let html = '';
+  if(rev.length || mal.length){
+    html += '<div class="doc-sec">Necesita que hagas algo</div>';
+    rev.forEach((d, i) => { html += docCardRevisar(d, i, lab); });
+    mal.forEach((d, j) => { html += docCardNoCoincide(d, rev.length + j); });
+  }
+  const cargas = docsCargasListadas().map(r => ({ r, e: docsEstadoCarga(r) }));
+  const q = _docsBusca.trim().toLowerCase();
+  const enBusca = cargas.filter(x => !q || docsTextoCarga(x.r).indexOf(q) >= 0 || x.e.docs.some(d => (d.numero + ' ' + d.nombre).toLowerCase().indexOf(q) >= 0));
+  const falt = enBusca.filter(x => !x.e.completa), comp = enBusca.filter(x => x.e.completa);
+  const lista = _docsFiltro === 'completas' ? comp : _docsFiltro === 'todas' ? enBusca : falt;
+  const chip = (k, t, n) => '<button class="chip-f' + (_docsFiltro === k ? ' on' : '') + '" onclick="docsFiltrar(\'' + k + '\')">' + t + ' <b>' + n + '</b></button>';
+  html += '<div class="doc-sec">Set de documentos por carga · ' + lab + '</div>'
+    + '<div class="doc-barra">' + chip('faltantes', 'Con faltantes', falt.length) + chip('completas', 'Completas', comp.length) + chip('todas', 'Todas', enBusca.length)
+    + '<span style="flex:1"></span><input id="docs-busca" class="doc-buscar" placeholder="Buscar lote, BL, contenedor, cliente…" value="' + escaparHtml(_docsBusca) + '" oninput="docsBuscar(this.value)">'
+    + '<button class="btn" onclick="docsRecargar()">↻ Actualizar</button></div>';
+  if(!lista.length) html += '<div class="empty"><div class="empty-icon">✓</div>' + (_docsFiltro === 'faltantes' ? 'Ninguna carga con documentos faltantes.' : 'No hay cargas para mostrar.') + '</div>';
+  lista.slice(0, 150).forEach(x => { html += docCardCarga(x.r, x.e); });
+  if(lista.length > 150) html += '<div class="doc-sub" style="padding:8px 0;">Se muestran las primeras 150: usá el buscador para encontrar las demás.</div>';
+  cont.innerHTML = html;
+  const b = document.getElementById('docs-busca');
+  if(b && window._docsFocoBusca){ b.focus(); b.setSelectionRange(b.value.length, b.value.length); window._docsFocoBusca = false; }
+}
+function docsFiltrar(k){ _docsFiltro = k; renderDocumentos(); }
+function docsBuscar(v){ _docsBusca = v; window._docsFocoBusca = true; renderDocumentos(); }
+async function docsRecargar(){
+  showToast('Actualizando documentos…', 'info');
+  try { await cargarDocumentos(); } catch(e){ showToast('No pude leer los documentos: ' + e.message, 'err'); }
+  updateBadges(); if(currentView === 'documentos') renderDocumentos();
+}
+function docsFechaCorta(s){ const m = String(s || '').match(/^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2})/); return m ? m[3] + '/' + m[2] + ' ' + m[4] + ':' + m[5] : (s || ''); }
+function docsRemitenteCorto(s){ const m = String(s || '').match(/^\s*"?([^"<]+?)"?\s*</); return m ? m[1].trim() : String(s || '').replace(/[<>]/g, ''); }
+function docTituloHtml(d){
+  const l = docLinkSeguro(d.drive), n = escaparHtml(d.nombre || '(sin nombre)');
+  return '📄 ' + (l ? '<a href="' + escaparHtml(l) + '" target="_blank" rel="noopener">' + n + '</a>' : n);
+}
+function docCardRevisar(d, i, lab){
+  const sub = escaparHtml(docsRemitenteCorto(d.remitente)) + ' · "' + escaparHtml(d.asunto) + '" · ' + escaparHtml(docsFechaCorta(d.fechaMail));
+  let h = '<div class="doc-card doc-rev"><div class="doc-top"><span class="doc-tit">' + docTituloHtml(d) + '</span><span class="doc-sub">' + sub + '</span>'
+    + (d.negocio ? '' : '<span class="doc-tag">sin carga todavía</span>') + '</div>';
+  if(d.estado === 'asignado'){
+    h += '<div class="doc-motivo">Asignado a la fila ' + d.filas.join(', ') + ' de ' + docTextoDeNegocio(d.negocio) + '. n8n lo guarda en su carpeta de Drive en la próxima vuelta (10 minutos como mucho).</div></div>';
+    return h;
+  }
+  h += '<div class="doc-motivo">' + escaparHtml(d.detalle || 'n8n no pudo saber de qué carga es.') + '</div>'
+    + '<div class="doc-acc"><button class="btn" style="background:var(--accent);color:#fff;border-color:var(--accent);" onclick="docsAbrirAsignar(' + i + ')">Elegir carga de ' + lab + '…</button>'
+    + '<button class="btn" onclick="docsDescartar(' + i + ')">No es de una carga</button></div>';
+  if(_docsAsignar === i){
+    h += '<div class="doc-asig"><input id="docs-asig-q" class="doc-buscar" style="width:100%;" placeholder="Buscar carga de ' + lab + ' por lote, booking, BL, contenedor, cliente o fila…" value="'
+      + escaparHtml(_docsBuscaCarga) + '" oninput="docsBuscarCarga(this.value)"><div id="docs-asig-res">' + docsResultadosAsignar(i) + '</div></div>';
+  }
+  return h + '</div>';
+}
+function docsCandidatas(q){
+  q = String(q || '').trim().toLowerCase();
+  if(!q) return [];
+  const partes = q.split(/[\s,]+/).filter(Boolean);
+  return allRowsAll.filter(r => { const t = docsTextoCarga(r); return partes.every(p => t.indexOf(p) >= 0); })
+    .sort((a, b) => (b._sheetRow || 0) - (a._sheetRow || 0)).slice(0, 8);
+}
+function docsResultadosAsignar(i){
+  const c = docsCandidatas(_docsBuscaCarga);
+  if(!_docsBuscaCarga.trim()) return '<div class="doc-sub" style="padding:6px 2px;">Escribí algo para buscar la carga.</div>';
+  if(!c.length) return '<div class="doc-sub" style="padding:6px 2px;">No encontré cargas de ' + docTextoDeNegocio(negocioActivo) + ' con eso.</div>';
+  return c.map(r => '<div class="doc-cand"><div><b>Fila ' + r._sheetRow + ' · ' + escaparHtml(String(r[COL.CUSTOMER] || '—')) + ' · ' + escaparHtml(String(r[COL.PRODUCT] || '')) + '</b>'
+    + '<div class="doc-sub">lote ' + escaparHtml(String(r[COL.LOTS] || '—')) + ' · booking ' + escaparHtml(String(r[COL.BOOKING] || '—')) + ' · ' + escaparHtml(String(r[COL.CONTAINERS] || '')) + ' · ETD ' + fmtDate(r[COL.ETD]) + '</div></div>'
+    + '<span style="flex:1"></span><button class="btn" style="background:var(--accent);color:#fff;border-color:var(--accent);" onclick="docsAsignar(' + i + ',' + idxDeFila(r) + ')">Es esta carga</button></div>').join('');
+}
+function docsAbrirAsignar(i){
+  const d = (window._docsVista || [])[i];
+  _docsAsignar = i;
+  _docsBuscaCarga = d ? (String(d.lotes || '').split(/[,\s]+/).filter(Boolean)[0] || '') : '';
+  renderDocumentos();
+  const inp = document.getElementById('docs-asig-q'); if(inp) inp.focus();
+}
+function docsBuscarCarga(v){ _docsBuscaCarga = v; const el = document.getElementById('docs-asig-res'); if(el) el.innerHTML = docsResultadosAsignar(_docsAsignar); }
+function docCardNoCoincide(d, i){
+  const ctl = d.controles || [];
+  let tabla = '';
+  if(ctl.length){
+    tabla = '<table class="doc-tabla"><tr><th>Control</th><th>Pedimos (planilla)</th><th>Dice la factura</th><th></th></tr>'
+      + ctl.map(c => '<tr' + (c.ok ? '' : ' class="x"') + '><td>' + escaparHtml(c.control) + '</td><td>' + escaparHtml(c.esperado) + '</td><td>' + escaparHtml(c.factura) + '</td><td>' + (c.ok ? '✓' : '✗') + '</td></tr>').join('')
+      + '</table>';
+  } else tabla = '<div class="doc-motivo">' + escaparHtml(d.detalle) + '</div>';
+  return '<div class="doc-card doc-mal"><div class="doc-top"><span class="doc-tit">' + docTituloHtml(d) + '</span><span class="doc-sub">fila ' + d.filas.join(', ') + ' · lote ' + escaparHtml(d.lotes || '—') + ' · '
+    + escaparHtml(docsRemitenteCorto(d.remitente)) + ' · ' + escaparHtml(docsFechaCorta(d.fechaMail)) + '</span><span class="doc-prog" style="color:var(--danger);">no se anotó</span></div>' + tabla
+    + '<div class="doc-acc">' + (negocioActivo === 'axt' ? '<button class="btn" onclick="docsBorradorDiferencia(' + i + ')">Armar borrador con la diferencia</button>' : '')
+    + '<button class="btn" onclick="docsResuelto(' + i + ')">Ya lo resolví</button></div></div>';
+}
+function docCardCarga(r, e){
+  const idx = idxDeFila(r);
+  const anot = e.docs.filter(d => d.anotado).map(d => escaparHtml(d.anotado) + ' (' + escaparHtml(docsFechaCorta(d.procesado)) + ')');
+  return '<div class="doc-card"><div class="doc-top"><span class="doc-tit">' + escaparHtml(String(r[COL.CUSTOMER] || '—')) + ' · ' + escaparHtml(String(r[COL.PRODUCT] || '')) + '</span>'
+    + '<span class="doc-sub">fila ' + r._sheetRow + ' · lote ' + escaparHtml(String(r[COL.LOTS] || '—')) + (r[COL.CONTAINERS] ? ' · ' + escaparHtml(String(r[COL.CONTAINERS])) : '')
+    + ' · ' + escaparHtml(String(r[COL.PORT] || '—')) + ' · ETD ' + fmtDate(r[COL.ETD]) + '</span>'
+    + '<span class="doc-prog' + (e.completa ? ' ok' : '') + '">' + e.hay + ' de ' + e.total + '</span></div>'
+    + '<div class="doc-chips">' + e.chips.map(docChip).join('') + e.otros.map(docChip).join('') + '</div>'
+    + '<div class="doc-pie"><button class="btn" onclick="driveOpenFolder(' + idx + ')">📂 Carpeta de Drive</button>'
+    + (anot.length ? '<span class="doc-dato">n8n anotó: ' + anot.join(' · ') + '</span>' : '') + '</div></div>';
+}
+// Panel lateral de Cargas: los mismos chips, para ver qué falta sin cambiar de pantalla.
+function docsPanelHtml(row){
+  if(!_docsListo || !row) return '';
+  const e = docsEstadoCarga(row);
+  return '<div style="font-size:11px;font-weight:600;color:var(--text3);text-transform:uppercase;margin:12px 0 4px;">Documentos · ' + e.hay + ' de ' + e.total + '</div>'
+    + '<div class="doc-chips">' + e.chips.map(docChip).join('') + e.otros.map(docChip).join('') + '</div>'
+    + '<div style="font-size:12px;"><a href="#" onclick="cerrarPanelCarga();showView(\'documentos\');return false;" style="color:var(--accent);font-weight:600;">Ver en Documentos →</a></div>';
+}
+
+// ── Escrituras en DOCUMENTOS (siempre con confirmación) ──
+async function docsEscribir(d, cambios){
+  const base = 'https://sheets.googleapis.com/v4/spreadsheets/' + cfg.hubSheetId;
+  const hd = { Authorization: 'Bearer ' + accessToken, 'Content-Type': 'application/json' };
+  // La fila tiene que seguir siendo la de este documento (n8n nunca mueve filas, pero por las dudas).
+  const chk = await fetch(base + '/values/' + encodeURIComponent(HOJA_DOCUMENTOS + '!A' + d._rn), { headers: hd });
+  if(!chk.ok){ showToast('No pude leer DOCUMENTOS (HTTP ' + chk.status + ')', 'err'); return false; }
+  const cj = await chk.json();
+  if(String((((cj.values || [])[0] || [])[0]) || '') !== d.clave){ showToast('La fila de este documento cambió: actualizá la vista y probá de nuevo.', 'err'); return false; }
+  const data = Object.keys(cambios).map(c => ({ range: HOJA_DOCUMENTOS + '!' + c + d._rn, values: [[cambios[c]]] }));
+  const r = await fetch(base + '/values:batchUpdate', { method: 'POST', headers: hd, body: JSON.stringify({ valueInputOption: 'RAW', data }) });
+  if(!r.ok){ showToast('No se pudo guardar en DOCUMENTOS (HTTP ' + r.status + ')', 'err'); return false; }
+  return true;
+}
+function docsQuien(){ const e = getMiEmail(); return e ? e.split('@')[0] : 'el hub'; }
+async function docsAsignar(i, idxCarga){
+  const d = (window._docsVista || [])[i], row = filaPorIdx(idxCarga);
+  if(!d || !row) return;
+  if(d.negocio && d.negocio !== negocioActivo){ alert('Este documento es de ' + docTextoDeNegocio(d.negocio) + ': asignalo desde esa vista.'); return; }
+  if(d.tipo === 'fc_axt' && negocioActivo !== 'axt'){ alert('Una factura de AXT solo puede ir a una carga de AXT.'); return; }
+  const extra = d.tipo === 'bl' ? ' y anota el número de BL en la planilla si esa celda está vacía'
+              : d.tipo === 'fc_axt' ? ', controla la factura contra la carga y, si todo coincide y la celda está vacía, anota el número' : '';
+  const ok = await confirmarAccion('Asignar el documento a esta carga',
+    '"' + d.nombre + '" va a quedar en la carga de la fila ' + row._sheetRow + ' de ' + docTextoDeNegocio(negocioActivo) + '. En la próxima vuelta (10 minutos como mucho) n8n lo guarda en la carpeta de Drive de esa carga' + extra + '. Se escribe en la pestaña DOCUMENTOS del HUB.',
+    row, { okLabel: 'Asignar' });
+  if(!ok) return;
+  const hoy = new Date().toLocaleString('es-AR');
+  if(!await docsEscribir(d, { D: docTextoDeNegocio(negocioActivo), E: String(row._sheetRow), L: 'asignado', M: 'asignado a mano por ' + docsQuien() + ' el ' + hoy, N: 'a mano' })) return;
+  Object.assign(d, { negocio: negocioActivo, filas: [row._sheetRow], estado: 'asignado', via: 'a mano' });
+  _docsAsignar = -1; _docsBuscaCarga = '';
+  appendLog({ bl: (row[COL.BL] || '').trim(), customer: (row[COL.CUSTOMER] || '').trim(), accion: 'documento asignado', detalle: d.nombre + ' → fila ' + row._sheetRow }).catch(() => {});
+  showToast('✓ Asignado. n8n lo procesa en la próxima vuelta.', 'ok');
+  updateBadges(); renderDocumentos();
+}
+async function docsDescartar(i){
+  const d = (window._docsVista || [])[i]; if(!d) return;
+  const ok = await showConfirm('Descartar el documento', '"' + d.nombre + '" sale de la lista para revisar y queda en el historial como descartado. No se guarda en Drive ni se anota nada. Se escribe en la pestaña DOCUMENTOS del HUB.', { okLabel: 'Descartar' });
+  if(!ok) return;
+  if(!await docsEscribir(d, { L: 'descartado', M: 'descartado a mano por ' + docsQuien() + ' el ' + new Date().toLocaleString('es-AR') })) return;
+  d.estado = 'descartado';
+  appendLog({ accion: 'documento descartado', detalle: d.nombre }).catch(() => {});
+  updateBadges(); renderDocumentos();
+}
+async function docsResuelto(i){
+  const d = (window._docsVista || [])[i]; if(!d) return;
+  const ok = await showConfirm('Marcar como resuelta', 'La Invoice ' + d.numero + ' sale de "No coinciden". No se anota en la planilla: si después llega la versión corregida, n8n la controla de nuevo sola. Se escribe en la pestaña DOCUMENTOS del HUB.', { okLabel: 'Ya lo resolví' });
+  if(!ok) return;
+  if(!await docsEscribir(d, { L: 'resuelto', M: (d.detalle ? d.detalle + ' · ' : '') + 'resuelto a mano por ' + docsQuien() + ' el ' + new Date().toLocaleString('es-AR') })) return;
+  d.estado = 'resuelto';
+  appendLog({ fc: d.numero, accion: 'factura AXT resuelta a mano', detalle: d.nombre }).catch(() => {});
+  updateBadges(); renderDocumentos();
+}
+// Borrador para quien recibe la solicitud de FC (hoja CONTACTOS). Solo si lo pedís; no se manda solo.
+async function docsBorradorDiferencia(i){
+  const d = (window._docsVista || [])[i]; if(!d || negocioActivo !== 'axt') return;
+  const para = destinatariosFCHoja();
+  if(!para.length){ alert('No hay nadie marcado para la solicitud de FC de AXT en la hoja CONTACTOS: no sé a quién dirigir el borrador.'); return; }
+  const malos = (d.controles || []).filter(c => !c.ok);
+  const lineas = malos.length ? malos.map(c => '- ' + c.control + ': pedimos ' + c.esperado + ', la factura dice ' + c.factura) : [d.detalle];
+  const asunto = 'Invoice ' + d.numero + ' - corrección' + (d.lotes ? ' - lote ' + d.lotes : '');
+  const cuerpo = 'Hola,\n\nEn la Invoice ' + d.numero + (d.lotes ? ' (lote ' + d.lotes + ')' : '') + ' encontramos estas diferencias con lo que pedimos:\n\n' + lineas.join('\n') + '\n\n¿La pueden corregir y reenviar?\n\nGracias.';
+  const ok = await showConfirm('Armar borrador', 'Se crea un borrador en tu Gmail (no se manda). Lo revisás y lo mandás vos.', {
+    okLabel: 'Crear borrador', icono: '✉️',
+    detalle: '<div><span style="color:var(--text3);">Para:</span> <b>' + escaparHtml(para.join(', ')) + '</b></div><div><span style="color:var(--text3);">Asunto:</span> <b>' + escaparHtml(asunto) + '</b></div>'
+      + '<div style="white-space:pre-wrap;margin-top:6px;font-size:12px;">' + escaparHtml(cuerpo) + '</div>' });
+  if(!ok) return;
+  if(await createGmailDraft(para.join(', '), '', asunto, cuerpo)) appendLog({ fc: d.numero, accion: 'borrador diferencia FC AXT', detalle: lineas.join(' | ') }).catch(() => {});
+}
+
 // ─── COMENTARIOS EN CELDAS ───────────────────────────────────────────────────
 // Como los de Google Sheets, pero compartidos por todo el equipo desde el hub: se comenta
 // una celda de la tabla, se ve quien lo escribio y cuando, se responde, se resuelve o se
@@ -15363,6 +15730,7 @@ function abrirPanelCarga(idx){
     <div style="font-size:11px;font-weight:600;color:var(--text3);text-transform:uppercase;margin:12px 0 4px;">Facturación</div>
     ${fila('Contrato', v(COL.CONTRACT_CLIENTE))}${fila('Invoice FC1', v(COL.INVOICE_CLIENTE))}${fila('Invoice FC2', v(COL.INVOICE_FC_SERV))}
     ${fila('Total', usd(COL.TOTAL_CFR))}${fila('Cobro estimado', fmtDate(row[getCobroCol()]))}${fila('Cobro consultado', textoReclamoCobro(row[COL.BL]||'') || 'Nunca')}
+    ${docsPanelHtml(row)}
     <div class="pc-acc">
       <button style="background:var(--accent);color:#fff;border-color:var(--accent);" onclick="solicitarFC(${idx})">📄 Solicitud FC</button>
       <button onclick="avisoClienteBulk([${idx}])">📦 Aviso cliente</button>
