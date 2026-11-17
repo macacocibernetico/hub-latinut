@@ -10517,8 +10517,15 @@ function toggleContratoDet(fila){
   renderContratos();
 }
 
+let _ctCerrIntento = '';
 function renderContratos(){
   const cont = document.getElementById('content');
+  // Los contratos cerrados se leen en segundo plano una vez por planilla (si falla, no se reintenta solo: "Releer" lo vuelve a pedir).
+  const sidCerr = getNegocioConfig().sheetId || cfg.sheetId;
+  if(accessToken && sidCerr && _ctCerrIntento !== sidCerr && (!_contratosCerr || _contratosCerrClave !== sidCerr)){
+    _ctCerrIntento = sidCerr;
+    cargarContratosCerrados().then(() => { if(currentView === 'contratos') renderContratos(); }).catch(() => {});
+  }
   if(!_contratosHeaders.length){
     cont.innerHTML = `<div class="empty"><div class="empty-icon">📑</div>
       <div style="margin-bottom:12px;">${_contratosError || 'No pude leer la hoja “' + hojaContratos() + '”.'}</div>
@@ -10564,7 +10571,10 @@ function renderContratos(){
   const coincide = f => !palabras.length || (t => palabras.every(p => t.indexOf(p) >= 0))(normBusca(f.join(' ¦ ')));
   const todas = _contratosFilas.filter(f => C.contrato < 0 || esNumeroContrato(f[C.contrato])).filter(coincide).map(info);
   const cuenta = { abiertos: todas.filter(x => x.estado !== 'completo').length, completos: todas.filter(x => x.estado === 'completo').length, todos: todas.length };
-  let filas = todas.filter(x => contratosFiltro === 'todos' || (contratosFiltro === 'completos' ? x.estado === 'completo' : x.estado !== 'completo'));
+  // Los contratos de la hoja "Contratos cerrados" (se leen una vez por negocio) tienen su propia lista: no llevan toneladas ni saldo.
+  const cerrFilas = (_contratosCerr || []).filter(k => coincide([k.importador, k.contrato, k.producto, k.puertoTxt, k.formaPago, k.formulaPago]));
+  cuenta.cerrados = cerrFilas.length;
+  let filas = contratosFiltro === 'cerrados' ? [] : todas.filter(x => contratosFiltro === 'todos' || (contratosFiltro === 'completos' ? x.estado === 'completo' : x.estado !== 'completo'));
 
   const valor = { cliente: x => v(x.f, C.cliente), contrato: x => v(x.f, C.contrato), producto: x => v(x.f, C.producto),
     tns: x => x.tns, saldo: x => x.saldo, final: x => x.finalTn, estado: x => ({ sin: 0, parcial: 1, completo: 2 })[x.estado] ?? -1 }[contratosOrden.col] || (x => v(x.f, C.cliente));
@@ -10606,9 +10616,9 @@ function renderContratos(){
           style="font-size:13px;padding:5px 26px 5px 30px;border-radius:8px;border:1px solid var(--border);background:var(--bg2);color:var(--text);width:240px;outline:none;">
         ${contratosBusqueda ? '<button type="button" class="ct-x" onclick="contratosBusqueda=\'\';renderContratos();" aria-label="Limpiar la búsqueda" title="Limpiar la búsqueda">×</button>' : ''}
       </div>
-      ${chip('abiertos', 'Abiertos')}${chip('completos', 'Completos')}${chip('todos', 'Todos')}
+      ${chip('abiertos', 'Abiertos')}${chip('completos', 'Completos')}${chip('todos', 'Todos')}${chip('cerrados', 'Cerrados')}
       <span style="flex:1;"></span>
-      <span class="ct-res">${filas.length} contrato${filas.length === 1 ? '' : 's'}${C.saldo >= 0 ? ' · ' + num(saldoTotal) + ' tns de saldo' : ''}</span>
+      <span class="ct-res">${contratosFiltro === 'cerrados' ? cerrFilas.length + ' contrato' + (cerrFilas.length === 1 ? '' : 's') + ' cerrado' + (cerrFilas.length === 1 ? '' : 's') : filas.length + ' contrato' + (filas.length === 1 ? '' : 's') + (C.saldo >= 0 ? ' · ' + num(saldoTotal) + ' tns de saldo' : '')}</span>
       ${otras.length ? `<button type="button" class="btn" style="font-size:12px;padding:5px 12px;" onclick="contratosVerTodo=!contratosVerTodo;renderContratos();">${contratosVerTodo ? 'Ocultar columnas extra' : 'Ver todas las columnas (' + otras.length + ' más)'}</button>` : ''}
       <button class="btn" style="font-size:12px;padding:5px 12px;" onclick="recargarContratos()">${icoCt('recargar')} Releer</button>
       <button class="btn primary" style="font-size:12px;padding:5px 12px;" onclick="abrirFormContrato()">${icoCt('mas')} Nuevo contrato</button>
@@ -10618,6 +10628,35 @@ function renderContratos(){
     ${palabras.length ? '<div style="margin-top:10px;"><button class="btn" onclick="contratosBusqueda=\'\';renderContratos();">Limpiar la búsqueda</button></div>' : ''}</div>`;
 
   let html = '';
+  if(contratosFiltro === 'cerrados'){
+    const precioFinalC = k => { const d = desgloseContrato(k.price, k.flete, k.fcServ, NaN); return d ? d.finalTn : NaN; };
+    const cadC = k => esCadBank(k) ? ' <span class="ct-nop" title="Forma de pago CAD BANK: el TELEX sale con BL Original">CAD BANK</span>' : '';
+    const cargando = !_contratosCerr;
+    const vacioC = `<div class="empty" style="padding:24px;">${cargando ? (_contratosCerrCargando ? 'Leyendo los contratos cerrados…' : esc2(_contratosCerrInfo || 'Todavía no se leyeron los contratos cerrados.')) : (palabras.length ? 'Nada coincide con “' + esc2(contratosBusqueda) + '”.' : esc2(_contratosCerrInfo || 'No hay contratos cerrados.'))}</div>`;
+    const ordenados = cerrFilas.slice().sort((a, b) => String(a.importador).localeCompare(String(b.importador), 'es') || String(a.contrato).localeCompare(String(b.contrato), 'es', { numeric: true }));
+    if(isMobile()){
+      cont.innerHTML = `<div class="table-wrap ct-vista">${encabezado}<div style="padding:10px 12px;">` + (ordenados.length ? ordenados.map(k => `<div class="ct-card">
+        <div class="ct-ch"><b>${esc2(k.importador) || '—'}</b><span class="ct-st completo">Cerrado</span></div>
+        <div class="ct-cs">${esc2(k.contrato) || '—'}${k.puertoTxt ? ' · ' + esc2(k.puertoTxt) : ''}${cadC(k)}</div>
+        <div style="margin:6px 0;">${esc2(abreviarProducto(k.producto)) || '—'}</div>
+        <div class="ct-cf">${isNaN(precioFinalC(k)) ? '—' : usd(precioFinalC(k)) + ' x tn'}${k.formulaPago ? ' · ' + esc2(k.formulaPago) : ''}${k.formaPago ? ' · ' + esc2(k.formaPago) : ''}</div></div>`).join('') : vacioC) + '</div></div>';
+      return;
+    }
+    cont.innerHTML = `<div class="table-wrap ct-vista">${encabezado}
+      <div style="overflow-x:auto;"><table class="ct-tabla">
+        <thead><tr><th>Cliente</th><th>Contrato</th><th>Producto</th><th>Puerto</th><th style="text-align:right;">Precio final x tn</th><th>Pago</th><th>Forma de pago</th><th>Estado</th></tr></thead><tbody>`
+      + (ordenados.length ? ordenados.map(k => `<tr>
+        <td><b>${esc2(k.importador) || '—'}</b></td>
+        <td class="mono"><span style="font-weight:600;color:var(--accent);">${esc2(k.contrato) || '—'}</span></td>
+        <td class="ct-prod" title="${esc2(k.producto)}">${esc2(abreviarProducto(k.producto)) || '—'}</td>
+        <td class="ct-pto" title="${esc2(k.puertoTxt)}">${esc2(k.puertoTxt) || '—'}</td>
+        <td class="mono ct-fin" style="text-align:right;">${isNaN(precioFinalC(k)) ? '—' : usd(precioFinalC(k))}</td>
+        <td class="mono" style="font-size:12px;white-space:nowrap;">${esc2(k.formulaPago) || '—'}</td>
+        <td style="font-size:12px;white-space:nowrap;">${esc2(k.formaPago) || '—'}${cadC(k)}</td>
+        <td><span class="ct-st completo">Cerrado</span></td></tr>`).join('') : `<tr><td colspan="8">${vacioC}</td></tr>`)
+      + '</tbody></table></div></div>';
+    return;
+  }
   if(isMobile()){
     html = `<div class="table-wrap ct-vista">${encabezado}<div style="padding:10px 12px;">` + (filas.length ? filas.map(x => {
       const f = x.f, fila = f._fila, abierto = contratosExpandidos.has(fila);
@@ -10671,6 +10710,7 @@ function renderContratos(){
 async function recargarContratos(){
   showToast('Leyendo contratos...');
   await loadContratos();
+  try{ await cargarContratosCerrados(true); }catch(e){ console.warn('contratos cerrados:', e); }
   renderContratos();
 }
 
