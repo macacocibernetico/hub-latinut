@@ -545,6 +545,9 @@ body.t-redim{cursor:col-resize;user-select:none;}
 .docs-menu .dm-doc.no{color:var(--text3);}
 .docs-menu .dm-doc.no .i,.docs-menu .dm-doc.mal .i{color:var(--danger);}
 .docs-menu .dm-ok{color:var(--ok);font-weight:600;padding:0 12px 8px;}
+.docs-menu .mf-l{display:flex;justify-content:space-between;gap:12px;padding:2px 12px;color:var(--text2);}
+.docs-menu .mf-l b{color:var(--text);font-weight:600;text-align:right;}
+.docs-menu .mf-l small{color:var(--text3);font-weight:400;}
 .docs-menu .dm-acc{border-top:1px solid var(--border);padding:4px 0;}
 .docs-menu .dm-acc button{display:block;width:100%;text-align:left;background:none;border:0;padding:7px 12px;font:inherit;color:var(--text);cursor:pointer;}
 .docs-menu .dm-acc button:hover,.docs-menu .dm-acc button:focus-visible{background:var(--bg3);outline:none;}
@@ -1775,9 +1778,12 @@ function getBuzaramCfg(){
     PAGO_MONTO:         c('MONTO_FLETE'),       // "importe usd/fcl"
     PAGO_FECHA:         c('FECHA_PAGO_FWD'),    // "fecha pago estimada"
     PAGO_FECHA_REAL:    c('FECHA_PAGO_FWD_REAL'), // "fecha pago real"
-    PAGO_FC_COURIER:    null,                   // Buzaram no tiene courier
-    PAGO_MONTO_COURIER: null,
-    PAGO_TOTAL:         c('MONTO_FLETE'),       // no hay "total flete": total = importe
+    PAGO_FC_COURIER:    c('FC_COURIER'),        // "FC Courier" (columna nueva; null si la planilla no la tiene)
+    PAGO_MONTO_COURIER: c('MONTO_COURIER'),     // "courier"
+    // "total flete" si la planilla lo tiene; si no, como antes, el importe
+    PAGO_TOTAL:         c('TOTAL_PAGO') !== null ? c('TOTAL_PAGO') : c('MONTO_FLETE'),
+    // Mientras el total flete de una carga este vacio (todavia no se completo), se usa el importe como antes
+    PAGO_TOTAL_RESPALDO: c('TOTAL_PAGO') !== null ? c('MONTO_FLETE') : null,
   };
 }
 function getNegocioConfig(){
@@ -3339,6 +3345,11 @@ function mapearColumnasPorNombre(headerRow){
     map.FC_FLETE   = col('FC flete');
     map.PROVEEDOR_FLETE = col('proveedor');
     map.MONTO_FLETE = col('importe usd/fcl');
+    // Desde nov-2026 Buzaram tiene, como AXT, "FC Courier", "courier" y "total flete" (a la derecha de "importe usd/fcl").
+    // Si una planilla vieja no las tiene, quedan en -1 y el total sigue siendo el importe.
+    map.FC_COURIER    = col('FC Courier');
+    map.MONTO_COURIER = col('courier');
+    map.TOTAL_PAGO    = col('total flete');
     map.FECHA_PAGO_FWD      = col('fecha pago estimada');
     map.FECHA_PAGO_FWD_REAL = col('fecha pago real');
     map.FECHA_EST_COBRO = col('Fecha estimada');
@@ -3358,15 +3369,14 @@ function mapearColumnasPorNombre(headerRow){
     map.FEC_FACT_CLIENTE = col('Fecha factura Buzaram - Cliente');
     map.FEC_PAGO_EFECTIVO = col('Fecha efectiva del pago Cliente - Buzaram');
     // Buzaram no usa estos
-    map.FC_COURIER = -1; map.MONTO_COURIER = -1; map.TOTAL_PAGO = -1;
     map.PAGARE_ENVIADO = -1; map.PAGARE_FIRMADO = -1;
     // Fallbacks Buzaram (posiciones actuales con columnas vacías en el medio)
     const fbB = {
       TOTAL_FCA:22, PRICE_CLIENTE:26, PRECIO_FINAL_TN:33,
       LOMBARD:15, TOTAL_CFR:32, FC_FLETE:47, PROVEEDOR_FLETE:48, MONTO_FLETE:49,
-      FECHA_PAGO_FWD:50, FECHA_PAGO_FWD_REAL:51, FECHA_EST_COBRO:52, FECHA_COBRO:57,
-      FECHA_LT:58, NUM_FC_LT:59, MONTO_LT:60, FECHA_PAGO_LT:61, OV:62, C_NUTRIN:63,
-      FEC_FACT_PLANTA:64, FEC_FACT_CLIENTE:65, FEC_PAGO_EFECTIVO:66
+      FECHA_PAGO_FWD:53, FECHA_PAGO_FWD_REAL:54, FECHA_EST_COBRO:55, FECHA_COBRO:60,
+      FECHA_LT:61, NUM_FC_LT:62, MONTO_LT:63, FECHA_PAGO_LT:64, OV:65, C_NUTRIN:66,
+      FEC_FACT_PLANTA:67, FEC_FACT_CLIENTE:68, FEC_PAGO_EFECTIVO:69
     };
     aplicarFallbacks(fbB);
   } else {
@@ -4459,6 +4469,8 @@ function feParaCelda(row, c){
 // Cargas partidas por negocio: filas con el mismo lote (ej. una de 16 tn y otra de 6 tn del mismo contenedor). Devuelve la fila que
 // lleva el flete (la que ya tiene importe en esa columna, o la primera), o null si la carga no esta partida.
 function filaFleteDeCargaPartida(row, col){
+  // Buzaram reparte el flete por toneladas entre las filas de una carga partida (cada fila lleva su parte): no aplica.
+  if(negocioActivo === 'buzaram') return null;
   const lote = (row[COL.LOTS] || '').toString().trim().toUpperCase();
   const conts = r => (r[COL.CONTAINERS] || '').toString().toUpperCase().split(/[,;\/\n|]+/).map(x => x.replace(/[\s\-]/g, '')).filter(x => /^[A-Z]{4}\d{6,7}$/.test(x));
   const mios = conts(row);
@@ -7304,12 +7316,23 @@ function cargasCadBankSinTelex(){
   });
   return out;
 }
-async function marcarTelexCadBank(){
-  if(!accessToken){ alert('Conectate con Google primero para escribir en la planilla.'); return; }
+// Pedido del usuario (excepcion a "nada escribe sin confirmacion"): el BL Original de los contratos CAD BANK se escribe solo,
+// con aviso y LOG. Solo celdas de TELEX vacias, releyendo la fila antes; lo que ya tiene otra cosa no se toca.
+let _telexAutoVersion = -1, _telexAutoCorriendo = false;
+function telexCadBankAuto(){
+  if(!accessToken || _telexAutoCorriendo || _telexAutoVersion === _dataVersion) return;
+  _telexAutoVersion = _dataVersion;
+  if(!cargasCadBankSinTelex().vacias.length) return;
+  _telexAutoCorriendo = true;
+  return marcarTelexCadBank(true).catch(e => console.warn('BL Original automatico:', e)).then(() => { _telexAutoCorriendo = false; });
+}
+async function marcarTelexCadBank(auto){
+  if(!accessToken){ if(!auto) alert('Conectate con Google primero para escribir en la planilla.'); return; }
   if(!contratos.length){ try{ await loadContratos(); }catch(e){} }
   await cargarContratosCerrados();
   const c = cargasCadBankSinTelex();
   if(!c.vacias.length){
+    if(auto) return;
     showToast(c.conOtro.length ? 'Las cargas CAD BANK que faltan ya tienen otra cosa en el TELEX: no las piso (' + c.conOtro.length + ').' : 'Todas las cargas con contrato CAD BANK ya dicen BL Original en el TELEX.', 'info', 7000);
     return;
   }
@@ -7318,12 +7341,12 @@ async function marcarTelexCadBank(){
   const detalle = '<div style="margin-bottom:4px;"><b>Se escribe BL Original en el TELEX de ' + c.vacias.length + ':</b></div>' + c.vacias.slice(0, 25).map(lin).join('')
     + (c.vacias.length > 25 ? '<div style="color:var(--text3);">…y ' + (c.vacias.length - 25) + ' más.</div>' : '')
     + (c.conOtro.length ? '<div style="margin-top:8px;color:var(--warn);"><b>No se tocan ' + c.conOtro.length + '</b> que ya tienen otra cosa en el TELEX:</div>' + c.conOtro.slice(0, 15).map(lin).join('') : '');
-  const ok = await showConfirm('BL Original en el TELEX', 'Las cargas cuyo contrato tiene Forma de pago CAD BANK quedan con "BL Original" en la columna TELEX. Solo se escriben las que tienen el TELEX vacío.', { icono: '🏦', okLabel: 'Escribir BL Original', detalle });
+  const ok = auto || await showConfirm('BL Original en el TELEX', 'Las cargas cuyo contrato tiene Forma de pago CAD BANK quedan con "BL Original" en la columna TELEX. Solo se escriben las que tienen el TELEX vacío.', { icono: '🏦', okLabel: 'Escribir BL Original', detalle });
   if(!ok) return;
-  showToast('Escribiendo...');
+  if(!auto) showToast('Escribiendo...');
   let fresco;
   try{ fresco = await releerFilasCarga(c.vacias.map(x => x.row._sheetRow)); }
-  catch(err){ alert('No pude releer la planilla antes de escribir: ' + err.message); return; }
+  catch(err){ if(!auto) alert('No pude releer la planilla antes de escribir: ' + err.message); return; }
   const nc = getNegocioConfig(), hoja = nc.sheetName || cfg.sheetName, saltadas = [];
   const data = [];
   c.vacias.forEach(x => {
@@ -7337,13 +7360,14 @@ async function marcarTelexCadBank(){
       method: 'POST', headers: { Authorization: 'Bearer ' + accessToken, 'Content-Type': 'application/json' },
       body: JSON.stringify({ valueInputOption: 'USER_ENTERED', data: data.map(d => ({ range: d.range, values: d.values })) })
     });
-    if(!r.ok){ alert('No se pudo escribir en la planilla. No se cambió nada.'); return; }
+    if(!r.ok){ if(auto) showToast('No pude escribir BL Original en el TELEX (HTTP ' + r.status + '). Lo intento de nuevo la próxima vez.', 'warn', 8000); else alert('No se pudo escribir en la planilla. No se cambió nada.'); return; }
     data.forEach(d => { d.x.row[COL.TELEX] = ENVIO_CAD_BANK; });
-    _dataVersion++;
-    await appendLog({ fc: '', fcServ: '', bl: '', customer: '', accion: 'TELEX BL Original (CAD BANK)', detalle: data.length + ' carga(s): filas ' + data.map(d => d.x.row._sheetRow).join(', ') });
+    _dataVersion++; if(auto) _telexAutoVersion = _dataVersion;
+    await appendLog({ fc: '', fcServ: '', bl: '', customer: '', accion: 'TELEX BL Original (CAD BANK)' + (auto ? ' automático' : ''), detalle: data.length + ' carga(s): filas ' + data.map(d => d.x.row._sheetRow).join(', ') });
   }
-  if(saltadas.length) alert('Quedaron sin cambiar:\n' + saltadas.join('\n'));
-  showToast('🏦 BL Original escrito en el TELEX de ' + data.length + ' carga' + (data.length === 1 ? '' : 's'), data.length ? 'ok' : 'info');
+  if(saltadas.length && !auto) alert('Quedaron sin cambiar:\n' + saltadas.join('\n'));
+  if(auto){ if(data.length) showToast('🏦 BL Original puesto solo en el TELEX (contrato CAD BANK): fila' + (data.length === 1 ? ' ' : 's ') + data.map(d => d.x.row._sheetRow).join(', '), 'ok', 8000); }
+  else showToast('🏦 BL Original escrito en el TELEX de ' + data.length + ' carga' + (data.length === 1 ? '' : 's'), data.length ? 'ok' : 'info');
   if(currentView === 'cargas') renderCargas();
 }
 
@@ -7354,6 +7378,7 @@ function botonTelexCadBank(){
     cargarContratosCerrados().then(() => { if(currentView === 'cargas' && cargasCadBankSinTelex().vacias.length) renderCargas(); }).catch(() => {});
   }
   const n = cargasCadBankSinTelex().vacias.length;
+  if(n && accessToken){ setTimeout(telexCadBankAuto, 0); return ''; }   // se escribe solo (ver telexCadBankAuto)
   return n ? '<button class="t-filtros-btn" onclick="marcarTelexCadBank()" title="Cargas cuyo contrato tiene Forma de pago CAD BANK y el TELEX vacío: escribe BL Original en el TELEX (te muestra cuáles antes)"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 21h18M5 21V10M9 21V10M15 21V10M19 21V10M2 10l10-6 10 6"/></svg> BL Original en TELEX (' + n + ')</button>' : '';
 }
 
@@ -12335,11 +12360,13 @@ function tablaMenuDocs(ev){
   const td = ev && ev.target && ev.target.closest ? ev.target.closest('td[data-c]') : null;
   if(!td) return;
   const c = +td.getAttribute('data-c');
-  if(c !== COL.LOTS && c !== COL.DOCUMENTOS) return;         // en las demás celdas sigue el menú del navegador
+  const flete = esColFleteMenu(c);
+  if(c !== COL.LOTS && c !== COL.DOCUMENTOS && !flete) return;         // en las demás celdas sigue el menú del navegador
   const row = _tablaRows[+td.getAttribute('data-r')];
   if(!row) return;
   ev.preventDefault();
-  abrirMenuDocs(row, ev.clientX, ev.clientY);
+  if(flete) abrirMenuFlete(row, c, ev.clientX, ev.clientY);
+  else abrirMenuDocs(row, ev.clientX, ev.clientY);
 }
 function abrirMenuDocs(row, x, y){
   cerrarMenuDocs();
@@ -12828,6 +12855,73 @@ function rfAplicar(){
   cerrarPanelFletes();
   if(cambiadas && currentView === 'cargas') renderCargas();
   showToast((cambiadas ? '✓ ' + cambiadas + ' total flete puesto' + (cambiadas === 1 ? '' : 's') + ' según la tarifa (Ctrl+Z deshace). ' : '') + (dejadas ? dejadas + ' quedaron como estaban.' : ''), 'ok', 6000);
+}
+
+// ─── CLIC DERECHO EN EL FLETE: DE DONDE SALE LA TARIFA ───────────────────────
+// En "total flete" o "importe usd/fcl": que tarifa del TARIFARIO se usa (fila, mes, POL, forwarder, FLETE / ALL IN, dias libres),
+// la cuenta, lo que dice hoy y la diferencia. Si no hay tarifa, por que (que falta cargar). Desde ahi: poner la tarifa en la celda
+// (se guarda como cualquier edicion de la tabla, Ctrl+Z deshace) o abrir "Revisar fletes".
+let _mfRow = null, _mfCol = null;
+function esColFleteMenu(c){ return c !== undefined && c !== null && c >= 0 && (c === feColPrincipal() || c === COL.MONTO_FLETE); }
+function menuFleteHtml(row, c){
+  const e = t => escaparHtml(String(t === undefined || t === null ? '' : t));
+  const f = x => Math.abs(x - Math.round(x)) < 0.005 ? Math.round(x).toLocaleString('es-AR') : fmtUsd2(x);
+  const porTotal = c === feColPrincipal() && c !== COL.MONTO_FLETE;
+  const fe = porTotal ? fleteEsperadoTabla(row) : fleteEsperadoTabla(row, 'monto');
+  const nombreCol = (encabezadosCargas()[c] || (porTotal ? 'total flete' : 'importe usd/fcl')).toString().trim();
+  const cab = '<div class="dm-cab"><b>' + (e((row[COL.CUSTOMER] || '').toString().trim()) || '—') + '</b> · ' + e((row[COL.PORT] || '').toString().trim()) + ' · ' + e(normalizarNaviera(row[COL.SHIPPING] || ''))
+    + '<div class="dm-sub">fila ' + row._sheetRow + ' · booking ' + e(rfBooking(row)) + ' · forwarder ' + (e(forwarderDeTarifa(row)) || '—') + '</div></div>';
+  const lin = (k, v) => '<div class="mf-l"><span>' + k + '</span><b>' + v + '</b></div>';
+  if(!tarifas.length) return cab + '<div class="dm-sub" style="padding:8px 12px;">' + (_tarifarioError ? 'No pude leer el TARIFARIO: ' + e(_tarifarioError) : 'Todavía no se leyó el TARIFARIO.') + '</div>'
+    + '<div class="dm-acc"><button class="prim" onclick="cerrarMenuDocs();revisarFletes()">↻ Leer el tarifario y revisar fletes</button></div>';
+  let cuerpo = '';
+  const hoy = valorVisible(row, c).trim();
+  if(!fe || fe.estado === 'sin_tarifa'){
+    cuerpo = '<div class="dm-tit">Sin tarifa para comparar</div><div style="padding:2px 12px 8px;color:var(--text2);">' + e(motivoSinTarifa(row)) + '</div>' + lin(nombreCol, e(hoy || 'vacío'));
+  } else if(fe.estado === 'en_otra' || (fe.estado === 'bad' && isNaN(fe.esperado))){
+    cuerpo = '<div class="dm-tit">Carga partida</div><div style="padding:2px 12px 8px;color:var(--text2);">' + e(fe.titulo) + '</div>';
+  } else {
+    const t = tarifaPara(row), n = cantidadContenedores(row), ref = refTarifa(t);
+    const usaAllIn = !isNaN(t.allIn) && t.allIn;
+    cuerpo = '<div class="dm-tit">Tarifa usada · fila ' + t._sheetRow + ' del TARIFARIO</div>'
+      + lin('Mes', e(mesLegible(t.mes)) + ' <small>(de la ' + e(origenMesTarifa(row)) + ')</small>')
+      + lin('Sale de', e(t.pol || 'BUE')) + lin('Forwarder', e(t.forwarder || '—'))
+      + lin('FLETE', isNaN(t.flete) ? '—' : 'USD ' + f(t.flete)) + lin('ALL IN', isNaN(t.allIn) ? '—' : 'USD ' + f(t.allIn))
+      + (t.diasLibres ? lin('Días libres', e(t.diasLibres)) : '')
+      + '<div class="dm-tit">La cuenta</div>'
+      + lin('Por contenedor', 'USD ' + f(ref) + ' <small>(' + (usaAllIn ? 'ALL IN' : 'FLETE') + ')</small>')
+      + (porTotal ? lin('× contenedores', n + ' → USD ' + f(fe.esperado)) : '')
+      + lin('Hoy dice', hoy ? e(hoy) : 'vacío')
+      + (fe.estado === 'ok' ? '<div class="dm-ok" style="padding-top:4px;">✓ Coincide con la tarifa</div>'
+        : fe.estado === 'sin_importe' ? '' : lin('Diferencia', '<span style="color:' + (fe.estado === 'bad' ? 'var(--danger)' : 'var(--warn)') + '">' + (fe.dif > 0 ? '+' : '−') + 'USD ' + f(Math.abs(fe.dif)) + '</span>'));
+    const alts = tarifasAlternativas(row);
+    if(alts.length) cuerpo += '<div class="dm-sub" style="padding:2px 12px 6px;">Saliendo por otro puerto: ' + alts.map(a => e(a.pol) + ' USD ' + f(a.ref)).join(' · ') + '</div>';
+  }
+  const puede = fe && !isNaN(fe.esperado) && (fe.estado === 'sin_importe' || fe.estado === 'warn' || fe.estado === 'bad') && !esColFormula(c);
+  return cab + cuerpo + '<div class="dm-acc">'
+    + (puede ? '<button class="prim" onclick="mfPonerTarifa()">Poner la tarifa en ' + e(nombreCol) + ': USD ' + f(fe.esperado) + '</button>' : '')
+    + '<button onclick="cerrarMenuDocs();revisarFletes()">↻ Releer el tarifario y revisar todos los fletes</button></div>';
+}
+function abrirMenuFlete(row, c, x, y){
+  cerrarMenuDocs();
+  _mfRow = row; _mfCol = c;
+  const m = document.createElement('div');
+  m.id = 'docs-menu'; m.className = 'docs-menu mf'; m.setAttribute('role', 'menu');
+  m.innerHTML = menuFleteHtml(row, c);
+  document.body.appendChild(m);
+  const w = m.offsetWidth || 340, h = m.offsetHeight || 320;
+  m.style.left = Math.max(8, Math.min(x, window.innerWidth - w - 8)) + 'px';
+  m.style.top = Math.max(8, Math.min(y, window.innerHeight - h - 8)) + 'px';
+  setTimeout(() => { document.addEventListener('mousedown', _docsMenuFuera, true); document.addEventListener('keydown', _docsMenuEsc, true); }, 0);
+}
+function mfPonerTarifa(){
+  const row = _mfRow, c = _mfCol;
+  cerrarMenuDocs();
+  if(!row || !esColFleteMenu(c)) return;
+  const fe = c === feColPrincipal() && c !== COL.MONTO_FLETE ? fleteEsperadoTabla(row) : fleteEsperadoTabla(row, 'monto');
+  if(!fe || isNaN(fe.esperado) || esColFormula(c)) return;
+  anotarCambioTabla(row, c, String(Math.round(fe.esperado * 100) / 100).replace('.', ','), 'Tarifario: ' + fe.titulo.replace(/^Sugerido, no escrito: /, '').replace(/\. .*$/, ''));
+  if(currentView === 'cargas') renderCargas();
 }
 
 // ─── COMENTARIOS EN CELDAS ───────────────────────────────────────────────────
@@ -16695,7 +16789,9 @@ function renderCashFlow(){
       const invoice  = (row[COL.INVOICE_CLIENTE]||'').trim();
       const fechaPagoEst  = (row[nc.PAGO_FECHA]||'').trim();
       const fechaPagoReal = (row[nc.PAGO_FECHA_REAL]||'').trim();
-      const totalPago = parseSheetNum(row[nc.PAGO_TOTAL]);
+      let totalPago = parseSheetNum(row[nc.PAGO_TOTAL]);
+      // Buzaram: total flete vacio (carga anterior a la columna) -> el importe, como antes. Con "-" no: es la otra fila de una carga partida.
+      if(isNaN(totalPago) && nc.PAGO_TOTAL_RESPALDO != null && !(row[nc.PAGO_TOTAL] || '').toString().trim()) totalPago = parseSheetNum(row[nc.PAGO_TOTAL_RESPALDO]);
 
       let fechaPago, pagado;
       if(fechaPagoEst.toUpperCase() === 'SI' && fechaPagoReal){
