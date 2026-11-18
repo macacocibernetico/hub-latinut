@@ -4325,7 +4325,34 @@ function mismoForwarder(deCarga, deTarifa){
 }
 // POL de la carga (columna opcional "POL"). Vacio = no se sabe.
 function polDeCarga(row){
-  return (COL.POL !== undefined && COL.POL >= 0 && row[COL.POL] !== undefined && row[COL.POL] !== null) ? row[COL.POL].toString().trim() : '';
+  const p = (COL.POL !== undefined && COL.POL >= 0 && row[COL.POL] !== undefined && row[COL.POL] !== null) ? row[COL.POL].toString().trim() : '';
+  return /^[-–—]+$/.test(p) ? '' : p;   // "-" (fila partida, sin dato) es lo mismo que vacio
+}
+// Por que una carga no tiene tarifa con que comparar, en criollo: que falta cargar en el TARIFARIO.
+// Va descartando en el mismo orden que tarifaPara: destino, naviera, mes, POL, forwarder.
+function motivoSinTarifa(row){
+  const destino = (row[COL.PORT] || '').toString().trim(), nav = (row[COL.SHIPPING] || '').toString().trim();
+  if(!destino || !nav) return 'A la carga le falta ' + (!destino ? 'el destino (Port)' : 'la naviera (Shipping Line)') + '.';
+  const uniq = a => [...new Set(a.filter(Boolean))];
+  const lista = a => a.length > 1 ? a.slice(0, -1).join(', ') + ' y ' + a[a.length - 1] : (a[0] || '');
+  const navN = normalizarNaviera(nav);
+  const aDest = tarifas.filter(t => coincideTexto(t.destino, destino));
+  if(!aDest.length) return 'En el TARIFARIO no hay ninguna tarifa a ' + destino + '.';
+  const deNav = aDest.filter(t => coincideNaviera(t.carrier, nav));
+  if(!deNav.length) return 'A ' + destino + ' hay tarifas de ' + lista(uniq(aDest.map(t => normalizarNaviera(t.carrier)))) + ', pero de ' + navN + ' no hay ninguna.';
+  const meses = mesesDeCarga(row);
+  if(!meses.length) return 'La carga no tiene fecha de consolidación ni ETD: no se sabe de qué mes tomar la tarifa.';
+  const m = meses[0], delMes = deNav.filter(t => t.mes === m);
+  if(!delMes.length){
+    const hay = uniq(deNav.map(t => t.mes)).sort((a, b) => b - a).slice(0, 3).map(mesLegible);
+    return navN + ' a ' + destino + ': falta la tarifa de ' + mesLegible(m) + ' (mes de la ' + origenMesTarifa(row) + '). Hay de ' + lista(hay) + '.';
+  }
+  const pol = polDeCarga(row), conPol = delMes.filter(t => !pol || polIgual(t.pol, pol));
+  if(!conPol.length) return navN + ' a ' + destino + ' de ' + mesLegible(m) + ': hay tarifa saliendo de ' + lista(uniq(delMes.map(t => t.pol || 'BUE'))) + ', pero la carga sale de ' + pol + ' (columna POL).';
+  const fwd = forwarderDeTarifa(row);
+  if(fwd && !conPol.some(t => !t.forwarder || mismoForwarder(fwd, t.forwarder)))
+    return navN + ' a ' + destino + ' de ' + mesLegible(m) + ': hay tarifa de ' + lista(uniq(conPol.map(t => t.forwarder))) + ', pero de ' + fwd + ' no. Cargala en el TARIFARIO con ' + fwd + ' en la columna FORWARDER.';
+  return 'La tarifa de ' + mesLegible(m) + ' (fila ' + conPol[0]._sheetRow + ' del TARIFARIO) no tiene importe en FLETE ni en ALL IN.';
 }
 // BUE, BS AS, ARG y vacio son el mismo puerto base; el resto se compara por nombre.
 function polIgual(a, b){
@@ -4466,13 +4493,10 @@ function fleteEsperadoTabla(row, modo){
   const meses = mesesDeCarga(row);
   const tarifa = tarifaPara(row), ref = refTarifa(tarifa);
   if(!tarifa || isNaN(ref) || !ref){
-    const fwdT = forwarderDeTarifa(row);
-    if(fwdT && meses.length && tarifas.some(t => t.mes === meses[0] && coincideTexto(t.destino, destino) && coincideNaviera(t.carrier, naviera)))
-      return { col, estado: 'sin_tarifa', texto: 'sin tarifa ' + fwdT + ' ' + mesLegible(meses[0]),
-        titulo: 'Hay tarifa de ' + mesLegible(meses[0]) + ' para ese destino y naviera, pero de otro forwarder. De ' + fwdT + ' no hay: cargala en el TARIFARIO (con ' + fwdT + ' en la columna FORWARDER) y tocá Revisar fletes.' };
-    return { col, estado: 'sin_tarifa', texto: meses.length ? 'sin tarifa ' + mesLegible(meses[0]) : 'sin fecha p/ tarifa',
-      titulo: meses.length ? 'No hay tarifa de ' + mesLegible(meses[0]) + ' (mes de la ' + origenMesTarifa(row) + ') para ese destino y naviera, así que no hay con qué comparar.'
-                           : 'La carga no tiene fecha de consolidación ni ETD: no se sabe de qué mes tomar la tarifa.' };
+    const fwdT = forwarderDeTarifa(row), motivo = motivoSinTarifa(row);
+    const otroFwd = fwdT && meses.length && / pero de .* no\. Cargala/.test(motivo);
+    return { col, estado: 'sin_tarifa', texto: !meses.length ? 'sin fecha p/ tarifa' : 'sin tarifa ' + (otroFwd ? fwdT + ' ' : '') + mesLegible(meses[0]),
+      motivo, titulo: 'Sin tarifa para comparar: ' + motivo + ' Cuando la cargues, tocá Revisar fletes.' };
   }
   const n = cantidadContenedores(row);
   const esperado = porTotal ? ref * n : ref;
@@ -12693,16 +12717,19 @@ function rfPagadoAlForwarder(row){
   const est = COL.FECHA_PAGO_FWD !== undefined && COL.FECHA_PAGO_FWD >= 0 ? String(row[COL.FECHA_PAGO_FWD] || '').trim().toUpperCase() : '';
   return !!real || est === 'SI';
 }
+const rfBooking = r => (COL.BOOKING !== undefined && COL.BOOKING >= 0 ? (r[COL.BOOKING] || '').toString().trim() : '') || '—';
 function botonRevisarFletes(){
   const c = feColPrincipal();
   if(c === undefined || c < 0) return '';
   return '<button class="t-filtros-btn" onclick="revisarFletes()" title="Vuelve a leer el TARIFARIO y te muestra los total flete vacíos o distintos a la tarifa de su forwarder: elegís cuáles dejar y cuáles cambiar"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M2 17h13V7H2z"/><path d="M15 10h4l3 3v4h-7"/><circle cx="6" cy="19" r="2"/><circle cx="18" cy="19" r="2"/></svg> Revisar fletes</button>';
 }
 function calcularFletesParaRevisar(){
-  const col = feColPrincipal(), mem = rfMemoria(), out = [], dobles = [];
+  const col = feColPrincipal(), mem = rfMemoria(), out = [], dobles = [], sinTarifa = [];
   (allRows || []).forEach(row => {
     if(rfPagadoAlForwarder(row)) return;
     const fe = fleteEsperadoTabla(row);
+    // Sin tarifa con que comparar: se junta aparte, con el motivo (que falta cargar en el TARIFARIO)
+    if((!fe && tarifas.length && (row[COL.PORT] || '').toString().trim()) || (fe && fe.estado === 'sin_tarifa')){ sinTarifa.push({ row, motivo: motivoSinTarifa(row) }); return; }
     if(!fe || fe.col !== col) return;
     if(fe.estado === 'bad' && isNaN(fe.esperado)){ dobles.push({ row, fe }); return; }   // flete doble en una carga partida
     if(fe.estado === 'sin_importe'){ if(fe.escribible) out.push({ row, fe, actual: '', vacia: true }); return; }
@@ -12710,7 +12737,7 @@ function calcularFletesParaRevisar(){
     const actual = valorVisible(row, col).trim();
     out.push({ row, fe, actual, vista: !!mem[rfClave(row, actual, fe.esperado)] });
   });
-  out.dobles = dobles;
+  out.dobles = dobles; out.sinTarifa = sinTarifa;
   return out;
 }
 async function revisarFletes(){
@@ -12721,7 +12748,7 @@ async function revisarFletes(){
   _rfSel = {};
   _rfLista.forEach((it, i) => { _rfSel[i] = it.vacia ? 'tarifa' : 'dejar'; });
   if(currentView === 'cargas') renderCargas();   // la tabla tambien muestra las tarifas nuevas
-  if(!_rfLista.length && !_rfLista.dobles.length){ showToast('✓ Tarifario releído (' + tarifas.length + ' tarifas). Todos los total flete coinciden con su tarifa o no tienen tarifa con qué comparar.', 'ok', 7000); return; }
+  if(!_rfLista.length && !_rfLista.dobles.length && !_rfLista.sinTarifa.length){ showToast('✓ Tarifario releído (' + tarifas.length + ' tarifas). Todos los total flete coinciden con su tarifa o no tienen tarifa con qué comparar.', 'ok', 7000); return; }
   abrirPanelFletes();
 }
 function rfVisible(it){ const c = document.getElementById('rf-ver-vistas'); return !it.vista || !!(c && c.checked); }
@@ -12746,6 +12773,7 @@ function rfTablaHTML(){
     return '<tr class="' + (it.vista ? 'fe-vista' : '') + '" style="' + (it.vista ? 'display:none;' : '') + '">'
       + '<td>' + (it.row._sheetRow || '') + '</td>'
       + '<td>' + esc((it.row[COL.CUSTOMER] || '').toString().trim() || '—') + '<div class="fe-sub">' + esc((it.row[COL.PORT] || '').toString().trim()) + ' · ' + esc((it.row[COL.SHIPPING] || '').toString().trim()) + '</div></td>'
+      + '<td class="mono">' + esc(rfBooking(it.row)) + '</td>'
       + '<td>' + esc(forwarderDeTarifa(it.row) || '—') + '<div class="fe-sub">' + esc(t.mes ? mesLegible(t.mes) : '') + (it.fe.cuentaTxt ? ' · ' + esc(it.fe.cuentaTxt) : '') + '</div></td>'
       + '<td class="fe-dif">' + (it.vacia ? '<span class="fe-sub">vacío</span>' : esc(it.actual)) + '</td><td class="fe-fm" title="' + esc(it.fe.titulo) + '">' + f(it.fe.esperado) + '</td>'
       + '<td>' + d + '</td>'
@@ -12755,13 +12783,18 @@ function rfTablaHTML(){
   const dob = _rfLista.dobles || [];
   const dobHTML = dob.length ? '<div style="margin:10px 0;padding:10px 12px;border-radius:10px;background:var(--danger-light);border:1px solid var(--danger);color:var(--danger);font-size:13px;"><b>Flete cargado dos veces en una carga partida (' + dob.length + '):</b>'
     + dob.map(x => '<div style="margin-top:4px;">• Fila ' + x.row._sheetRow + ' (' + esc((x.row[COL.CUSTOMER] || '').toString().trim()) + '): ' + esc(x.fe.titulo) + '</div>').join('') + '<div style="margin-top:4px;">Borrá el de la fila que sobra en la tabla.</div></div>' : '';
+  const st = _rfLista.sinTarifa || [], grupos = {};
+  st.forEach(x => { (grupos[x.motivo] = grupos[x.motivo] || []).push(x.row); });
+  const stHTML = st.length ? '<details class="rf-sin"' + (fil ? '' : ' open') + ' style="margin:10px 0;padding:10px 12px;border-radius:10px;background:var(--bg3);border:1px solid var(--border);font-size:13px;"><summary style="cursor:pointer;"><b>Sin tarifa para comparar (' + st.length + ')</b> <span class="fe-sub">· qué falta cargar en el TARIFARIO</span></summary>'
+    + Object.keys(grupos).map(m => '<div style="margin-top:8px;">• ' + esc(m) + '<div class="fe-sub" style="padding-left:12px;">' + grupos[m].map(r => 'fila ' + r._sheetRow + ' · ' + esc((r[COL.CUSTOMER] || '').toString().trim() || '—') + ' · booking ' + esc(rfBooking(r))).join('<br>') + '</div></div>').join('') + '</details>' : '';
   const titulo = (nDist ? nDist + ' distinto' + (nDist === 1 ? '' : 's') + ' a la tarifa' : '') + (nDist && nVacias ? ' · ' : '') + (nVacias ? nVacias + ' vacío' + (nVacias === 1 ? '' : 's') : '') || 'Ninguno para revisar';
   return '<div class="fe-cab"><b>Total flete contra el tarifario · ' + titulo + '</b>'
     + '<p>Recién releído el TARIFARIO (' + tarifas.length + ' tarifas). Cada carga se compara con la tarifa de SU forwarder, del mes de la consolidación. Los vacíos vienen marcados para completar; los distintos, para dejar así. Nada se escribe hasta que apretás "Aplicar". Las cargas ya pagadas al forwarder no aparecen.</p></div>'
     + '<div class="fe-tools"><button class="btn" onclick="rfTodas(\'tarifa\')">Todas a la tarifa</button><button class="btn" onclick="rfTodas(\'dejar\')">Todas: dejar así</button><button class="btn" onclick="cerrarPanelFletes();revisarFletes()">↻ Releer tarifario</button><span style="flex:1"></span>'
     + (nVistas ? '<label class="fe-sub"><input type="checkbox" id="rf-ver-vistas" onchange="rfVerVistas()"> Ver también los que ya dejé así (' + nVistas + ')</label>' : '') + '</div>'
     + dobHTML
-    + (fil ? '<div class="fe-sc"><table class="fe-tab"><thead><tr><th>Fila</th><th>Cliente · destino</th><th>Forwarder · tarifa</th><th>Hoy dice</th><th>Daría la tarifa</th><th>Diferencia</th><th>¿Qué hacemos?</th></tr></thead><tbody>' + fil + '</tbody></table></div>' : '')
+    + (fil ? '<div class="fe-sc"><table class="fe-tab"><thead><tr><th>Fila</th><th>Cliente · destino</th><th>Booking</th><th>Forwarder · tarifa</th><th>Hoy dice</th><th>Daría la tarifa</th><th>Diferencia</th><th>¿Qué hacemos?</th></tr></thead><tbody>' + fil + '</tbody></table></div>' : '')
+    + stHTML
     + '<div class="fe-pie"><span id="rf-resumen" class="fe-sub"></span><span style="flex:1"></span><button class="btn" onclick="cerrarPanelFletes()">Cancelar</button><button class="btn primary" id="rf-aplicar" onclick="rfAplicar()">Aplicar</button></div>';
 }
 function _rfTecla(e){ if(e.key === 'Escape'){ e.stopPropagation(); cerrarPanelFletes(); } }
