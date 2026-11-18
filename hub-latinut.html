@@ -549,6 +549,13 @@ body.t-redim{cursor:col-resize;user-select:none;}
 .docs-menu .dm-acc button{display:block;width:100%;text-align:left;background:none;border:0;padding:7px 12px;font:inherit;color:var(--text);cursor:pointer;}
 .docs-menu .dm-acc button:hover,.docs-menu .dm-acc button:focus-visible{background:var(--bg3);outline:none;}
 .docs-menu .dm-acc button.prim{color:var(--accent);font-weight:700;}
+/* Flete de una carga partida: va en la otra fila */
+.t-fl.en_otra{color:var(--text3);font-style:italic;}
+/* Total que no cierra con las Tns de su fila (carga dividida que quedo con los totales de la carga entera) */
+.t-grid td.t-tot-mal{background:var(--danger-light) !important;color:var(--danger);font-weight:600;box-shadow:inset 0 0 0 1px var(--danger);}
+.t-filtros-btn.t-tot-btn{color:var(--danger);border-color:var(--danger);}
+/* Fecha de pago al forwarder que no coincide con la regla (ETA + dias del forwarder) */
+.t-grid td.t-pf-dif{text-decoration:underline dotted var(--warn);text-decoration-thickness:2px;text-underline-offset:3px;}
 /* VISTA DOCUMENTOS (lo que n8n lee de los mails) */
 .doc-sec{font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--text3);margin:16px 0 8px;}
 .doc-card{background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius-lg);padding:12px 14px;margin-bottom:10px;}
@@ -2479,6 +2486,8 @@ function resumenFC(rowIndices){
     r.avisos.push(r.yaPedidas.length + ' carga' + (r.yaPedidas.length>1?'s ya tienen':' ya tiene') + ' marcada la columna de envio (' + r.yaPedidas.join(', ') + '): la FC ya se pidio.');
   if(r.sinPrecio)
     r.avisos.push(r.sinPrecio + ' carga' + (r.sinPrecio>1?'s':'') + ' sin precio cargado: el mail va a salir con "completar" a mano.');
+  if(avisoTotalesMal(r.filas))
+    r.avisos.push('Totales que no cierran con las toneladas de su fila: ' + avisoTotalesMal(r.filas).replace(/\n/g, ' · ') + '. Corregilos antes de facturar.');
   return r;
 }
 
@@ -4279,7 +4288,13 @@ function origenMesTarifa(row){
 function tarifaPara(row){
   if(!tarifas.length) return null;
   const destino = row[COL.PORT], carrier = row[COL.SHIPPING];
-  const candidatas = tarifas.filter(t => coincideTexto(t.destino, destino) && coincideNaviera(t.carrier, carrier));
+  let candidatas = tarifas.filter(t => coincideTexto(t.destino, destino) && coincideNaviera(t.carrier, carrier));
+  if(!candidatas.length) return null;
+  // Si la carga tiene forwarder, solo sirve la tarifa de ESE forwarder (el mismo mes puede tener la de Done Deal y la de
+  // Pluscargo para el mismo destino y naviera). Antes se tomaba la primera que apareciera: una carga de Pluscargo se comparaba
+  // con la tarifa de Done Deal y decia "tarifa ok" aunque de Pluscargo no hubiera tarifa.
+  const fwd = forwarderDeTarifa(row);
+  if(fwd) candidatas = candidatas.filter(t => !t.forwarder || mismoForwarder(fwd, t.forwarder));
   if(!candidatas.length) return null;
 
   const meses = mesesDeCarga(row);
@@ -4296,6 +4311,18 @@ function tarifaPara(row){
   return null;
 }
 
+// Forwarder de la carga para elegir la tarifa (vacio o "-" = no se sabe, y entonces vale cualquiera)
+function forwarderDeTarifa(row){
+  const f = typeof forwarderDeFila === 'function' ? forwarderDeFila(row) : '';
+  return /^[-–—\s]*$/.test(f) ? '' : f;
+}
+// "Done Deal" es de "Done Deal / Done Deal FS"; Transcargo es Done Deal (grupoForwarder ya los junta)
+function mismoForwarder(deCarga, deTarifa){
+  const k = grupoForwarder(deCarga);
+  if(!k) return true;
+  return String(deTarifa || '').split(/[\/,]/).map(p => grupoForwarder(p)).filter(p => p.length >= 3)
+    .some(p => p === k || (k.length >= 4 && p.length >= 4 && (p.indexOf(k) >= 0 || k.indexOf(p) >= 0)));
+}
 // POL de la carga (columna opcional "POL"). Vacio = no se sabe.
 function polDeCarga(row){
   return (COL.POL !== undefined && COL.POL >= 0 && row[COL.POL] !== undefined && row[COL.POL] !== null) ? row[COL.POL].toString().trim() : '';
@@ -4402,6 +4429,21 @@ function feParaCelda(row, c){
   if(c === COL.MONTO_FLETE && c >= 0) return fleteEsperadoTabla(row, 'monto');
   return null;
 }
+// Cargas partidas por negocio: filas con el mismo lote (ej. una de 16 tn y otra de 6 tn del mismo contenedor). Devuelve la fila que
+// lleva el flete (la que ya tiene importe en esa columna, o la primera), o null si la carga no esta partida.
+function filaFleteDeCargaPartida(row, col){
+  const lote = (row[COL.LOTS] || '').toString().trim().toUpperCase();
+  const conts = r => (r[COL.CONTAINERS] || '').toString().toUpperCase().split(/[,;\/\n|]+/).map(x => x.replace(/[\s\-]/g, '')).filter(x => /^[A-Z]{4}\d{6,7}$/.test(x));
+  const mios = conts(row);
+  if(!lote && !mios.length) return null;
+  const grupo = (allRowsAll || []).filter(r => r === row || (lote && (r[COL.LOTS] || '').toString().trim().toUpperCase() === lote) || conts(r).some(c => mios.indexOf(c) >= 0));
+  if(grupo.length < 2 || grupo.indexOf(row) < 0) return null;
+  // partida por la columna Negocio (MSU1C / MSU1B...): si todas dicen lo mismo no es una division, es otra cosa
+  if(COL.NEGOCIO >= 0 && new Set(grupo.map(r => (r[COL.NEGOCIO] || '').toString().trim())).size < 2) return null;
+  grupo.sort((x, y) => (x._sheetRow || 0) - (y._sheetRow || 0));
+  const conImporte = grupo.find(r => { const v = parseSheetNum(r[col]); return !isNaN(v) && v; });
+  return conImporte || grupo[0];
+}
 function fleteEsperadoTabla(row, modo){
   if(!tarifas.length) return null;
   const porTotal = modo !== 'monto' && COL.TOTAL_PAGO !== undefined && COL.TOTAL_PAGO >= 0;
@@ -4411,9 +4453,23 @@ function fleteEsperadoTabla(row, modo){
   if(!destino || !naviera) return null;
   const hayDestino = tarifas.some(t => coincideTexto(t.destino, destino) && coincideNaviera(t.carrier, naviera));
   if(!hayDestino) return null;
+  // Carga partida en dos filas por negocio (mismo lote, ej. 16 y 6 tn): el contenedor es uno solo, asi que el flete va UNA vez.
+  // Lo lleva la fila que ya tiene el importe; si ninguna lo tiene, la primera. En la otra se aclara y no se sugiere nada.
+  const part = porTotal ? filaFleteDeCargaPartida(row, col) : null;
+  if(part && part !== row){
+    const otra = part._sheetRow;
+    if(!isNaN(parseSheetNum(row[col])) && parseSheetNum(row[col])) return { col, estado: 'bad', texto: 'flete doble (ya en fila ' + otra + ')',
+      titulo: 'Esta carga está partida con la fila ' + otra + ' (mismo contenedor): el contenedor es uno solo y el flete ya está cargado en esa fila. Acá estaría contado dos veces.' };
+    return { col, estado: 'en_otra', texto: 'flete en fila ' + otra,
+      titulo: 'Esta carga está partida con la fila ' + otra + ' (mismo contenedor): el contenedor es uno solo, así que el flete va una sola vez, en esa fila.' };
+  }
   const meses = mesesDeCarga(row);
   const tarifa = tarifaPara(row), ref = refTarifa(tarifa);
   if(!tarifa || isNaN(ref) || !ref){
+    const fwdT = forwarderDeTarifa(row);
+    if(fwdT && meses.length && tarifas.some(t => t.mes === meses[0] && coincideTexto(t.destino, destino) && coincideNaviera(t.carrier, naviera)))
+      return { col, estado: 'sin_tarifa', texto: 'sin tarifa ' + fwdT + ' ' + mesLegible(meses[0]),
+        titulo: 'Hay tarifa de ' + mesLegible(meses[0]) + ' para ese destino y naviera, pero de otro forwarder. De ' + fwdT + ' no hay: cargala en el TARIFARIO (con ' + fwdT + ' en la columna FORWARDER) y tocá Revisar fletes.' };
     return { col, estado: 'sin_tarifa', texto: meses.length ? 'sin tarifa ' + mesLegible(meses[0]) : 'sin fecha p/ tarifa',
       titulo: meses.length ? 'No hay tarifa de ' + mesLegible(meses[0]) + ' (mes de la ' + origenMesTarifa(row) + ') para ese destino y naviera, así que no hay con qué comparar.'
                            : 'La carga no tiene fecha de consolidación ni ETD: no se sabe de qué mes tomar la tarifa.' };
@@ -4422,7 +4478,8 @@ function fleteEsperadoTabla(row, modo){
   const esperado = porTotal ? ref * n : ref;
   const actual = parseSheetNum(row[col]);
   const f = x => Math.abs(x - Math.round(x)) < 0.005 ? Math.round(x).toLocaleString('es-AR') : fmtUsd2(x);
-  const cuenta = 'Tarifa ' + (!isNaN(tarifa.allIn) && tarifa.allIn ? 'ALL IN' : 'FLETE') + ' ' + mesLegible(tarifa.mes) + ' (mes de la ' + origenMesTarifa(row) + '): USD ' + f(ref)
+  const cuenta = 'Tarifa ' + (!isNaN(tarifa.allIn) && tarifa.allIn ? 'ALL IN' : 'FLETE') + ' ' + mesLegible(tarifa.mes) + ' (mes de la ' + origenMesTarifa(row) + ')'
+    + (tarifa.forwarder ? ' de ' + tarifa.forwarder : '') + ': USD ' + f(ref)
     + (porTotal ? ' × ' + n + ' contenedor' + (n === 1 ? '' : 'es') + ' = USD ' + f(esperado) : ' por contenedor');
   if(isNaN(actual) || !actual){
     // Sin importe cargado: se sugiere el que deberia ser (texto fantasma, NO escrito). Solo si la celda se puede escribir (no es una formula).
@@ -6411,7 +6468,7 @@ function renderCargas(showAll, sort){
     ${searchHtml}
     ${filtrosWrap}
     ${resetBtn}
-    ${_colEstCobroOk() ? '<button class="t-filtros-btn" onclick="rellenarFechasEstimadas()" title="Completa la fecha estimada de cobro de las cargas que la tienen vacía, con la fórmula de pago de su contrato (te muestra cómo se calculó cada una antes de aplicar)"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><rect width="18" height="18" x="3" y="4" rx="3"/><path d="M16 2v4M8 2v4M3 10h18"/></svg> Rellenar fecha estimada de cobro</button><button class="t-filtros-btn" onclick="revisarFechasEstimadas()" title="Compara la fecha estimada de cobro de cada carga con la que da la fórmula de pago de su contrato y te deja elegir, una por una, si la dejás así o la cambiás"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m8.5 11 2 2 3.5-3.5M20 20l-3.5-3.5"/></svg> Revisar fecha estimada de cobro</button>' : ''}${botonesPagoFwd()}${botonTelexCadBank()}${botonTotalFca()}
+    ${_colEstCobroOk() ? '<button class="t-filtros-btn" onclick="rellenarFechasEstimadas()" title="Completa la fecha estimada de cobro de las cargas que la tienen vacía, con la fórmula de pago de su contrato (te muestra cómo se calculó cada una antes de aplicar)"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><rect width="18" height="18" x="3" y="4" rx="3"/><path d="M16 2v4M8 2v4M3 10h18"/></svg> Rellenar fecha estimada de cobro</button><button class="t-filtros-btn" onclick="revisarFechasEstimadas()" title="Compara la fecha estimada de cobro de cada carga con la que da la fórmula de pago de su contrato y te deja elegir, una por una, si la dejás así o la cambiás"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m8.5 11 2 2 3.5-3.5M20 20l-3.5-3.5"/></svg> Revisar fecha estimada de cobro</button>' : ''}${botonesPagoFwd()}${botonRevisarFletes()}${botonTelexCadBank()}${botonTotalFca()}${botonTotalesMal()}
     ${_etaOrdenFijo && ordenPorETAActivo() ? '<button class="t-filtros-btn on" onclick="reordenarPorETA()" title="Las fechas que cambiaste siguen en su lugar hasta que salgas de la tabla; esto acomoda todas por ETA ahora (la que llega ultima, abajo de todo)">↕ Reordenar por ETA</button>' : ''}
     <span style="flex:1;"></span>
     <span class="seg">${viewChip('Por embarque', false, "cargasVista='grupos';renderCargas()")}
@@ -6850,7 +6907,9 @@ function renderCargasTabla(rows){
       // Documentos que llegaron (los que registra n8n): contador chico, el detalle sale con clic derecho en el lote
       if(c === COL.DOCUMENTOS) extra += docsContadorCelda(row);
       const fija = kk < TABLA_FIJAS;
-      return `<td data-r="${r}" data-c="${c}" class="${fija ? 'fija' : ''}${kk === TABLA_FIJAS - 1 ? ' fija-ult' : ''}${p ? ' chg' : ''}${esColFormula(c) ? ' formula' : ''}${celdaMarcada(row, c) ? ' t-marca' : ''}${(c === COL.PRODUCT && enDudaNOP(row)) ? ' t-duda' : ''}${comAbiertosCelda(row, c).length ? ' t-com' : ''}${colorDeCelda(row, c) ? ' t-pint' : ''}" style="${colorDeCelda(row, c) ? '--pin:' + hexColor(colorPaleta(colorDeCelda(row, c)).rgb) + ';' : ''}${fija ? 'left:' + left[c] + 'px;' : ''}max-width:${anchos[c]}px;" title="${esc(v)}${p ? ' · antes: ' + esc(p.antes || '(vacío)') + (p.nota ? ' · ' + esc(p.nota) : '') : ''}"${corte[c] ? ' data-corte="1"' : ''}>${esc(v)}${extra}</td>`;
+      const tmI = totMalCelda(row, c);   // total que no cierra con las Tns de esta fila
+      const pfI = c === COL.FECHA_PAGO_FWD ? pfInfoCelda(row) : null;   // de donde sale la fecha de pago al forwarder (hover)
+      return `<td data-r="${r}" data-c="${c}" class="${fija ? 'fija' : ''}${kk === TABLA_FIJAS - 1 ? ' fija-ult' : ''}${p ? ' chg' : ''}${esColFormula(c) ? ' formula' : ''}${celdaMarcada(row, c) ? ' t-marca' : ''}${(c === COL.PRODUCT && enDudaNOP(row)) ? ' t-duda' : ''}${comAbiertosCelda(row, c).length ? ' t-com' : ''}${colorDeCelda(row, c) ? ' t-pint' : ''}${pfI && pfI.dif ? ' t-pf-dif' : ''}${tmI ? ' t-tot-mal' : ''}" style="${colorDeCelda(row, c) ? '--pin:' + hexColor(colorPaleta(colorDeCelda(row, c)).rgb) + ';' : ''}${fija ? 'left:' + left[c] + 'px;' : ''}max-width:${anchos[c]}px;" title="${pfI ? esc(pfI.tip) : tmI ? esc('⚠ ' + tmI.tip) : esc(v)}${p ? ' · antes: ' + esc(p.antes || '(vacío)') + (p.nota ? ' · ' + esc(p.nota) : '') : ''}"${corte[c] ? ' data-corte="1"' : ''}>${esc(v)}${extra}</td>`;
     }).join('');
     return `<tr id="fc-tr-${localIdx}" class="${sel ? 'sel' : ''}${filaVista(row) ? ' vista' : ''}">
       <td class="t-num" role="button" aria-label="Marcar o desmarcar la fila ${row._sheetRow || ''} como vista" title="Clic para marcar / desmarcar la fila como vista" onclick="toggleFilaVista(${localIdx},event)">${row._sheetRow || ''}</td>
@@ -9683,6 +9742,9 @@ function resumenPagare(rowIndices){
     r.bloqueo = 'Las cargas seleccionadas no tienen Customer cargado.';
   else if(TEMPLATES_PAGARE.indexOf(r.customer.toUpperCase()) < 0)
     r.bloqueo = 'No hay template de pagare para ' + r.customer + '. Los que estan en Drive son: ' + TEMPLATES_PAGARE.join(', ') + '.';
+  else if(avisoTotalesMal(filas))
+    r.bloqueo = 'No genero el pagaré: hay totales que no cierran con las toneladas de su fila (el pagaré saldría por otro importe).\n\n' + avisoTotalesMal(filas)
+      + '\n\nCorregilos con el botón "Totales que no cierran" de la vista Tabla de Cargas (o en la planilla) y después generá el pagaré.';
 
   // Avisos: se puede generar igual, pero conviene mirarlo antes
   if(r.vencimientos.length > 1)
@@ -12370,64 +12432,129 @@ function _omitidasPF(omitidas){
 }
 function botonesPagoFwd(){
   if(!_colPagoFwdOk()) return '';
-  return '<button class="t-filtros-btn" onclick="rellenarFechasPagoFwd()" title="Completa la fecha estimada de pago al forwarder de las cargas que la tienen vacía: ETA + los días del forwarder en CONTACTOS"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 7h11v9H3z"/><path d="M14 10h4l3 3v3h-7z"/><circle cx="7" cy="18" r="2"/><circle cx="17" cy="18" r="2"/></svg> Rellenar fecha de pago al forwarder</button>'
-    + '<button class="t-filtros-btn" onclick="revisarFechasPagoFwd()" title="Compara la fecha estimada de pago al forwarder con ETA + los días del forwarder y te deja elegir cuáles corregir"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m8.5 11 2 2 3.5-3.5M20 20l-3.5-3.5"/></svg> Revisar fecha de pago al forwarder</button>';
+  return '<button class="t-filtros-btn" onclick="revisarFechasPagoFwd()" title="Panel con las fechas estimadas de pago al forwarder que están vacías o no coinciden con ETA + los días del forwarder: elegís cuáles dejar y cuáles cambiar"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 7h11v9H3z"/><path d="M14 10h4l3 3v3h-7z"/><circle cx="7" cy="18" r="2"/><circle cx="17" cy="18" r="2"/></svg> Fechas de pago al forwarder</button>';
 }
-// Rellenar: solo las cargas activas con forwarder y la fecha vacía. Muestra el cálculo de cada una antes de escribir.
-async function rellenarFechasPagoFwd(){
-  if(!_colPagoFwdOk()){ showToast('Esta planilla no tiene la columna de fecha estimada de pago al forwarder.', 'info'); return; }
-  const vacias = allRows.filter(r => forwarderDeFila(r) && !valorVisible(r, COL.FECHA_PAGO_FWD).trim());
-  if(!vacias.length){ showToast('Todas las cargas activas con forwarder ya tienen fecha de pago estimada.', 'ok'); return; }
-  const listas = [], omitidas = {};
-  vacias.forEach(row => { const c = fechaPagoFwdCalculada(row); if(c.error) omitidas[c.error] = (omitidas[c.error] || 0) + 1; else listas.push(Object.assign({ row }, c)); });
-  let det = listas.slice(0, 60).map(it => '<div style="margin-bottom:6px;">• <b>' + _escPF(it.fecha) + '</b> — ' + _nombPF(it.row) + '<br><span style="color:var(--text3);font-size:12px;">' + _escPF(it.nota) + '</span></div>').join('');
-  if(listas.length > 60) det += '<div style="color:var(--text3);">…y ' + (listas.length - 60) + ' más con el mismo criterio.</div>';
-  det += _omitidasPF(omitidas);
-  if(!listas.length){ await showConfirm('No se puede completar ninguna', 'Hay ' + vacias.length + ' cargas con forwarder y sin fecha de pago, pero a ninguna se le puede calcular.', { icono: 'ℹ️', okLabel: 'Entendido', detalle: det }); return; }
-  const ok = await showConfirm('Rellenar la fecha de pago al forwarder en ' + listas.length + ' carga' + (listas.length > 1 ? 's' : ''),
-    'Se completa con ETA + los días corridos del forwarder (columna "' + ENC_DIAS_PAGO_FWD + '" de CONTACTOS). Solo las vacías: no se toca ninguna que ya tenga fecha. Se guardan en la planilla al confirmar (Ctrl+Z las deshace).',
-    { icono: '🚚', okLabel: 'Rellenar', detalle: det });
-  if(!ok) return;
-  listas.forEach(it => anotarCambioTabla(it.row, COL.FECHA_PAGO_FWD, it.fecha, it.nota, true));
-  if(currentView === 'cargas') renderCargas();
-  showToast('Fecha de pago al forwarder completada en ' + listas.length + ' carga' + (listas.length > 1 ? 's' : '') + '. Se guardó (Ctrl+Z deshace).', 'info');
+// Lo que se ve al pasar el mouse por la fecha estimada de pago en la tabla: de donde sale y si coincide.
+// dif = true cuando la fecha escrita no es la que da la regla (la celda se subraya).
+function pfInfoCelda(row){
+  if(!row || !_colPagoFwdOk()) return null;
+  const actual = valorVisible(row, COL.FECHA_PAGO_FWD).trim();
+  if(pagoFwdPagado(actual)) return { tip: 'Pago al forwarder: ya está pagado (dice SI).', dif: false };
+  if(!forwarderDeFila(row) && !actual) return null;
+  const c = fechaPagoFwdCalculada(row);
+  if(c.error) return { tip: 'Fecha estimada de pago al forwarder: no se calcula sola, ' + c.error + '.', dif: false };
+  const regla = c.fwd + ': condición de pago ETA' + (c.dias ? ' + ' + c.dias + ' días corridos' : ' (el mismo día de la ETA)') + ' · hoja CONTACTOS';
+  const cuenta = 'ETA ' + valorVisible(row, COL.ETA) + (c.dias ? ' + ' + c.dias + ' = ' : ' = ') + c.fecha;
+  let estado, dif = false;
+  if(!actual) estado = 'La celda está vacía: la regla daría ' + c.fecha + '.';
+  else {
+    const da = parseDate(actual), dn = parseDate(c.fecha);
+    if(da && dn && da.getTime() === dn.getTime()) estado = '✓ Coincide con la regla.';
+    else { dif = true; estado = '⚠ Dice ' + actual + ', no coincide con la regla. Revisala en "Fechas de pago al forwarder".'; }
+  }
+  return { tip: regla + '\n' + cuenta + '\n' + estado, dif };
 }
-// Revisar: las que tienen fecha (y no dicen SI) distinta de ETA + días. Se tilda cuáles corregir; las demás quedan como están.
-function calcularPagosFwdDistintos(){
-  const out = [], omitidas = {};
+// ── Panel "Fechas de pago al forwarder" ──
+// Junta las vacías (para completar) y las que no coinciden con la regla (para decidir). Por cada una: "dejar así" o
+// "poner la de la regla". Las que se dejan así se recuerdan en este navegador y no vuelven a aparecer mientras no cambie
+// la fecha ni la regla. Nada se escribe hasta apretar "Aplicar"; ahí se guarda como cualquier edición de la tabla.
+const PF_MEMORIA = 'hub_pago_fwd_ok';
+function pfMemoria(){ try{ return JSON.parse(localStorage.getItem(PF_MEMORIA) || '{}') || {}; }catch(e){ return {}; } }
+function pfGuardarMemoria(m){ try{ localStorage.setItem(PF_MEMORIA, JSON.stringify(m)); }catch(e){} }
+const pfClave = (row, actual, nueva) => negocioActivo + ':' + (row._sheetRow || 0) + ':' + actual + ':' + nueva;
+let _pfLista = [], _pfSel = {};
+function calcularPagosFwdParaRevisar(){
+  const mem = pfMemoria(), out = [], omitidas = {};
   allRows.forEach(row => {
+    if(!forwarderDeFila(row)) return;
     const actual = valorVisible(row, COL.FECHA_PAGO_FWD).trim();
-    if(!actual || pagoFwdPagado(actual) || !forwarderDeFila(row)) return;
+    if(pagoFwdPagado(actual)) return;
     const c = fechaPagoFwdCalculada(row);
     if(c.error){ omitidas[c.error] = (omitidas[c.error] || 0) + 1; return; }
+    if(!actual){ out.push(Object.assign({ row, actual: '', vacia: true, dif: null }, c)); return; }
     const da = parseDate(actual), dn = parseDate(c.fecha);
     if(da && dn && da.getTime() === dn.getTime()) return;
-    out.push(Object.assign({ row, actual, dif: da && dn ? Math.round((da.getTime() - dn.getTime()) / 86400000) : null }, c));
+    out.push(Object.assign({ row, actual, dif: da && dn ? Math.round((da.getTime() - dn.getTime()) / 86400000) : null, vista: !!mem[pfClave(row, actual, c.fecha)] }, c));
   });
   out.omitidas = omitidas;
   return out;
 }
-async function revisarFechasPagoFwd(){
+function revisarFechasPagoFwd(){
   if(!_colPagoFwdOk()){ showToast('Esta planilla no tiene la columna de fecha estimada de pago al forwarder.', 'info'); return; }
-  const lista = calcularPagosFwdDistintos();
-  const omit = _omitidasPF(lista.omitidas);
-  if(!lista.length){
-    if(omit){ await showConfirm('Revisión de fechas de pago al forwarder', 'Las que se pudieron comparar coinciden con ETA + días del forwarder, pero hay cargas que no se pudieron revisar.', { icono: 'ℹ️', okLabel: 'Entendido', detalle: omit }); return; }
-    showToast('✓ Todas las fechas de pago al forwarder coinciden con ETA + días del forwarder.', 'ok'); return;
-  }
-  const det = lista.map((it, i) => '<label style="display:flex;gap:8px;align-items:flex-start;margin-bottom:8px;cursor:pointer;"><input type="checkbox" id="pf-cb-' + i + '" style="margin-top:3px;">'
-    + '<span>' + _nombPF(it.row) + '<br>Hoy dice <b>' + _escPF(it.actual) + '</b> → según ' + _escPF(it.fwd) + ' daría <b>' + _escPF(it.fecha) + '</b>'
-    + (it.dif !== null ? ' <span style="color:var(--text3);">(' + (it.dif > 0 ? '+' : '−') + Math.abs(it.dif) + ' día' + (Math.abs(it.dif) === 1 ? '' : 's') + ')</span>' : '')
-    + '<br><span style="color:var(--text3);font-size:12px;">' + _escPF(it.nota) + '</span></span></label>').join('') + omit;
-  const ok = await showConfirm(lista.length + ' carga' + (lista.length === 1 ? '' : 's') + ' con la fecha de pago distinta a la regla del forwarder',
-    'Tildá las que querés corregir a ETA + días del forwarder. Las que no tildes quedan como están. Se guardan en la planilla al confirmar (Ctrl+Z las deshace).',
-    { icono: '🚚', okLabel: 'Corregir las tildadas', detalle: det });
-  if(!ok) return;
-  const elegidas = lista.filter((it, i) => { const cb = document.getElementById('pf-cb-' + i); return !!(cb && cb.checked); });
-  if(!elegidas.length){ showToast('No tildaste ninguna: quedan todas como estaban.', 'info'); return; }
-  elegidas.forEach(it => anotarCambioTabla(it.row, COL.FECHA_PAGO_FWD, it.fecha, it.nota, true));
-  if(currentView === 'cargas') renderCargas();
-  showToast('✓ ' + elegidas.length + ' fecha' + (elegidas.length === 1 ? '' : 's') + ' de pago al forwarder corregida' + (elegidas.length === 1 ? '' : 's') + ' (Ctrl+Z deshace).', 'ok');
+  _pfLista = calcularPagosFwdParaRevisar();
+  _pfSel = {};
+  _pfLista.forEach((it, i) => { _pfSel[i] = it.vacia ? 'regla' : 'dejar'; });
+  if(!_pfLista.length && !Object.keys(_pfLista.omitidas).length){ showToast('✓ Todas las fechas de pago al forwarder están completas y coinciden con la regla.', 'ok'); return; }
+  abrirPanelPagoFwd();
+}
+function pfVisible(it){ const c = document.getElementById('pf-ver-vistas'); return !it.vista || !!(c && c.checked); }
+function pfCambio(i, v){ _pfSel[i] = v; pfResumen(); }
+function pfTodas(v){ _pfLista.forEach((it, i) => { if(!pfVisible(it)) return; _pfSel[i] = v; const r = document.querySelector('input[name="pf-' + i + '"][value="' + v + '"]'); if(r) r.checked = true; }); pfResumen(); }
+function pfVerVistas(){ document.querySelectorAll('#pf-overlay tr.fe-vista').forEach(tr => { tr.style.display = pfVisible({ vista: true }) ? '' : 'none'; }); pfResumen(); }
+function pfResumen(){
+  const el = document.getElementById('pf-resumen'); if(!el) return;
+  const vis = _pfLista.map((it, i) => ({ it, i })).filter(x => pfVisible(x.it));
+  const cambiar = vis.filter(x => _pfSel[x.i] === 'regla').length;
+  el.textContent = cambiar + ' para poner la de la regla · ' + (vis.length - cambiar) + ' quedan como están';
+  const b = document.getElementById('pf-aplicar'); if(b) b.textContent = cambiar ? 'Aplicar (' + cambiar + ' cambio' + (cambiar === 1 ? '' : 's') + ')' : 'Aplicar';
+}
+function pfTablaHTML(){
+  const esc = t => String(t === undefined || t === null ? '' : t).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
+  const nVacias = _pfLista.filter(it => it.vacia).length, nDist = _pfLista.filter(it => !it.vacia && !it.vista).length, nVistas = _pfLista.filter(it => it.vista).length;
+  const fil = _pfLista.map((it, i) => {
+    const d = it.vacia ? '—' : it.dif === null ? '?' : (it.dif > 0 ? '+' : '−') + Math.abs(it.dif) + ' día' + (Math.abs(it.dif) === 1 ? '' : 's');
+    const regla = 'ETA' + (it.dias ? ' + ' + it.dias + ' días' : '');
+    return '<tr class="' + (it.vista ? 'fe-vista' : '') + '" style="' + (it.vista ? 'display:none;' : '') + '">'
+      + '<td>' + (it.row._sheetRow || '') + '</td>'
+      + '<td>' + esc((it.row[COL.CUSTOMER] || '').toString().trim() || '—') + '<div class="fe-sub">BL ' + esc((it.row[COL.BL] || '').toString().trim() || '—') + '</div></td>'
+      + '<td>' + esc(it.fwd) + '<div class="fe-sub">' + regla + '</div></td>'
+      + '<td>' + esc(valorVisible(it.row, COL.ETA)) + '</td>'
+      + '<td class="fe-dif">' + (it.vacia ? '<span class="fe-sub">vacía</span>' : esc(it.actual)) + '</td><td class="fe-fm">' + esc(it.fecha) + '</td>'
+      + '<td>' + d + '</td>'
+      + '<td class="fe-op"><label><input type="radio" name="pf-' + i + '" value="dejar"' + (_pfSel[i] === 'dejar' ? ' checked' : '') + ' onchange="pfCambio(' + i + ',\'dejar\')"> ' + (it.vacia ? 'Dejar vacía' : 'Dejar así') + '</label>'
+      + '<label><input type="radio" name="pf-' + i + '" value="regla"' + (_pfSel[i] === 'regla' ? ' checked' : '') + ' onchange="pfCambio(' + i + ',\'regla\')"> Poner la de la regla</label></td></tr>';
+  }).join('');
+  const om = _pfLista.omitidas || {}, mot = Object.keys(om);
+  const omHTML = mot.length ? '<div style="margin:10px 0;padding:10px 12px;border-radius:10px;background:rgba(217,142,0,.12);border:1px solid rgba(217,142,0,.3);color:#8a4b00;font-size:13px;"><b>No se pueden calcular (' + mot.reduce((a, k) => a + om[k], 0) + '):</b>'
+    + mot.map(k => '<div style="margin-top:4px;">• ' + om[k] + ' — ' + esc(k) + '</div>').join('') + '</div>' : '';
+  const titulo = (nDist ? nDist + ' con la fecha distinta a la regla' : '') + (nDist && nVacias ? ' · ' : '') + (nVacias ? nVacias + ' vacía' + (nVacias === 1 ? '' : 's') : '') || 'Ninguna para revisar';
+  return '<div class="fe-cab"><b>Fechas estimadas de pago al forwarder · ' + titulo + '</b>'
+    + '<p>La regla es ETA + los días corridos de cada forwarder (columna "' + ENC_DIAS_PAGO_FWD + '" de la hoja CONTACTOS). Las vacías vienen marcadas para completar; las distintas, para dejar así. Nada se escribe hasta que apretás "Aplicar". Las que dicen SI (pagadas) no aparecen.</p></div>'
+    + '<div class="fe-tools"><button class="btn" onclick="pfTodas(\'regla\')">Todas a la regla</button><button class="btn" onclick="pfTodas(\'dejar\')">Todas: dejar así</button><span style="flex:1"></span>'
+    + (nVistas ? '<label class="fe-sub"><input type="checkbox" id="pf-ver-vistas" onchange="pfVerVistas()"> Ver también las que ya dejé así (' + nVistas + ')</label>' : '') + '</div>'
+    + (fil ? '<div class="fe-sc"><table class="fe-tab"><thead><tr><th>Fila</th><th>Cliente · BL</th><th>Forwarder · regla</th><th>ETA</th><th>Hoy dice</th><th>Daría la regla</th><th>Diferencia</th><th>¿Qué hacemos?</th></tr></thead><tbody>' + fil + '</tbody></table></div>' : '')
+    + omHTML
+    + '<div class="fe-pie"><span id="pf-resumen" class="fe-sub"></span><span style="flex:1"></span><button class="btn" onclick="cerrarPanelPagoFwd()">Cancelar</button><button class="btn primary" id="pf-aplicar" onclick="pfAplicar()">Aplicar</button></div>';
+}
+function _pfTecla(e){ if(e.key === 'Escape'){ e.stopPropagation(); cerrarPanelPagoFwd(); } }
+function cerrarPanelPagoFwd(){
+  const o = document.getElementById('pf-overlay');
+  if(o && o.parentNode) o.parentNode.removeChild(o);
+  document.removeEventListener('keydown', _pfTecla, true);
+}
+function abrirPanelPagoFwd(){
+  cerrarPanelPagoFwd();
+  const o = document.createElement('div');
+  o.id = 'pf-overlay'; o.className = 'fe-ov';
+  o.innerHTML = '<div class="fe-box" role="dialog" aria-label="Fechas de pago al forwarder">' + pfTablaHTML() + '</div>';
+  o.onclick = e => { if(e.target === o) cerrarPanelPagoFwd(); };
+  document.body.appendChild(o);
+  document.addEventListener('keydown', _pfTecla, true);
+  pfResumen();
+}
+function pfAplicar(){
+  const mem = pfMemoria();
+  let cambiadas = 0, dejadas = 0;
+  _pfLista.forEach((it, i) => {
+    if(!pfVisible(it)) return;                                   // las ocultas (ya dejadas) no se tocan
+    const k = pfClave(it.row, it.actual, it.fecha);
+    if(_pfSel[i] === 'regla'){ anotarCambioTabla(it.row, COL.FECHA_PAGO_FWD, it.fecha, it.nota, true); delete mem[k]; cambiadas++; }
+    else { if(!it.vacia) mem[k] = 1; dejadas++; }
+  });
+  pfGuardarMemoria(mem);
+  cerrarPanelPagoFwd();
+  if(cambiadas && currentView === 'cargas') renderCargas();
+  showToast((cambiadas ? '✓ ' + cambiadas + ' fecha' + (cambiadas === 1 ? '' : 's') + ' de pago al forwarder puesta' + (cambiadas === 1 ? '' : 's') + ' según la regla (Ctrl+Z deshace). ' : '') + (dejadas ? dejadas + ' quedaron como estaban.' : ''), 'ok', 6000);
 }
 // Al cambiar la ETA o el forwarder de una carga en la tabla: si la fecha de pago estaba vacía o era la que daba la regla
 // con el dato anterior, se actualiza sola (con aviso). Si alguien la escribió a mano, no se pisa: se avisa para revisarla.
@@ -12441,12 +12568,233 @@ function propagarFechaPagoFwd(row, c, antes){
   let previa = '';
   if(c === COL.ETA){ const p = fechaPagoFwdCalculada(row, antes); previa = p.error ? '' : p.fecha; }
   if(actual && actual !== previa){
-    showToast('La fecha de pago al forwarder de la fila ' + (row._sheetRow || '?') + ' (' + actual + ') no coincide con ' + nueva.fwd + ' (daría ' + nueva.fecha + '). No la cambio porque estaba escrita a mano: usá "Revisar fecha de pago al forwarder".', 'warn', 9000);
+    showToast('La fecha de pago al forwarder de la fila ' + (row._sheetRow || '?') + ' (' + actual + ') no coincide con ' + nueva.fwd + ' (daría ' + nueva.fecha + '). No la cambio porque estaba escrita a mano: usá "Fechas de pago al forwarder".', 'warn', 9000);
     return;
   }
   anotarCambioTabla(row, COL.FECHA_PAGO_FWD, nueva.fecha, nueva.nota, true);
   if(currentView === 'cargas' && cargasVista === 'tabla') renderCargas();
   showToast('Fecha de pago al forwarder: ' + (actual || '(vacía)') + ' → ' + nueva.fecha + ' (ETA + ' + nueva.dias + ' días, ' + nueva.fwd + '). Se guarda sola (Ctrl+Z deshace).', 'info');
+}
+
+// ─── TOTALES QUE NO CIERRAN CON LAS TONELADAS DE SU FILA ────────────────────────
+// Cada fila es una carga con sus propias toneladas: Total FCA = Price FCA x Tns, Total CFR = (Price + Flete) x Tns,
+// Price serv = FC Servicios del contrato x Tns. Si una carga se divide en dos filas cambiando las Tns directo en la planilla
+// (ej. 22 -> 16 y 6), los totales quedan los de 22 tn en las dos filas y la carga se cuenta doble (paso: pagare de 88.000 en
+// vez de 44.000). Aca se detecta: la celda queda marcada en la tabla, hay un boton para corregir (con confirmacion) y el
+// pagare no se genera mientras una de sus cargas tenga los totales mal.
+// Solo cargas sin cobrar (las cobradas son historia y tienen sus particularidades).
+function totalesNoCierran(row){
+  if(!row || isClosed(row)) return [];
+  const num = c => (c === undefined || c < 0) ? NaN : numeroCelda(valorVisible(row, c));
+  const n = num(COL.TNS);
+  if(isNaN(n) || n <= 0) return [];
+  const out = [];
+  const f = x => x.toLocaleString('es-AR', { maximumFractionDigits: 2 });
+  const nTxt = f(n) + ' tn';
+  const revisar = (c, esperado, cuenta) => {
+    const act = num(c);
+    if(isNaN(act) || act <= 0 || isNaN(esperado) || Math.abs(act - esperado) <= 1) return;
+    out.push({ c, nombre: (encabezadosCargas()[c] || '').toString().trim() || 'Total', actual: act, esperado: redondear2(esperado),
+      cuenta, tip: (encabezadosCargas()[c] || '').toString().trim() + ' ' + f(act) + ' no cierra con las ' + nTxt + ' de esta fila: ' + cuenta + ' = ' + f(redondear2(esperado)) });
+  };
+  const pf = num(COL.PRICE_FCA);
+  if(pf > 0) revisar(COL.TOTAL_FCA, pf * n, f(pf) + ' × ' + f(n));
+  const pc = num(COL.PRICE_CLIENTE), fl = num(COL.FLETE) > 0 ? num(COL.FLETE) : 0;
+  if(pc > 0) revisar(COL.TOTAL_CFR_ORIG, (pc + fl) * n, '(' + f(pc) + ' + ' + f(fl) + ') × ' + f(n));
+  const k = COL.CONTRACT_CLIENTE >= 0 ? contratoPorNumero(valorVisible(row, COL.CONTRACT_CLIENTE)) : null;
+  if(k && !isNaN(k.fcServ) && k.fcServ > 0) revisar(COL.PRICE_SERV, k.fcServ * n, f(k.fcServ) + ' (FC Servicios del contrato) × ' + f(n));
+  // TOTAL FINAL / VALOR TOTAL: Total CFR, mas Price serv cuando la planilla lo suma (se ve en si hoy lo incluye)
+  // (solo si la fila tiene Total CFR: sin eso no hay de donde saber como se armo el total)
+  if(pc > 0 && num(COL.TOTAL_CFR_ORIG) > 0 && COL.TOTAL_CFR !== undefined && COL.TOTAL_CFR >= 0 && COL.TOTAL_CFR !== COL.TOTAL_CFR_ORIG){
+    const tf = num(COL.TOTAL_CFR), cfrAct = num(COL.TOTAL_CFR_ORIG), servAct = num(COL.PRICE_SERV);
+    const cfrEsp = (pc + fl) * n;
+    const servEsp = (out.find(x => x.c === COL.PRICE_SERV) || {}).esperado;
+    const conServ = servAct > 0 && !isNaN(tf) && !isNaN(cfrAct) && Math.abs(tf - cfrAct) > 1;
+    const serv = conServ ? (servEsp !== undefined ? servEsp : servAct) : 0;
+    revisar(COL.TOTAL_CFR, cfrEsp + serv, conServ ? 'Total CFR ' + f(redondear2(cfrEsp)) + ' + Price serv ' + f(serv) : 'Total CFR (' + f(pc) + ' + ' + f(fl) + ') × ' + f(n));
+  }
+  return out;
+}
+// Las cuentas que entran en el pagare y en la factura al cliente (no el Total FCA, que es lo que le pagamos al proveedor)
+const totalesClienteNoCierran = row => totalesNoCierran(row).filter(x => x.c !== COL.TOTAL_FCA);
+function cargasTotalesMal(){ return (allRowsAll || []).filter(r => totalesNoCierran(r).length); }
+function totMalCelda(row, c){
+  if(c !== COL.TOTAL_FCA && c !== COL.TOTAL_CFR_ORIG && c !== COL.PRICE_SERV && c !== COL.TOTAL_CFR) return null;
+  return totalesNoCierran(row).find(x => x.c === c) || null;
+}
+function botonTotalesMal(){
+  const n = cargasTotalesMal().length;
+  return n ? '<button class="t-filtros-btn t-tot-btn" onclick="corregirTotalesMal()" title="Cargas sin cobrar cuyos totales no coinciden con las toneladas de su propia fila (por ejemplo una carga dividida en dos filas que quedó con los totales de la carga entera). Te muestra cada una antes de corregir"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 9v4M12 17h.01"/><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/></svg> Totales que no cierran (' + n + ')</button>' : '';
+}
+async function corregirTotalesMal(){
+  if(!accessToken){ alert('Conectate con Google primero para escribir en la planilla.'); return; }
+  const lista = cargasTotalesMal();
+  if(!lista.length){ showToast('Todas las cargas sin cobrar tienen los totales de acuerdo a sus toneladas.', 'ok'); return; }
+  const e = t => String(t === undefined || t === null ? '' : t).replace(/&/g, '&amp;').replace(/</g, '&lt;');
+  const f = x => x.toLocaleString('es-AR', { maximumFractionDigits: 2 });
+  const detalle = lista.map(r => '<div style="margin-bottom:6px;"><b>Fila ' + r._sheetRow + '</b> · ' + e((r[COL.CUSTOMER] || '').trim() || '—') + ' · ' + e((r[COL.LOTS] || '').trim() || (r[COL.BL] || '').trim() || '—') + ' · ' + e(valorVisible(r, COL.TNS)) + ' tn'
+    + totalesNoCierran(r).map(x => '<div style="padding-left:12px;">' + e(x.nombre) + ': ' + f(x.actual) + ' → <b>' + f(x.esperado) + '</b> <span style="color:var(--text3);">(' + e(x.cuenta) + ')</span></div>').join('') + '</div>').join('')
+    + '<div style="color:var(--text3);margin-top:6px;">Las celdas que en la planilla son fórmula no se pisan: se avisa para que las mires. Si el TOTAL FINAL es fórmula, se recalcula solo con lo corregido.</div>';
+  const ok = await showConfirm('Corregir totales por fila', lista.length + ' carga' + (lista.length === 1 ? '' : 's') + ' sin cobrar tiene' + (lista.length === 1 ? '' : 'n') + ' totales que no coinciden con las toneladas de su fila. Se escribe cada total con la cuenta de su propia fila.', { icono: '⚠️', okLabel: 'Corregir', detalle });
+  if(!ok) return;
+  showToast('Escribiendo...');
+  let fresco;
+  try{ fresco = await releerFilasCarga(lista.map(r => r._sheetRow)); }
+  catch(err){ alert('No pude releer la planilla antes de escribir: ' + err.message); return; }
+  const nc = getNegocioConfig(), hoja = nc.sheetName || cfg.sheetName, saltadas = [], data = [], hechas = [];
+  lista.forEach(r => {
+    const fr = fresco[r._sheetRow] || { valores: [], formulas: [] };
+    const igual = c => ((fr.valores[c] || '').toString().trim()) === ((r[c] || '').toString().trim());
+    if(!igual(COL.TNS) || !igual(COL.BL) || !igual(COL.LOTS)){ saltadas.push('Fila ' + r._sheetRow + ': cambió en la planilla mientras tanto'); return; }
+    const cambios = [];
+    totalesNoCierran(r).forEach(x => {
+      if(!igual(x.c)){ saltadas.push('Fila ' + r._sheetRow + ' · ' + x.nombre + ': cambió en la planilla mientras tanto'); return; }
+      if(esFormulaCelda(fr.formulas[x.c]) && x.c === COL.TOTAL_CFR) return;   // TOTAL FINAL con formula: se recalcula sola con lo de arriba
+      if(esFormulaCelda(fr.formulas[x.c])){ saltadas.push('Fila ' + r._sheetRow + ' · ' + x.nombre + ': es una fórmula (' + fr.formulas[x.c] + '), revisala en la planilla'); return; }
+      data.push({ range: hoja + '!' + colIndexToLetter(x.c) + r._sheetRow, values: [[x.esperado]] });
+      cambios.push(x.nombre + ' ' + f(x.actual) + ' → ' + f(x.esperado));
+    });
+    if(cambios.length) hechas.push({ r, cambios });
+  });
+  if(data.length){
+    const resp = await fetch('https://sheets.googleapis.com/v4/spreadsheets/' + (nc.sheetId || cfg.sheetId) + '/values:batchUpdate', {
+      method: 'POST', headers: { Authorization: 'Bearer ' + accessToken, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ valueInputOption: 'RAW', data })
+    });
+    if(!resp.ok){ alert('No se pudo escribir en la planilla (HTTP ' + resp.status + '). No se cambió nada.'); return; }
+    for(const h of hechas) await appendLog({ fc: (h.r[COL.INVOICE_CLIENTE] || '').trim(), fcServ: '', bl: (h.r[COL.BL] || '').trim(), customer: (h.r[COL.CUSTOMER] || '').trim(),
+      accion: 'totales corregidos por fila', detalle: 'fila ' + h.r._sheetRow + ' · ' + valorVisible(h.r, COL.TNS) + ' tn · ' + h.cambios.join(' · ') });
+  }
+  _dataVersion++;
+  await loadData();
+  if(saltadas.length) alert((data.length ? 'Se corrigieron ' + data.length + ' celdas. ' : 'No se escribió nada. ') + 'Quedaron sin tocar:\n\n' + saltadas.join('\n'));
+  else showToast('✓ Totales corregidos en ' + hechas.length + ' carga' + (hechas.length === 1 ? '' : 's') + '.', 'ok', 6000);
+}
+// Para el pagare y la solicitud de FC: el texto que explica que cargas tienen los totales mal
+function avisoTotalesMal(filas){
+  const mal = (filas || []).filter(r => totalesClienteNoCierran(r).length);
+  if(!mal.length) return '';
+  return mal.map(r => 'Fila ' + r._sheetRow + ' (' + valorVisible(r, COL.TNS) + ' tn): ' + totalesClienteNoCierran(r).map(x => x.tip).join(' · ')).join('\n');
+}
+
+// ─── PANEL "REVISAR FLETES" ──────────────────────────────────────────────────
+// Vuelve a leer el TARIFARIO (asi aparece la cotizacion que se acaba de cargar) y junta las cargas cuyo total flete esta
+// vacio o no coincide con la tarifa de su forwarder. Por cada una: "dejar así" o "poner la tarifa". Las vacias vienen
+// marcadas para completar, las distintas para dejar (vos decidis). Las que se dejan asi se recuerdan en este navegador
+// mientras no cambie el importe ni la tarifa. Nada se escribe hasta "Aplicar"; ahi se guarda como cualquier edicion de la
+// tabla (Ctrl+Z deshace). Solo cargas que todavia no se le pagaron al forwarder.
+const RF_MEMORIA = 'hub_fletes_ok';
+function rfMemoria(){ try{ return JSON.parse(localStorage.getItem(RF_MEMORIA) || '{}') || {}; }catch(e){ return {}; } }
+function rfGuardarMemoria(m){ try{ localStorage.setItem(RF_MEMORIA, JSON.stringify(m)); }catch(e){} }
+const rfClave = (row, actual, esp) => negocioActivo + ':' + (row._sheetRow || 0) + ':' + actual + ':' + esp;
+let _rfLista = [], _rfSel = {};
+function rfPagadoAlForwarder(row){
+  const real = COL.FECHA_PAGO_FWD_REAL !== undefined && COL.FECHA_PAGO_FWD_REAL >= 0 ? String(row[COL.FECHA_PAGO_FWD_REAL] || '').trim() : '';
+  const est = COL.FECHA_PAGO_FWD !== undefined && COL.FECHA_PAGO_FWD >= 0 ? String(row[COL.FECHA_PAGO_FWD] || '').trim().toUpperCase() : '';
+  return !!real || est === 'SI';
+}
+function botonRevisarFletes(){
+  const c = feColPrincipal();
+  if(c === undefined || c < 0) return '';
+  return '<button class="t-filtros-btn" onclick="revisarFletes()" title="Vuelve a leer el TARIFARIO y te muestra los total flete vacíos o distintos a la tarifa de su forwarder: elegís cuáles dejar y cuáles cambiar"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M2 17h13V7H2z"/><path d="M15 10h4l3 3v4h-7"/><circle cx="6" cy="19" r="2"/><circle cx="18" cy="19" r="2"/></svg> Revisar fletes</button>';
+}
+function calcularFletesParaRevisar(){
+  const col = feColPrincipal(), mem = rfMemoria(), out = [], dobles = [];
+  (allRows || []).forEach(row => {
+    if(rfPagadoAlForwarder(row)) return;
+    const fe = fleteEsperadoTabla(row);
+    if(!fe || fe.col !== col) return;
+    if(fe.estado === 'bad' && isNaN(fe.esperado)){ dobles.push({ row, fe }); return; }   // flete doble en una carga partida
+    if(fe.estado === 'sin_importe'){ if(fe.escribible) out.push({ row, fe, actual: '', vacia: true }); return; }
+    if(fe.estado !== 'warn' && fe.estado !== 'bad') return;
+    const actual = valorVisible(row, col).trim();
+    out.push({ row, fe, actual, vista: !!mem[rfClave(row, actual, fe.esperado)] });
+  });
+  out.dobles = dobles;
+  return out;
+}
+async function revisarFletes(){
+  showToast('Leyendo el tarifario…', 'info', 2000);
+  try{ await loadTarifario(); }catch(e){}
+  if(_tarifarioError){ alert('No pude leer el TARIFARIO: ' + _tarifarioError); return; }
+  _rfLista = calcularFletesParaRevisar();
+  _rfSel = {};
+  _rfLista.forEach((it, i) => { _rfSel[i] = it.vacia ? 'tarifa' : 'dejar'; });
+  if(currentView === 'cargas') renderCargas();   // la tabla tambien muestra las tarifas nuevas
+  if(!_rfLista.length && !_rfLista.dobles.length){ showToast('✓ Tarifario releído (' + tarifas.length + ' tarifas). Todos los total flete coinciden con su tarifa o no tienen tarifa con qué comparar.', 'ok', 7000); return; }
+  abrirPanelFletes();
+}
+function rfVisible(it){ const c = document.getElementById('rf-ver-vistas'); return !it.vista || !!(c && c.checked); }
+function rfCambio(i, v){ _rfSel[i] = v; rfResumen(); }
+function rfTodas(v){ _rfLista.forEach((it, i) => { if(!rfVisible(it)) return; _rfSel[i] = v; const r = document.querySelector('input[name="rf-' + i + '"][value="' + v + '"]'); if(r) r.checked = true; }); rfResumen(); }
+function rfVerVistas(){ document.querySelectorAll('#rf-overlay tr.fe-vista').forEach(tr => { tr.style.display = rfVisible({ vista: true }) ? '' : 'none'; }); rfResumen(); }
+function rfResumen(){
+  const el = document.getElementById('rf-resumen'); if(!el) return;
+  const vis = _rfLista.map((it, i) => ({ it, i })).filter(x => rfVisible(x.it));
+  const cambiar = vis.filter(x => _rfSel[x.i] === 'tarifa').length;
+  el.textContent = cambiar + ' para poner la tarifa · ' + (vis.length - cambiar) + ' quedan como están';
+  const b = document.getElementById('rf-aplicar'); if(b) b.textContent = cambiar ? 'Aplicar (' + cambiar + ' cambio' + (cambiar === 1 ? '' : 's') + ')' : 'Aplicar';
+}
+function rfTablaHTML(){
+  const esc = t => String(t === undefined || t === null ? '' : t).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
+  const f = x => Math.abs(x - Math.round(x)) < 0.005 ? Math.round(x).toLocaleString('es-AR') : fmtUsd2(x);
+  const nVacias = _rfLista.filter(it => it.vacia).length, nDist = _rfLista.filter(it => !it.vacia && !it.vista).length, nVistas = _rfLista.filter(it => it.vista).length;
+  const fil = _rfLista.map((it, i) => {
+    const t = tarifaPara(it.row) || {};
+    const act = parseSheetNum(it.actual);
+    const d = it.vacia || isNaN(act) ? '—' : (act - it.fe.esperado > 0 ? '+' : '−') + f(Math.abs(act - it.fe.esperado));
+    return '<tr class="' + (it.vista ? 'fe-vista' : '') + '" style="' + (it.vista ? 'display:none;' : '') + '">'
+      + '<td>' + (it.row._sheetRow || '') + '</td>'
+      + '<td>' + esc((it.row[COL.CUSTOMER] || '').toString().trim() || '—') + '<div class="fe-sub">' + esc((it.row[COL.PORT] || '').toString().trim()) + ' · ' + esc((it.row[COL.SHIPPING] || '').toString().trim()) + '</div></td>'
+      + '<td>' + esc(forwarderDeTarifa(it.row) || '—') + '<div class="fe-sub">' + esc(t.mes ? mesLegible(t.mes) : '') + (it.fe.cuentaTxt ? ' · ' + esc(it.fe.cuentaTxt) : '') + '</div></td>'
+      + '<td class="fe-dif">' + (it.vacia ? '<span class="fe-sub">vacío</span>' : esc(it.actual)) + '</td><td class="fe-fm" title="' + esc(it.fe.titulo) + '">' + f(it.fe.esperado) + '</td>'
+      + '<td>' + d + '</td>'
+      + '<td class="fe-op"><label><input type="radio" name="rf-' + i + '" value="dejar"' + (_rfSel[i] === 'dejar' ? ' checked' : '') + ' onchange="rfCambio(' + i + ',\'dejar\')"> ' + (it.vacia ? 'Dejar vacío' : 'Dejar así') + '</label>'
+      + '<label><input type="radio" name="rf-' + i + '" value="tarifa"' + (_rfSel[i] === 'tarifa' ? ' checked' : '') + ' onchange="rfCambio(' + i + ',\'tarifa\')"> Poner la tarifa</label></td></tr>';
+  }).join('');
+  const dob = _rfLista.dobles || [];
+  const dobHTML = dob.length ? '<div style="margin:10px 0;padding:10px 12px;border-radius:10px;background:var(--danger-light);border:1px solid var(--danger);color:var(--danger);font-size:13px;"><b>Flete cargado dos veces en una carga partida (' + dob.length + '):</b>'
+    + dob.map(x => '<div style="margin-top:4px;">• Fila ' + x.row._sheetRow + ' (' + esc((x.row[COL.CUSTOMER] || '').toString().trim()) + '): ' + esc(x.fe.titulo) + '</div>').join('') + '<div style="margin-top:4px;">Borrá el de la fila que sobra en la tabla.</div></div>' : '';
+  const titulo = (nDist ? nDist + ' distinto' + (nDist === 1 ? '' : 's') + ' a la tarifa' : '') + (nDist && nVacias ? ' · ' : '') + (nVacias ? nVacias + ' vacío' + (nVacias === 1 ? '' : 's') : '') || 'Ninguno para revisar';
+  return '<div class="fe-cab"><b>Total flete contra el tarifario · ' + titulo + '</b>'
+    + '<p>Recién releído el TARIFARIO (' + tarifas.length + ' tarifas). Cada carga se compara con la tarifa de SU forwarder, del mes de la consolidación. Los vacíos vienen marcados para completar; los distintos, para dejar así. Nada se escribe hasta que apretás "Aplicar". Las cargas ya pagadas al forwarder no aparecen.</p></div>'
+    + '<div class="fe-tools"><button class="btn" onclick="rfTodas(\'tarifa\')">Todas a la tarifa</button><button class="btn" onclick="rfTodas(\'dejar\')">Todas: dejar así</button><button class="btn" onclick="cerrarPanelFletes();revisarFletes()">↻ Releer tarifario</button><span style="flex:1"></span>'
+    + (nVistas ? '<label class="fe-sub"><input type="checkbox" id="rf-ver-vistas" onchange="rfVerVistas()"> Ver también los que ya dejé así (' + nVistas + ')</label>' : '') + '</div>'
+    + dobHTML
+    + (fil ? '<div class="fe-sc"><table class="fe-tab"><thead><tr><th>Fila</th><th>Cliente · destino</th><th>Forwarder · tarifa</th><th>Hoy dice</th><th>Daría la tarifa</th><th>Diferencia</th><th>¿Qué hacemos?</th></tr></thead><tbody>' + fil + '</tbody></table></div>' : '')
+    + '<div class="fe-pie"><span id="rf-resumen" class="fe-sub"></span><span style="flex:1"></span><button class="btn" onclick="cerrarPanelFletes()">Cancelar</button><button class="btn primary" id="rf-aplicar" onclick="rfAplicar()">Aplicar</button></div>';
+}
+function _rfTecla(e){ if(e.key === 'Escape'){ e.stopPropagation(); cerrarPanelFletes(); } }
+function cerrarPanelFletes(){
+  const o = document.getElementById('rf-overlay');
+  if(o && o.parentNode) o.parentNode.removeChild(o);
+  document.removeEventListener('keydown', _rfTecla, true);
+}
+function abrirPanelFletes(){
+  cerrarPanelFletes();
+  const o = document.createElement('div');
+  o.id = 'rf-overlay'; o.className = 'fe-ov';
+  o.innerHTML = '<div class="fe-box" role="dialog" aria-label="Revisar fletes">' + rfTablaHTML() + '</div>';
+  o.onclick = e => { if(e.target === o) cerrarPanelFletes(); };
+  document.body.appendChild(o);
+  document.addEventListener('keydown', _rfTecla, true);
+  rfResumen();
+}
+function rfAplicar(){
+  const mem = rfMemoria(), col = feColPrincipal();
+  let cambiadas = 0, dejadas = 0;
+  _rfLista.forEach((it, i) => {
+    if(!rfVisible(it)) return;
+    const k = rfClave(it.row, it.actual, it.fe.esperado);
+    if(_rfSel[i] === 'tarifa'){
+      anotarCambioTabla(it.row, col, String(Math.round(it.fe.esperado * 100) / 100).replace('.', ','), 'Tarifario: ' + it.fe.titulo.replace(/^Sugerido, no escrito: /, '').replace(/\. .*$/, ''), true);
+      delete mem[k]; cambiadas++;
+    } else { if(!it.vacia) mem[k] = 1; dejadas++; }
+  });
+  rfGuardarMemoria(mem);
+  cerrarPanelFletes();
+  if(cambiadas && currentView === 'cargas') renderCargas();
+  showToast((cambiadas ? '✓ ' + cambiadas + ' total flete puesto' + (cambiadas === 1 ? '' : 's') + ' según la tarifa (Ctrl+Z deshace). ' : '') + (dejadas ? dejadas + ' quedaron como estaban.' : ''), 'ok', 6000);
 }
 
 // ─── COMENTARIOS EN CELDAS ───────────────────────────────────────────────────
