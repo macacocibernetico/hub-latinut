@@ -4468,9 +4468,8 @@ function feParaCelda(row, c){
 }
 // Cargas partidas por negocio: filas con el mismo lote (ej. una de 16 tn y otra de 6 tn del mismo contenedor). Devuelve la fila que
 // lleva el flete (la que ya tiene importe en esa columna, o la primera), o null si la carga no esta partida.
-function filaFleteDeCargaPartida(row, col){
-  // Buzaram reparte el flete por toneladas entre las filas de una carga partida (cada fila lleva su parte): no aplica.
-  if(negocioActivo === 'buzaram') return null;
+// Filas de la misma carga partida por negocio (mismo contenedor o lote, distinto Negocio), ordenadas; null si no esta partida.
+function grupoCargaPartida(row){
   const lote = (row[COL.LOTS] || '').toString().trim().toUpperCase();
   const conts = r => (r[COL.CONTAINERS] || '').toString().toUpperCase().split(/[,;\/\n|]+/).map(x => x.replace(/[\s\-]/g, '')).filter(x => /^[A-Z]{4}\d{6,7}$/.test(x));
   const mios = conts(row);
@@ -4480,9 +4479,28 @@ function filaFleteDeCargaPartida(row, col){
   // partida por la columna Negocio (MSU1C / MSU1B...): si todas dicen lo mismo no es una division, es otra cosa
   if(COL.NEGOCIO >= 0 && new Set(grupo.map(r => (r[COL.NEGOCIO] || '').toString().trim())).size < 2) return null;
   grupo.sort((x, y) => (x._sheetRow || 0) - (y._sheetRow || 0));
+  return grupo;
+}
+function filaFleteDeCargaPartida(row, col){
+  // Buzaram reparte el flete por toneladas entre las filas de una carga partida (cada fila lleva su parte): no aplica.
+  if(negocioActivo === 'buzaram') return null;
+  const grupo = grupoCargaPartida(row);
+  if(!grupo) return null;
   const conImporte = grupo.find(r => { const v = parseSheetNum(r[col]); return !isNaN(v) && v; });
   return conImporte || grupo[0];
 }
+// Buzaram: parte del flete del contenedor que le toca a esta fila de una carga partida = sus toneladas / las de todas las filas.
+// Ej: 22 tn partidas en 16 y 6, flete 5.000 -> 5.000 x 16/22 = 3.636,36 y 5.000 x 6/22 = 1.363,64. null si no corresponde.
+function parteFleteBuzaram(row){
+  if(negocioActivo !== 'buzaram' || !row) return null;
+  const g = grupoCargaPartida(row);
+  if(!g) return null;
+  const tn = r => { const v = numeroCelda(valorVisible(r, COL.TNS)); return v > 0 ? v : 0; };
+  const mio = tn(row), tot = g.reduce((a, r) => a + tn(r), 0);
+  if(!(mio > 0) || !(tot > 0) || mio >= tot) return null;
+  return { frac: mio / tot, mio, tot, filas: g.map(r => r._sheetRow) };
+}
+const fmtCntN = x => Math.abs(x - Math.round(x)) < 1e-9 ? String(Math.round(x)) : x.toLocaleString('es-AR', { maximumFractionDigits: 2 });
 function fleteEsperadoTabla(row, modo){
   if(!tarifas.length) return null;
   const porTotal = modo !== 'monto' && COL.TOTAL_PAGO !== undefined && COL.TOTAL_PAGO >= 0;
@@ -4511,22 +4529,24 @@ function fleteEsperadoTabla(row, modo){
       motivo, titulo: 'Sin tarifa para comparar: ' + motivo + ' Cuando la cargues, tocá Revisar fletes.' };
   }
   const n = cantidadContenedores(row);
-  const esperado = porTotal ? ref * n : ref;
+  const parte = porTotal ? parteFleteBuzaram(row) : null;   // Buzaram, carga partida: solo la parte de esta fila
+  const esperado = porTotal ? redondear2(ref * n * (parte ? parte.frac : 1)) : ref;
   const actual = parseSheetNum(row[col]);
   const f = x => Math.abs(x - Math.round(x)) < 0.005 ? Math.round(x).toLocaleString('es-AR') : fmtUsd2(x);
   const cuenta = 'Tarifa ' + (!isNaN(tarifa.allIn) && tarifa.allIn ? 'ALL IN' : 'FLETE') + ' ' + mesLegible(tarifa.mes) + ' (mes de la ' + origenMesTarifa(row) + ')'
     + (tarifa.forwarder ? ' de ' + tarifa.forwarder : '') + ': USD ' + f(ref)
-    + (porTotal ? ' × ' + n + ' contenedor' + (n === 1 ? '' : 'es') + ' = USD ' + f(esperado) : ' por contenedor');
+    + (porTotal ? ' × ' + n + ' contenedor' + (n === 1 ? '' : 'es') + ' = USD ' + f(ref * n) : ' por contenedor')
+    + (parte ? ' × ' + f(parte.mio) + '/' + f(parte.tot) + ' tn de esta fila (carga partida con la' + (parte.filas.length > 2 ? 's filas ' : ' fila ') + parte.filas.filter(x => x !== row._sheetRow).join(', ') + ') = USD ' + f(esperado) : '');
   if(isNaN(actual) || !actual){
     // Sin importe cargado: se sugiere el que deberia ser (texto fantasma, NO escrito). Solo si la celda se puede escribir (no es una formula).
-    return { col, estado: 'sin_importe', esperado, texto: 'debería ' + f(esperado), numTxt: f(esperado), cuentaTxt: (porTotal && n > 1) ? n + ' × ' + f(ref) : '',
+    return { col, estado: 'sin_importe', esperado, parte, texto: 'debería ' + f(esperado), numTxt: f(esperado), cuentaTxt: parte ? f(parte.mio) + '/' + f(parte.tot) + ' tn' : (porTotal && n > 1) ? n + ' × ' + f(ref) : '',
       valor: String(Math.round(esperado * 100) / 100).replace('.', ','), escribible: !esColFormula(col),
       titulo: 'Sugerido, no escrito: ' + cuenta + '. Todavía no hay importe cargado.' };
   }
   const dif = actual - esperado, pct = esperado ? dif / esperado * 100 : 0;
-  if(Math.abs(dif) < 0.005) return { col, estado: 'ok', esperado, texto: '✓ tarifa', titulo: cuenta + '. Coincide.' };
+  if(Math.abs(dif) < (parte ? 1 : 0.005)) return { col, estado: 'ok', esperado, parte, texto: '✓ tarifa', titulo: cuenta + '. Coincide.' };   // al repartir por toneladas hay centavos de redondeo
   const signo = dif > 0 ? '+' : '−';
-  return { col, estado: Math.abs(pct) >= TOL_ROJO_FLETE ? 'bad' : 'warn', esperado, dif, texto: 'debería ' + f(esperado) + ((porTotal && n > 1) ? ' (' + n + '×' + f(ref) + ')' : ''),
+  return { col, estado: Math.abs(pct) >= TOL_ROJO_FLETE ? 'bad' : 'warn', esperado, dif, parte, texto: 'debería ' + f(esperado) + (parte ? ' (' + f(parte.mio) + '/' + f(parte.tot) + ' tn)' : (porTotal && n > 1) ? ' (' + n + '×' + f(ref) + ')' : ''),
     titulo: cuenta + '. Hoy dice USD ' + f(actual) + ' (' + signo + 'USD ' + fmtUsd2(Math.abs(dif)) + ', ' + signo + fmtUsd2(Math.abs(pct)) + '%).' };
 }
 
@@ -4553,7 +4573,8 @@ function refTarifa(t){
 function esperadoFactura(idxs){
   const filas = idxs.map(i => {
     const row = filaPorIdx(i);
-    const cnt = cantidadContenedores(row);
+    const parte = parteFleteBuzaram(row);   // Buzaram, carga partida: la fila lleva su parte del contenedor (por toneladas)
+    const cnt = cantidadContenedores(row) * (parte ? parte.frac : 1);
     const t = tarifaPara(row);
     const ref = refTarifa(t);
     return { idx: i, row, cnt, alts: tarifasAlternativas(row), tarifa: (t && !isNaN(ref) && ref) ? t : null,
@@ -4648,7 +4669,7 @@ function abrirFacturaForwarder(idxs){
   const filasHtml = esp.filas.map(f => `<tr style="border-top:1px solid var(--border);">
       <td style="padding:6px 4px;"><b class="mono">Fila ${f.row._sheetRow}</b> · <span class="mono">${(f.row[COL.LOTS]||'—')}</span>
         <div style="font-size:12px;">BL <span class="mono">${(f.row[COL.BL]||'—')}</span> · BKG <span class="mono">${(f.row[COL.BOOKING]||'—')}</span></div>
-        <div style="font-size:12px;color:var(--text2);">${f.row[COL.VESSEL]||'—'} → ${f.row[COL.PORT]||'—'} · <b>${f.cnt} cnt</b></div>
+        <div style="font-size:12px;color:var(--text2);">${f.row[COL.VESSEL]||'—'} → ${f.row[COL.PORT]||'—'} · <b>${fmtCntN(f.cnt)} cnt</b>${f.cnt % 1 ? ' <span title="Carga partida: esta fila lleva su parte del contenedor, por toneladas">(su parte)</span>' : ''}</div>
         <div style="font-size:12px;color:var(--text2);">ETD <b>${fmtDate(f.row[COL.ETD])||'—'}</b> · ETA <b>${fmtDate(f.row[COL.ETA])||'—'}</b></div></td>
       <td style="font-size:12px;">${f.tarifa ? (f.tarifa.carrier||'') + ' · ' + (f.tarifa.forwarder||'') + ' · ' + mesLegible(f.tarifa.mes) + '<br>USD ' + fmtUsd2(f.ref) + ' x cnt' + (f.tarifa.pol ? ' <span style="color:var(--text3);">(' + f.tarifa.pol + ')</span>' : '') + f.alts.map(a => '<br><span style="color:var(--text3);">por ' + a.pol + ': USD ' + fmtUsd2(a.ref) + ' x cnt</span>').join('') : '<span style="color:var(--warn);">sin tarifa</span>'}</td>
       <td class="mono" style="text-align:right;">${f.tarifa ? 'USD ' + fmtUsd2(f.esperado) : '—'}</td>
@@ -4657,7 +4678,7 @@ function abrirFacturaForwarder(idxs){
   m.innerHTML = `<div class="modal" role="dialog" aria-modal="true" aria-label="Factura de forwarder" style="width:720px;max-width:96vw;">
     <div class="modal-header">
       <div><span class="modal-title">🚚 Factura de forwarder</span>
-      <div style="font-size:12px;color:var(--text3);margin-top:2px;">${(r0[COL.CUSTOMER]||'—')} · ${idxs.length} carga${idxs.length>1?'s':''} · ${esp.cnt} contenedor${esp.cnt>1?'es':''}</div></div>
+      <div style="font-size:12px;color:var(--text3);margin-top:2px;">${(r0[COL.CUSTOMER]||'—')} · ${idxs.length} carga${idxs.length>1?'s':''} · ${fmtCntN(esp.cnt)} contenedor${esp.cnt>1?'es':''}</div></div>
       <button type="button" class="modal-close" onclick="cerrarFacturaForwarder()" aria-label="Cerrar">×</button>
     </div>
     <div class="modal-body" style="max-height:72vh;overflow-y:auto;">
@@ -4852,7 +4873,7 @@ async function guardarFacturaForwarder(){
   for(const f of esp.filas){
     await appendLog({ fc: d.nro, bl: (f.row[COL.BL]||'').trim(), customer: (f.row[COL.CUSTOMER]||'').trim(),
       accion: 'factura forwarder',
-      detalle: (d.proveedor || 'sin proveedor') + ' · USD ' + fmtUsd2(d.porCnt) + ' x ' + f.cnt + ' cnt' +
+      detalle: (d.proveedor || 'sin proveedor') + ' · USD ' + fmtUsd2(d.porCnt) + ' x ' + fmtCntN(f.cnt) + ' cnt' +
                (f.tarifa ? ' · tarifa ' + fmtUsd2(f.ref) : ' · sin tarifa') +
                (avisos.porPol ? ' · salió por ' + avisos.porPol : '') +
                (avisos.length ? ' · DIFERENCIA: ' + avisos.join(' | ') : ' · coincide') });
@@ -12890,7 +12911,8 @@ function menuFleteHtml(row, c){
       + (t.diasLibres ? lin('Días libres', e(t.diasLibres)) : '')
       + '<div class="dm-tit">La cuenta</div>'
       + lin('Por contenedor', 'USD ' + f(ref) + ' <small>(' + (usaAllIn ? 'ALL IN' : 'FLETE') + ')</small>')
-      + (porTotal ? lin('× contenedores', n + ' → USD ' + f(fe.esperado)) : '')
+      + (porTotal ? lin('× contenedores', n + ' → USD ' + f(ref * n)) : '')
+      + (fe.parte ? lin('Parte de esta fila', f(fe.parte.mio) + ' de ' + f(fe.parte.tot) + ' tn → USD ' + f(fe.esperado)) + '<div class="dm-sub" style="padding:0 12px 4px;">Carga partida con la' + (fe.parte.filas.length > 2 ? 's filas ' : ' fila ') + fe.parte.filas.filter(x => x !== row._sheetRow).join(', ') + ': el flete del contenedor se reparte por toneladas.</div>' : '')
       + lin('Hoy dice', hoy ? e(hoy) : 'vacío')
       + (fe.estado === 'ok' ? '<div class="dm-ok" style="padding-top:4px;">✓ Coincide con la tarifa</div>'
         : fe.estado === 'sin_importe' ? '' : lin('Diferencia', '<span style="color:' + (fe.estado === 'bad' ? 'var(--danger)' : 'var(--warn)') + '">' + (fe.dif > 0 ? '+' : '−') + 'USD ' + f(Math.abs(fe.dif)) + '</span>'));
