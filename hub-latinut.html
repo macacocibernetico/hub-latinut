@@ -1992,6 +1992,7 @@ async function loadContacts(){
     const _normC = v => (v||'').toString().normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().replace(/[^a-z0-9]/g,'');
     const _hayEnc = !/@/.test(String((_filasC[0] || [])[2] || ''));   // si la fila 1 ya trae un mail, no hay encabezados
     const _iDiasFwd = _hayEnc ? (_filasC[0] || []).map(_normC).indexOf(_normC('Días de pago desde ETA')) : -1;
+    const _iAvisoN8n = _hayEnc ? (_filasC[0] || []).map(_normC).indexOf(_normC('Aviso_n8n')) : -1;
     contacts=(_hayEnc ? _filasC.slice(1) : _filasC).map(row=>({
       empresa:(row[0]||'').trim(),
       contacto:(row[1]||'').trim(),
@@ -2004,7 +2005,9 @@ async function loadContacts(){
       ccAviso:siNo(row[7]),
       ccLiberacion:siNo(row[8]),
       // Plazo de pago del forwarder (dias corridos desde la ETA): se pone en alguna fila de ese forwarder
-      diasPagoFwd: _iDiasFwd >= 0 ? (row[_iDiasFwd]||'').toString().trim() : ''
+      diasPagoFwd: _iDiasFwd >= 0 ? (row[_iDiasFwd]||'').toString().trim() : '',
+      // A quien le llega el mail de n8n cuando una celda ya tiene otro dato del que trae el documento (columna Aviso_n8n)
+      avisoN8n: _iAvisoN8n >= 0 ? siNo(row[_iAvisoN8n]) : false
     })).filter(c=>c.email);
     console.log(`Loaded ${contacts.length} contacts`);
   }catch(e){console.error('Error loading contacts',e);}
@@ -16241,6 +16244,7 @@ const N8N_WORKFLOWS = [
 ];
 // Qué cambiamos en n8n y qué control se sumó en este panel. El más nuevo arriba. "version" = la que anota la Marca de corrida.
 const N8N_CAMBIOS = [
+  { fecha: '19/11/2026', versiones: [], cambio: 'Documentos: si el documento trae un dato (BL, invoice de AXT) distinto al que ya tiene la celda, no se escribe y llega un mail con lo que hay escrito y lo que trae el documento. Va a quien tenga «Sí» en la columna Aviso_n8n de CONTACTOS, un mail por negocio, una vez por documento', control: 'Celdas con otro dato: a quién le llega el aviso (o que no le llega a nadie) y las celdas así de los últimos 7 días' },
   { fecha: '19/11/2026', versiones: [], cambio: 'Documentos: una invoice de AXT por contenedor (fila con varios contenedores del mismo booking, como Manila/Cebu) se controla por su parte: sus lotes tienen que estar en la fila y las toneladas ser las de sus contenedores; si la celda ya dice «15036, 15035» cuenta como cargada. Y al atar por lote se cuentan los lotes por carga (filas del mismo contenedor juntas), no fila por fila', control: 'Documentos: las invoices por contenedor (15035/15036, 15075/15076) ya no quedan en «no coincide»; la FC 1350 queda en las filas 913 y 914' },
   { fecha: '19/11/2026', versiones: [], cambio: 'Documentos, arreglos de la prueba de 90 días: la invoice a «AGRICULTURE BUSINESS WORLD» es del cliente ABW; hasta 5 centavos por tn en el costo logístico es redondeo; BL de Maersk/COSCO/ONE con número solo de dígitos (manda el número del nombre del archivo; un contenedor SUDU ya no se toma como BL); «COSU6465047140» y «6465047140» son el mismo BL; proformas y planillas del despachante de Nutrin se atan por la referencia NU172 (Contract Proveedor); una FC del proveedor cuyo lote está en dos cargas va a la que ya tiene esa factura, y si ninguna la tiene queda para revisar', control: 'Documentos: menos «no coincide» de ABW y del costo logístico, BL de Maersk anotados, proformas NU172 atadas a su carga; y la prueba con el pasado vuelta a correr para comparar' },
   { fecha: '19/11/2026', versiones: [], cambio: 'Prueba con el pasado de documentos: un PDF ilegible ya no corta la corrida, y si una ventana trae más de 150 adjuntos o 35 MB frena enseguida con aviso (antes se colgaba)', control: 'Prueba con el pasado: la ventana de la última corrida en «¿Está corriendo?»; si frena, el aviso dice cuántos adjuntos y MB traía' },
@@ -16525,6 +16529,14 @@ function pruebaEtapa1Html(){
   return h;
 }
 
+// Aviso por mail de n8n cuando una celda ya tiene OTRO dato del que trae el documento (no se pisa): a quien llega
+// (hoja CONTACTOS, columna Aviso_n8n) y que celdas quedaron asi en los ultimos 7 dias (DOCUMENTOS, detalle "no se pisa").
+function n8nAvisoConflictos(docs, negocio, contactos, ahora){
+  const para = (contactos || []).filter(c => c.avisoN8n && c.email).map(c => c.email);
+  const lista = (docs || []).filter(d => d.negocio === negocio && /no se pisa/i.test(d.detalle || ''))
+    .filter(d => { const f = Date.parse(String(d.procesado || d.fechaMail || '').replace(' ', 'T')); return !f || ahora - f <= 7 * 864e5; });
+  return { para, lista };
+}
 function n8nPanelHtml(ahora){
   ahora = ahora || Date.now();
   const esc = t => String(t === undefined || t === null ? '' : t).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
@@ -16551,6 +16563,13 @@ function n8nPanelHtml(ahora){
   h += '<div class="n8-sec">2 · Etapas del circuito de documentos <small>· últimos 7 días · ' + esc(neg) + '</small></div>'
     + (!_docsListo ? '<div class="n8-aviso">' + esc(_docsError || 'No pude leer la hoja DOCUMENTOS.') + '</div>' : '<div class="n8-etapas">'
     + et.map((s, i) => '<details class="n8-et"' + (s.lista.length ? '' : ' data-vacia="1"') + '><summary><span class="n8-n">' + (i + 1) + '</span><span class="n8-t">' + esc(s.titulo) + '<small>' + esc(s.sub) + '</small></span><span class="n8-c">' + s.n + '</span><span class="n8-chk">' + s.checks.map(c => p(c.c, c.t)).join('') + '</span><span class="n8-ver">' + (s.lista.length ? 'Ver' : '') + '</span></summary>' + listaDocs(s.lista) + '</details>').join('') + '</div>');
+  // Aviso por mail de celdas con otro dato
+  const ac = n8nAvisoConflictos(_docs || [], negocioActivo, typeof contacts !== 'undefined' ? contacts : [], ahora);
+  h += '<div class="n8-box" style="margin-top:10px;"><h4>Celdas con otro dato · aviso por mail</h4>'
+    + (ac.para.length ? '<div class="n8-leg">Cuando el documento trae un dato distinto al de la celda, n8n no escribe y manda un mail a <b>' + esc(ac.para.join(', ')) + '</b> (uno por negocio, una vez por documento).</div>'
+      : '<div class="n8-aviso">Nadie recibe este aviso: en la hoja CONTACTOS agregá la columna <b>Aviso_n8n</b> y poné «Sí» en tu fila.</div>')
+    + (ac.lista.length ? '<div class="n8-det">' + ac.lista.slice(0, 20).map(d => '<div>• ' + esc(String(d.procesado || '').slice(0, 10)) + ' · <b>' + esc(d.nombre || d.tipo) + '</b> · ' + esc(d.detalle) + '</div>').join('') + '</div>'
+      : '<div class="n8-leg">Ninguna en los últimos 7 días (' + esc(neg) + ').</div>') + '</div>';
   // 3
   const vf = _docsListo ? n8nVerificacion(_docs || [], negocioActivo, allRowsAll || [], _n8n.lotesOtro, ahora) : [];
   if(vf.length) h += '<div class="n8-sec">3 · Lo que el hub verifica por su cuenta <small>· no le cree a n8n: lo compara con la planilla de ' + esc(neg) + ' (30 días)</small></div><div class="n8-cruz">'
