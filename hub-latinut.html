@@ -16241,6 +16241,11 @@ const N8N_WORKFLOWS = [
 ];
 // Qué cambiamos en n8n y qué control se sumó en este panel. El más nuevo arriba. "version" = la que anota la Marca de corrida.
 const N8N_CAMBIOS = [
+  { fecha: '19/11/2026', versiones: [], cambio: 'Documentos, arreglos de la prueba de 90 días: la invoice a «AGRICULTURE BUSINESS WORLD» es del cliente ABW; hasta 5 centavos por tn en el costo logístico es redondeo; BL de Maersk/COSCO/ONE con número solo de dígitos (manda el número del nombre del archivo; un contenedor SUDU ya no se toma como BL); «COSU6465047140» y «6465047140» son el mismo BL; proformas y planillas del despachante de Nutrin se atan por la referencia NU172 (Contract Proveedor); una FC del proveedor cuyo lote está en dos cargas va a la que ya tiene esa factura, y si ninguna la tiene queda para revisar', control: 'Documentos: menos «no coincide» de ABW y del costo logístico, BL de Maersk anotados, proformas NU172 atadas a su carga; y la prueba con el pasado vuelta a correr para comparar' },
+  { fecha: '19/11/2026', versiones: [], cambio: 'Prueba con el pasado de documentos: un PDF ilegible ya no corta la corrida, y si una ventana trae más de 150 adjuntos o 35 MB frena enseguida con aviso (antes se colgaba)', control: 'Prueba con el pasado: la ventana de la última corrida en «¿Está corriendo?»; si frena, el aviso dice cuántos adjuntos y MB traía' },
+  { fecha: '19/11/2026', versiones: [], cambio: 'Comparador de FC del proveedor: si el Apps Script tiene la factura sin cantidad, precio ni total, ya no cuenta como diferencia de n8n; en facturas de varios lotes no se suma la cantidad repetida', control: 'n8n contra el Apps Script: aparece como «el script no cargó los números» (no como distinta)' },
+  { fecha: '19/11/2026', versiones: ['prueba-etapa1-2026-11-19'], cambio: 'Prueba con el pasado de la Etapa 1: 90 días de solicitudes de Argen y Nutrin, tope US$ 15 (hoja PRUEBA_ETAPA1)', control: 'Prueba Etapa 1: % de datos bien extraídos, por dato, desacuerdos con la planilla y costo contra el tope' },
+  { fecha: '19/11/2026', versiones: ['prueba-docs-2026-11-19'], cambio: 'Prueba con el pasado de documentos: workflow manual que corre lo mismo sobre 90 días de mails (hojas PRUEBA_DOCS y PRUEBA_FC)', control: 'Prueba con el pasado: % bien por tipo de documento, FC del proveedor contra el script y la lista de lo que hay que mirar' },
   { fecha: '19/11/2026', versiones: ['docs-2026-11-19', 'etapa1-2026-11-19'], cambio: 'Marca de cada corrida y de cada error (hojas N8N_ESTADO y N8N_CORRIDAS)', control: '¿Está corriendo?: última corrida, qué hizo, aviso si no corre o falla' },
   { fecha: '18/11/2026', versiones: [], cambio: 'Reintentos por Message-ID de los documentos que quedaron para revisar o sin Drive', control: 'Etapas: "para revisar hace más de 2 días" y "sin subir a Drive"' },
   { fecha: '17/11/2026', versiones: [], cambio: 'FC del proveedor leídas también por n8n, en paralelo con el Apps Script (hoja FC_PARALELO)', control: 'n8n contra el Apps Script: iguales, distintas y días seguidos sin distintas' },
@@ -16248,7 +16253,7 @@ const N8N_CAMBIOS = [
   { fecha: '16/11/2026', versiones: [], cambio: 'Etapa 1: preparar cargas desde los mails (hoja AUTO_CARGAS)', control: 'Tablero de la Etapa 1 (sin corrección, campos que más se corrigen)' }
 ];
 const N8N_VERSIONES_CONOCIDAS = new Set([].concat(...N8N_CAMBIOS.map(c => c.versiones)));
-let _n8n = { ok: false, cargando: false, error: '', estado: [], corridas: [], fc: [], lotesOtro: null };
+let _n8n = { ok: false, cargando: false, error: '', estado: [], corridas: [], fc: [], lotesOtro: null, prueba: [], pruebaFc: [], pruebaE1: [] };
 
 function n8nFecha(x){
   const t = String(x || '').trim();
@@ -16272,7 +16277,8 @@ async function n8nCargar(){
   _n8n.error = '';
   const h = { headers: { Authorization: 'Bearer ' + accessToken } };
   const base = 'https://sheets.googleapis.com/v4/spreadsheets/' + cfg.hubSheetId + '/values:batchGet?ranges=' + encodeURIComponent('N8N_ESTADO!A2:J10')
-    + '&ranges=' + encodeURIComponent('N8N_CORRIDAS!A2:J') + '&ranges=' + encodeURIComponent('FC_PARALELO!A2:P');
+    + '&ranges=' + encodeURIComponent('N8N_CORRIDAS!A2:J') + '&ranges=' + encodeURIComponent('FC_PARALELO!A2:P')
+    + '&ranges=' + encodeURIComponent('PRUEBA_DOCS!A2:O') + '&ranges=' + encodeURIComponent('PRUEBA_FC!A2:P') + '&ranges=' + encodeURIComponent('PRUEBA_ETAPA1!A2:H');
   try{
     const r = await fetch(base, h);
     if(r.ok){
@@ -16280,11 +16286,15 @@ async function n8nCargar(){
       _n8n.estado = ((vr[0] || {}).values || []).map(n8nFila).filter(x => x.wf);
       _n8n.corridas = ((vr[1] || {}).values || []).map(n8nFila).filter(x => x.wf);
       _n8n.fc = ((vr[2] || {}).values || []).filter(f => f && f[0]);
+      _n8n.prueba = ((vr[3] || {}).values || []).filter(f => f && f[14]).map(pruebaFila);
+      _n8n.pruebaFc = ((vr[4] || {}).values || []).filter(f => f && f[0]);
+      _n8n.pruebaE1 = ((vr[5] || {}).values || []).filter(f => f && f[0]);
     } else {
       // Si falta alguna hoja, Google rechaza todo el pedido: se leen por separado para mostrar lo que haya.
       const una = async rango => { const x = await fetch('https://sheets.googleapis.com/v4/spreadsheets/' + cfg.hubSheetId + '/values/' + encodeURIComponent(rango), h); return x.ok ? ((await x.json()).values || []) : null; };
       const e = await una('N8N_ESTADO!A2:J10'), c = await una('N8N_CORRIDAS!A2:J'), f = await una('FC_PARALELO!A2:P');
       _n8n.estado = (e || []).map(n8nFila).filter(x => x.wf); _n8n.corridas = (c || []).map(n8nFila).filter(x => x.wf); _n8n.fc = (f || []).filter(x => x && x[0]);
+      _n8n.prueba = ((await una('PRUEBA_DOCS!A2:O')) || []).filter(x => x && x[14]).map(pruebaFila); _n8n.pruebaFc = ((await una('PRUEBA_FC!A2:P')) || []).filter(x => x && x[0]); _n8n.pruebaE1 = ((await una('PRUEBA_ETAPA1!A2:H')) || []).filter(x => x && x[0]);
       if(e === null) _n8n.error = 'Todavía no existe la hoja N8N_ESTADO en HUB LATINUT: la crea n8n en su primera corrida con la marca.';
     }
   }catch(err){ _n8n.error = 'No pude leer las hojas de n8n: ' + err.message; }
@@ -16413,16 +16423,16 @@ function n8nVerificacion(docs, negocio, filas, lotesOtro, ahora){
 }
 
 // 4) n8n contra el Apps Script (FC_PARALELO): Negocio | Fecha mail | Archivo | Factura | Resultado | Diferencias | ...
-function n8nParalelo(filas, negocio, ahora){
-  ahora = ahora || Date.now();
+function n8nParalelo(filas, negocio, ahora, dias){
+  ahora = ahora || Date.now(); dias = dias || 30;
   const neg = docTextoDeNegocio(negocio).toUpperCase();
   const L = (filas || []).filter(f => String(f[0] || '').trim().toUpperCase() === neg).map(f => ({ fecha: n8nFecha(f[1]), archivo: f[2] || '', factura: f[3] || '', res: String(f[4] || ''), dif: f[5] || '' }))
-    .filter(x => !x.fecha || ahora - x.fecha.getTime() <= 30 * 864e5);
+    .filter(x => !x.fecha || ahora - x.fecha.getTime() <= dias * 864e5);
   const iguales = L.filter(x => x.res === 'igual'), distintas = L.filter(x => x.res === 'distinto'), otras = L.filter(x => x.res !== 'igual' && x.res !== 'distinto');
   const ultDist = distintas.map(x => x.fecha).filter(Boolean).sort((a, b) => b - a)[0];
   const desdeIni = L.map(x => x.fecha).filter(Boolean).sort((a, b) => a - b)[0];
-  const dias = ultDist ? Math.floor((ahora - ultDist.getTime()) / 864e5) : desdeIni ? Math.floor((ahora - desdeIni.getTime()) / 864e5) : 0;
-  return { total: L.length, iguales: iguales.length, distintas, otras, pct: L.length ? Math.round(iguales.length / L.length * 100) : 0, diasSinDistintas: dias };
+  const diasSin = ultDist ? Math.floor((ahora - ultDist.getTime()) / 864e5) : desdeIni ? Math.floor((ahora - desdeIni.getTime()) / 864e5) : 0;
+  return { total: L.length, iguales: iguales.length, distintas, otras, pct: L.length ? Math.round(iguales.length / L.length * 100) : 0, diasSinDistintas: diasSin };
 }
 
 function renderAutomatizacion(){
@@ -16435,6 +16445,85 @@ function renderAutomatizacion(){
   }
   cont.innerHTML = n8nPanelHtml();
 }
+// ── Prueba con el pasado (documentos): lo que hubiera hecho n8n con los mails de los ultimos 90 dias, contra la planilla de hoy ──
+// Lo escribe el workflow manual "Documentos · Prueba con el pasado" en PRUEBA_DOCS (un documento por fila, con su veredicto) y
+// PRUEBA_FC (facturas del proveedor contra el Apps Script). La fila 5 de N8N_ESTADO dice cuando se corrio y que ventana.
+const PRUEBA_TIPOS = { bl: 'BL', fc_proveedor: 'FC del proveedor', fc_axt: 'FC de AXT', packing: 'Packing', origen: 'Certificado de origen', fito: 'Fitosanitario',
+  isf: 'ISF', jla: 'Análisis (JLA)', seguro: 'Seguro', shipping: 'Shipping', aviso_salida: 'Aviso de salida', proforma: 'Proforma', planilla: 'Planilla', otro: 'Otros' };
+const PRUEBA_BIEN = ['acierto', 'completaría', 'atado'], PRUEBA_FUERA = ['no es documento', 'reemplazada'];
+const pruebaFila = f => ({ fecha: f[0] || '', negocio: docNegocioDeTexto(f[1]), remitente: f[2] || '', asunto: f[3] || '', archivo: f[4] || '', tipo: f[5] || 'otro', numero: f[6] || '',
+  filas: f[7] || '', lotes: f[8] || '', estado: f[9] || '', veredicto: String(f[10] || '').trim(), dice: f[11] || '', script: f[12] || '', detalle: f[13] || '', clave: f[14] || '' });
+function pruebaResumen(filas, negocio){
+  // Lo sin negocio (no se pudo atar) se cuenta en los dos: no se sabe de cual es.
+  const L = (filas || []).filter(x => x.negocio === negocio || !x.negocio);
+  const porTipo = {};
+  L.forEach(x => {
+    const t = x.tipo || 'otro', o = porTipo[t] = porTipo[t] || { tipo: t, total: 0, cuenta: 0, bien: 0, v: {} };
+    o.total++; o.v[x.veredicto] = (o.v[x.veredicto] || 0) + 1;
+    if(PRUEBA_FUERA.indexOf(x.veredicto) < 0){ o.cuenta++; if(PRUEBA_BIEN.indexOf(x.veredicto) >= 0) o.bien++; }
+  });
+  const tipos = Object.values(porTipo).filter(o => o.cuenta).sort((a, b) => b.cuenta - a.cuenta).map(o => Object.assign(o, { pct: Math.round(o.bien / o.cuenta * 100) }));
+  const cuenta = tipos.reduce((a, o) => a + o.cuenta, 0), bien = tipos.reduce((a, o) => a + o.bien, 0);
+  const mirar = L.filter(x => ['distinto', 'no leído', 'sin atar', 'atado (otra vía)', 'no coincide', 'no se pudo bajar'].indexOf(x.veredicto) >= 0)
+    .sort((a, b) => String(b.fecha).localeCompare(String(a.fecha)));
+  return { total: L.length, cuenta, bien, pct: cuenta ? Math.round(bien / cuenta * 100) : 0, tipos, mirar,
+    mails: new Set(L.map(x => String(x.clave).split('|')[0])).size };
+}
+function pruebaHtml(ahora){
+  const esc = t => String(t === undefined || t === null ? '' : t).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
+  const neg = docTextoDeNegocio(negocioActivo);
+  const est = (_n8n.estado || []).find(x => x.wf === 'prueba_docs');
+  let h = '<div class="n8-sec">Prueba con el pasado · documentos <small>· lo que hubiera hecho n8n con los mails viejos, contra la planilla de hoy · ' + esc(neg) + '</small></div>';
+  if(!(_n8n.prueba || []).length) return h + '<div class="n8-leg">Todavía no se corrió la prueba (workflow "Documentos · Prueba con el pasado" en n8n).</div>';
+  const r = pruebaResumen(_n8n.prueba, negocioActivo);
+  const pa = n8nParalelo(_n8n.pruebaFc || [], negocioActivo, ahora || Date.now(), 120);
+  const color = p => p >= 95 ? 'var(--ok)' : p >= 85 ? 'var(--warn)' : 'var(--danger)';
+  h += '<div class="n8-duo"><div class="n8-box"><h4>Documentos bien procesados</h4><div class="n8-big" style="color:' + color(r.pct) + '">' + r.pct + ' % <small>(' + r.bien + ' de ' + r.cuenta + ' documentos, ' + r.mails + ' mails)</small></div>'
+    + '<div class="n8-leg">Bien = el número coincide con la planilla, la celda estaba vacía y n8n lo hubiera completado, o el documento quedó en la carga de su lote.'
+    + (est ? ' Última corrida: ' + esc(String(est.fecha).slice(0, 16).replace('T', ' ')) + ' (' + esc(est.avisos) + ').' : '') + '</div></div>'
+    + '<div class="n8-box"><h4>FC del proveedor contra el Apps Script</h4>'
+    + (pa.total ? '<div class="n8-big" style="color:' + color(pa.pct) + '">' + pa.pct + ' % <small>iguales (' + pa.iguales + ' de ' + pa.total + ')</small></div><div class="n8-leg">' + pa.distintas.length + ' distintas · ' + pa.otras.length + ' otras (el script no la cargó, n8n no la vio...)</div>'
+      + (pa.distintas.length ? '<div class="n8-det">' + pa.distintas.slice(0, 15).map(x => '<div>• FC ' + esc(x.factura) + ' · ' + esc(x.archivo) + ': ' + esc(x.dif) + '</div>').join('') + '</div>' : '')
+      : '<div class="n8-leg">Sin facturas de ' + esc(neg) + ' en la prueba.</div>') + '</div></div>';
+  h += '<div class="table-wrap" style="margin-top:10px;"><table class="ac-tabla"><thead><tr><th>Documento</th><th>Total</th><th>Acierto</th><th>Completaría</th><th>Atado</th><th>Distinto</th><th>No leído</th><th>Sin atar</th><th>Otros</th><th>Bien</th></tr></thead><tbody>'
+    + r.tipos.map(o => { const v = k => o.v[k] || 0; const otros = o.cuenta - v('acierto') - v('completaría') - v('atado') - v('distinto') - v('no leído') - v('sin atar');
+      return '<tr><td>' + esc(PRUEBA_TIPOS[o.tipo] || o.tipo) + '</td><td>' + o.cuenta + '</td><td>' + v('acierto') + '</td><td>' + v('completaría') + '</td><td>' + v('atado') + '</td><td>' + (v('distinto') ? '<b style="color:var(--danger)">' + v('distinto') + '</b>' : 0) + '</td><td>' + v('no leído') + '</td><td>' + v('sin atar') + '</td><td>' + otros + '</td><td><b style="color:' + color(o.pct) + '">' + o.pct + ' %</b></td></tr>'; }).join('')
+    + '</tbody></table></div>';
+  if(r.mirar.length) h += '<details class="ac-det" style="margin-top:8px;"><summary>Lo que hay que mirar (' + r.mirar.length + ')</summary><div class="table-wrap"><table class="ac-tabla"><thead><tr><th>Fecha</th><th>Archivo</th><th>Veredicto</th><th>n8n leyó</th><th>La planilla dice</th><th>Detalle</th></tr></thead><tbody>'
+    + r.mirar.slice(0, 200).map(x => '<tr><td>' + esc(String(x.fecha).slice(0, 10)) + '</td><td>' + esc(x.archivo) + '<div class="n8-leg">' + esc(PRUEBA_TIPOS[x.tipo] || x.tipo) + ' · ' + esc(x.remitente.replace(/<.*>/, '').trim()) + '</div></td><td><b>' + esc(x.veredicto) + '</b></td><td>' + esc(x.numero) + (x.filas ? '<div class="n8-leg">fila ' + esc(x.filas) + '</div>' : '') + '</td><td>' + esc(x.dice) + '</td><td>' + esc(x.detalle) + '</td></tr>').join('')
+    + '</tbody></table></div></details>';
+  return h;
+}
+
+// ── Prueba con el pasado (Etapa 1): lo que extrajo n8n de las solicitudes de Argen / Nutrin contra la fila real de la planilla ──
+// Lo escribe el workflow manual "Prueba con el pasado (Etapa 1.5)" en PRUEBA_ETAPA1; la fila 6 de N8N_ESTADO trae el resumen.
+// Clase: campo | desacuerdo | sin fila | falla | vacío. Los desacuerdos traen su negocio (de la planilla donde estaba la carga).
+const PRUEBA_E1_CAMPOS = { product: 'Producto', port: 'Puerto', vessel: 'Buque', shipping: 'Naviera', etd: 'ETD', eta: 'ETA (informativo)', tns: 'Toneladas', priceFOB: 'Price FCA',
+  packing: 'Packing', exporter: 'Exporter', lots: 'Lotes', contractProv: 'Contract Proveedor', consol: 'Consolidación', containers: 'Contenedores' };
+function pruebaEtapa1Html(){
+  const esc = t => String(t === undefined || t === null ? '' : t).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
+  const neg = docTextoDeNegocio(negocioActivo);
+  const est = (_n8n.estado || []).find(x => x.wf === 'prueba_etapa1');
+  const F = _n8n.pruebaE1 || [];
+  let h = '<div class="n8-sec">Prueba con el pasado · Etapa 1 <small>· lo que n8n extrajo de las solicitudes de Argen y Nutrin contra la carga real</small></div>';
+  if(!F.length || !est) return h + '<div class="n8-leg">Todavía no se corrió la prueba de la Etapa 1 (workflow "Prueba con el pasado (Etapa 1.5)" en n8n).</div>';
+  const d = est.detalle || {};
+  const campos = F.filter(f => f[0] === 'campo');
+  const desac = F.filter(f => f[0] === 'desacuerdo' && docNegocioDeTexto(f[1]) === negocioActivo);
+  const sinFila = F.filter(f => f[0] === 'sin fila'), fallas = F.filter(f => f[0] === 'falla');
+  const pct = (String(d.acierto || '').match(/^(\d+)%/) || [])[1];
+  const color = p => p >= 95 ? 'var(--ok)' : p >= 85 ? 'var(--warn)' : 'var(--danger)';
+  h += '<div class="n8-duo"><div class="n8-box"><h4>Datos bien extraídos</h4><div class="n8-big"' + (pct ? ' style="color:' + color(+pct) + '"' : '') + '>' + (pct ? pct + ' %' : '—') + ' <small>' + esc(String(d.acierto || '').replace(/^\d+%\s*/, '')) + '</small></div>'
+    + '<div class="n8-leg">' + (d.mailsLeidos || 0) + ' mails · ' + (d.cargasExtraidas || 0) + ' cargas · ' + (d.conFila || 0) + ' encontradas en la planilla · ' + (d.sinFila || 0) + ' sin encontrar · ' + (d.fallas || 0) + ' mails que fallaron'
+    + '<br>Costo de IA de la prueba: US$ ' + String(d.costoUsd || 0).replace('.', ',') + ' (tope US$ ' + (d.topeUsd || '?') + ') · corrida ' + esc(String(est.fecha).slice(0, 16).replace('T', ' ')) + '</div></div>'
+    + '<div class="n8-box"><h4>Por dato <small>(AXT y Buzaram juntos)</small></h4>' + campos.map(f => '<div class="n8-leg"><b>' + esc(PRUEBA_E1_CAMPOS[f[3]] || f[3]) + '</b>: ' + esc(f[7]) + '</div>').join('') + '</div></div>';
+  if(desac.length) h += '<details class="ac-det" style="margin-top:8px;"><summary>Datos que no coinciden con la planilla de ' + esc(neg) + ' (' + desac.length + ')</summary><div class="table-wrap"><table class="ac-tabla"><thead><tr><th>Origen</th><th>Booking / contrato</th><th>Dato</th><th>n8n extrajo</th><th>La planilla dice</th></tr></thead><tbody>'
+    + desac.map(f => '<tr><td>' + esc(f[2]) + '</td><td>' + esc(f[6]) + '</td><td>' + esc(f[3]) + '</td><td>' + esc(f[4]) + '</td><td>' + esc(f[5]) + '</td></tr>').join('') + '</tbody></table></div></details>';
+  if(sinFila.length || fallas.length) h += '<details class="ac-det"><summary>Sin carga en la planilla (' + sinFila.length + ') y mails que fallaron (' + fallas.length + ')</summary><div class="n8-det">'
+    + sinFila.concat(fallas).map(f => '<div>• ' + esc(f[0]) + ' · ' + esc(f[2]) + ' · ' + esc(f[6]) + ' · ' + esc(f[7]) + '</div>').join('') + '</div></details>';
+  return h;
+}
+
 function n8nPanelHtml(ahora){
   ahora = ahora || Date.now();
   const esc = t => String(t === undefined || t === null ? '' : t).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
@@ -16479,6 +16568,7 @@ function n8nPanelHtml(ahora){
       + '<div class="n8-leg">' + (r.campos.length ? 'Lo que más corregís: ' + r.campos.slice(0, 3).map(([k, n]) => esc(k) + ' (' + n + ')').join(', ') + ' · ' : '') + 'costo de IA del mes US$ ' + (Math.round(r.costoMes * 100) / 100).toFixed(2).replace('.', ',') + ' · ' + r.porAprobar + ' por aprobar</div>'
       : '<div class="n8-leg">' + (r ? 'Todavía no hay cargas preparadas resueltas.' + (r.porAprobar ? ' ' + r.porAprobar + ' por aprobar en Pendientes.' : '') : 'No pude leer AUTO_CARGAS.') + '</div>')
     + '<div class="n8-leg">Pasa a automático con 40 resueltas y 95 % sin corrección.</div></div></div>';
+  h += pruebaHtml(ahora) + pruebaEtapa1Html();
   // 5
   h += '<div class="n8-sec">5 · Qué cambiamos en n8n y qué control se sumó</div><div class="n8-log"><div class="n8-lg n8-lgh"><span>Fecha</span><span>Cambio en n8n</span><span>Control en este panel</span></div>'
     + N8N_CAMBIOS.map(c => '<div class="n8-lg"><span>' + esc(c.fecha) + '</span><span>' + esc(c.cambio) + (c.versiones.length ? ' <small>(' + esc(c.versiones.join(', ')) + ')</small>' : '') + '</span><span>' + esc(c.control) + '</span></div>').join('') + '</div>';
