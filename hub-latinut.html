@@ -16244,6 +16244,7 @@ const N8N_WORKFLOWS = [
 ];
 // Qué cambiamos en n8n y qué control se sumó en este panel. El más nuevo arriba. "version" = la que anota la Marca de corrida.
 const N8N_CAMBIOS = [
+  { fecha: '19/11/2026', versiones: ['docs-2026-11-19-ia'], cambio: 'Documentos: lector de imagen con IA (Claude Opus 5.5, esfuerzo medio) para los BL escaneados, que no traen texto. Hasta 3 por vuelta y tope de US$ 5 por mes; cada documento se lee una sola vez. El número leído se anota solo si coincide con el booking o el BL de la carga; si no, queda para revisar', control: 'BL escaneados · lector con IA: gasto del mes contra el tope y cantidad de lecturas' },
   { fecha: '19/11/2026', versiones: [], cambio: 'Documentos: si el documento trae un dato (BL, invoice de AXT) distinto al que ya tiene la celda, no se escribe y llega un mail con lo que hay escrito y lo que trae el documento. Va a quien tenga «Sí» en la columna Aviso_n8n de CONTACTOS, un mail por negocio, una vez por documento', control: 'Celdas con otro dato: a quién le llega el aviso (o que no le llega a nadie) y las celdas así de los últimos 7 días' },
   { fecha: '19/11/2026', versiones: [], cambio: 'Documentos: una invoice de AXT por contenedor (fila con varios contenedores del mismo booking, como Manila/Cebu) se controla por su parte: sus lotes tienen que estar en la fila y las toneladas ser las de sus contenedores; si la celda ya dice «15036, 15035» cuenta como cargada. Y al atar por lote se cuentan los lotes por carga (filas del mismo contenedor juntas), no fila por fila', control: 'Documentos: las invoices por contenedor (15035/15036, 15075/15076) ya no quedan en «no coincide»; la FC 1350 queda en las filas 913 y 914' },
   { fecha: '19/11/2026', versiones: [], cambio: 'Documentos, arreglos de la prueba de 90 días: la invoice a «AGRICULTURE BUSINESS WORLD» es del cliente ABW; hasta 5 centavos por tn en el costo logístico es redondeo; BL de Maersk/COSCO/ONE con número solo de dígitos (manda el número del nombre del archivo; un contenedor SUDU ya no se toma como BL); «COSU6465047140» y «6465047140» son el mismo BL; proformas y planillas del despachante de Nutrin se atan por la referencia NU172 (Contract Proveedor); una FC del proveedor cuyo lote está en dos cargas va a la que ya tiene esa factura, y si ninguna la tiene queda para revisar', control: 'Documentos: menos «no coincide» de ABW y del costo logístico, BL de Maersk anotados, proformas NU172 atadas a su carga; y la prueba con el pasado vuelta a correr para comparar' },
@@ -16531,6 +16532,13 @@ function pruebaEtapa1Html(){
 
 // Aviso por mail de n8n cuando una celda ya tiene OTRO dato del que trae el documento (no se pisa): a quien llega
 // (hoja CONTACTOS, columna Aviso_n8n) y que celdas quedaron asi en los ultimos 7 dias (DOCUMENTOS, detalle "no se pisa").
+// Gasto del lector de imagen con IA en el mes: sale del detalle de la ultima corrida de Documentos (N8N_ESTADO, fila 2)
+function n8nLectorIA(estado){
+  const e = (estado || []).find(x => x.wf === 'documentos');
+  const ia = e && e.detalle && e.detalle.ia;
+  if (!ia || !ia.mes || ia.mes !== new Date().toISOString().slice(0, 7)) return null;
+  return { usd: +ia.usd || 0, topeUsd: +ia.topeUsd || 5, lecturas: +ia.lecturas || 0 };
+}
 function n8nAvisoConflictos(docs, negocio, contactos, ahora){
   const para = (contactos || []).filter(c => c.avisoN8n && c.email).map(c => c.email);
   const lista = (docs || []).filter(d => d.negocio === negocio && /no se pisa/i.test(d.detalle || ''))
@@ -16570,6 +16578,12 @@ function n8nPanelHtml(ahora){
       : '<div class="n8-aviso">Nadie recibe este aviso: en la hoja CONTACTOS agregá la columna <b>Aviso_n8n</b> y poné «Sí» en tu fila.</div>')
     + (ac.lista.length ? '<div class="n8-det">' + ac.lista.slice(0, 20).map(d => '<div>• ' + esc(String(d.procesado || '').slice(0, 10)) + ' · <b>' + esc(d.nombre || d.tipo) + '</b> · ' + esc(d.detalle) + '</div>').join('') + '</div>'
       : '<div class="n8-leg">Ninguna en los últimos 7 días (' + esc(neg) + ').</div>') + '</div>';
+  // Lector de imagen con IA (BL escaneados): gasto del mes contra el tope (lo anota "Marca de corrida" en N8N_ESTADO)
+  const iaE = n8nLectorIA(_n8n.estado);
+  h += '<div class="n8-box" style="margin-top:10px;"><h4>BL escaneados · lector con IA (Claude Opus 5.5)</h4>'
+    + (iaE ? '<div class="n8-big"' + (iaE.usd >= iaE.topeUsd ? ' style="color:var(--danger)"' : '') + '>US$ ' + iaE.usd.toFixed(2).replace('.', ',') + ' <small>de US$ ' + iaE.topeUsd + ' este mes · ' + iaE.lecturas + ' lectura' + (iaE.lecturas === 1 ? '' : 's') + '</small></div>'
+      + '<div class="n8-leg">' + (iaE.usd >= iaE.topeUsd ? 'Tope alcanzado: hasta el mes que viene los BL escaneados quedan para revisar.' : 'Lee solo los BL que vienen escaneados (sin texto). Su número se anota solo si coincide con el booking o el BL de la carga.') + '</div>'
+      : '<div class="n8-leg">Todavía no leyó ningún BL escaneado este mes.</div>') + '</div>';
   // 3
   const vf = _docsListo ? n8nVerificacion(_docs || [], negocioActivo, allRowsAll || [], _n8n.lotesOtro, ahora) : [];
   if(vf.length) h += '<div class="n8-sec">3 · Lo que el hub verifica por su cuenta <small>· no le cree a n8n: lo compara con la planilla de ' + esc(neg) + ' (30 días)</small></div><div class="n8-cruz">'
