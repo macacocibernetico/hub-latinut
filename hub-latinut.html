@@ -554,6 +554,45 @@ body.t-redim{cursor:col-resize;user-select:none;}
 .docs-menu .dm-acc button.prim{color:var(--accent);font-weight:700;}
 /* Flete de una carga partida: va en la otra fila */
 .t-fl.en_otra{color:var(--text3);font-style:italic;}
+/* Panel Automatizacion: control de n8n */
+.n8-sec{font-size:12px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--text3);margin:20px 0 8px;}
+.n8-sec:first-child{margin-top:0}.n8-sec small{font-weight:600;text-transform:none;letter-spacing:0;}
+.n8-aviso{background:var(--warn-light);border:1px solid var(--warn);color:var(--warn);border-radius:10px;padding:8px 12px;margin-bottom:8px;}
+.n8-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(300px,100%),1fr));gap:10px;}
+.n8-wf{background:var(--bg2);border:1px solid var(--border);border-left:4px solid var(--ok);border-radius:12px;padding:12px 14px;}
+.n8-wf.mal{border-left-color:var(--danger)}.n8-wf.ojo{border-left-color:var(--warn)}
+.n8-wf h3{font-size:15px;display:flex;gap:8px;align-items:center;margin:0;}
+.n8-dot{width:9px;height:9px;border-radius:50%;background:var(--ok);flex-shrink:0}.n8-wf.mal .n8-dot{background:var(--danger)}.n8-wf.ojo .n8-dot{background:var(--warn)}
+.n8-st{font-weight:700;margin:4px 0 2px;color:var(--ok)}.n8-wf.mal .n8-st{color:var(--danger)}.n8-wf.ojo .n8-st{color:var(--warn)}
+.n8-m{color:var(--text3);font-size:13px;line-height:1.5}.n8-m b{color:var(--text2)}.n8-av{color:var(--warn);font-weight:600}
+.n8-que{color:var(--text3);font-size:12px;margin-top:6px;border-top:1px solid var(--border);padding-top:6px;}
+.n8-etapas,.n8-cruz,.n8-log{background:var(--bg2);border:1px solid var(--border);border-radius:12px;overflow:hidden;}
+.n8-et>summary,.n8-cz>summary{list-style:none;cursor:pointer;}
+.n8-et>summary::-webkit-details-marker,.n8-cz>summary::-webkit-details-marker{display:none}
+.n8-et>summary{display:grid;grid-template-columns:28px 200px 70px 1fr 40px;gap:10px;align-items:center;padding:10px 14px;}
+.n8-et+.n8-et{border-top:1px solid var(--border)}
+.n8-n{width:24px;height:24px;border-radius:50%;background:var(--bg3);display:flex;align-items:center;justify-content:center;font-weight:700;font-size:12px;}
+.n8-t{font-weight:600}.n8-t small,.n8-tx small{display:block;font-weight:400;color:var(--text3);font-size:12px}
+.n8-c{font-size:20px;font-weight:700;font-variant-numeric:tabular-nums}
+.n8-chk{display:flex;flex-wrap:wrap;gap:6px}
+.n8-p{display:inline-flex;align-items:center;border-radius:99px;padding:2px 9px;font-size:12.5px;font-weight:600}
+.n8-p.ok{background:var(--ok-light);color:var(--ok)}.n8-p.ojo{background:var(--warn-light);color:var(--warn)}.n8-p.mal{background:var(--danger-light);color:var(--danger)}
+.n8-ver{color:var(--accent);font-weight:600;text-align:right}
+.n8-det{background:var(--bg3);padding:8px 14px 10px 52px;font-size:13px;color:var(--text2);border-top:1px dashed var(--border2);}
+.n8-det div{padding:2px 0}
+.n8-cz>summary{display:flex;gap:10px;align-items:baseline;padding:9px 14px;}
+.n8-cz+.n8-cz{border-top:1px solid var(--border)}
+.n8-i{width:18px;font-weight:700;text-align:center;flex-shrink:0}.n8-tx{flex:1}
+.n8-cz.ok .n8-i{color:var(--ok)}.n8-cz.ojo .n8-i{color:var(--warn)}.n8-cz.mal .n8-i{color:var(--danger)}
+.n8-duo{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.n8-box{background:var(--bg2);border:1px solid var(--border);border-radius:12px;padding:12px 14px}.n8-box h4{font-size:14px;margin:0 0 6px}
+.n8-big{font-size:26px;font-weight:700}.n8-big small{font-size:13px;color:var(--text3);font-weight:600}
+.n8-barra{height:10px;border-radius:6px;background:var(--bg3);overflow:hidden;display:flex;margin:8px 0}.n8-barra i{display:block;height:100%}
+.n8-leg{font-size:12.5px;color:var(--text3);line-height:1.6}
+.n8-nota{background:var(--accent-light);border-radius:10px;padding:8px 12px;margin-top:8px;font-size:13px}
+.n8-lg{display:grid;grid-template-columns:90px 1fr 1fr;gap:12px;padding:9px 14px;font-size:13px}.n8-lg+.n8-lg{border-top:1px solid var(--border)}
+.n8-lgh{background:var(--bg3);font-weight:700;font-size:12px;color:var(--text3)}
+@media(max-width:760px){.n8-duo{grid-template-columns:1fr}.n8-et>summary{grid-template-columns:28px 1fr 50px}.n8-chk{grid-column:2/4}.n8-ver{grid-column:2/4;text-align:left}}
 /* Total que no cierra con las Tns de su fila (carga dividida que quedo con los totales de la carga entera) */
 .t-grid td.t-tot-mal{background:var(--danger-light) !important;color:var(--danger);font-weight:600;box-shadow:inset 0 0 0 1px var(--danger);}
 .t-filtros-btn.t-tot-btn{color:var(--danger);border-color:var(--danger);}
@@ -5809,7 +5848,7 @@ function updateBadges(){
 
 // ─── VIEWS ───────────────────────────────────────────────────────────────────
 // Subtitulo de cada pantalla (debajo del titulo del encabezado).
-const _VIEW_SUBS = {automatizacion:'Qué tan bien prepara n8n las cargas y cuándo conviene pasarlas a automático.', contactos:'La hoja CONTACTOS: a quién le llega cada mail y qué forwarders tienen sus datos cargados.', alertas:'Lo que necesita tu atención hoy, ordenado por urgencia.', cargas:'Todas las cargas del negocio: seguimiento, documentos y cobros.', nueva_carga:'Cargá una operación nueva a partir de su contrato.', mails:'Gestioná y organizá los mails de tus cargas de forma rápida y eficiente.', cobranza:'Cobros estimados, vencimientos y reclamos.', cashflow:'Cobros y pagos estimados, por fecha.', liberaciones:'Cargas que llegan pronto y esperan la liberación del TELEX.', documentos:'Lo que llegó por mail de cada carga (BL, facturas, certificados): qué falta y qué necesita que lo mires.', pagares:'Pagarés enviados, firmados y pendientes.', contratos:'Contratos abiertos y cerrados, con sus condiciones.', tarifario:'Tarifas de flete por puerto y naviera.', log:'Registro de lo que se hizo desde el hub.', config:'Conexiones, claves y preferencias.'};
+const _VIEW_SUBS = {automatizacion:'Qué hace n8n en cada etapa, si está corriendo y si lo que hizo está bien.', contactos:'La hoja CONTACTOS: a quién le llega cada mail y qué forwarders tienen sus datos cargados.', alertas:'Lo que necesita tu atención hoy, ordenado por urgencia.', cargas:'Todas las cargas del negocio: seguimiento, documentos y cobros.', nueva_carga:'Cargá una operación nueva a partir de su contrato.', mails:'Gestioná y organizá los mails de tus cargas de forma rápida y eficiente.', cobranza:'Cobros estimados, vencimientos y reclamos.', cashflow:'Cobros y pagos estimados, por fecha.', liberaciones:'Cargas que llegan pronto y esperan la liberación del TELEX.', documentos:'Lo que llegó por mail de cada carga (BL, facturas, certificados): qué falta y qué necesita que lo mires.', pagares:'Pagarés enviados, firmados y pendientes.', contratos:'Contratos abiertos y cerrados, con sus condiciones.', tarifario:'Tarifas de flete por puerto y naviera.', log:'Registro de lo que se hizo desde el hub.', config:'Conexiones, claves y preferencias.'};
 function setViewSub(v){ const el = document.getElementById('view-sub'); if(el) el.textContent = _VIEW_SUBS[v] || ''; }
 function showView(view){
   if(view === 'nueva_carga' && currentView !== 'nueva_carga') cargasGuardadasSesion = [];
@@ -16161,22 +16200,11 @@ function acResumen(filas, ahora){
     campos: Object.entries(campos).sort((a, b) => b[1] - a[1]), semanas,
     otras: { ignoradas: filas.filter(f => f.estado === 'ignorada').length, listas: filas.filter(f => f.estado === 'lista_manual').length, sinMedir: filas.filter(f => f.estado === 'aprobada_sin_medir').length } };
 }
-function renderAutomatizacion(){
-  const cont = document.getElementById('content');
-  if(!accessToken){ cont.innerHTML = '<div class="empty"><div class="empty-icon">🤖</div><div style="margin-bottom:16px;">Conectate con Google para ver el tablero de automatización.</div><button class="btn primary" onclick="handleAuth()">Conectar con Google</button></div>'; return; }
-  if(!_ac.ok && !_ac.cargando){
-    if(_ac.intentado){ cont.innerHTML = '<div class="empty"><div class="empty-icon">⚠</div><div style="margin-bottom:16px;">No pude leer la hoja ' + AC_HOJA + ' de HUB LATINUT.</div><button class="btn" onclick="acRecargar()">Reintentar</button></div>'; return; }
-    _ac.cargando = true;
-    cont.innerHTML = '<div class="spinner"><div class="spin"></div> Leyendo la hoja ' + AC_HOJA + '…</div>';
-    acCargar().then(() => { _ac.cargando = false; if(currentView === 'automatizacion') renderAutomatizacion(); });
-    return;
-  }
+function acTableroHtml(){
+  if(!_ac.ok) return '<div class="ac-nota">No pude leer la hoja ' + AC_HOJA + ' de HUB LATINUT.</div>';
+  if(_ac.existe === false) return '<div class="ac-nota">Todavía no existe la hoja ' + AC_HOJA + '. <button class="btn" onclick="acCrearYMostrar()">Crear la hoja ' + AC_HOJA + '</button></div>';
   const esc = t => String(t === undefined || t === null ? '' : t).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
-  const link = cfg.hubSheetId ? '<a class="btn" target="_blank" rel="noopener" href="https://docs.google.com/spreadsheets/d/' + esc(cfg.hubSheetId) + '/edit">Abrir la hoja</a>' : '';
-  if(_ac.existe === false){
-    cont.innerHTML = '<div class="empty"><div class="empty-icon">🤖</div><div style="margin-bottom:6px;"><b>Todavía no existe la hoja ' + AC_HOJA + '.</b></div><div style="max-width:560px;margin:0 auto 16px;color:var(--text3);font-size:13px;">Es donde n8n deja las cargas que prepara y donde el hub anota qué corregís. Se crea una sola vez, en la planilla HUB LATINUT, y no toca las cargas ni MAILS_CARGA.</div><button class="btn primary" onclick="acCrearYMostrar()">Crear la hoja ' + AC_HOJA + '</button></div>';
-    return;
-  }
+  const link = '';
   const r = acResumen(_ac.filas);
   const usd = x => 'US$ ' + (Math.round(x * 100) / 100).toFixed(2).replace('.', ',');
   const pill = e => '<span class="ac-p ' + e.clase + '">' + esc(e.texto) + '</span>';
@@ -16195,10 +16223,271 @@ function renderAutomatizacion(){
   h += '<div class="ac-nota" style="margin-top:14px;">Fuera de la cuenta: ' + r.otras.ignoradas + ' ignorada' + (r.otras.ignoradas === 1 ? '' : 's') + ', ' + r.otras.listas + ' marcada' + (r.otras.listas === 1 ? '' : 's') + ' como lista a mano' + (r.otras.sinMedir ? ', ' + r.otras.sinMedir + ' aprobada' + (r.otras.sinMedir === 1 ? '' : 's') + ' sin poder medir' : '') + '.</div>'
     + '<div style="display:flex;gap:8px;flex-wrap:wrap;margin:12px 0;"><button class="btn" onclick="acRecargar()">↻ Recargar</button>' + link + '</div>'
     + '<details class="ac-det"><summary>Cómo se anota cada carga (para configurar n8n)</summary><div>Hoja <b>' + AC_HOJA + '</b>, fila 1: ' + esc(AC_ENCABEZADOS.join(' | ')) + '.<br>n8n escribe: Clave (<code>mid:&lt;Message-ID del mail&gt;|&lt;archivo o planilla&gt;</code>), Creada, Tipo (argen o nutrin), Asunto, Version, Confianza (alta, media o baja), Avisos, Propuesta (JSON) y Costo_USD, con Estado = <code>propuesta</code>. El hub completa Estado, Resuelta, Usuario, Corregidos, Final, Fila, Negocio y Detalle. Detalle en <code>docs/n8n-etapa1.md</code>.</div></details>';
-  cont.innerHTML = h;
+  return h;
 }
-async function acRecargar(){ _ac.ok = false; _ac.intentado = false; _ac.cargando = false; if(currentView === 'automatizacion') renderAutomatizacion(); }
+async function acRecargar(){ _ac.ok = false; _ac.intentado = false; _ac.cargando = false; _n8n.ok = false; _n8n.cargando = false; if(!_docsCargando){ _docsListo = false; _docsError = ''; } if(currentView === 'automatizacion') renderAutomatizacion(); }
 async function acCrearYMostrar(){ if(await acCrearHoja()) renderAutomatizacion(); }
+
+// ─── PANEL AUTOMATIZACION: CONTROL DE n8n ────────────────────────────────────
+// De un vistazo: ¿esta corriendo cada workflow?, ¿que hizo cada etapa?, ¿que verifica el hub por su cuenta (sin creerle a n8n)?,
+// n8n contra el Apps Script, la Etapa 1 y el registro de cambios. Regla de trabajo: cada cambio en n8n suma su control aca y una
+// linea en N8N_CAMBIOS (si n8n trae una version que no esta en la lista, el panel lo avisa).
+// Fuentes (todo de la planilla HUB LATINUT, solo lectura): N8N_ESTADO y N8N_CORRIDAS (las escribe la "Marca de corrida" de cada
+// workflow), DOCUMENTOS, FC_PARALELO, AUTO_CARGAS; y la planilla de cargas del negocio activo (mas los lotes del otro negocio
+// para detectar mezclas). Las etapas y la verificacion son del negocio activo: AXT y Buzaram nunca se mezclan.
+const N8N_WORKFLOWS = [
+  { wf: 'documentos', nombre: 'Documentos de las cargas', cadaMin: 10, que: 'Lee BL, facturas y certificados de los mails, los ata a su carga, anota los números en la planilla y los sube a Drive. También compara las FC del proveedor con el Apps Script.' },
+  { wf: 'etapa1', nombre: 'Preparar cargas desde los mails', cadaMin: 5, que: 'Lee las solicitudes de Argen y Nutrin y deja la carga preparada en Pendientes (no escribe en las cargas).' }
+];
+// Qué cambiamos en n8n y qué control se sumó en este panel. El más nuevo arriba. "version" = la que anota la Marca de corrida.
+const N8N_CAMBIOS = [
+  { fecha: '19/11/2026', versiones: ['docs-2026-11-19', 'etapa1-2026-11-19'], cambio: 'Marca de cada corrida y de cada error (hojas N8N_ESTADO y N8N_CORRIDAS)', control: '¿Está corriendo?: última corrida, qué hizo, aviso si no corre o falla' },
+  { fecha: '18/11/2026', versiones: [], cambio: 'Reintentos por Message-ID de los documentos que quedaron para revisar o sin Drive', control: 'Etapas: "para revisar hace más de 2 días" y "sin subir a Drive"' },
+  { fecha: '17/11/2026', versiones: [], cambio: 'FC del proveedor leídas también por n8n, en paralelo con el Apps Script (hoja FC_PARALELO)', control: 'n8n contra el Apps Script: iguales, distintas y días seguidos sin distintas' },
+  { fecha: '17/11/2026', versiones: [], cambio: 'Circuito de documentos: atar a la carga, anotar en la planilla, subir a Drive (hoja DOCUMENTOS)', control: 'Etapas del circuito y verificación cruzada con la planilla' },
+  { fecha: '16/11/2026', versiones: [], cambio: 'Etapa 1: preparar cargas desde los mails (hoja AUTO_CARGAS)', control: 'Tablero de la Etapa 1 (sin corrección, campos que más se corrigen)' }
+];
+const N8N_VERSIONES_CONOCIDAS = new Set([].concat(...N8N_CAMBIOS.map(c => c.versiones)));
+let _n8n = { ok: false, cargando: false, error: '', estado: [], corridas: [], fc: [], lotesOtro: null };
+
+function n8nFecha(x){
+  const t = String(x || '').trim();
+  if(!t) return null;
+  const d = new Date(/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}$/.test(t) ? t.replace(' ', 'T') + 'Z' : t);   // DOCUMENTOS anota "AAAA-MM-DD HH:MM" en UTC
+  if(!isNaN(d.getTime())) return d;
+  const p = parseDate(t); return p || null;
+}
+function n8nHace(ms){
+  const m = Math.round(ms / 60000);
+  if(m < 1) return 'recién';
+  if(m < 60) return 'hace ' + m + ' min';
+  const h = Math.round(m / 60);
+  if(h < 48) return 'hace ' + h + ' h';
+  return 'hace ' + Math.round(h / 24) + ' días';
+}
+const n8nFila = f => ({ wf: String(f[0] || '').trim(), fecha: f[1] || '', version: f[2] || '', resultado: String(f[3] || '').trim().toLowerCase(),
+  mails: +f[4] || 0, documentos: +f[5] || 0, escritos: +f[6] || 0, drive: +f[7] || 0, avisos: f[8] || '', detalle: (() => { try { return JSON.parse(f[9] || '{}') || {}; } catch(e){ return {}; } })() });
+
+async function n8nCargar(){
+  _n8n.error = '';
+  const h = { headers: { Authorization: 'Bearer ' + accessToken } };
+  const base = 'https://sheets.googleapis.com/v4/spreadsheets/' + cfg.hubSheetId + '/values:batchGet?ranges=' + encodeURIComponent('N8N_ESTADO!A2:J10')
+    + '&ranges=' + encodeURIComponent('N8N_CORRIDAS!A2:J') + '&ranges=' + encodeURIComponent('FC_PARALELO!A2:P');
+  try{
+    const r = await fetch(base, h);
+    if(r.ok){
+      const j = await r.json(), vr = j.valueRanges || [];
+      _n8n.estado = ((vr[0] || {}).values || []).map(n8nFila).filter(x => x.wf);
+      _n8n.corridas = ((vr[1] || {}).values || []).map(n8nFila).filter(x => x.wf);
+      _n8n.fc = ((vr[2] || {}).values || []).filter(f => f && f[0]);
+    } else {
+      // Si falta alguna hoja, Google rechaza todo el pedido: se leen por separado para mostrar lo que haya.
+      const una = async rango => { const x = await fetch('https://sheets.googleapis.com/v4/spreadsheets/' + cfg.hubSheetId + '/values/' + encodeURIComponent(rango), h); return x.ok ? ((await x.json()).values || []) : null; };
+      const e = await una('N8N_ESTADO!A2:J10'), c = await una('N8N_CORRIDAS!A2:J'), f = await una('FC_PARALELO!A2:P');
+      _n8n.estado = (e || []).map(n8nFila).filter(x => x.wf); _n8n.corridas = (c || []).map(n8nFila).filter(x => x.wf); _n8n.fc = (f || []).filter(x => x && x[0]);
+      if(e === null) _n8n.error = 'Todavía no existe la hoja N8N_ESTADO en HUB LATINUT: la crea n8n en su primera corrida con la marca.';
+    }
+  }catch(err){ _n8n.error = 'No pude leer las hojas de n8n: ' + err.message; }
+  if(!_docsListo && !_docsError){ try{ await cargarDocumentos(); }catch(e){} }
+  if(!_ac.ok){ try{ await acCargar(); }catch(e){} }
+  try{ _n8n.lotesOtro = await n8nLotesOtroNegocio(); }catch(e){ _n8n.lotesOtro = null; }
+  _n8n.ok = true;
+}
+// Lotes de la planilla del OTRO negocio, para detectar un documento atado a una carga del negocio equivocado.
+async function n8nLotesOtroNegocio(){
+  const otro = negocioActivo === 'buzaram' ? { id: cfg.sheetId, hoja: cfg.sheetName || 'Cargas' } : { id: cfg.buzaramSheetId, hoja: 'CARGAS' };
+  if(!otro.id) return null;
+  const h = { headers: { Authorization: 'Bearer ' + accessToken } };
+  const r1 = await fetch('https://sheets.googleapis.com/v4/spreadsheets/' + otro.id + '/values/' + encodeURIComponent(otro.hoja + '!2:2'), h);
+  if(!r1.ok) return null;
+  const enc = (((await r1.json()).values || [])[0] || []).map(x => String(x || '').trim().toLowerCase());
+  const i = enc.indexOf('lots');
+  if(i < 0) return null;
+  const L = colIndexToLetter(i);
+  const r2 = await fetch('https://sheets.googleapis.com/v4/spreadsheets/' + otro.id + '/values/' + encodeURIComponent(otro.hoja + '!' + L + '3:' + L), h);
+  if(!r2.ok) return null;
+  const set = new Set();
+  ((await r2.json()).values || []).forEach(f => n8nLotes(f[0]).forEach(l => set.add(l)));
+  return set;
+}
+const n8nLotes = t => String(t || '').toUpperCase().split(/[,;\/\n]+/).map(x => x.replace(/\(.*?\)/g, '').replace(/\s+/g, '').trim()).filter(x => x.length >= 4);
+
+// 1) ¿Está corriendo?
+function n8nEstadoWorkflows(estado, corridas, ahora){
+  ahora = ahora || Date.now();
+  return N8N_WORKFLOWS.map(w => {
+    const e = estado.find(x => x.wf === w.wf);
+    const hist = corridas.filter(x => x.wf === w.wf);
+    const ultAct = hist.length ? hist[hist.length - 1] : null;
+    const o = { wf: w.wf, nombre: w.nombre, que: w.que, cadaMin: w.cadaMin, e, ultAct };
+    if(!e || !e.fecha){ o.clase = 'ojo'; o.texto = 'Todavía no anotó ninguna corrida'; return o; }
+    const d = n8nFecha(e.fecha), ms = d ? ahora - d.getTime() : Infinity;
+    o.hace = n8nHace(ms);
+    if(e.resultado === 'error'){ o.clase = 'mal'; o.texto = '✗ Falló ' + o.hace; }
+    else if(ms > w.cadaMin * 3 * 60000){ o.clase = 'mal'; o.texto = '⚠ Sin corridas ' + o.hace + ' (debería ser cada ' + w.cadaMin + ' min)'; }
+    else if(e.avisos){ o.clase = 'ojo'; o.texto = 'Funcionando, con avisos · última corrida ' + o.hace; }
+    else { o.clase = 'ok'; o.texto = 'Funcionando · última corrida ' + o.hace; }
+    o.versionNueva = e.version && !N8N_VERSIONES_CONOCIDAS.has(e.version);
+    o.errores7 = hist.filter(x => { const f = n8nFecha(x.fecha); return x.resultado === 'error' && f && ahora - f.getTime() < 7 * 864e5; }).length;
+    return o;
+  });
+}
+
+// 2) Etapas del circuito de documentos (negocio activo, ultimos 7 dias). Los documentos sin negocio todavia se ven en los dos.
+function n8nDocsDelNegocio(docs, negocio, ahora, dias){
+  ahora = ahora || Date.now();
+  return (docs || []).filter(d => (d.negocio === negocio || !d.negocio)).filter(d => { const f = n8nFecha(d.procesado) || n8nFecha(d.fechaMail); return !dias || !f || ahora - f.getTime() <= dias * 864e5; });
+}
+const n8nVaADrive = d => d.filas.length && ['ignorado', 'reemplazada', 'descartado'].indexOf(d.estado) < 0;
+const n8nAnotados = d => String(d.anotado || '').split(',').map(x => x.trim()).filter(Boolean).map(x => { const m = x.match(/^(.*) fila (\d+)$/); return m ? { columna: m[1].trim(), fila: +m[2] } : null; }).filter(Boolean);
+function n8nEtapasDocs(docs, negocio, ahora){
+  ahora = ahora || Date.now();
+  const L = n8nDocsDelNegocio(docs, negocio, ahora, 7);
+  const viejo = d => { const f = n8nFecha(d.procesado) || n8nFecha(d.fechaMail); return f && ahora - f.getTime() > 2 * 864e5; };
+  const mails = new Set(L.map(d => String(d.clave).split('|')[0]));
+  const ign = L.filter(d => d.estado === 'ignorado'), desc = L.filter(d => d.estado === 'descartado'), sinTipo = L.filter(d => !d.tipo && d.estado !== 'ignorado');
+  const atados = L.filter(d => d.filas.length && ['ignorado', 'descartado'].indexOf(d.estado) < 0);
+  const revisar = L.filter(d => d.estado === 'revisar');
+  const fcAxt = L.filter(d => d.tipo === 'fc_axt' && d.estado !== 'reemplazada');
+  const noCoinc = fcAxt.filter(d => d.estado === 'no_coincide');
+  const anot = L.reduce((a, d) => a + n8nAnotados(d).length, 0);
+  const noAnot = L.filter(d => /no se anotó/.test(d.detalle));
+  const drive = L.filter(n8nVaADrive), sinDrive = drive.filter(d => !d.drive);
+  const e = [];
+  e.push({ k: 'mails', titulo: 'Buscar mails', sub: 'Gmail, con reintentos', n: mails.size, checks: [{ c: 'ok', t: '✓ ' + mails.size + ' mail' + (mails.size === 1 ? '' : 's') + ' con documentos' }], lista: [] });
+  e.push({ k: 'leer', titulo: 'Leer el documento', sub: 'tipo y número (BL, FC, certificados)', n: L.length,
+    checks: [{ c: 'ok', t: '✓ ' + (L.length - ign.length - sinTipo.length) + ' leídos' }].concat(ign.length ? [{ c: 'ok', t: ign.length + ' no eran documentos de carga' }] : [], desc.length ? [{ c: 'ok', t: desc.length + ' descartados a mano' }] : [], sinTipo.length ? [{ c: 'mal', t: '✗ ' + sinTipo.length + ' sin reconocer' }] : []),
+    lista: sinTipo });
+  e.push({ k: 'atar', titulo: 'Atar a su carga', sub: 'por lote, contrato, contenedor', n: atados.length,
+    checks: [{ c: 'ok', t: '✓ ' + atados.filter(d => d.estado !== 'revisar').length + ' atados' }].concat(revisar.length ? [{ c: 'ojo', t: revisar.length + ' para revisar' }] : [], revisar.filter(viejo).length ? [{ c: 'mal', t: revisar.filter(viejo).length + ' hace más de 2 días' }] : []),
+    lista: revisar });
+  if(negocio !== 'buzaram') e.push({ k: 'fc', titulo: 'Controlar la FC de AXT', sub: 'contra el borrador del hub', n: fcAxt.length,
+    checks: [{ c: 'ok', t: '✓ ' + (fcAxt.length - noCoinc.length) + ' coinciden' }].concat(noCoinc.length ? [{ c: 'mal', t: '✗ ' + noCoinc.length + ' no coincide' + (noCoinc.length === 1 ? '' : 'n') }] : []),
+    lista: noCoinc });
+  e.push({ k: 'escribir', titulo: 'Escribir en la planilla', sub: 'solo celdas vacías, relee antes', n: anot,
+    checks: [{ c: 'ok', t: '✓ ' + anot + ' anotado' + (anot === 1 ? '' : 's') }, { c: 'ok', t: L.filter(d => d.estado === 'ya_estaba').length + ' ya estaban' }].concat(noAnot.length ? [{ c: 'ojo', t: noAnot.length + ' no se pudieron anotar' }] : []),
+    lista: noAnot });
+  e.push({ k: 'drive', titulo: 'Subir a Drive', sub: 'carpeta de cada carga', n: drive.length,
+    checks: [{ c: 'ok', t: '✓ ' + (drive.length - sinDrive.length) + ' subidos' }].concat(sinDrive.length ? [{ c: 'ojo', t: sinDrive.length + ' pendientes (reintenta solo)' }] : []),
+    lista: sinDrive });
+  return e;
+}
+
+// 3) Lo que el hub verifica por su cuenta: compara lo que dice DOCUMENTOS con la planilla real.
+function n8nVerificacion(docs, negocio, filas, lotesOtro, ahora){
+  ahora = ahora || Date.now();
+  const L = n8nDocsDelNegocio(docs, negocio, ahora, 30).filter(d => d.negocio === negocio);
+  const porFila = new Map((filas || []).map(r => [r._sheetRow, r]));
+  const enc = (encabezadosCargas() || []).map(x => String(x || '').trim().toLowerCase());
+  const dig = t => String(t || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+  const out = [];
+  // a) negocio
+  const cruzados = lotesOtro ? L.filter(d => n8nLotes(d.lotes).some(l => lotesOtro.has(l))) : [];
+  out.push(!lotesOtro ? { c: 'ojo', titulo: 'AXT y Buzaram separados', sub: 'No pude leer la planilla del otro negocio para comparar.', lista: [] }
+    : cruzados.length ? { c: 'mal', titulo: cruzados.length + ' documento' + (cruzados.length === 1 ? '' : 's') + ' con lotes que también están en ' + (negocio === 'buzaram' ? 'AXT' : 'Buzaram'), sub: 'Puede estar atado al negocio equivocado: revisalo.', lista: cruzados }
+    : { c: 'ok', titulo: 'AXT y Buzaram separados', sub: 'Los ' + L.length + ' documentos de ' + docTextoDeNegocio(negocio) + ' (30 días) tienen lotes que no están en la planilla del otro negocio.', lista: [] });
+  // b) lo anotado sigue en la planilla
+  let total = 0; const cambiados = [];
+  L.forEach(d => n8nAnotados(d).forEach(a => {
+    total++;
+    const r = porFila.get(a.fila), c = enc.indexOf(a.columna.toLowerCase());
+    const v = r && c >= 0 ? String(r[c] || '').trim() : '';
+    if(!r || c < 0 || (d.numero && dig(v).indexOf(dig(d.numero)) < 0)) cambiados.push(Object.assign({}, d, { _nota: 'fila ' + a.fila + ' · ' + a.columna + ': n8n puso ' + d.numero + ', hoy dice ' + (v || '(vacío)') }));
+  }));
+  out.push(cambiados.length ? { c: 'ojo', titulo: cambiados.length + ' número' + (cambiados.length === 1 ? '' : 's') + ' anotado' + (cambiados.length === 1 ? '' : 's') + ' por n8n ya no está' + (cambiados.length === 1 ? '' : 'n') + ' igual en la planilla', sub: '¿Lo leyó mal n8n o se corrigió a mano después?', lista: cambiados }
+    : { c: 'ok', titulo: 'Lo que n8n anotó sigue en la planilla', sub: total + ' de ' + total + ' números están en la celda donde dice que los escribió.', lista: [] });
+  // c) atado a una fila que ya no coincide (el lote no esta en esa fila)
+  const desatados = [];
+  L.filter(d => d.filas.length && n8nLotes(d.lotes).length && ['ignorado', 'descartado', 'reemplazada'].indexOf(d.estado) < 0).forEach(d => {
+    const ls = n8nLotes(d.lotes);
+    const mal = d.filas.filter(n => { const r = porFila.get(n); return !r || !n8nLotes(r[COL.LOTS]).some(l => ls.indexOf(l) >= 0); });
+    if(mal.length) desatados.push(Object.assign({}, d, { _nota: 'lote ' + d.lotes + ' · fila' + (mal.length > 1 ? 's ' : ' ') + mal.join(', ') + (mal.some(n => !porFila.get(n)) ? ' (ya no existe)' : ' hoy tiene otro lote') }));
+  });
+  out.push(desatados.length ? { c: 'mal', titulo: desatados.length + ' documento' + (desatados.length === 1 ? '' : 's') + ' atado' + (desatados.length === 1 ? '' : 's') + ' a una fila que ya no coincide', sub: 'El lote del documento no está en esa fila (se movió la carga o se ató mal).', lista: desatados }
+    : { c: 'ok', titulo: 'Cada documento está en la fila de su lote', sub: 'Ningún documento atado a una fila con otro lote.', lista: [] });
+  // d) atado sin archivo en Drive (pasada una hora: n8n reintenta solo)
+  const sinDrive = L.filter(d => n8nVaADrive(d) && !d.drive && (() => { const f = n8nFecha(d.procesado); return !f || ahora - f.getTime() > 3600000; })());
+  out.push(sinDrive.length ? { c: 'ojo', titulo: sinDrive.length + ' documento' + (sinDrive.length === 1 ? '' : 's') + ' sin su archivo en Drive', sub: 'n8n lo reintenta solo en cada vuelta; si sigue, mirá el detalle.', lista: sinDrive }
+    : { c: 'ok', titulo: 'Todo lo atado tiene su archivo en Drive', sub: 'Ningún documento sin link.', lista: [] });
+  return out;
+}
+
+// 4) n8n contra el Apps Script (FC_PARALELO): Negocio | Fecha mail | Archivo | Factura | Resultado | Diferencias | ...
+function n8nParalelo(filas, negocio, ahora){
+  ahora = ahora || Date.now();
+  const neg = docTextoDeNegocio(negocio).toUpperCase();
+  const L = (filas || []).filter(f => String(f[0] || '').trim().toUpperCase() === neg).map(f => ({ fecha: n8nFecha(f[1]), archivo: f[2] || '', factura: f[3] || '', res: String(f[4] || ''), dif: f[5] || '' }))
+    .filter(x => !x.fecha || ahora - x.fecha.getTime() <= 30 * 864e5);
+  const iguales = L.filter(x => x.res === 'igual'), distintas = L.filter(x => x.res === 'distinto'), otras = L.filter(x => x.res !== 'igual' && x.res !== 'distinto');
+  const ultDist = distintas.map(x => x.fecha).filter(Boolean).sort((a, b) => b - a)[0];
+  const desdeIni = L.map(x => x.fecha).filter(Boolean).sort((a, b) => a - b)[0];
+  const dias = ultDist ? Math.floor((ahora - ultDist.getTime()) / 864e5) : desdeIni ? Math.floor((ahora - desdeIni.getTime()) / 864e5) : 0;
+  return { total: L.length, iguales: iguales.length, distintas, otras, pct: L.length ? Math.round(iguales.length / L.length * 100) : 0, diasSinDistintas: dias };
+}
+
+function renderAutomatizacion(){
+  const cont = document.getElementById('content');
+  if(!accessToken){ cont.innerHTML = '<div class="empty"><div class="empty-icon">🤖</div><div style="margin-bottom:16px;">Conectate con Google para ver el control de n8n.</div><button class="btn primary" onclick="handleAuth()">Conectar con Google</button></div>'; return; }
+  if(!_n8n.ok){
+    if(!_n8n.cargando){ _n8n.cargando = true; n8nCargar().then(() => { _n8n.cargando = false; if(currentView === 'automatizacion') renderAutomatizacion(); }); }
+    cont.innerHTML = '<div class="spinner"><div class="spin"></div> Leyendo lo que anotó n8n…</div>';
+    return;
+  }
+  cont.innerHTML = n8nPanelHtml();
+}
+function n8nPanelHtml(ahora){
+  ahora = ahora || Date.now();
+  const esc = t => String(t === undefined || t === null ? '' : t).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
+  const neg = docTextoDeNegocio(negocioActivo);
+  const p = (c, t) => '<span class="n8-p ' + c + '">' + esc(t) + '</span>';
+  const listaDocs = l => l.length ? '<div class="n8-det">' + l.slice(0, 40).map(d => '<div>• ' + esc(String(d.procesado || d.fechaMail || '').slice(0, 10)) + ' · <b>' + esc(d.nombre || d.tipo || '—') + '</b>' + (d.filas.length ? ' · fila ' + d.filas.join(', ') : '') + ' · ' + esc(d._nota || d.detalle || d.estado) + '</div>').join('') + (l.length > 40 ? '<div>…y ' + (l.length - 40) + ' más.</div>' : '') + '</div>' : '';
+  let h = (_n8n.error ? '<div class="n8-aviso">' + esc(_n8n.error) + '</div>' : '');
+  // 1
+  const ws = n8nEstadoWorkflows(_n8n.estado, _n8n.corridas, ahora);
+  h += '<div class="n8-sec">1 · ¿Está corriendo? <small>· cada workflow anota cada corrida en N8N_ESTADO</small></div><div class="n8-grid">'
+    + ws.map(w => {
+      const e = w.e || {};
+      const hizo = e.fecha ? 'Última: <b>' + e.mails + ' mail' + (e.mails === 1 ? '' : 's') + '</b>, <b>' + e.documentos + ' ' + (w.wf === 'etapa1' ? 'propuesta' + (e.documentos === 1 ? '' : 's') : 'documento' + (e.documentos === 1 ? '' : 's')) + '</b>' + (w.wf === 'documentos' ? ', ' + e.escritos + ' anotado' + (e.escritos === 1 ? '' : 's') + ', ' + e.drive + ' a Drive' : '') : '';
+      return '<div class="n8-wf ' + w.clase + '"><h3><span class="n8-dot"></span>' + esc(w.nombre) + '</h3><div class="n8-st">' + esc(w.texto) + '</div>'
+        + '<div class="n8-m">Corre cada ' + w.cadaMin + ' min' + (e.version ? ' · versión <b>' + esc(e.version) + '</b>' : '') + (hizo ? '<br>' + hizo : '')
+        + (e.avisos ? '<br><span class="n8-av">' + esc(e.avisos) + '</span>' : '')
+        + (w.ultAct && w.ultAct !== e ? '<br>Última con actividad: ' + esc(n8nHace(ahora - ((n8nFecha(w.ultAct.fecha) || new Date(ahora)).getTime()))) : '')
+        + (w.errores7 ? '<br><b>' + w.errores7 + ' error' + (w.errores7 === 1 ? '' : 'es') + ' en 7 días</b>' : '')
+        + (w.versionNueva ? '<br><span class="n8-av">Versión nueva que este panel no conoce: falta sumar su control (registro de cambios).</span>' : '') + '</div>'
+        + '<div class="n8-que">' + esc(w.que) + '</div></div>';
+    }).join('') + '</div>';
+  // 2
+  const et = n8nEtapasDocs(_docs || [], negocioActivo, ahora);
+  h += '<div class="n8-sec">2 · Etapas del circuito de documentos <small>· últimos 7 días · ' + esc(neg) + '</small></div>'
+    + (!_docsListo ? '<div class="n8-aviso">' + esc(_docsError || 'No pude leer la hoja DOCUMENTOS.') + '</div>' : '<div class="n8-etapas">'
+    + et.map((s, i) => '<details class="n8-et"' + (s.lista.length ? '' : ' data-vacia="1"') + '><summary><span class="n8-n">' + (i + 1) + '</span><span class="n8-t">' + esc(s.titulo) + '<small>' + esc(s.sub) + '</small></span><span class="n8-c">' + s.n + '</span><span class="n8-chk">' + s.checks.map(c => p(c.c, c.t)).join('') + '</span><span class="n8-ver">' + (s.lista.length ? 'Ver' : '') + '</span></summary>' + listaDocs(s.lista) + '</details>').join('') + '</div>');
+  // 3
+  const vf = _docsListo ? n8nVerificacion(_docs || [], negocioActivo, allRowsAll || [], _n8n.lotesOtro, ahora) : [];
+  if(vf.length) h += '<div class="n8-sec">3 · Lo que el hub verifica por su cuenta <small>· no le cree a n8n: lo compara con la planilla de ' + esc(neg) + ' (30 días)</small></div><div class="n8-cruz">'
+    + vf.map(v => '<details class="n8-cz ' + v.c + '"><summary><span class="n8-i">' + (v.c === 'ok' ? '✓' : v.c === 'mal' ? '✗' : '!') + '</span><span class="n8-tx"><b>' + esc(v.titulo) + '</b><small>' + esc(v.sub) + '</small></span><span class="n8-ver">' + (v.lista.length ? 'Ver' : '') + '</span></summary>' + listaDocs(v.lista) + '</details>').join('') + '</div>';
+  // 4
+  const pa = n8nParalelo(_n8n.fc, negocioActivo, ahora), r = _ac.ok && _ac.existe !== false ? acResumen(_ac.filas) : null;
+  h += '<div class="n8-sec">4 · n8n contra el Apps Script, y la Etapa 1</div><div class="n8-duo">'
+    + '<div class="n8-box"><h4>FC del proveedor · ' + esc(neg) + ' · 30 días</h4>'
+    + (pa.total ? '<div class="n8-big">' + pa.pct + ' % <small>iguales (' + pa.iguales + ' de ' + pa.total + ')</small></div><div class="n8-barra"><i style="width:' + pa.pct + '%;background:var(--ok)"></i><i style="width:' + Math.round(pa.distintas.length / pa.total * 100) + '%;background:var(--danger)"></i><i style="width:' + Math.round(pa.otras.length / pa.total * 100) + '%;background:var(--warn)"></i></div>'
+      + '<div class="n8-leg">' + pa.iguales + ' iguales · ' + pa.distintas.length + ' distintas · ' + pa.otras.length + ' otras (el script no la cargó, n8n no la vio...)</div>'
+      + (pa.distintas.length ? '<div class="n8-det">' + pa.distintas.slice(0, 10).map(x => '<div>• FC ' + esc(x.factura) + ' · ' + esc(x.archivo) + ': ' + esc(x.dif) + '</div>').join('') + '</div>' : '')
+      + '<div class="n8-nota">Para apagar el Apps Script: <b>30 días seguidos sin distintas</b>. Van ' + pa.diasSinDistintas + '.</div>'
+      : '<div class="n8-leg">Todavía no hay comparaciones de ' + esc(neg) + ' en FC_PARALELO.</div>') + '</div>'
+    + '<div class="n8-box"><h4>Preparar cargas (Etapa 1)</h4>'
+    + (r && r.total ? '<div class="n8-big">' + r.pct + ' % <small>sin corrección (' + r.sin + ' de ' + r.total + ')</small></div><div class="n8-barra"><i style="width:' + r.pct + '%;background:var(--ok)"></i><i style="width:' + (100 - r.pct) + '%;background:var(--warn)"></i></div>'
+      + '<div class="n8-leg">' + (r.campos.length ? 'Lo que más corregís: ' + r.campos.slice(0, 3).map(([k, n]) => esc(k) + ' (' + n + ')').join(', ') + ' · ' : '') + 'costo de IA del mes US$ ' + (Math.round(r.costoMes * 100) / 100).toFixed(2).replace('.', ',') + ' · ' + r.porAprobar + ' por aprobar</div>'
+      : '<div class="n8-leg">' + (r ? 'Todavía no hay cargas preparadas resueltas.' + (r.porAprobar ? ' ' + r.porAprobar + ' por aprobar en Pendientes.' : '') : 'No pude leer AUTO_CARGAS.') + '</div>')
+    + '<div class="n8-leg">Pasa a automático con 40 resueltas y 95 % sin corrección.</div></div></div>';
+  // 5
+  h += '<div class="n8-sec">5 · Qué cambiamos en n8n y qué control se sumó</div><div class="n8-log"><div class="n8-lg n8-lgh"><span>Fecha</span><span>Cambio en n8n</span><span>Control en este panel</span></div>'
+    + N8N_CAMBIOS.map(c => '<div class="n8-lg"><span>' + esc(c.fecha) + '</span><span>' + esc(c.cambio) + (c.versiones.length ? ' <small>(' + esc(c.versiones.join(', ')) + ')</small>' : '') + '</span><span>' + esc(c.control) + '</span></div>').join('') + '</div>';
+  h += '<div style="display:flex;gap:8px;flex-wrap:wrap;margin:14px 0;"><button class="btn" onclick="acRecargar()">↻ Recargar</button>'
+    + (cfg.hubSheetId ? '<a class="btn" target="_blank" rel="noopener" href="https://docs.google.com/spreadsheets/d/' + esc(cfg.hubSheetId) + '/edit">Abrir HUB LATINUT</a>' : '') + '</div>'
+    + '<details class="ac-det"><summary>Detalle de la Etapa 1 (cargas preparadas)</summary><div>' + acTableroHtml() + '</div></details>';
+  return h;
+}
+
 
 // Cada 5 minutos (con el hub abierto) se vuelve a contar cuantos mails de carga hay sin procesar.
 setInterval(() => { if(!window.__sinAutoGuardado && accessToken && !document.hidden) mcRefrescarBadge(); }, 300000);
