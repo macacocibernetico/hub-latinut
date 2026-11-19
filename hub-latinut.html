@@ -12089,7 +12089,9 @@ function docDeFila(f, rn){
     filas: String(f[4] || '').split(/[^0-9]+/).map(Number).filter(n => n > 0),
     lotes: f[5] || '', tipo: f[6] || '', numero: f[7] || '', nombre: f[8] || '', remitente: f[9] || '', asunto: f[10] || '',
     estado: String(f[11] || '').trim().toLowerCase(), detalle: f[12] || '', via: f[13] || '', anotado: f[14] || '', drive: f[15] || '',
-    servicios: !!extra.servicios, controles: Array.isArray(extra.controles) ? extra.controles : [], _rn: rn };
+    servicios: !!extra.servicios, controles: Array.isArray(extra.controles) ? extra.controles : [],
+    // Propuesta del revisor con IA para lo que quedó sin carga: { negocio, filas, confianza, razon } o { ninguna, razon }
+    propuesta: extra.propuesta && typeof extra.propuesta === 'object' ? extra.propuesta : null, _rn: rn };
 }
 async function cargarDocumentos(){
   if(!accessToken || !cfg.hubSheetId) return;
@@ -12251,6 +12253,7 @@ function docCardRevisar(d, i, lab){
     return h;
   }
   h += '<div class="doc-motivo">' + escaparHtml(d.detalle || 'n8n no pudo saber de qué carga es.') + '</div>'
+    + docPropuestaHtml(d, i)
     + '<div class="doc-acc"><button class="btn" style="background:var(--accent);color:#fff;border-color:var(--accent);" onclick="docsAbrirAsignar(' + i + ')">Elegir carga de ' + lab + '…</button>'
     + '<button class="btn" onclick="docsDescartar(' + i + ')">No es de una carga</button></div>';
   if(_docsAsignar === i){
@@ -12258,6 +12261,42 @@ function docCardRevisar(d, i, lab){
       + escaparHtml(_docsBuscaCarga) + '" oninput="docsBuscarCarga(this.value)"><div id="docs-asig-res">' + docsResultadosAsignar(i) + '</div></div>';
   }
   return h + '</div>';
+}
+// Sugerencia del revisor con IA (n8n) para un documento sin carga. Solo propone: asignar sigue pidiendo confirmación.
+// Si la carga sugerida es del otro negocio, no se ofrece el botón acá (AXT y Buzaram no se mezclan): hay que cambiar de negocio.
+function docPropuestaHtml(d, i){
+  const p = d.propuesta;
+  if(!p) return '';
+  const caja = t => '<div style="margin:8px 0;padding:8px 10px;border-radius:8px;background:var(--accent-light);font-size:12.5px;">🤖 ' + t + '</div>';
+  if(p.ninguna) return caja('El revisor con IA tampoco encontró una carga clara: ' + escaparHtml(p.razon || ''));
+  const filas = (p.filas || []).map(Number).filter(n => n > 0);
+  if(!filas.length) return '';
+  const conf = p.confianza ? ' <span class="doc-sub">(confianza ' + escaparHtml(p.confianza) + ')</span>' : '';
+  if(p.negocio !== negocioActivo) return caja('El revisor con IA cree que es de la fila ' + filas.join(', ') + ' de <b>' + escaparHtml(docTextoDeNegocio(p.negocio)) + '</b>' + conf + ': ' + escaparHtml(p.razon || '') + ' Pasá a ese negocio para asignarlo.');
+  const rows = filas.map(n => (allRowsAll || []).find(r => r._sheetRow === n)).filter(Boolean);
+  if(rows.length !== filas.length) return caja('El revisor con IA sugirió la fila ' + filas.join(', ') + conf + ', pero ya no está en la planilla.');
+  const desc = rows.map(r => 'fila ' + r._sheetRow + ' · ' + escaparHtml(String(r[COL.CUSTOMER] || '—')) + ' · lote ' + escaparHtml(String(r[COL.LOTS] || '—'))).join('; ');
+  return caja('Sugerencia del revisor con IA: <b>' + desc + '</b>' + conf + '<br>' + escaparHtml(p.razon || '')
+    + '<div style="margin-top:6px;"><button class="btn" style="background:var(--accent);color:#fff;border-color:var(--accent);" onclick="docsUsarSugerencia(' + i + ')">Usar la sugerencia</button></div>');
+}
+async function docsUsarSugerencia(i){
+  const d = (window._docsVista || [])[i];
+  const p = d && d.propuesta;
+  if(!p || p.ninguna || p.negocio !== negocioActivo) return;
+  if(d.tipo === 'fc_axt' && negocioActivo !== 'axt'){ alert('Una factura de AXT solo puede ir a una carga de AXT.'); return; }
+  const rows = (p.filas || []).map(n => (allRowsAll || []).find(r => r._sheetRow === Number(n))).filter(Boolean);
+  if(!rows.length) return;
+  const filas = rows.map(r => r._sheetRow);
+  const ok = await confirmarAccion('Usar la sugerencia del revisor con IA',
+    '"' + d.nombre + '" va a quedar en la carga de la fila ' + filas.join(', ') + ' de ' + docTextoDeNegocio(negocioActivo) + ', como si lo asignaras a mano. En la próxima vuelta (10 minutos como mucho) n8n lo guarda en la carpeta de Drive de la carga. Se escribe en la pestaña DOCUMENTOS de HUB LATINUT.',
+    rows[0], { okLabel: 'Asignar' });
+  if(!ok) return;
+  const hoy = new Date().toLocaleString('es-AR');
+  if(!await docsEscribir(d, { D: docTextoDeNegocio(negocioActivo), E: filas.join(', '), L: 'asignado', M: 'asignado por ' + docsQuien() + ' el ' + hoy + ' con la sugerencia del revisor con IA', N: 'a mano' })) return;
+  Object.assign(d, { negocio: negocioActivo, filas, estado: 'asignado', via: 'a mano' });
+  appendLog({ bl: (rows[0][COL.BL] || '').trim(), customer: (rows[0][COL.CUSTOMER] || '').trim(), accion: 'documento asignado (sugerencia IA)', detalle: d.nombre + ' → fila ' + filas.join(', ') }).catch(() => {});
+  showToast('✓ Asignado. n8n lo procesa en la próxima vuelta.', 'ok');
+  updateBadges(); renderDocumentos();
 }
 function docsCandidatas(q){
   q = String(q || '').trim().toLowerCase();
@@ -16240,10 +16279,21 @@ async function acCrearYMostrar(){ if(await acCrearHoja()) renderAutomatizacion()
 // para detectar mezclas). Las etapas y la verificacion son del negocio activo: AXT y Buzaram nunca se mezclan.
 const N8N_WORKFLOWS = [
   { wf: 'documentos', nombre: 'Documentos de las cargas', cadaMin: 10, que: 'Lee BL, facturas y certificados de los mails, los ata a su carga, anota los números en la planilla y los sube a Drive. También compara las FC del proveedor con el Apps Script.' },
-  { wf: 'etapa1', nombre: 'Preparar cargas desde los mails', cadaMin: 5, que: 'Lee las solicitudes de Argen y Nutrin y deja la carga preparada en Pendientes (no escribe en las cargas).' }
+  { wf: 'etapa1', nombre: 'Preparar cargas desde los mails', cadaMin: 5, que: 'Lee las solicitudes de Argen y Nutrin y deja la carga preparada en Pendientes (no escribe en las cargas).' },
+  // Una vez por semana: se avisa si pasan más de 3 semanas sin corrida (cadaMin × 3)
+  { wf: 'auditor', nombre: 'Auditor semanal (IA)', cadaMin: 7 * 24 * 60, cada: 'los lunes a las 7:30', que: 'Revisa las cargas activas de AXT y de Buzaram (por separado) contra los documentos recibidos, con reglas y con Claude Opus 5.5, y manda un mail por negocio a quien tenga Sí en Auditoria_n8n (CONTACTOS). No escribe en las planillas.' }
 ];
+// Lo que hizo la última corrida del auditor: cuántas cosas para mirar en cada negocio y cuánto gastó de IA en el mes
+function n8nAuditorHizo(e){
+  const r = ((e.detalle || {}).resumen) || {}, g = (e.detalle || {}).gasto || {};
+  const neg = (k, n) => r[k] ? n + ' <b>' + (r[k].hallazgos || 0) + '</b>' + (r[k].altas ? ' (' + r[k].altas + ' importante' + (r[k].altas === 1 ? '' : 's') + ')' : '') : '';
+  return 'Última: cosas para mirar · ' + [neg('axt', 'AXT'), neg('buzaram', 'Buzaram')].filter(Boolean).join(' · ')
+    + (g.mes === new Date().toISOString().slice(0, 7) ? '<br>IA del mes: US$ ' + Number(g.usd || 0).toFixed(2).replace('.', ',') + ' de US$ ' + ((e.detalle || {}).topeUsd || 5) : '');
+}
 // Qué cambiamos en n8n y qué control se sumó en este panel. El más nuevo arriba. "version" = la que anota la Marca de corrida.
 const N8N_CAMBIOS = [
+  { fecha: '19/11/2026', versiones: ['auditor-2026-11-19'], cambio: 'Auditor semanal con IA (workflow nuevo, lunes 7:30): revisa las cargas activas de cada negocio por separado contra DOCUMENTOS, primero con reglas (BL con contenedor, dígitos de más o de menos, contenedores mal tipeados, ETA vencida sin BL, BL o factura del documento distinta a la planilla) y después con Claude Opus 5.5. Manda un mail por negocio a quien tenga Sí en Auditoria_n8n (CONTACTOS). No escribe. Tope US$ 5 por mes', control: '¿Está corriendo?: tarjeta «Auditor semanal», con lo que encontró en cada negocio y el gasto de IA del mes; avisa si pasan más de 3 semanas sin corrida' },
+  { fecha: '19/11/2026', versiones: ['docs-2026-11-19-rev'], cambio: 'Documentos: revisor de casos dudosos con IA (Claude Sonnet 5.5). Lo que queda para revisar sin carga se le pasa con las cargas candidatas de las dos planillas y propone de cuál es y por qué. No escribe: en Documentos aparece la sugerencia con «Usar la sugerencia» (con confirmación). Hasta 5 por vuelta, tope US$ 3 por mes, una vez por documento', control: 'Revisor de casos dudosos: gasto del mes contra el tope y casos revisados; en Documentos, la sugerencia en cada tarjeta para revisar' },
   { fecha: '19/11/2026', versiones: ['docs-2026-11-19-ia'], cambio: 'Documentos: lector de imagen con IA (Claude Opus 5.5, esfuerzo medio) para los BL escaneados, que no traen texto. Hasta 3 por vuelta y tope de US$ 5 por mes; cada documento se lee una sola vez. El número leído se anota solo si coincide con el booking o el BL de la carga; si no, queda para revisar', control: 'BL escaneados · lector con IA: gasto del mes contra el tope y cantidad de lecturas' },
   { fecha: '19/11/2026', versiones: [], cambio: 'Documentos: si el documento trae un dato (BL, invoice de AXT) distinto al que ya tiene la celda, no se escribe y llega un mail con lo que hay escrito y lo que trae el documento. Va a quien tenga «Sí» en la columna Aviso_n8n de CONTACTOS, un mail por negocio, una vez por documento', control: 'Celdas con otro dato: a quién le llega el aviso (o que no le llega a nadie) y las celdas así de los últimos 7 días' },
   { fecha: '19/11/2026', versiones: [], cambio: 'Documentos: una invoice de AXT por contenedor (fila con varios contenedores del mismo booking, como Manila/Cebu) se controla por su parte: sus lotes tienen que estar en la fila y las toneladas ser las de sus contenedores; si la celda ya dice «15036, 15035» cuenta como cargada. Y al atar por lote se cuentan los lotes por carga (filas del mismo contenedor juntas), no fila por fila', control: 'Documentos: las invoices por contenedor (15035/15036, 15075/15076) ya no quedan en «no coincide»; la FC 1350 queda en las filas 913 y 914' },
@@ -16533,11 +16583,11 @@ function pruebaEtapa1Html(){
 // Aviso por mail de n8n cuando una celda ya tiene OTRO dato del que trae el documento (no se pisa): a quien llega
 // (hoja CONTACTOS, columna Aviso_n8n) y que celdas quedaron asi en los ultimos 7 dias (DOCUMENTOS, detalle "no se pisa").
 // Gasto del lector de imagen con IA en el mes: sale del detalle de la ultima corrida de Documentos (N8N_ESTADO, fila 2)
-function n8nLectorIA(estado){
+function n8nLectorIA(estado, clave){
   const e = (estado || []).find(x => x.wf === 'documentos');
-  const ia = e && e.detalle && e.detalle.ia;
+  const ia = e && e.detalle && e.detalle[clave || 'ia'];
   if (!ia || !ia.mes || ia.mes !== new Date().toISOString().slice(0, 7)) return null;
-  return { usd: +ia.usd || 0, topeUsd: +ia.topeUsd || 5, lecturas: +ia.lecturas || 0 };
+  return { usd: +ia.usd || 0, topeUsd: +ia.topeUsd || 5, lecturas: +(ia.lecturas || ia.casos) || 0 };
 }
 function n8nAvisoConflictos(docs, negocio, contactos, ahora){
   const para = (contactos || []).filter(c => c.avisoN8n && c.email).map(c => c.email);
@@ -16557,9 +16607,9 @@ function n8nPanelHtml(ahora){
   h += '<div class="n8-sec">1 · ¿Está corriendo? <small>· cada workflow anota cada corrida en N8N_ESTADO</small></div><div class="n8-grid">'
     + ws.map(w => {
       const e = w.e || {};
-      const hizo = e.fecha ? 'Última: <b>' + e.mails + ' mail' + (e.mails === 1 ? '' : 's') + '</b>, <b>' + e.documentos + ' ' + (w.wf === 'etapa1' ? 'propuesta' + (e.documentos === 1 ? '' : 's') : 'documento' + (e.documentos === 1 ? '' : 's')) + '</b>' + (w.wf === 'documentos' ? ', ' + e.escritos + ' anotado' + (e.escritos === 1 ? '' : 's') + ', ' + e.drive + ' a Drive' : '') : '';
+      const hizo = !e.fecha ? '' : w.wf === 'auditor' ? n8nAuditorHizo(e) : 'Última: <b>' + e.mails + ' mail' + (e.mails === 1 ? '' : 's') + '</b>, <b>' + e.documentos + ' ' + (w.wf === 'etapa1' ? 'propuesta' + (e.documentos === 1 ? '' : 's') : 'documento' + (e.documentos === 1 ? '' : 's')) + '</b>' + (w.wf === 'documentos' ? ', ' + e.escritos + ' anotado' + (e.escritos === 1 ? '' : 's') + ', ' + e.drive + ' a Drive' : '');
       return '<div class="n8-wf ' + w.clase + '"><h3><span class="n8-dot"></span>' + esc(w.nombre) + '</h3><div class="n8-st">' + esc(w.texto) + '</div>'
-        + '<div class="n8-m">Corre cada ' + w.cadaMin + ' min' + (e.version ? ' · versión <b>' + esc(e.version) + '</b>' : '') + (hizo ? '<br>' + hizo : '')
+        + '<div class="n8-m">' + (w.cada ? 'Corre ' + esc(w.cada) : 'Corre cada ' + w.cadaMin + ' min') + (e.version ? ' · versión <b>' + esc(e.version) + '</b>' : '') + (hizo ? '<br>' + hizo : '')
         + (e.avisos ? '<br><span class="n8-av">' + esc(e.avisos) + '</span>' : '')
         + (w.ultAct && w.ultAct !== e ? '<br>Última con actividad: ' + esc(n8nHace(ahora - ((n8nFecha(w.ultAct.fecha) || new Date(ahora)).getTime()))) : '')
         + (w.errores7 ? '<br><b>' + w.errores7 + ' error' + (w.errores7 === 1 ? '' : 'es') + ' en 7 días</b>' : '')
@@ -16584,6 +16634,12 @@ function n8nPanelHtml(ahora){
     + (iaE ? '<div class="n8-big"' + (iaE.usd >= iaE.topeUsd ? ' style="color:var(--danger)"' : '') + '>US$ ' + iaE.usd.toFixed(2).replace('.', ',') + ' <small>de US$ ' + iaE.topeUsd + ' este mes · ' + iaE.lecturas + ' lectura' + (iaE.lecturas === 1 ? '' : 's') + '</small></div>'
       + '<div class="n8-leg">' + (iaE.usd >= iaE.topeUsd ? 'Tope alcanzado: hasta el mes que viene los BL escaneados quedan para revisar.' : 'Lee solo los BL que vienen escaneados (sin texto). Su número se anota solo si coincide con el booking o el BL de la carga.') + '</div>'
       : '<div class="n8-leg">Todavía no leyó ningún BL escaneado este mes.</div>') + '</div>';
+  // Revisor de casos dudosos con IA: propone la carga de lo que quedó sin atar (el hub lo muestra en Documentos con "Usar la sugerencia")
+  const rvE = n8nLectorIA(_n8n.estado, 'revisor');
+  h += '<div class="n8-box" style="margin-top:10px;"><h4>Revisor de casos dudosos con IA (Claude Sonnet 5.5)</h4>'
+    + (rvE ? '<div class="n8-big"' + (rvE.usd >= rvE.topeUsd ? ' style="color:var(--danger)"' : '') + '>US$ ' + rvE.usd.toFixed(2).replace('.', ',') + ' <small>de US$ ' + rvE.topeUsd + ' este mes · ' + rvE.lecturas + ' caso' + (rvE.lecturas === 1 ? '' : 's') + '</small></div>'
+      + '<div class="n8-leg">' + (rvE.usd >= rvE.topeUsd ? 'Tope alcanzado: hasta el mes que viene no propone cargas.' : 'Propone de qué carga es lo que quedó sin atar; lo ves en Documentos con «Usar la sugerencia». No escribe nada solo.') + '</div>'
+      : '<div class="n8-leg">Todavía no revisó ningún caso este mes.</div>') + '</div>';
   // 3
   const vf = _docsListo ? n8nVerificacion(_docs || [], negocioActivo, allRowsAll || [], _n8n.lotesOtro, ahora) : [];
   if(vf.length) h += '<div class="n8-sec">3 · Lo que el hub verifica por su cuenta <small>· no le cree a n8n: lo compara con la planilla de ' + esc(neg) + ' (30 días)</small></div><div class="n8-cruz">'
