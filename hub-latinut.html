@@ -1625,26 +1625,6 @@ body{background:radial-gradient(760px 420px at 86% -12%,rgba(var(--lg-a-rgb),.05
 .ac-nota{font-size:12px;color:var(--text3);margin:8px 2px;}
 .ac-barra{display:flex;align-items:center;gap:10px;margin:5px 0;font-size:13px;}.ac-barra span{width:150px;color:var(--text2);}.ac-barra i{display:block;height:9px;border-radius:5px;background:rgb(var(--lg-a-rgb));opacity:.65;}.ac-barra b{font-weight:600;}
 .ac-det{font-size:12.5px;color:var(--text2);margin:6px 0 20px;}.ac-det summary{cursor:pointer;font-weight:600;}.ac-det div{margin-top:8px;line-height:1.6;}
-/* Asistente "Preguntale al hub": panel a la derecha (en celular, pantalla completa) */
-.asist-panel{position:fixed;top:0;right:0;bottom:0;width:380px;max-width:100vw;background:var(--surface,#fff);border-left:1px solid var(--border);z-index:900;display:flex;flex-direction:column;box-shadow:-8px 0 24px rgba(0,0,0,.08);}
-.asist-head{display:flex;align-items:center;gap:6px;padding:12px 14px;border-bottom:1px solid var(--border);font-size:14px;}
-.asist-head span{color:var(--text3);font-size:12px;}
-.asist-x{margin-left:auto;font-size:12px;color:var(--text2);padding:4px 8px;border-radius:var(--radius);}
-.asist-x + .asist-x{margin-left:4px;}
-.asist-x:hover{background:var(--bg3);}
-.asist-cuerpo{flex:1;overflow-y:auto;padding:14px;display:flex;flex-direction:column;gap:10px;font-size:13px;}
-.asist-yo{align-self:flex-end;background:var(--bg3);border-radius:var(--radius);padding:7px 10px;max-width:85%;white-space:pre-wrap;}
-.asist-ia{line-height:1.6;}
-.asist-ia a.asist-fila{color:var(--accent);text-decoration:underline;cursor:pointer;}
-.asist-pasos{font-size:12px;color:var(--text3);display:flex;flex-direction:column;gap:2px;}
-.asist-pensando{font-style:italic;}
-.asist-err{color:var(--danger);font-size:12px;}
-.asist-vacio{color:var(--text3);font-size:13px;line-height:1.6;}
-.asist-pie{border-top:1px solid var(--border);padding:10px 14px;display:flex;flex-direction:column;gap:6px;}
-.asist-caja{display:flex;gap:6px;align-items:flex-end;}
-.asist-caja textarea{flex:1;min-width:0;resize:none;font-family:var(--font);font-size:13px;padding:7px 9px;border:1px solid var(--border);border-radius:var(--radius);background:var(--bg);color:var(--text);}
-.asist-gasto{font-size:11px;color:var(--text3);}
-@media (max-width:700px){.asist-panel{width:100vw;}}
 </style>
 </head>
 <body>
@@ -1756,7 +1736,6 @@ body{background:radial-gradient(760px 420px at 86% -12%,rgba(var(--lg-a-rgb),.05
         </div>
         <div class="search-results hidden" id="search-results"></div>
       </div>
-      <button class="btn" id="asist-btn" style="display:none" onclick="asistAbrir()" title="Preguntale al hub sobre las cargas (solo lee)"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/><path d="M9.5 9a2.5 2.5 0 0 1 4.9.7c0 1.6-2.4 2-2.4 3.3"/><path d="M12 15.5h.01"/></svg> Preguntar</button>
       <button class="btn ayuda-btn" id="ayuda-btn" onclick="abrirAyuda()" title="Atajos y cosas que se pueden hacer" aria-label="Ayuda: atajos y trucos">?</button>
       <button class="btn primary" id="sync-btn" onclick="loadData()"><svg class="ico sync-ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 12a9 9 0 0 1 15.5-6.2L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-15.5 6.2L3 16"/><path d="M3 21v-5h5"/></svg> <span id="sync-txt">Sincronizar</span></button>
     </div>
@@ -11515,8 +11494,6 @@ function renderConfig(){
         <div style="font-size:11px;color:var(--text3);margin-top:4px;">Anthropic no deja que el hub le hable directo desde el navegador, así que se pasa por un Apps Script. <b>Sin esta URL solo se pueden leer mails (texto), no PDFs.</b> Pasos de instalación: archivo <b>appscript/claude-proxy.gs</b> (pegarlo en un proyecto nuevo, implementar como aplicación web con acceso para cualquier persona, y pegar acá la URL /exec).</div>
       </div>
       <label style="display:flex;gap:8px;align-items:flex-start;font-size:12px;color:var(--text);margin-top:8px;"><input type="checkbox" id="cfg-iaSupervisa" ${cfg.iaSupervisaNutrin !== false ? 'checked' : ''} style="margin-top:3px;"><span><b>Supervisar con IA los PDF de Nutrin</b>: después de leerlos por posición, Haiku (el modelo barato) los lee por su cuenta y avisa si ve algún dato distinto. No cambia nada solo. Cuesta unas décimas de centavo de dólar por PDF.</span></label>
-      <label style="display:flex;gap:8px;align-items:flex-start;font-size:12px;color:var(--text);margin-top:8px;"><input type="checkbox" id="cfg-asistenteOn" ${cfg.asistenteOn ? 'checked' : ''} style="margin-top:3px;"><span><b>Asistente «Preguntar» (solo en este navegador)</b>: un panel donde le preguntás al hub sobre las cargas del negocio abierto. Claude Sonnet 5.5 busca en la planilla, DOCUMENTOS, el LOG, las notas y los contratos, y contesta con la fila de donde sacó cada dato. Solo lee: no escribe nada. Cuesta unos US$ 0,03 a 0,12 por pregunta.</span></label>
-      <div class="config-field" style="margin-top:6px;"><div class="config-label">Tope de gasto del asistente por mes (US$)</div><input class="config-input" id="cfg-asistenteTope" type="number" min="1" step="1" value="${asistTope()}" style="width:90px;"></div>
       ${iaPanelHtml()}
     </div>
     <div class="config-field">
@@ -11552,9 +11529,6 @@ function saveConfig(){
   const ak=document.getElementById('cfg-anthropicKey')?.value?.trim();if(ak) cfg.anthropicKey=ak;
   const sv=document.getElementById('cfg-iaSupervisa'); if(sv) cfg.iaSupervisaNutrin=!!sv.checked;
   const cpx=document.getElementById('cfg-claudeProxyUrl'); if(cpx) cfg.claudeProxyUrl=cpx.value.trim();
-  const aon=document.getElementById('cfg-asistenteOn'); if(aon){ cfg.asistenteOn=!!aon.checked; if(!cfg.asistenteOn && _asist.abierto){ _asist.abierto=false; asistRender(); } }
-  const atp=parseFloat(document.getElementById('cfg-asistenteTope')?.value); if(atp>0) cfg.asistenteTopeUsd=atp;
-  asistActualizarBoton();
   const gk=document.getElementById('cfg-geminiKey')?.value?.trim();if(gk) cfg.geminiKey=gk;
   const bsid=document.getElementById('cfg-buzaramSheetId')?.value?.trim();if(bsid) cfg.buzaramSheetId=bsid;
   const burl=document.getElementById('cfg-buzaramAppsScriptUrl')?.value?.trim();if(burl) cfg.buzaramAppsScriptUrl=burl;
@@ -18990,221 +18964,6 @@ function extraerJsonIA(texto){
   return null;
 }
 
-// ─── ASISTENTE: PREGUNTALE AL HUB (agente que SOLO LEE) ─────────────────────
-// Un panel a la derecha donde se pregunta en lenguaje normal. Claude (Sonnet) decide qué buscar con unas pocas herramientas de lectura
-// (cargas, una fila, documentos, historial y notas, contratos, totales), da varias vueltas si hace falta y contesta citando la fila.
-// REGLAS: nunca escribe (no hay ninguna herramienta que escriba); solo ve el negocio abierto (AXT y Buzaram nunca se mezclan: al cambiar
-// de negocio la conversación empieza de cero); se activa por navegador en Configuración (apagado por defecto); tope de gasto por mes.
-const ASIST_MODELO = 'claude-sonnet-5-5';
-const ASIST_MAX_VUELTAS = 8;
-let _asist = { abierto: false, msgs: [], vista: [], ocupado: false, negocio: '', pasos: [] };
-function asistTope(){ const t = parseFloat(cfg.asistenteTopeUsd); return t > 0 ? t : 15; }
-function asistGastoMes(){ try{ const g = JSON.parse(localStorage.getItem('hub_asist_gasto') || '{}'); return g.mes === _mesIA() ? (+g.usd || 0) : 0; }catch(e){ return 0; } }
-function asistSumarGasto(usd){ try{ localStorage.setItem('hub_asist_gasto', JSON.stringify({ mes: _mesIA(), usd: Math.round((asistGastoMes() + (usd || 0)) * 1e5) / 1e5 })); }catch(e){} }
-// Costo con la cache de Anthropic: lo cacheado se cobra 10 % (lectura) o 125 % (escritura) del precio de entrada
-function asistCosto(u){
-  const p = PRECIOS_IA[ASIST_MODELO] || { ent: 2, sal: 10 }; u = u || {};
-  return ((u.input_tokens || 0) + (u.cache_creation_input_tokens || 0) * 1.25 + (u.cache_read_input_tokens || 0) * 0.1) * p.ent / 1e6 + (u.output_tokens || 0) * p.sal / 1e6;
-}
-function asistActualizarBoton(){ const b = document.getElementById('asist-btn'); if(b) b.style.display = cfg.asistenteOn ? '' : 'none'; }
-
-// ── Herramientas (todas de lectura, todas sobre el negocio abierto) ──
-const _asTxt = { type: 'string' }, _asFila = { type: 'object', properties: { fila: { type: 'integer', description: 'número de fila de la planilla (como lo muestra el hub)' } }, required: ['fila'] };
-const _asFiltros = {
-  texto: { type: 'string', description: 'busca en cliente, lotes, booking, BL, contenedores, invoices, producto, puerto y contratos' },
-  cliente: { type: 'string', description: 'nombre o parte del nombre del cliente (Customer)' },
-  eta_desde: { type: 'string', description: 'dd/mm/aaaa' }, eta_hasta: { type: 'string', description: 'dd/mm/aaaa' },
-  etd_desde: { type: 'string', description: 'dd/mm/aaaa' }, etd_hasta: { type: 'string', description: 'dd/mm/aaaa' },
-  estado: { type: 'string', enum: ['sin_cobrar', 'cobradas', 'todas'], description: 'por defecto todas' }
-};
-const ASIST_TOOLS = [
-  { name: 'buscar_cargas', description: 'Busca cargas (filas) en la planilla del negocio abierto. Devuelve un resumen por carga. Para contar o sumar muchas, usá totales.',
-    input_schema: { type: 'object', properties: Object.assign({}, _asFiltros, { limite: { type: 'integer', description: 'máximo de cargas (por defecto 20, máximo 50)' } }) } },
-  { name: 'ver_carga', description: 'Todas las columnas con dato de una fila (precios, totales, contrato, pagaré, telex, cobro, fechas...).', input_schema: _asFila },
-  { name: 'documentos_de_carga', description: 'Documentos registrados de una carga (pestaña DOCUMENTOS que llena n8n: BL, facturas, packing, origen, fito...) y cuáles del set faltan.', input_schema: _asFila },
-  { name: 'historial_de_carga', description: 'Lo que se hizo con una carga (pestaña LOG del hub: liberaciones, pagarés, mails, cambios) y las notas del equipo.', input_schema: _asFila },
-  { name: 'ver_contrato', description: 'Datos de un contrato del cliente por su número (importador, precio, flete, incoterm, FC servicios, forma de pago).', input_schema: { type: 'object', properties: { numero: _asTxt }, required: ['numero'] } },
-  { name: 'totales', description: 'Cuenta cargas y suma toneladas y totales de las que cumplen los filtros, agrupadas.',
-    input_schema: { type: 'object', properties: Object.assign({}, _asFiltros, { agrupar_por: { type: 'string', enum: ['cliente', 'producto', 'puerto', 'mes_eta', 'nada'] } }) } }
-];
-ASIST_TOOLS[ASIST_TOOLS.length - 1].cache_control = { type: 'ephemeral' };
-function asistVal(row, c){ return c === undefined || c < 0 ? '' : String(valorVisible(row, c) || '').trim(); }
-function asistFecha(t){ const m = String(t || '').match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/); return m ? new Date(+m[3], +m[2] - 1, +m[1]).getTime() : NaN; }
-function asistFiltrar(f){
-  f = f || {};
-  const tx = normTar(f.texto || ''), cli = normTar(f.cliente || '');
-  const cols = [COL.CUSTOMER, COL.LOTS, COL.BOOKING, COL.BL, COL.CONTAINERS, COL.INVOICE_CLIENTE, COL.INVOICE_FC_SERV, COL.PRODUCT, COL.PORT, COL.CONTRACT_CLIENTE, COL.CONTRACT_PROVEEDOR];
-  const rango = (row, c, d, h) => { if(!d && !h) return true; const v = asistFecha(asistVal(row, c)); if(isNaN(v)) return false; return (!d || v >= asistFecha(d)) && (!h || v <= asistFecha(h)); };
-  return (allRowsAll || []).filter(r => r && r._sheetRow &&
-    (!cli || normTar(asistVal(r, COL.CUSTOMER)).indexOf(cli) >= 0) &&
-    (!tx || cols.some(c => normTar(asistVal(r, c)).indexOf(tx) >= 0)) &&
-    (f.estado === 'sin_cobrar' ? !isClosed(r) : f.estado === 'cobradas' ? isClosed(r) : true) &&
-    rango(r, COL.ETA, f.eta_desde, f.eta_hasta) && rango(r, COL.ETD, f.etd_desde, f.etd_hasta));
-}
-function asistResumenFila(r){
-  const o = { fila: r._sheetRow, cliente: asistVal(r, COL.CUSTOMER), producto: asistVal(r, COL.PRODUCT), tns: asistVal(r, COL.TNS), lotes: asistVal(r, COL.LOTS),
-    booking: asistVal(r, COL.BOOKING), bl: asistVal(r, COL.BL), contenedores: asistVal(r, COL.CONTAINERS), puerto: asistVal(r, COL.PORT), etd: asistVal(r, COL.ETD), eta: asistVal(r, COL.ETA),
-    invoice: asistVal(r, COL.INVOICE_CLIENTE), cobrada: isClosed(r) };
-  Object.keys(o).forEach(k => { if(o[k] === '') delete o[k]; });
-  return o;
-}
-function asistFilaRow(n){ return (allRowsAll || []).find(r => r && r._sheetRow === Number(n)) || null; }
-function asistEjecutar(nombre, inp){
-  inp = inp || {};
-  const negocio = MC_NOMBRES[negocioActivo] || negocioActivo;
-  if(nombre === 'buscar_cargas'){
-    const l = asistFiltrar(inp), lim = Math.min(50, Math.max(1, parseInt(inp.limite) || 20));
-    return { negocio, total: l.length, mostradas: Math.min(lim, l.length), cargas: l.slice(-lim).map(asistResumenFila) };
-  }
-  if(nombre === 'totales'){
-    const l = asistFiltrar(inp), g = {}, por = inp.agrupar_por || 'nada';
-    const clave = r => por === 'cliente' ? asistVal(r, COL.CUSTOMER) : por === 'producto' ? asistVal(r, COL.PRODUCT) : por === 'puerto' ? asistVal(r, COL.PORT)
-      : por === 'mes_eta' ? (asistVal(r, COL.ETA).match(/\/(\d{1,2})\/(\d{4})$/) || []).slice(1).reverse().join('-') : 'total';
-    l.forEach(r => {
-      const k = clave(r) || '(sin dato)', x = g[k] = g[k] || { grupo: k, cargas: 0, tns: 0, total_fca_usd: 0, total_cliente_usd: 0 };
-      const n = v => { const y = numeroCelda(v); return isNaN(y) ? 0 : y; };
-      x.cargas++; x.tns += n(asistVal(r, COL.TNS)); x.total_fca_usd += n(asistVal(r, COL.TOTAL_FCA)); x.total_cliente_usd += n(asistVal(r, COL.TOTAL_CFR));
-    });
-    const grupos = Object.values(g).map(x => ({ grupo: x.grupo, cargas: x.cargas, tns: Math.round(x.tns * 10000) / 10000, total_fca_usd: Math.round(x.total_fca_usd * 100) / 100,
-      total_cliente_usd: Math.round(x.total_cliente_usd * 100) / 100, precio_fca_promedio: x.tns ? Math.round(x.total_fca_usd / x.tns * 100) / 100 : null })).sort((a, b) => b.tns - a.tns);
-    return { negocio, cargas: l.length, grupos: grupos.slice(0, 40) };
-  }
-  const row = inp.fila !== undefined ? asistFilaRow(inp.fila) : null;
-  if(['ver_carga', 'documentos_de_carga', 'historial_de_carga'].indexOf(nombre) >= 0 && !row) return { error: 'No hay ninguna carga en la fila ' + inp.fila + ' de la planilla de ' + negocio + '.' };
-  if(nombre === 'ver_carga'){
-    const hd = encabezadosCargas(), datos = {};
-    hd.forEach((h, c) => { const v = asistVal(row, c); if(v && String(h || '').trim()) datos[String(h).trim()] = v; });
-    return { negocio, fila: row._sheetRow, cobrada: isClosed(row), datos };
-  }
-  if(nombre === 'documentos_de_carga'){
-    if(!_docsListo) return { error: 'No pude leer la pestaña DOCUMENTOS' + (_docsError ? ': ' + _docsError : '') + '.' };
-    const docs = docsDeCarga(row), tipos = docs.map(d => docTipoEfectivo(d, row));
-    const faltan = docsSetDeCarga(row).filter(s => !s.na && tipos.indexOf(s.k) < 0).map(s => DOC_TIPOS[s.k] || s.k);
-    return { negocio, fila: row._sheetRow, documentos: docs.map(d => ({ tipo: DOC_TIPOS[docTipoEfectivo(d, row)] || d.tipo, archivo: d.nombre, numero: d.numero, estado: d.estado, fecha_mail: d.fechaMail, de: d.remitente })), faltan_del_set: faltan };
-  }
-  if(nombre === 'historial_de_carga'){
-    const bl = asistVal(row, COL.BL), inv = asistVal(row, COL.INVOICE_CLIENTE), re = new RegExp('fila[s]?\\s+(?:\\d+\\s*[,y]\\s*)*' + row._sheetRow + '(?!\\d)', 'i');
-    const log = (logRows || []).filter(f => normTar(f[2] || negocio) === normTar(negocio) &&
-      ((bl && String(f[5] || '').trim() === bl) || (inv && String(f[3] || '').trim() === inv) || re.test(String(f[8] || ''))))
-      .slice(-30).map(f => ({ fecha: f[0], hora: f[1], accion: f[7], detalle: String(f[8] || '').slice(0, 200) }));
-    let notas = [];
-    try{ notas = comHilosCarga(row).map(h => ({ resuelta: !!h.resuelto, mensajes: [h.raiz].concat(h.respuestas || []).map(m => ({ autor: comNombre(m.autor), fecha: m.fecha, texto: String(m.texto || '').slice(0, 300) })) })); }catch(e){ notas = []; }
-    return { negocio, fila: row._sheetRow, log, notas };
-  }
-  if(nombre === 'ver_contrato'){
-    const k = contratoPorNumero(inp.numero);
-    if(!k) return { error: 'No encontré el contrato ' + inp.numero + ' en los contratos de ' + negocio + '.' };
-    const o = {}; Object.keys(k).forEach(x => { const v = k[x]; if(v !== '' && v !== null && v !== undefined && typeof v !== 'object' && !(typeof v === 'number' && isNaN(v))) o[x] = v; });
-    return { negocio, contrato: o };
-  }
-  return { error: 'herramienta desconocida: ' + nombre };
-}
-function asistDescribirPaso(nombre, inp){
-  inp = inp || {};
-  const f = ['texto', 'cliente', 'eta_desde', 'eta_hasta', 'etd_desde', 'etd_hasta', 'estado'].filter(k => inp[k]).map(k => k.replace('_', ' ') + ' ' + inp[k]).join(', ');
-  return nombre === 'buscar_cargas' ? 'Busqué en la planilla' + (f ? ': ' + f : '') : nombre === 'totales' ? 'Sumé las cargas' + (f ? ' (' + f + ')' : '') + (inp.agrupar_por && inp.agrupar_por !== 'nada' ? ' por ' + inp.agrupar_por.replace('_', ' ') : '')
-    : nombre === 'ver_carga' ? 'Abrí la fila ' + inp.fila : nombre === 'documentos_de_carga' ? 'Miré DOCUMENTOS de la fila ' + inp.fila
-    : nombre === 'historial_de_carga' ? 'Miré el LOG y las notas de la fila ' + inp.fila : nombre === 'ver_contrato' ? 'Abrí el contrato ' + inp.numero : nombre;
-}
-function asistSistema(){
-  const hoy = new Date().toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit', year: 'numeric' });
-  return 'Sos el asistente del HUB LATINUT (LATINUT S.A., trading de maní). Respondés preguntas sobre las cargas del negocio ' + (MC_NOMBRES[negocioActivo] || negocioActivo) + ' usando SOLO lo que devuelven las herramientas. Hoy es ' + hoy + '.\n'
-    + '- Solo ves ' + (MC_NOMBRES[negocioActivo] || negocioActivo) + '. Si te preguntan por el otro negocio (AXT o Buzaram), decí que cambien de negocio en el hub. Nunca mezcles datos de los dos.\n'
-    + '- No podés escribir nada ni mandar mails: si piden hacer algo, explicá dónde se hace en el hub.\n'
-    + '- No inventes: si un dato no está, decilo ("no hay fito registrado"). Cada dato que des tiene que venir de una herramienta.\n'
-    + '- Nombrá siempre las cargas como "fila N" (el hub lo convierte en un link a la fila).\n'
-    + '- Contestá en español rioplatense, corto y claro, sin jerga. Usá viñetas cuando haya varios datos. Montos en US$ con separador de miles.';
-}
-async function asistLlamar(msgs){
-  const url = String(cfg.claudeProxyUrl || '').trim();
-  const body = { model: ASIST_MODELO, max_tokens: 2000, system: [{ type: 'text', text: asistSistema(), cache_control: { type: 'ephemeral' } }], tools: ASIST_TOOLS, messages: msgs };
-  for(let intento = 0; ; intento++){
-    let st, data;
-    try{
-      const r = await fetchConTope(url, { method: 'POST', headers: { 'Content-Type': 'text/plain' }, body: JSON.stringify({ action: 'claudeProxy2', anthropicKey: cfg.anthropicKey, body }) }, _iaTopeMs);
-      const j = await r.json(); st = Number(j.status) || 0; data = j.data || {};
-    }catch(e){ throw ErrorIA(e && e.name === 'AbortError' ? 'Claude tardó demasiado en responder. Probá de nuevo.' : 'No pude conectar con el proxy de Claude. Revisá la conexión y la URL del proxy en Configuración.', 'red'); }
-    if(st === 200) return data;
-    if((st === 429 || st === 529 || st >= 500) && intento < _iaEsperas.length){ await _esperar(_iaEsperas[intento]); continue; }
-    const er = (data && data.error) || {};
-    throw mensajeErrorIA(st, er.type, er.message, ASIST_MODELO);
-  }
-}
-async function asistPreguntar(texto){
-  const inp = document.getElementById('asist-input');
-  texto = String(texto !== undefined ? texto : (inp ? inp.value : '')).trim();
-  if(!texto || _asist.ocupado) return;
-  const err = !cfg.anthropicKey ? 'Falta la clave de Anthropic en Configuración.' : !String(cfg.claudeProxyUrl || '').trim() ? 'Falta la URL del proxy de Claude en Configuración (el asistente la necesita).'
-    : asistGastoMes() >= asistTope() ? 'Se alcanzó el tope del mes (US$ ' + asistTope() + '). Se puede cambiar en Configuración.' : '';
-  if(_asist.negocio !== negocioActivo){ _asist.msgs = []; _asist.vista = []; _asist.negocio = negocioActivo; }
-  if(inp) inp.value = '';
-  _asist.vista.push({ rol: 'yo', texto });
-  if(err){ _asist.vista.push({ rol: 'error', texto: err }); asistRender(); return; }
-  _asist.msgs.push({ role: 'user', content: texto });
-  _asist.ocupado = true; _asist.pasos = []; asistRender();
-  const neg = negocioActivo;
-  try{
-    if(!_docsListo && !_docsCargando){ try{ await cargarDocumentos(); }catch(e){} }
-    let fin = '';
-    for(let v = 0; v < ASIST_MAX_VUELTAS && !fin; v++){
-      const data = await asistLlamar(_asist.msgs);
-      const usd = asistCosto(data.usage); asistSumarGasto(usd);
-      const u = data.usage || {};
-      iaRegistrarUso(ASIST_MODELO, { input_tokens: Math.round((u.input_tokens || 0) + (u.cache_creation_input_tokens || 0) * 1.25 + (u.cache_read_input_tokens || 0) * 0.1), output_tokens: u.output_tokens || 0 }, 'asistente', 'pregunta al hub (' + (MC_NOMBRES[neg] || neg) + ')');
-      if(negocioActivo !== neg) throw ErrorIA('Cambiaste de negocio mientras contestaba: la conversación empieza de cero.', 'negocio');
-      const content = data.content || [];
-      _asist.msgs.push({ role: 'assistant', content });
-      const usos = content.filter(b => b && b.type === 'tool_use');
-      if(!usos.length || data.stop_reason !== 'tool_use'){ fin = content.filter(b => b && b.type === 'text').map(b => b.text).join('').trim() || '(sin respuesta)'; break; }
-      const res = usos.map(b => { _asist.pasos.push(asistDescribirPaso(b.name, b.input)); let out; try{ out = asistEjecutar(b.name, b.input); }catch(e){ out = { error: e.message }; } return { type: 'tool_result', tool_use_id: b.id, content: JSON.stringify(out).slice(0, 24000) }; });
-      _asist.msgs.push({ role: 'user', content: res });
-      asistRender();
-      if(asistGastoMes() >= asistTope()){ fin = 'Corté acá: se alcanzó el tope del mes (US$ ' + asistTope() + ').'; break; }
-    }
-    if(!fin){ fin = 'No llegué a una respuesta en ' + ASIST_MAX_VUELTAS + ' pasos. Probá preguntar algo más puntual.'; _asist.msgs = []; }
-    _asist.vista.push({ rol: 'ia', texto: fin, pasos: _asist.pasos.slice() });
-  }catch(e){
-    _asist.vista.push({ rol: 'error', texto: (e && e.message) || String(e) });
-    _asist.msgs = [];   // la conversación con la IA quedó a medias: la próxima pregunta arranca limpia
-    if(negocioActivo !== neg){ _asist.vista = [{ rol: 'error', texto: 'Cambiaste de negocio mientras contestaba: la conversación empieza de cero.' }]; _asist.negocio = negocioActivo; }
-  }
-  // conversación larga: se cortan las preguntas viejas, siempre arrancando en una pregunta tuya (no en medio de una búsqueda)
-  if(_asist.msgs.length > 40){ const i = _asist.msgs.findIndex((m, k) => k >= _asist.msgs.length - 40 && m.role === 'user' && typeof m.content === 'string'); _asist.msgs = i >= 0 ? _asist.msgs.slice(i) : []; }
-  _asist.ocupado = false; _asist.pasos = []; asistRender();
-}
-// Texto de la respuesta: escapado, **negrita**, viñetas y "fila 956" / "filas 956 y 957" como links a la fila
-function asistTextoHtml(t){
-  return escH(t).replace(/\*\*(.+?)\*\*/g, '<b>$1</b>')
-    .replace(/\b(filas?)\s+((?:\d{1,5}(?:\s*(?:,|y|e)\s*)?)+)/gi, (m, pal, nums) => pal + ' ' + nums.replace(/\d{1,5}/g, n => '<a class="asist-fila" onclick="asistIrFila(' + n + ')">' + n + '</a>'))
-    .replace(/\n/g, '<br>');
-}
-function asistIrFila(n){
-  cargasVista = 'tabla';
-  if(currentView !== 'cargas') showView('cargas'); else renderCargas();
-  setTimeout(() => irAFilaTabla(Number(n)), 50);
-}
-function asistAbrir(){ _asist.abierto = !_asist.abierto; asistRender(); if(_asist.abierto) setTimeout(() => { const i = document.getElementById('asist-input'); if(i) i.focus(); }, 30); }
-function asistLimpiar(){ if(_asist.ocupado) return; _asist.msgs = []; _asist.vista = []; asistRender(); }
-function asistRender(){
-  let p = document.getElementById('asist-panel');
-  if(!_asist.abierto){ if(p) p.remove(); return; }
-  if(!p){ p = document.createElement('aside'); p.id = 'asist-panel'; p.className = 'asist-panel'; p.setAttribute('aria-label', 'Preguntale al hub'); document.body.appendChild(p); }
-  const neg = MC_NOMBRES[negocioActivo] || negocioActivo, vieja = _asist.negocio && _asist.negocio !== negocioActivo;
-  const msgs = (vieja ? [] : _asist.vista).map(m => m.rol === 'yo' ? '<div class="asist-yo">' + escH(m.texto) + '</div>'
-    : m.rol === 'error' ? '<div class="asist-err">' + escH(m.texto) + '</div>'
-    : (m.pasos && m.pasos.length ? '<div class="asist-pasos">' + m.pasos.map(x => '<div>✓ ' + escH(x) + '</div>').join('') + '</div>' : '') + '<div class="asist-ia">' + asistTextoHtml(m.texto) + '</div>').join('');
-  const enCurso = _asist.ocupado ? '<div class="asist-pasos">' + _asist.pasos.map(x => '<div>✓ ' + escH(x) + '</div>').join('') + '<div class="asist-pensando">Buscando…</div></div>' : '';
-  const vacio = !msgs && !enCurso ? '<div class="asist-vacio">Preguntá sobre las cargas de ' + escH(neg) + ': en qué está una carga, qué documentos faltan, qué está sin cobrar, cuántas toneladas se mandaron… Solo lee: no cambia nada.</div>' : '';
-  const g = asistGastoMes();
-  p.innerHTML = '<div class="asist-head"><b>Preguntale al hub</b><span>· ' + escH(neg) + ' · solo lee</span>'
-    + '<button class="asist-x" onclick="asistLimpiar()" title="Empezar de cero">Nueva</button><button class="asist-x" onclick="asistAbrir()" aria-label="Cerrar">✕</button></div>'
-    + '<div class="asist-cuerpo" id="asist-cuerpo">' + vacio + msgs + enCurso + '</div>'
-    + '<div class="asist-pie"><div class="asist-caja"><textarea id="asist-input" rows="2" placeholder="¿Qué cargas de este mes están sin cobrar?" onkeydown="if(event.key===\'Enter\'&&!event.shiftKey){event.preventDefault();asistPreguntar()}"' + (_asist.ocupado ? ' disabled' : '') + '></textarea>'
-    + '<button class="btn primary" onclick="asistPreguntar()"' + (_asist.ocupado ? ' disabled' : '') + ' aria-label="Preguntar">↑</button></div>'
-    + '<div class="asist-gasto"' + (g >= asistTope() ? ' style="color:var(--danger)"' : '') + '>Gasto del mes: ' + fmtUsdIA(g) + ' de US$ ' + asistTope() + ' · Claude Sonnet 5.5</div></div>';
-  const c = document.getElementById('asist-cuerpo'); if(c) c.scrollTop = c.scrollHeight;
-}
-
 // ─── GMAIL + CLAUDE: EXTRAER DATOS DEL MAIL DEL DESPACHANTE ─────────────────
 async function buscarMailDespachante(filename){
   if(!accessToken) return null;
@@ -20014,7 +19773,6 @@ window.onload=async()=>{
   try{ await importarConfigDeEnlace(); }catch(e){ console.warn('Config del link:', e); }
   if(!accessToken && document.body.classList) document.body.classList.add('sin-google');
   updateNegocioPill();
-  asistActualizarBoton();
   // Restore last view
   const lastView = getLastView();
   updateBottomNav(lastView);
