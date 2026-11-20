@@ -2388,8 +2388,9 @@ function parseSheetNum(val){
   else if(/^\d{1,3}(,\d{3})+(\.\d+)?$/.test(s)){
     s = s.replace(/,/g,'');
   }
-  // Plain with comma as decimal: 54425,00
-  else if(/^\d+,\d{1,2}$/.test(s)){
+  // Plain with comma as decimal: 54425,00 | 21,7728 (toneladas con 4 decimales; antes solo 1-2 y "21,7728" se leia 21)
+  // (3 decimales justos, "21,772", sigue siendo miles al estilo EE.UU.: lo toma la regla de arriba)
+  else if(/^\d+,\d+$/.test(s)){
     s = s.replace(',','.');
   }
   return parseFloat(s);
