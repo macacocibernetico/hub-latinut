@@ -15295,6 +15295,35 @@ function mcLeerArgenTexto(asunto, cuerpo, fechaMs){
   if(mg){ o.consignatario = mg[1].replace(/\*/g, '').split(/\s+(?:VIA|VÍA|STRADA|AV\.?|CALLE|\d)/i)[0].trim(); o.fuentes.customer = 'cuerpo del mail (consignatario de CO y FITO)'; }
   return o;
 }
+// Consignatario POR CONTRATO: cuando el mail trae varias planillas, la nota dice uno por contrato:
+//   "NOTA: el consignatario de los CO y FITO debe ser: / 26084: PEANUTS IMPORT ... LLC / EA26084: ARSAL SRL VIA ... / ED26084: DIMIPRO SRL Via ..."
+// Devuelve { '26084': 'PEANUTS IMPORT ... LLC', 'EA26084': 'ARSAL SRL', 'ED26084': 'DIMIPRO SRL' } (sin la dirección). Vacío si no hay.
+function mcConsignatariosPorContrato(cuerpo){
+  const t = String(cuerpo || ''), i = t.search(/consignatario/i), out = {};
+  if(i < 0) return out;
+  t.slice(i, i + 1500).split(/\r?\n/).slice(1).forEach(l => {
+    const m = l.replace(/\*/g, '').match(/^[\s•\-]*([A-Z]{0,3}\d{4,6})\s*:\s*(.+)$/i);
+    if(!m) return;
+    const nombre = m[2].split(/\s+(?:VIA|VÍA|STRADA|AV\.?|AVENIDA|CALLE|ROAD|STREET|ST\.|\d)/i)[0].replace(/[,;.\s]+$/, '').trim();
+    if(nombre) out[m[1].toUpperCase()] = nombre;
+  });
+  return out;
+}
+// El contrato de una planilla de Argen, CON sus letras (EA26084): del nombre del archivo ("Ctto EA26084") o de la celda "CONTRATO N°".
+function mcContratoDePlanilla(nombre, workbook){
+  const mf = String(nombre || '').match(/Ctto\.?\s*([A-Z]{0,3}\d{4,6})/i);
+  if(mf) return mf[1].toUpperCase();
+  try{
+    const ws = workbook.Sheets[workbook.SheetNames[0]];
+    for(const addr of Object.keys(ws)){
+      if(addr[0] === '!' || !/CONTRATO/i.test(String((ws[addr] || {}).v || ''))) continue;
+      const c = window.XLSX.utils.decode_cell(addr), v = ws[window.XLSX.utils.encode_cell({ r: c.r, c: c.c + 1 })];
+      const m = String((v || {}).v || '').trim().match(/^([A-Z]{0,3}\d{4,6})$/i);
+      if(m) return m[1].toUpperCase();
+    }
+  }catch(e){}
+  return '';
+}
 async function mcIaTextoArgen(asunto, cuerpo){
   if(!cfg.anthropicKey) return null;
   try{
@@ -15447,9 +15476,20 @@ async function mcTarjetasArgen(m, full){
   }
   const out = [];
   await mcAsegurarXLSX();
+  const porCtto = mcConsignatariosPorContrato(cuerpo);
   for(const a of lista){
     const buf = await mcAdjuntoBytes(m.id, a);
-    const data = parsePlanillaDespachante(window.XLSX.read(buf, { type: 'array', cellDates: false }));
+    const wb = window.XLSX.read(buf, { type: 'array', cellDates: false });
+    const data = parsePlanillaDespachante(wb);
+    // Si la nota del mail da un consignatario por contrato, cada planilla lleva el de SU contrato (no el mismo para todas).
+    // Si el contrato de la planilla no esta en la nota, no se adivina: queda vacio para que se elija.
+    let consigP = consig, fuenteP = conCita(tx.fuentes.customer || 'cuerpo del mail', citaIA(ia, 'consignatario'));
+    const avisoP = [];
+    if(Object.keys(porCtto).length){
+      const ctto = mcContratoDePlanilla(a.nombre, wb);
+      if(ctto && porCtto[ctto]){ consigP = mcSinPrefijoProducto(porCtto[ctto]); fuenteP = 'cuerpo del mail: "' + ctto + ': ' + porCtto[ctto] + '" (consignatario de CO y FITO de ese contrato)'; }
+      else { consigP = ''; avisoP.push('El mail da un consignatario por contrato y no encontré el del contrato ' + (ctto || 'de esta planilla') + ': elegí el Customer.'); }
+    }
     // El contrato: el que dice el nombre de la planilla ("Ctto EA26084") o, si no, los del asunto. Va solo el numero (26084), sin las letras.
     const sug = mcContenedoresSugeridos(tx.contenedores, data.tns);
     const polI = mcPolDeTexto(m.asunto + ' ' + cuerpo + ' ' + (data.port || ''));
@@ -15457,8 +15497,8 @@ async function mcTarjetasArgen(m, full){
     const contratoProv = mfn ? mfn[1].replace(/\D/g, '') : [...new Set(tx.contratos.map(x => x.replace(/\D/g, '')).filter(Boolean))].join(', ');
     const fuentes = Object.assign({ vessel: 'planilla (.xlsx)', port: 'planilla (.xlsx)', eta: 'planilla (.xlsx)', product: 'planilla (.xlsx)', tns: 'planilla (.xlsx)', priceFOB: 'planilla (.xlsx)', lots: 'planilla (.xlsx)', contractProv: mfn ? 'nombre de la planilla' : 'asunto del mail' }, tx.fuentes);
     out.push(mcNuevaTarjeta({ clave: m.id + '|' + a.nombre, tipo: 'argen', negocio: 'axt', motivoNegocio: 'Argen Peanuts siempre va a AXT', archivo: a.nombre, data, mail,
-      candidatos: [consig], contractProv: contratoProv, fuentesCliente: conCita(tx.fuentes.customer || 'cuerpo del mail', citaIA(ia, 'consignatario')), consol: tx.consol ? tx.consol.iso : '', containers: sug.texto, pol: polI.pol, fuentes: Object.assign(fuentes, { pol: polI.fuente }, sug.cambio ? { contenedores: 'por las toneladas de la planilla (el mail decía ' + tx.contenedores + ')' } : {}), avisos: comunes.slice().concat(sug.aviso ? [sug.aviso] : []),
-      hints: { consignatario: consig, contratos: tx.contratos.join(', '), destino: tx.destino }, ia: { texto: tx, ia } }));
+      candidatos: [consigP], contractProv: contratoProv, fuentesCliente: fuenteP, consol: tx.consol ? tx.consol.iso : '', containers: sug.texto, pol: polI.pol, fuentes: Object.assign(fuentes, { pol: polI.fuente }, sug.cambio ? { contenedores: 'por las toneladas de la planilla (el mail decía ' + tx.contenedores + ')' } : {}), avisos: comunes.filter(x => !(Object.keys(porCtto).length && /No encontré el consignatario/.test(x))).concat(avisoP, sug.aviso ? [sug.aviso] : []),
+      hints: { consignatario: consigP, contratos: tx.contratos.join(', '), destino: tx.destino }, ia: { texto: tx, ia } }));
   }
   return out;
 }
@@ -16292,6 +16332,8 @@ function n8nAuditorHizo(e){
 }
 // Qué cambiamos en n8n y qué control se sumó en este panel. El más nuevo arriba. "version" = la que anota la Marca de corrida.
 const N8N_CAMBIOS = [
+  { fecha: '20/11/2026', versiones: ['etapa1-2026-11-20'], cambio: 'Etapa 1: mail de Argen con varias planillas y una nota «el consignatario de los CO y FITO debe ser: 26084: … / EA26084: … / ED26084: …». Cada planilla lleva el consignatario de SU contrato (el «Ctto» del nombre del archivo), no el mismo para todas. Si un contrato no está en la nota, el Customer queda vacío con aviso. Es una regla fija, sin IA', control: 'En Mails de carga, cada tarjeta de Argen muestra de dónde salió el consignatario («cuerpo del mail: "EA26084: ARSAL SRL…"») o el aviso de que falta' },
+  { fecha: '20/11/2026', versiones: ['docs-2026-11-20-bk'], cambio: 'Documentos: el booking se busca en los dos lados. El lector lo saca de cualquier documento (planilla del despachante, packing, shipping), lo usa para encontrar la carga y, si la carga tiene OTRO booking en la planilla, no escribe nada y lo manda en el mail de conflictos («la planilla dice X y el documento dice Y»)', control: 'Mail de conflictos (los de Sí en Aviso_n8n) con la línea del Booking; en ¿Está corriendo? la versión docs-2026-11-20-bk' },
   { fecha: '19/11/2026', versiones: ['auditor-2026-11-19'], cambio: 'Auditor semanal con IA (workflow nuevo, lunes 7:30): revisa las cargas activas de cada negocio por separado contra DOCUMENTOS, primero con reglas (BL con contenedor, dígitos de más o de menos, contenedores mal tipeados, ETA vencida sin BL, BL o factura del documento distinta a la planilla) y después con Claude Opus 5.5. Manda un mail por negocio a quien tenga Sí en Auditoria_n8n (CONTACTOS). No escribe. Tope US$ 5 por mes', control: '¿Está corriendo?: tarjeta «Auditor semanal», con lo que encontró en cada negocio y el gasto de IA del mes; avisa si pasan más de 3 semanas sin corrida' },
   { fecha: '19/11/2026', versiones: ['docs-2026-11-19-rev'], cambio: 'Documentos: revisor de casos dudosos con IA (Claude Sonnet 5.5). Lo que queda para revisar sin carga se le pasa con las cargas candidatas de las dos planillas y propone de cuál es y por qué. No escribe: en Documentos aparece la sugerencia con «Usar la sugerencia» (con confirmación). Hasta 5 por vuelta, tope US$ 3 por mes, una vez por documento', control: 'Revisor de casos dudosos: gasto del mes contra el tope y casos revisados; en Documentos, la sugerencia en cada tarjeta para revisar' },
   { fecha: '19/11/2026', versiones: ['docs-2026-11-19-ia'], cambio: 'Documentos: lector de imagen con IA (Claude Opus 5.5, esfuerzo medio) para los BL escaneados, que no traen texto. Hasta 3 por vuelta y tope de US$ 5 por mes; cada documento se lee una sola vez. El número leído se anota solo si coincide con el booking o el BL de la carga; si no, queda para revisar', control: 'BL escaneados · lector con IA: gasto del mes contra el tope y cantidad de lecturas' },
