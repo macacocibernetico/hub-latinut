@@ -16381,6 +16381,7 @@ function n8nAuditorHizo(e){
 }
 // Qué cambiamos en n8n y qué control se sumó en este panel. El más nuevo arriba. "version" = la que anota la Marca de corrida.
 const N8N_CAMBIOS = [
+  { fecha: '20/11/2026', versiones: ['etapa1-2026-11-20b'], cambio: 'Etapa 1: aviso por mail de cliente no reconocido. Si una carga preparada trae un cliente que no es ninguno de los ya cargados en la planilla de su negocio (mismas reglas que el hub, y si no atan, Claude Sonnet 5.5 elige solo entre esos clientes), manda un mail a los de Sí en Aviso_n8n (CONTACTOS), uno por negocio y una vez por carga. El negocio sale de la regla fija (Argen → AXT; Nutrin: harina → Buzaram, pasta → AXT, aceite no se mira, resto → Buzaram). No escribe nada. Tope de IA US$ 2 por mes (alcanzado, avisa sin consultarla)', control: 'Recuadro «Cliente no reconocido · aviso por mail (Etapa 1)»: a quién le llega, gasto del mes contra el tope, cuántos ató la IA y cuántos se avisaron' },
   { fecha: '20/11/2026', versiones: ['etapa1-2026-11-20'], cambio: 'Etapa 1: mail de Argen con varias planillas y una nota «el consignatario de los CO y FITO debe ser: 26084: … / EA26084: … / ED26084: …». Cada planilla lleva el consignatario de SU contrato (el «Ctto» del nombre del archivo), no el mismo para todas. Si un contrato no está en la nota, el Customer queda vacío con aviso. Es una regla fija, sin IA', control: 'En Mails de carga, cada tarjeta de Argen muestra de dónde salió el consignatario («cuerpo del mail: "EA26084: ARSAL SRL…"») o el aviso de que falta' },
   { fecha: '20/11/2026', versiones: ['docs-2026-11-20-bk'], cambio: 'Documentos: el booking se busca en los dos lados. El lector lo saca de cualquier documento (planilla del despachante, packing, shipping), lo usa para encontrar la carga y, si la carga tiene OTRO booking en la planilla, no escribe nada y lo manda en el mail de conflictos («la planilla dice X y el documento dice Y»)', control: 'Mail de conflictos (los de Sí en Aviso_n8n) con la línea del Booking; en ¿Está corriendo? la versión docs-2026-11-20-bk' },
   { fecha: '19/11/2026', versiones: ['auditor-2026-11-19'], cambio: 'Auditor semanal con IA (workflow nuevo, lunes 7:30): revisa las cargas activas de cada negocio por separado contra DOCUMENTOS, primero con reglas (BL con contenedor, dígitos de más o de menos, contenedores mal tipeados, ETA vencida sin BL, BL o factura del documento distinta a la planilla) y después con Claude Opus 5.5. Manda un mail por negocio a quien tenga Sí en Auditoria_n8n (CONTACTOS). No escribe. Tope US$ 5 por mes', control: '¿Está corriendo?: tarjeta «Auditor semanal», con lo que encontró en cada negocio y el gasto de IA del mes; avisa si pasan más de 3 semanas sin corrida' },
@@ -16680,6 +16681,13 @@ function n8nLectorIA(estado, clave){
   if (!ia || !ia.mes || ia.mes !== new Date().toISOString().slice(0, 7)) return null;
   return { usd: +ia.usd || 0, topeUsd: +ia.topeUsd || 5, lecturas: +(ia.lecturas || ia.casos) || 0 };
 }
+// Etapa 1 · cliente no reconocido: lo que anota la Marca de corrida (detalle.clientes) del mes en curso
+function n8nClientesIA(estado){
+  const e = (estado || []).find(x => x.wf === 'etapa1');
+  const c = e && e.detalle && e.detalle.clientes;
+  if (!c || !c.mes || c.mes !== new Date().toISOString().slice(0, 7)) return null;
+  return { usd: +c.usd || 0, topeUsd: +c.topeUsd || 2, consultas: +c.consultas || 0, resueltos: +c.resueltos || 0, sinReconocer: +c.sinReconocer || 0 };
+}
 function n8nAvisoConflictos(docs, negocio, contactos, ahora){
   const para = (contactos || []).filter(c => c.avisoN8n && c.email).map(c => c.email);
   const lista = (docs || []).filter(d => d.negocio === negocio && /no se pisa/i.test(d.detalle || ''))
@@ -16731,6 +16739,14 @@ function n8nPanelHtml(ahora){
     + (rvE ? '<div class="n8-big"' + (rvE.usd >= rvE.topeUsd ? ' style="color:var(--danger)"' : '') + '>US$ ' + rvE.usd.toFixed(2).replace('.', ',') + ' <small>de US$ ' + rvE.topeUsd + ' este mes · ' + rvE.lecturas + ' caso' + (rvE.lecturas === 1 ? '' : 's') + '</small></div>'
       + '<div class="n8-leg">' + (rvE.usd >= rvE.topeUsd ? 'Tope alcanzado: hasta el mes que viene no propone cargas.' : 'Propone de qué carga es lo que quedó sin atar; lo ves en Documentos con «Usar la sugerencia». No escribe nada solo.') + '</div>'
       : '<div class="n8-leg">Todavía no revisó ningún caso este mes.</div>') + '</div>';
+  // Etapa 1 · cliente no reconocido: aviso por mail (los nombres que no atan las reglas se le preguntan a la IA, solo entre los clientes cargados)
+  const clE = n8nClientesIA(_n8n.estado), paraCl = (typeof contacts !== 'undefined' ? contacts : []).filter(c => c.avisoN8n && c.email).map(c => c.email);
+  h += '<div class="n8-box" style="margin-top:10px;"><h4>Cliente no reconocido · aviso por mail (Etapa 1)</h4>'
+    + (paraCl.length ? '<div class="n8-leg">Si una carga preparada trae un cliente que no es ninguno de los cargados en la planilla de su negocio (ni por las reglas ni por la IA), n8n manda un mail a <b>' + esc(paraCl.join(', ')) + '</b> (uno por negocio, una vez por carga). No escribe nada.</div>'
+      : '<div class="n8-aviso">Nadie recibe este aviso: en la hoja CONTACTOS poné «Sí» en la columna <b>Aviso_n8n</b> de tu fila.</div>')
+    + (clE ? '<div class="n8-big"' + (clE.usd >= clE.topeUsd ? ' style="color:var(--danger)"' : '') + '>US$ ' + clE.usd.toFixed(2).replace('.', ',') + ' <small>de US$ ' + clE.topeUsd + ' este mes · ' + clE.resueltos + ' atado' + (clE.resueltos === 1 ? '' : 's') + ' por la IA · ' + clE.sinReconocer + ' avisado' + (clE.sinReconocer === 1 ? '' : 's') + '</small></div>'
+      + (clE.usd >= clE.topeUsd ? '<div class="n8-leg">Tope alcanzado: hasta el mes que viene se avisa sin consultar a la IA.</div>' : '')
+      : '<div class="n8-leg">Todavía no hubo clientes para revisar este mes.</div>') + '</div>';
   // 3
   const vf = _docsListo ? n8nVerificacion(_docs || [], negocioActivo, allRowsAll || [], _n8n.lotesOtro, ahora) : [];
   if(vf.length) h += '<div class="n8-sec">3 · Lo que el hub verifica por su cuenta <small>· no le cree a n8n: lo compara con la planilla de ' + esc(neg) + ' (30 días)</small></div><div class="n8-cruz">'
