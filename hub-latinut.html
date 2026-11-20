@@ -14820,14 +14820,18 @@ async function mcOfrecerAlias(cards){
   const pares = [];
   cards.forEach(c => {
     if(c.item.estado !== 'ok' || !c.item.customer) return;
+    if(c.clienteIA && c.item.customer === c.clienteIA.cliente) return;   // lo reconocio la IA: no se guarda esa forma de escribirlo
     if(!getUnique(COL.CUSTOMER).some(x => normTar(x) === normTar(c.item.customer))) return;
     c.candidatos.forEach(t => {
       if(!t || clienteEnLista(t) || pares.some(p => normTar(p.alias) === normTar(t))) return;
-      pares.push({ alias: t, cliente: c.item.customer });
+      // lo que habia encontrado la IA, para decidir con eso a la vista
+      const ia = c.clienteIA ? ' La IA lo había interpretado como "' + c.clienteIA.cliente + '"' + (c.clienteIA.motivo ? ' (' + c.clienteIA.motivo + ')' : '') + ', y lo cambiaste.'
+        : c.iaSinCliente ? ' La IA no lo pudo atar a ningún cliente cargado' + (c.iaSinCliente.motivo ? ' (' + c.iaSinCliente.motivo + ')' : '') + '.' : '';
+      pares.push({ alias: t, cliente: c.item.customer, ia });
     });
   });
   for(const p of pares){
-    const ok = await showConfirm('¿Recordar este nombre de cliente?', 'El mail decía "' + p.alias + '" y cargaste el cliente "' + p.cliente + '". Si lo recordás, la próxima vez el hub lo pone solo. Se anota en la pestaña ' + MC_HOJA_ALIAS + ' de HUB LATINUT (se crea si no existe) y lo ve todo el equipo.', { icono: '🧠', okLabel: 'Recordarlo' });
+    const ok = await showConfirm('¿Recordar este nombre de cliente?', 'El mail decía "' + p.alias + '" y cargaste el cliente "' + p.cliente + '".' + (p.ia || '') + ' Si lo recordás, la próxima vez el hub lo pone solo. Se anota en la pestaña ' + MC_HOJA_ALIAS + ' de HUB LATINUT (se crea si no existe) y lo ve todo el equipo.', { icono: '🧠', okLabel: 'Recordarlo' });
     if(ok && !(await mcGuardarAlias(p.alias, p.cliente))) showToast('No pude anotar el nombre del cliente', 'warn');
   }
 }
@@ -15786,6 +15790,48 @@ function mcArmarLote(){
   });
   _lote = { bandeja: true, items: _mc.cards.filter(c => c.negocio === negocioActivo && !c.noCargable).map(c => c.item) };
 }
+// CLIENTE CON IA: si el nombre del mail no se pudo atar con las reglas (mal escrito: "PEANUT IMPRT AN DISTRIBITON COMPANY"),
+// se le pregunta a Claude cuál de los clientes YA cargados en la planilla de ESTE negocio es. Solo puede elegir uno de esa lista
+// (escrito como está en la planilla) o ninguno; no se guarda ningún alias: queda en la tarjeta con su motivo para que lo revises.
+// Si dice ninguno, sigue el aviso "Cliente no reconocido". Una sola consulta por tarjeta y negocio, todos los nombres juntos.
+const ESQ_CLIENTE_IA = { type: 'object', properties: { resultados: { type: 'array', items: { type: 'object', properties: { nombre: { type: 'string' }, cliente: { type: ['string', 'null'] }, motivo: { type: 'string' } }, required: ['nombre', 'cliente', 'motivo'], additionalProperties: false } } }, required: ['resultados'], additionalProperties: false };
+async function mcIaClientes(){
+  if(!cfg.anthropicKey || _mc.iaCliCorriendo) return;
+  const neg = negocioActivo;
+  const cards = _mc.cards.filter(c => c.negocio === neg && !c.noCargable && c.item.estado !== 'ok' && !c.item.customer && (c.candidatos || []).length && c.iaCli !== neg);
+  const lista = getUnique(COL.CUSTOMER);
+  if(!cards.length || !lista.length) return;
+  cards.forEach(c => { c.iaCli = neg; });
+  const nombres = [...new Set([].concat(...cards.map(c => c.candidatos)).map(s => String(s || '').trim()).filter(Boolean))];
+  _mc.iaCliCorriendo = true;
+  let res = [];
+  try{
+    const r = await llamarClaude({ tarea: 'cliente_ia', maxTokens: 1000, detalle: 'cliente del mail (' + MC_NOMBRES[neg] + ')', schema: ESQ_CLIENTE_IA, content:
+`Sos un asistente de LATINUT S.A. (trading de maní). En los mails de carga el cliente (consignatario) viene escrito a mano, a veces con errores de tipeo, abreviado, con o sin forma legal (SRL, LLC, Inc), o con el nombre completo de una empresa que en la planilla figura por su sigla.
+Para cada NOMBRE DEL MAIL decí cuál de los CLIENTES DE LA PLANILLA es la misma empresa. "cliente" tiene que ser uno de la lista, copiado EXACTO, o null.
+Elegí uno solo si estás seguro de que es la misma empresa (mismo nombre mal escrito, sigla de ese nombre, misma empresa sin la forma legal). Si dudás, o se parece pero puede ser otra empresa, null. No inventes clientes.
+"motivo": una frase corta en español explicando por qué (ej. "PIDCO es la sigla de Peanut Import and Distribution Company; 'IMPRT' y 'DISTRIBITON' son errores de tipeo").
+CLIENTES DE LA PLANILLA:
+${lista.map(x => '- ' + x).join('\n')}
+NOMBRES DEL MAIL:
+${nombres.map(x => '- ' + x).join('\n')}` });
+    res = ((extraerJsonIA(r.texto) || {}).resultados) || [];
+  }catch(e){ console.warn('IA cliente:', e); _mc.errores.push('La IA no pudo reconocer el cliente: ' + e.message); }
+  finally{ _mc.iaCliCorriendo = false; }
+  let cambio = false;
+  cards.forEach(c => {
+    if(c.negocio !== neg || c.item.customer || c.item.estado === 'ok') return;
+    for(const t of c.candidatos){
+      const x = res.find(z => z && normTar(z.nombre) === normTar(t));
+      // solo vale si es un cliente de la lista (la IA no puede agregar uno nuevo); se pone como esta escrito en la planilla
+      const k = x && x.cliente ? (lista.find(l => l === x.cliente) || lista.find(l => normTar(l) === normTar(x.cliente)) || '') : '';
+      if(k){ c.item.customer = k; c.clienteIA = { nombre: t, cliente: k, motivo: String(x.motivo || '').slice(0, 240) }; c.fuentes.customer = 'IA: el mail dice «' + t + '»' + (x.motivo ? ' · ' + String(x.motivo).slice(0, 240) : ''); cambio = true; break; }
+    }
+    // la IA contesto pero no lo ato a ninguno: se recuerda su motivo para contarlo si despues lo elegis a mano
+    if(!c.clienteIA && res.length){ const x = res.find(z => z && c.candidatos.some(t => normTar(z.nombre) === normTar(t))); c.iaSinCliente = { motivo: x ? String(x.motivo || '').slice(0, 240) : '' }; }
+  });
+  if(cambio && currentView === 'mails') renderBandeja();
+}
 const MC_NOMBRES = { axt: 'AXT', buzaram: 'Buzaram' };
 // Cuantos contenedores hay: por los numeros de contenedor de la celda (MSKU1234567, ...) o por la cantidad escrita ("2x40 HC").
 function mcContarContenedores(txt){
@@ -15863,6 +15909,7 @@ function mcActualizarAvisos(i){
   const av = [];
   if(it.estado !== 'ok'){
     const neg = MC_NOMBRES[negocioActivo];
+    if(c.clienteIA && it.customer === c.clienteIA.cliente) av.push('🤖 El mail dice "' + c.clienteIA.nombre + '" y la IA lo interpretó como "' + c.clienteIA.cliente + '"' + (c.clienteIA.motivo ? ': ' + c.clienteIA.motivo : '') + '. Revisalo antes de guardar.');
     if(!it.customer && c.candidatos.length) av.push('🔔 Cliente no reconocido: el mail dice "' + c.candidatos.join('" / "') + '" y no es ninguno de los clientes cargados de ' + neg + '. Elegí el Customer.');
     else if(it.customer && !getUnique(COL.CUSTOMER).some(x => normTar(x) === normTar(it.customer))) av.push('🔔 "' + it.customer + '" no está entre los clientes cargados de ' + neg + ': ¿es un cliente nuevo?');
     const cc = mcControlContenedores(it.containers || it.contHint, d.tns);
@@ -16024,6 +16071,7 @@ function renderBandeja(){
   if(!accessToken){ cont.innerHTML = '<div class="empty"><div class="empty-icon">📬</div><div style="margin-bottom:16px;">Conectate con Google para revisar los mails de carga.</div><button class="btn primary" onclick="handleAuth()">Conectar con Google</button></div>'; return; }
   if(!_mc.ultima && !_mc.cargando) mcCargarTodo();
   mcArmarLote();
+  mcIaClientes();   // los nombres que las reglas no pudieron atar (no frena la pantalla: cuando contesta, se vuelve a dibujar)
   const act = _mc.cards.filter(c => c.negocio === negocioActivo && !c.noCargable);
   const otros = _mc.cards.filter(c => c.negocio && c.negocio !== negocioActivo && !c.noCargable && c.item.estado !== 'ok');
   const sinNeg = _mc.cards.filter(c => !c.negocio && !c.noCargable);
