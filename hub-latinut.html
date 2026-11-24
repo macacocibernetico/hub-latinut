@@ -12149,7 +12149,8 @@ function docsEstadoCarga(row){
     const ds = docs.filter(d => docTipoEfectivo(d, row) === s.k);
     ds.forEach(d => usados.add(d));
     const bueno = ds.filter(d => d.estado !== 'no_coincide').sort((a, b) => (b.drive ? 1 : 0) - (a.drive ? 1 : 0))[0];
-    if(bueno) return { k: s.k, estado: 'ok', link: docLinkSeguro(bueno.drive), num: bueno.numero };
+    // reconocido por dentro (el nombre no decía qué era, ej. "483843.pdf"): se muestra el nombre del archivo entre paréntesis
+    if(bueno) return { k: s.k, estado: 'ok', link: docLinkSeguro(bueno.drive), num: bueno.numero, arch: /contenido/.test(bueno.via || '') ? bueno.nombre : '' };
     const mal = ds.find(d => d.estado === 'no_coincide');
     if(mal) return { k: s.k, estado: 'mal', link: docLinkSeguro(mal.drive), num: mal.numero };
     const pl = valor(enPlanilla[s.k]);
@@ -12162,7 +12163,7 @@ function docsEstadoCarga(row){
   return { chips, otros, total: req.length, hay: hay.length, completa: hay.length === req.length, docs };
 }
 function docChip(c){
-  const lab = DOC_TIPOS[c.k] || c.k, num = c.num ? ' <small>· ' + escaparHtml(String(c.num)) + '</small>' : '';
+  const lab = DOC_TIPOS[c.k] || c.k, num = (c.num ? ' <small>· ' + escaparHtml(String(c.num)) + '</small>' : '') + (c.arch ? ' <small>(' + escaparHtml(String(c.arch)) + ')</small>' : '');
   if(c.estado === 'na') return '<span class="dc dc-na">' + lab + ' <small>(' + escaparHtml(c.nota) + ')</small></span>';
   if(c.estado === 'no') return '<span class="dc dc-no" title="Todavía no llegó">' + lab + '</span>';
   if(c.estado === 'planilla') return '<span class="dc dc-pl" title="Está anotado en la planilla, pero el PDF no pasó por n8n">' + lab + num + '</span>';
@@ -16369,10 +16370,19 @@ async function acCrearYMostrar(){ if(await acCrearHoja()) renderAutomatizacion()
 const N8N_WORKFLOWS = [
   { wf: 'documentos', nombre: 'Documentos de las cargas', cadaMin: 10, que: 'Lee BL, facturas y certificados de los mails, los ata a su carga, anota los números en la planilla y los sube a Drive. También compara las FC del proveedor con el Apps Script.' },
   { wf: 'etapa1', nombre: 'Preparar cargas desde los mails', cadaMin: 5, que: 'Lee las solicitudes de Argen y Nutrin y deja la carga preparada en Pendientes (no escribe en las cargas).' },
+  { wf: 'carpetas', nombre: 'Carpetas de Drive de las cargas', cadaMin: 15, que: 'Recorre las carpetas de Drive de las cargas activas (sin cobrar y sin SI en DOCUMENTOS), AXT y Buzaram por separado, y anota en DOCUMENTOS lo que hay, también lo subido a mano. Lo que no reconoce por el nombre lo lee por dentro con IA (Haiku). Solo lee Drive: no crea ni mueve nada.' },
   // Una vez por semana: se avisa si pasan más de 3 semanas sin corrida (cadaMin × 3)
   { wf: 'auditor', nombre: 'Auditor semanal (IA)', cadaMin: 7 * 24 * 60, cada: 'los lunes a las 7:30', que: 'Revisa las cargas activas de AXT y de Buzaram (por separado) contra los documentos recibidos, con reglas y con Claude Opus 5.5, y manda un mail por negocio a quien tenga Sí en Auditoria_n8n (CONTACTOS). No escribe en las planillas.' }
 ];
 // Lo que hizo la última corrida del auditor: cuántas cosas para mirar en cada negocio y cuánto gastó de IA en el mes
+// Carpetas de Drive: cuántas carpetas leyó, cuántos archivos nuevos anotó (y cuántos leyó por dentro con IA), y el gasto de IA del mes contra el tope
+function n8nCarpetasHizo(e){
+  const d = e.detalle || {}, ia = d.ia || {}, mesOk = ia.mes === new Date().toISOString().slice(0, 7);
+  const usd = mesOk ? (+ia.usd || 0) : 0, tope = +ia.topeUsd || 2;
+  return 'Última: <b>' + (+e.mails || 0) + ' carpeta' + (+e.mails === 1 ? '' : 's') + '</b>, <b>' + (+e.documentos || 0) + ' archivo' + (+e.documentos === 1 ? '' : 's') + ' nuevo' + (+e.documentos === 1 ? '' : 's') + '</b>'
+    + ((+d.porIA || 0) ? ' (' + d.porIA + ' leído' + (d.porIA === 1 ? '' : 's') + ' por dentro con IA)' : '')
+    + '<br>IA del mes: <b' + (usd >= tope ? ' style="color:var(--danger)"' : '') + '>US$ ' + usd.toFixed(2).replace('.', ',') + '</b> de US$ ' + tope + (mesOk && ia.lecturas ? ' · ' + ia.lecturas + ' archivo' + (ia.lecturas === 1 ? '' : 's') + ' leído' + (ia.lecturas === 1 ? '' : 's') : '');
+}
 function n8nAuditorHizo(e){
   const r = ((e.detalle || {}).resumen) || {}, g = (e.detalle || {}).gasto || {};
   const neg = (k, n) => r[k] ? n + ' <b>' + (r[k].hallazgos || 0) + '</b>' + (r[k].altas ? ' (' + r[k].altas + ' importante' + (r[k].altas === 1 ? '' : 's') + ')' : '') : '';
@@ -16381,6 +16391,8 @@ function n8nAuditorHizo(e){
 }
 // Qué cambiamos en n8n y qué control se sumó en este panel. El más nuevo arriba. "version" = la que anota la Marca de corrida.
 const N8N_CAMBIOS = [
+  { fecha: '24/11/2026', versiones: ['carpetas-2026-11-24'], cambio: 'Workflow nuevo «Carpetas de las cargas» (cada 15 min): recorre las carpetas de Drive de las cargas activas (sin cobrar y sin SI en DOCUMENTOS), AXT, Italia y Buzaram por separado, y anota en DOCUMENTOS los archivos que encuentra, también los subidos a mano. Los reconoce por el nombre; los que no (ej. "483843.pdf"), si son PDF o imagen, los lee por dentro Claude Haiku 5.5 y en el hub se ven con el nombre del archivo entre paréntesis. Solo lee Drive: no crea ni mueve carpetas. Tope de IA US$ 2 por mes, hasta 8 archivos por vuelta', control: '¿Está corriendo?: tarjeta «Carpetas de Drive de las cargas» con carpetas leídas, archivos nuevos, cuántos leyó la IA y el gasto del mes contra el tope' },
+  { fecha: '24/11/2026', versiones: ['docs-2026-11-24'], cambio: 'Documentos: los reintentos de mails y la comparación de facturas con el Apps Script saltean lo que anotó «Carpetas de las cargas» (no viene de un mail)', control: 'FC_PARALELO y las etapas del circuito de mails no cuentan los archivos de las carpetas' },
   { fecha: '20/11/2026', versiones: ['etapa1-2026-11-20b'], cambio: 'Etapa 1: aviso por mail de cliente no reconocido. Si una carga preparada trae un cliente que no es ninguno de los ya cargados en la planilla de su negocio (mismas reglas que el hub, y si no atan, Claude Sonnet 5.5 elige solo entre esos clientes), manda un mail a los de Sí en Aviso_n8n (CONTACTOS), uno por negocio y una vez por carga. El negocio sale de la regla fija (Argen → AXT; Nutrin: harina → Buzaram, pasta → AXT, aceite no se mira, resto → Buzaram). No escribe nada. Tope de IA US$ 2 por mes (alcanzado, avisa sin consultarla)', control: 'Recuadro «Cliente no reconocido · aviso por mail (Etapa 1)»: a quién le llega, gasto del mes contra el tope, cuántos ató la IA y cuántos se avisaron' },
   { fecha: '20/11/2026', versiones: ['etapa1-2026-11-20'], cambio: 'Etapa 1: mail de Argen con varias planillas y una nota «el consignatario de los CO y FITO debe ser: 26084: … / EA26084: … / ED26084: …». Cada planilla lleva el consignatario de SU contrato (el «Ctto» del nombre del archivo), no el mismo para todas. Si un contrato no está en la nota, el Customer queda vacío con aviso. Es una regla fija, sin IA', control: 'En Mails de carga, cada tarjeta de Argen muestra de dónde salió el consignatario («cuerpo del mail: "EA26084: ARSAL SRL…"») o el aviso de que falta' },
   { fecha: '20/11/2026', versiones: ['docs-2026-11-20-bk'], cambio: 'Documentos: el booking se busca en los dos lados. El lector lo saca de cualquier documento (planilla del despachante, packing, shipping), lo usa para encontrar la carga y, si la carga tiene OTRO booking en la planilla, no escribe nada y lo manda en el mail de conflictos («la planilla dice X y el documento dice Y»)', control: 'Mail de conflictos (los de Sí en Aviso_n8n) con la línea del Booking; en ¿Está corriendo? la versión docs-2026-11-20-bk' },
@@ -16494,7 +16506,8 @@ function n8nEstadoWorkflows(estado, corridas, ahora){
 // 2) Etapas del circuito de documentos (negocio activo, ultimos 7 dias). Los documentos sin negocio todavia se ven en los dos.
 function n8nDocsDelNegocio(docs, negocio, ahora, dias){
   ahora = ahora || Date.now();
-  return (docs || []).filter(d => (d.negocio === negocio || !d.negocio)).filter(d => { const f = n8nFecha(d.procesado) || n8nFecha(d.fechaMail); return !dias || !f || ahora - f.getTime() <= dias * 864e5; });
+  // lo que anotó "Carpetas de las cargas" (archivos de Drive, no mails) no es parte del circuito de mails: no cuenta en estas etapas
+  return (docs || []).filter(d => !/^carpeta\|/.test(String(d.clave || ''))).filter(d => (d.negocio === negocio || !d.negocio)).filter(d => { const f = n8nFecha(d.procesado) || n8nFecha(d.fechaMail); return !dias || !f || ahora - f.getTime() <= dias * 864e5; });
 }
 const n8nVaADrive = d => d.filas.length && ['ignorado', 'reemplazada', 'descartado'].indexOf(d.estado) < 0;
 const n8nAnotados = d => String(d.anotado || '').split(',').map(x => x.trim()).filter(Boolean).map(x => { const m = x.match(/^(.*) fila (\d+)$/); return m ? { columna: m[1].trim(), fila: +m[2] } : null; }).filter(Boolean);
@@ -16706,7 +16719,7 @@ function n8nPanelHtml(ahora){
   h += '<div class="n8-sec">1 · ¿Está corriendo? <small>· cada workflow anota cada corrida en N8N_ESTADO</small></div><div class="n8-grid">'
     + ws.map(w => {
       const e = w.e || {};
-      const hizo = !e.fecha ? '' : w.wf === 'auditor' ? n8nAuditorHizo(e) : 'Última: <b>' + e.mails + ' mail' + (e.mails === 1 ? '' : 's') + '</b>, <b>' + e.documentos + ' ' + (w.wf === 'etapa1' ? 'propuesta' + (e.documentos === 1 ? '' : 's') : 'documento' + (e.documentos === 1 ? '' : 's')) + '</b>' + (w.wf === 'documentos' ? ', ' + e.escritos + ' anotado' + (e.escritos === 1 ? '' : 's') + ', ' + e.drive + ' a Drive' : '');
+      const hizo = !e.fecha ? '' : w.wf === 'auditor' ? n8nAuditorHizo(e) : w.wf === 'carpetas' ? n8nCarpetasHizo(e) : 'Última: <b>' + e.mails + ' mail' + (e.mails === 1 ? '' : 's') + '</b>, <b>' + e.documentos + ' ' + (w.wf === 'etapa1' ? 'propuesta' + (e.documentos === 1 ? '' : 's') : 'documento' + (e.documentos === 1 ? '' : 's')) + '</b>' + (w.wf === 'documentos' ? ', ' + e.escritos + ' anotado' + (e.escritos === 1 ? '' : 's') + ', ' + e.drive + ' a Drive' : '');
       return '<div class="n8-wf ' + w.clase + '"><h3><span class="n8-dot"></span>' + esc(w.nombre) + '</h3><div class="n8-st">' + esc(w.texto) + '</div>'
         + '<div class="n8-m">' + (w.cada ? 'Corre ' + esc(w.cada) : 'Corre cada ' + w.cadaMin + ' min') + (e.version ? ' · versión <b>' + esc(e.version) + '</b>' : '') + (hizo ? '<br>' + hizo : '')
         + (e.avisos ? '<br><span class="n8-av">' + esc(e.avisos) + '</span>' : '')
