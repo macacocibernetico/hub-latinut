@@ -12089,7 +12089,7 @@ async function resumenOperativo(enviar){
 const HOJA_DOCUMENTOS = 'DOCUMENTOS';
 let _docs = [], _docsListo = false, _docsError = '', _docsCargando = false;
 let _docsFiltro = 'faltantes', _docsBusca = '', _docsAsignar = -1, _docsBuscaCarga = '';
-const DOC_TIPOS = { bl: 'BL', fc_proveedor: 'FC proveedor', fc_axt: 'FC AXT', fc_axt_serv: 'FC servicios', packing: 'Packing list', origen: 'Origen',
+const DOC_TIPOS = { bl: 'BL', fc_proveedor: 'FC proveedor', fc_axt: 'FC AXT', fc_axt_serv: 'FC servicios', fc_buzaram: 'FC Buzaram', fc_buzaram_serv: 'FC servicios', nota_credito: 'Nota de crédito', packing: 'Packing list', origen: 'Origen',
   fito: 'Fito', isf: 'ISF', jla: 'Análisis JLA', seguro: 'Seguro', shipping: 'Shipping advice', aviso_salida: 'Aviso de salida', proforma: 'Proforma', planilla: 'Planilla despachante' };
 const DOC_PUERTOS_EEUU = ['norfolk', 'new york', 'newark', 'savannah', 'charleston', 'baltimore', 'philadelphia', 'boston', 'miami', 'port everglades', 'jacksonville',
   'houston', 'new orleans', 'los angeles', 'long beach', 'oakland', 'seattle', 'tacoma', 'usa', 'estados unidos'];
@@ -12128,11 +12128,11 @@ function docsSetDeCarga(row){
   const port = String(row[COL.PORT] || '').toLowerCase(), inco = String(row[COL.INCOTERM] || '').toUpperCase();
   const axt = negocioActivo !== 'buzaram';
   const set = [{ k: 'bl' }, { k: 'fc_proveedor' }];
-  if(axt){
-    set.push({ k: 'fc_axt' });
-    const serv = parseSheetNum(row[COL.PRICE_SERV]);
-    set.push(!isNaN(serv) && serv > 0 ? { k: 'fc_axt_serv' } : { k: 'fc_axt_serv', na: 'no lleva' });
-  }
+  // La factura al cliente (AXT: la arma Ornella; Buzaram: Newsan) y la de servicios si la carga tiene Price Serv (cargas a IDI en EE.UU.)
+  const fc = axt ? 'fc_axt' : 'fc_buzaram';
+  set.push({ k: fc });
+  const serv = parseSheetNum(row[COL.PRICE_SERV]);
+  set.push(!isNaN(serv) && serv > 0 ? { k: fc + '_serv' } : { k: fc + '_serv', na: 'no lleva' });
   set.push({ k: 'packing' }, { k: 'origen' }, { k: 'fito' });
   set.push(DOC_PUERTOS_EEUU.some(p => port.indexOf(p) >= 0) ? { k: 'isf' } : { k: 'isf', na: 'solo EE.UU.' });
   if(DOC_PUERTOS_ITALIA.some(p => port.indexOf(p) >= 0)) set.push({ k: 'jla' });
@@ -12172,18 +12172,19 @@ function docsDeCarga(row){
   return _docs.filter(d => d.negocio === negocioActivo && DOC_SIN_SET.indexOf(d.estado) < 0 && docFilasEfectivas(d).indexOf(n) >= 0);
 }
 // Una FC de AXT es "de servicios" si n8n lo leyo asi o si su numero es el de Invoice Serv de la carga.
+// Igual con la de Buzaram ("A4886" en la planilla puede estar como "4886": se comparan los números).
 function docTipoEfectivo(d, row){
-  if(d.tipo !== 'fc_axt') return d.tipo;
-  if(d.servicios) return 'fc_axt_serv';
-  const s = String(row[COL.INVOICE_FC_SERV] || '').trim();
-  return s && s === String(d.numero).trim() ? 'fc_axt_serv' : 'fc_axt';
+  if(d.tipo !== 'fc_axt' && d.tipo !== 'fc_buzaram') return d.tipo;
+  if(d.servicios) return d.tipo + '_serv';
+  const dig = x => String(x || '').replace(/\D/g, ''), s = dig(row[COL.INVOICE_FC_SERV]);
+  return s && s === dig(d.numero) ? d.tipo + '_serv' : d.tipo;
 }
 const docLinkSeguro = u => /^https:\/\/(drive|docs)\.google\.com\//.test(String(u || '')) ? String(u) : '';
 // Estado de cada documento del set: ok (llego, con su PDF), mal (llego y no coincide), planilla (el dato esta en la planilla pero
 // el PDF no paso por n8n: cargas de antes), no (falta), na (esta carga no lo lleva).
 function docsEstadoCarga(row){
   const docs = docsDeCarga(row), set = docsSetDeCarga(row);
-  const enPlanilla = { bl: COL.BL, fc_proveedor: COL.INVOICE_PROVEEDOR, fc_axt: COL.INVOICE_CLIENTE, fc_axt_serv: COL.INVOICE_FC_SERV };
+  const enPlanilla = { bl: COL.BL, fc_proveedor: COL.INVOICE_PROVEEDOR, fc_axt: COL.INVOICE_CLIENTE, fc_axt_serv: COL.INVOICE_FC_SERV, fc_buzaram: COL.INVOICE_CLIENTE, fc_buzaram_serv: COL.INVOICE_FC_SERV };
   const valor = c => (c !== undefined && c !== null && c >= 0) ? String(row[c] || '').trim() : '';
   const todoSi = valor(COL.DOCUMENTOS).toUpperCase() === 'SI';
   const usados = new Set();
@@ -12329,6 +12330,7 @@ async function docsUsarSugerencia(i){
   const p = d && d.propuesta;
   if(!p || p.ninguna || p.negocio !== negocioActivo) return;
   if(d.tipo === 'fc_axt' && negocioActivo !== 'axt'){ alert('Una factura de AXT solo puede ir a una carga de AXT.'); return; }
+  if((d.tipo === 'fc_buzaram' || d.tipo === 'nota_credito') && negocioActivo !== 'buzaram'){ alert('Una factura de Buzaram solo puede ir a una carga de Buzaram.'); return; }
   const rows = (p.filas || []).map(n => (allRowsAll || []).find(r => r._sheetRow === Number(n))).filter(Boolean);
   if(!rows.length) return;
   const filas = rows.map(r => r._sheetRow);
@@ -12419,6 +12421,7 @@ async function docsAsignar(i, idxCarga){
   if(!d || !row) return;
   if(d.negocio && d.negocio !== negocioActivo){ alert('Este documento es de ' + docTextoDeNegocio(d.negocio) + ': asignalo desde esa vista.'); return; }
   if(d.tipo === 'fc_axt' && negocioActivo !== 'axt'){ alert('Una factura de AXT solo puede ir a una carga de AXT.'); return; }
+  if((d.tipo === 'fc_buzaram' || d.tipo === 'nota_credito') && negocioActivo !== 'buzaram'){ alert('Una factura de Buzaram solo puede ir a una carga de Buzaram.'); return; }
   const extra = d.tipo === 'bl' ? ' y anota el número de BL en la planilla si esa celda está vacía'
               : d.tipo === 'fc_axt' ? ', controla la factura contra la carga y, si todo coincide y la celda está vacía, anota el número' : '';
   const ok = await confirmarAccion('Asignar el documento a esta carga',
@@ -12501,7 +12504,7 @@ function contactosDeExportador(nombre){
 }
 function docsFaltantesReclamo(row){
   const e = docsEstadoCarga(row), faltan = e.chips.filter(c => c.estado === 'no');
-  return { e, faltan, prov: faltan.filter(c => DOC_RECLAMO[c.k]), bl: faltan.find(c => c.k === 'bl'), fcAxt: faltan.filter(c => c.k === 'fc_axt' || c.k === 'fc_axt_serv'), seguro: faltan.find(c => c.k === 'seguro') };
+  return { e, faltan, prov: faltan.filter(c => DOC_RECLAMO[c.k]), bl: faltan.find(c => c.k === 'bl'), fcAxt: faltan.filter(c => c.k === 'fc_axt' || c.k === 'fc_axt_serv' || c.k === 'fc_buzaram' || c.k === 'fc_buzaram_serv'), seguro: faltan.find(c => c.k === 'seguro') };
 }
 function tablaMenuDocs(ev){
   const td = ev && ev.target && ev.target.closest ? ev.target.closest('td[data-c]') : null;
@@ -12558,7 +12561,7 @@ function menuDocsHtml(row){
   let acc = '';
   if(r.prov.length) acc += b('✉ Reclamar a ' + escaparHtml(exp || 'el proveedor') + ' (' + r.prov.length + ' faltante' + (r.prov.length > 1 ? 's' : '') + ')', 'docsReclamar(' + idx + ',\'proveedor\')', true);
   if(r.bl) acc += b('✉ Pedir el BL a ' + escaparHtml(fwd || 'el forwarder'), 'docsReclamar(' + idx + ',\'bl\')', true);
-  if(r.fcAxt.length && negocioActivo === 'axt') acc += b('📄 Solicitud de FC a AXT', 'solicitarFC(' + idx + ')');
+  if(r.fcAxt.length) acc += b('📄 Solicitud de FC a ' + (negocioActivo === 'buzaram' ? 'Buzaram' : 'AXT'), 'solicitarFC(' + idx + ')');
   const nota = !r.faltan.length ? '<div class="dm-ok">✓ Están todos los documentos</div>'
     : '';
   acc += b('↗ Ver en Documentos', 'showView(\'documentos\')');
@@ -12602,7 +12605,13 @@ function carpNumeroPorNombre(nombre, tipo){
 }
 // Un archivo de la carpeta: qué es por el nombre ("" = no se sabe) y si ya está en DOCUMENTOS
 function carpClasificar(a, negocio){
-  if(/VENTA[\s_-]*(CREDITO|CR[ÉE]DITO|CONTADO)/i.test(a.name)) return { tipo: 'otro', numero: '', detalle: 'factura de venta al cliente (por el nombre)', via: 'carpeta' };
+  // igual que el lector de n8n: en Buzaram "…VENTA_CREDITO_A4887…" es la factura de Buzaram; la NOTA_DE_CREDITO, una nota de crédito
+  if(/VENTA[\s_-]*(CREDITO|CR[ÉE]DITO|CONTADO)/i.test(a.name)){
+    const nro = a.name.toUpperCase().match(/_([A-Z])(\d{3,6})_\d+/) || [];
+    return negocio === 'buzaram' ? { tipo: 'fc_buzaram', numero: nro[1] ? nro[1] + nro[2] : '', detalle: 'factura de Buzaram (por el nombre)', via: 'carpeta' }
+      : { tipo: 'otro', numero: '', detalle: 'factura de venta al cliente (por el nombre)', via: 'carpeta' };
+  }
+  if(/NOTA[\s_-]*DE[\s_-]*CR[ÉE]DITO/i.test(a.name)) return { tipo: 'nota_credito', numero: '', detalle: 'nota de crédito (por el nombre)', via: 'carpeta' };
   const tipo = carpTipoPorNombre(a.name, negocio);
   return tipo ? { tipo, numero: carpNumeroPorNombre(a.name, tipo), detalle: 'reconocido por el nombre del archivo', via: 'carpeta' } : { tipo: '', numero: '', detalle: '', via: '' };
 }
@@ -16660,6 +16669,8 @@ function n8nAuditorHizo(e){
 }
 // Qué cambiamos en n8n y qué control se sumó en este panel. El más nuevo arriba. "version" = la que anota la Marca de corrida.
 const N8N_CAMBIOS = [
+  { fecha: '25/11/2026', versiones: ['docs-2026-11-25c', 'carpetas-2026-11-25e'], cambio: 'Carpetas de Drive de BUZARAM como las arma el equipo: Harina / año / la carpeta con todos los lotes de la carga; Aceite en tambores / lote (sin año); Aceite flexis / cliente (la carpeta cuyo nombre está en el Customer: Tianxiang) / contrato del proveedor (LT133-2026). El producto y el cliente no se crean nunca; otros productos o packings (peanut butter, blanched, bines) quedan sin Drive. Antes todo el aceite iba a «Aceite flexis / 2026 / lote», una carpeta que no corresponde. Lo mismo en el lector de carpetas y en el hub. Las facturas que no coinciden se vuelven a controlar 7 días (si se corrige la planilla, se anotan solas)', control: 'Documentos: los PDF de Buzaram quedan en su carpeta; Hub: «Leer la carpeta ahora» de una carga de Buzaram muestra la carpeta del equipo' },
+  { fecha: '25/11/2026', versiones: ['docs-2026-11-25b', 'carpetas-2026-11-25d'], cambio: 'Facturas de BUZARAM (las emite Newsan y las manda Pablo Hojman): n8n las lee (newsan.com.ar entra en la búsqueda), distingue la de mercadería + flete de la de servicios («LOGISTIC COST»), las ata a la carga por el OV (aunque esté partida en varias filas), las controla contra la planilla de Buzaram (cliente, contenedor, lote, packing, incoterm, toneladas, Price CFR, Flete y Price Serv) y si todo coincide anota «A4887» en Invoice Cliente / Invoice Serv de las filas vacías. Las notas de crédito se guardan y se registran, sin anotar nada. El lector de carpetas reconoce «…VENTA_CREDITO_A4887…» como factura de Buzaram', control: 'Hub, carga de Buzaram: chips «FC Buzaram» y «FC servicios» (si tiene Price Serv); Documentos: las que no coinciden, con su tabla de diferencias' },
   { fecha: '25/11/2026', versiones: ['docs-2026-11-25'], cambio: 'Documentos: también lee los mails que llegan por el grupo operaciones@ (Ornella y otros llegan «via Operaciones» y Gmail los muestra como enviados por el grupo; por eso se perdían casi todas las facturas de AXT). El remitente real sale de X-Original-Sender. Mira solo los mails de los últimos 3 días (antes 20; pedido: no procesar el pasado), hasta 500 por vuelta. En el hub, cada documento sigue a la fila que hoy tiene su lote si en la planilla se insertaron o movieron filas', control: '¿Está corriendo?: en Documentos, las facturas de AXT de los últimos 20 días aparecen en DOCUMENTOS; el control «atado a una fila que ya no coincide» dice en qué fila lo muestra el hub' },
   { fecha: '25/11/2026', versiones: ['carpetas-2026-11-25c'], cambio: 'Carpetas de las cargas: en Italia baja un nivel más, a la carpeta del LOTE adentro del contrato (Italia / PATA / 141PATA / BL40-260013-AP; también las del equipo con fecha y varios lotes en el nombre). Antes miraba la del contrato, que no tiene archivos sueltos. Igual que el Apps Script de AXT, que ahora guarda los documentos de Italia en la carpeta del lote', control: 'Menú del lote de una carga a Italia: «Leer la carpeta ahora» muestra los archivos de la carpeta del lote' },
   { fecha: '25/11/2026', versiones: ['carpetas-2026-11-25b'], cambio: 'Carpetas de las cargas: la marca de cada vuelta anota qué cargas leyó (negocio:fila), para que el menú del lote en la tabla muestre cuándo se leyó su carpeta automáticamente. Nuevo en el hub: «Leer la carpeta ahora» (clic derecho en Lots o DOCUMENTOS) lee la carpeta a pedido, anota la lectura en CARPETAS_LEIDAS y deja anotar lo nuevo en DOCUMENTOS con confirmación (y leer con IA lo que no reconoce)', control: 'Menú del lote: «Automática: hoy hh:mm (n8n)» y «A mano: … por …»' },
@@ -19885,6 +19896,40 @@ async function driveBuscarFolder(name, parentId){
   const data = await r.json();
   return data.files && data.files.length ? data.files[0].id : null;
 }
+// Carpetas de BUZARAM, como las arma el equipo (confirmado por el usuario el 25/11/2026):
+//   Harina             -> Harina \ AÑO \ la carpeta que tenga TODOS los lotes de la carga en el nombre ("14M-2173, 14M-2174")
+//   Aceite en tambores -> Aceite en tambores \ la carpeta del lote (sin año; tambien "16-01-2026 (100RO-979)")
+//   Aceite en flexis   -> Aceite flexis \ CLIENTE (la carpeta cuyo nombre esta en el Customer: "Tianxiang") \ la del contrato del proveedor (LT133-2026)
+//   Otro producto u otro packing (bines, boxes, big bags...): no se adivina, queda sin Drive.
+// Cada nivel: { nombre, modo }. modo: 'existente' (se usa si esta, nunca se crea), 'exacto', 'contiene' (tokens), 'cliente'. null = ese nivel no existe.
+function rutaBuzaram(prod, pack, anio, lote, cliente, cprov) {
+  const p = String(prod || '').toLowerCase(), k = String(pack || '').toLowerCase();
+  const lt = String(lote || '').toUpperCase().match(/[A-Z0-9]{2,6}-\d{3,6}/g) || [];
+  if (/flour|harina/.test(p)) return lt.length && anio ? [{ nombre: 'Harina', modo: 'existente' }, { nombre: String(anio), modo: 'exacto' }, { nombre: String(lote).trim(), modo: 'contiene', tokens: lt }] : null;
+  if (/oil|aceite/.test(p) && /tambor|drum/.test(k)) return lt.length ? [{ nombre: 'Aceite en tambores', modo: 'existente' }, null, { nombre: String(lote).trim(), modo: 'contiene', tokens: lt }] : null;
+  if (/oil|aceite/.test(p) && /flexi/.test(k)) {
+    const c = (String(cprov || '').toUpperCase().match(/LT\d{2,4}-\d{4}/) || [])[0];
+    return c && String(cliente || '').trim() ? [{ nombre: 'Aceite flexis', modo: 'existente' }, { nombre: String(cliente).trim(), modo: 'cliente' }, { nombre: String(cprov).trim(), modo: 'contiene', tokens: [c] }] : null;
+  }
+  return null;
+}
+// (la misma funcion que usa n8n en "Carpetas Buzaram"; un test verifica que den lo mismo)
+// Todas las carpetas de adentro de una carpeta, de la mas vieja a la mas nueva
+async function driveHijas(parentId){
+  const q = encodeURIComponent(`'${parentId}' in parents and mimeType='application/vnd.google-apps.folder' and trashed=false`);
+  const r = await fetch(`https://www.googleapis.com/drive/v3/files?q=${q}&fields=files(id,name,createdTime)&orderBy=createdTime&pageSize=1000&supportsAllDrives=true&includeItemsFromAllDrives=true`, { headers: { 'Authorization': `Bearer ${accessToken}` } });
+  if(!r.ok) throw new Error('Drive HTTP ' + r.status);
+  return (await r.json()).files || [];
+}
+// Cual de las carpetas de adentro corresponde a este nivel (mismas reglas que el nodo "Nivel" de n8n)
+function elegirCarpetaBuzaram(files, n){
+  const norm = x => String(x == null ? '' : x).toUpperCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^A-Z0-9]/g, '');
+  const tokens = t => (String(t || '').toUpperCase().match(/[A-Z0-9]{2,6}-\d{3,6}/g) || []).map(norm);
+  if(n.modo === 'exacto' || n.modo === 'existente') return files.find(x => x.name === n.nombre) || files.find(x => norm(x.name) === norm(n.nombre)) || null;
+  if(n.modo === 'contiene'){ const ts = (n.tokens || []).map(norm); return files.find(x => { const tx = tokens(x.name); return ts.length && ts.every(t => tx.indexOf(t) >= 0); }) || null; }
+  if(n.modo === 'cliente'){ const c = norm(n.nombre); return files.filter(x => norm(x.name).length >= 4 && c.indexOf(norm(x.name)) >= 0).sort((a, b) => norm(b.name).length - norm(a.name).length)[0] || null; }
+  return null;
+}
 async function driveGetFolderForRow(row, soloBuscar){
   const PRODUCT_MAP = {
     'blanched 38/42': 'Blanched', 'blanched 40/50': 'Blanched',
@@ -19901,7 +19946,6 @@ async function driveGetFolderForRow(row, soloBuscar){
   const anio = etd ? String(etd.getFullYear()) : String(new Date().getFullYear());
   const lote = (row[COL.LOTS] || row[COL.NEGOCIO] || '').trim();
 
-  if(!lote && negocioActivo === 'buzaram') throw new Error(soloBuscar ? 'la carga todavía no tiene lote (en Buzaram la carpeta es producto / año / lote)' : 'Sin lote');
 
   if(negocioActivo !== 'buzaram'){
     // Las cargas a Italia van a Italia \ CLIENTE \ CONTRATO: el Apps Script lo decide con el cliente, el puerto y el contrato (y no necesita lote).
@@ -19916,13 +19960,20 @@ async function driveGetFolderForRow(row, soloBuscar){
     return { id: data.id, url: data.url ? data.url.split('?')[0] : `https://drive.google.com/drive/folders/${data.id}`, nombre: data.nombre || '' };
   }
 
+  // Buzaram: Harina / año / lote, Aceite en tambores / lote, Aceite flexis / cliente / contrato (rutaBuzaram). El producto y el cliente no se crean.
   const DRIVE_BUZ_ROOT = '1wbh3fUph3P2Q8KzY0dFcfbFvcUSuCO_K';
-  let folderId = DRIVE_BUZ_ROOT;
-  for(const name of [producto, anio, lote]){
-    folderId = soloBuscar ? await driveBuscarFolder(name, folderId) : await driveGetOrCreateFolder(name, folderId);
-    if(!folderId) return null;
+  const ruta = rutaBuzaram(row[COL.PRODUCT], row[COL.PACKING], anio, lote, row[COL.CUSTOMER], row[COL.CONTRACT_PROVEEDOR]);
+  if(!ruta) throw new Error(!lote && !/flexi/i.test(String(row[COL.PACKING] || '')) ? 'Sin lote' : 'no sé en qué carpeta va: en Buzaram hay carpetas para harina, aceite en tambores y aceite en flexis (con el contrato del proveedor cargado)');
+  let folderId = DRIVE_BUZ_ROOT; const camino = [];
+  for(const n of ruta){
+    if(!n) continue;
+    const f = elegirCarpetaBuzaram(await driveHijas(folderId), n);
+    if(f){ folderId = f.id; camino.push(f.name); continue; }
+    if(soloBuscar) return null;
+    if(n.modo === 'existente' || n.modo === 'cliente') throw new Error('no encontré la carpeta "' + n.nombre + '" en el Drive de Buzaram: creala y probá de nuevo');
+    folderId = await driveGetOrCreateFolder(n.nombre, folderId); camino.push(n.nombre);
   }
-  return { id: folderId, url: `https://drive.google.com/drive/folders/${folderId}`, nombre: [producto, anio, lote].join(' / ') };
+  return { id: folderId, url: `https://drive.google.com/drive/folders/${folderId}`, nombre: camino.join(' / ') };
 }
 
 
