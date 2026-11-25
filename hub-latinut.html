@@ -12139,10 +12139,37 @@ function docsSetDeCarga(row){
   if(/\bCIF\b/.test(inco)) set.push({ k: 'seguro' });
   return set;
 }
+// Si en la planilla se insertan o reordenan filas, el número de fila que anotó n8n en DOCUMENTOS queda viejo (pasó: 33 documentos
+// apuntaban a otra carga). Por eso manda el LOTE: si la fila anotada ya no tiene ese lote, el documento sigue a la fila que sí lo tiene
+// (solo si es UNA; si hay varias con el mismo lote, no se adivina). Sin lote en el documento, se usa la fila anotada.
+const docLotesDeTexto = t => (String(t || '').toUpperCase().match(/[A-Z0-9]{2,6}-\d{3,6}(?:-AP)?/g) || []).filter(l => /[A-Z]/.test(l.split('-')[0]));
+let _docsIdx = { v: -1, neg: '', porFila: new Map(), porLote: new Map() };
+function docsIndiceFilas(){
+  if(_docsIdx.v === _dataVersion && _docsIdx.neg === negocioActivo && _docsIdx.n === allRowsAll.length) return _docsIdx;
+  const porFila = new Map(), porLote = new Map();
+  (allRowsAll.length ? allRowsAll : allRows).forEach(r => {
+    if(!r || !r._sheetRow) return;
+    const ls = docLotesDeTexto(r[COL.LOTS]);
+    porFila.set(r._sheetRow, ls);
+    ls.forEach(l => { if(!porLote.has(l)) porLote.set(l, []); if(porLote.get(l).indexOf(r._sheetRow) < 0) porLote.get(l).push(r._sheetRow); });
+  });
+  _docsIdx = { v: _dataVersion, neg: negocioActivo, n: allRowsAll.length, porFila, porLote };
+  return _docsIdx;
+}
+function docFilasEfectivas(d){
+  const lotes = docLotesDeTexto(d.lotes);
+  if(!lotes.length) return d.filas;
+  const ix = docsIndiceFilas();
+  const tiene = f => (ix.porFila.get(f) || []).some(l => lotes.indexOf(l) >= 0);
+  const validas = d.filas.filter(tiene);
+  if(validas.length || !ix.porFila.size) return validas.length ? validas : d.filas;
+  const cand = [...new Set([].concat(...lotes.map(l => ix.porLote.get(l) || [])))];
+  return cand.length === 1 ? cand : [];
+}
 function docsDeCarga(row){
   const n = row && row._sheetRow;
   if(!n) return [];
-  return _docs.filter(d => d.negocio === negocioActivo && d.filas.indexOf(n) >= 0 && DOC_SIN_SET.indexOf(d.estado) < 0);
+  return _docs.filter(d => d.negocio === negocioActivo && DOC_SIN_SET.indexOf(d.estado) < 0 && docFilasEfectivas(d).indexOf(n) >= 0);
 }
 // Una FC de AXT es "de servicios" si n8n lo leyo asi o si su numero es el de Invoice Serv de la carga.
 function docTipoEfectivo(d, row){
@@ -16633,6 +16660,8 @@ function n8nAuditorHizo(e){
 }
 // Qué cambiamos en n8n y qué control se sumó en este panel. El más nuevo arriba. "version" = la que anota la Marca de corrida.
 const N8N_CAMBIOS = [
+  { fecha: '25/11/2026', versiones: ['docs-2026-11-25'], cambio: 'Documentos: también lee los mails que llegan por el grupo operaciones@ (Ornella y otros llegan «via Operaciones» y Gmail los muestra como enviados por el grupo; por eso se perdían casi todas las facturas de AXT). El remitente real sale de X-Original-Sender. Mira solo los mails de los últimos 3 días (antes 20; pedido: no procesar el pasado), hasta 500 por vuelta. En el hub, cada documento sigue a la fila que hoy tiene su lote si en la planilla se insertaron o movieron filas', control: '¿Está corriendo?: en Documentos, las facturas de AXT de los últimos 20 días aparecen en DOCUMENTOS; el control «atado a una fila que ya no coincide» dice en qué fila lo muestra el hub' },
+  { fecha: '25/11/2026', versiones: ['carpetas-2026-11-25c'], cambio: 'Carpetas de las cargas: en Italia baja un nivel más, a la carpeta del LOTE adentro del contrato (Italia / PATA / 141PATA / BL40-260013-AP; también las del equipo con fecha y varios lotes en el nombre). Antes miraba la del contrato, que no tiene archivos sueltos. Igual que el Apps Script de AXT, que ahora guarda los documentos de Italia en la carpeta del lote', control: 'Menú del lote de una carga a Italia: «Leer la carpeta ahora» muestra los archivos de la carpeta del lote' },
   { fecha: '25/11/2026', versiones: ['carpetas-2026-11-25b'], cambio: 'Carpetas de las cargas: la marca de cada vuelta anota qué cargas leyó (negocio:fila), para que el menú del lote en la tabla muestre cuándo se leyó su carpeta automáticamente. Nuevo en el hub: «Leer la carpeta ahora» (clic derecho en Lots o DOCUMENTOS) lee la carpeta a pedido, anota la lectura en CARPETAS_LEIDAS y deja anotar lo nuevo en DOCUMENTOS con confirmación (y leer con IA lo que no reconoce)', control: 'Menú del lote: «Automática: hoy hh:mm (n8n)» y «A mano: … por …»' },
   { fecha: '25/11/2026', versiones: ['carpetas-2026-11-25'], cambio: 'Carpetas de las cargas: en AXT ahora recorre producto → año → lote (Blanched, Tostado y Pasta de mani), no las carpetas «2026» directo, así no lee las «2026 / 2026» duplicadas. Si el lote está en su lugar, manda esa carpeta aunque la hoja _DriveFolders apunte a otra (una duplicada vieja); el link de _DriveFolders se usa solo si el lote no está ahí. Igual que el Apps Script de AXT, que además ahora tiene candado y usa la carpeta que ya existe (también en Italia)', control: '¿Está corriendo?: la misma tarjeta «Carpetas de Drive de las cargas», con la versión carpetas-2026-11-25' },
   { fecha: '24/11/2026', versiones: ['carpetas-2026-11-24'], cambio: 'Workflow nuevo «Carpetas de las cargas» (cada 15 min): recorre las carpetas de Drive de las cargas activas (sin cobrar y sin SI en DOCUMENTOS), AXT, Italia y Buzaram por separado, y anota en DOCUMENTOS los archivos que encuentra, también los subidos a mano. Los reconoce por el nombre; los que no (ej. "483843.pdf"), si son PDF o imagen, los lee por dentro Claude Haiku 5.5 y en el hub se ven con el nombre del archivo entre paréntesis. Solo lee Drive: no crea ni mueve carpetas. Tope de IA US$ 2 por mes, hasta 8 archivos por vuelta', control: '¿Está corriendo?: tarjeta «Carpetas de Drive de las cargas» con carpetas leídas, archivos nuevos, cuántos leyó la IA y el gasto del mes contra el tope' },
@@ -16816,7 +16845,9 @@ function n8nVerificacion(docs, negocio, filas, lotesOtro, ahora){
   L.filter(d => d.filas.length && n8nLotes(d.lotes).length && ['ignorado', 'descartado', 'reemplazada'].indexOf(d.estado) < 0).forEach(d => {
     const ls = n8nLotes(d.lotes);
     const mal = d.filas.filter(n => { const r = porFila.get(n); return !r || !n8nLotes(r[COL.LOTS]).some(l => ls.indexOf(l) >= 0); });
-    if(mal.length) desatados.push(Object.assign({}, d, { _nota: 'lote ' + d.lotes + ' · fila' + (mal.length > 1 ? 's ' : ' ') + mal.join(', ') + (mal.some(n => !porFila.get(n)) ? ' (ya no existe)' : ' hoy tiene otro lote') }));
+    const ef = docFilasEfectivas(d).filter(n => d.filas.indexOf(n) < 0);
+    if(mal.length) desatados.push(Object.assign({}, d, { _nota: 'lote ' + d.lotes + ' · fila' + (mal.length > 1 ? 's ' : ' ') + mal.join(', ') + (mal.some(n => !porFila.get(n)) ? ' (ya no existe)' : ' hoy tiene otro lote')
+      + (ef.length ? ' → el hub lo muestra en la fila ' + ef.join(', ') + ', la que hoy tiene ese lote' : ' → no se muestra en ninguna carga (hay varias o ninguna con ese lote)') }));
   });
   out.push(desatados.length ? { c: 'mal', titulo: desatados.length + ' documento' + (desatados.length === 1 ? '' : 's') + ' atado' + (desatados.length === 1 ? '' : 's') + ' a una fila que ya no coincide', sub: 'El lote del documento no está en esa fila (se movió la carga o se ató mal).', lista: desatados }
     : { c: 'ok', titulo: 'Cada documento está en la fila de su lote', sub: 'Ningún documento atado a una fila con otro lote.', lista: [] });
