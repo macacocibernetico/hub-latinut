@@ -15372,19 +15372,21 @@ function mcCodigosLotes(lotes){
 // Lotes que manda Calidad. Dos formatos:
 //  viejo:  "NU172-71PA1V-0143 22-10-2026 22-04-2026 ... Neto: 21770 kg"
 //  nuevo:  "PA1V-0147  27/10/2026  27/04/2028" y debajo (cuando mandan los pesos) "960 Cajas x 22.68 kg en 20 pallet. Neto: 21770 kg – Bruto: 23200 kg."
+// El lote es cualquier codigo con alguna letra + guion + numero (PA1V-0147 pasta, 100R-1067 / 100E-… aceite en tambores, 14M-2163 harina),
+// siempre seguido de las dos fechas. Antes solo se aceptaban los que empiezan con P y los de aceite no aparecian.
 // Cada lote se lee con lo que haya entre el y el lote siguiente, asi el peso de uno nunca se le pega a otro.
 function mcNumeroKg(x){ const t = String(x || ''); return /^\d{1,3}([.,]\d{3})+$/.test(t) ? Number(t.replace(/[.,]/g, '')) : Number(t.replace(',', '.')); }
 function mcLeerLotesCalidad(texto){
   const t = String(texto || '');
-  const re = /(?:(NU\d+-\d+)\s*)?(P[A-Z0-9]+-\d+)\s+(\d{2}[-\/]\d{2}[-\/]\d{4})\s+(\d{2}[-\/]\d{2}[-\/]\d{4})/g;
+  const re = /(?<![A-Z0-9])(?:(NU\d+-\d+)\s*)?((?=[A-Z0-9]*[A-Z])[A-Z0-9]{2,6}-\d{3,5})\s+(\d{2}[-\/]\d{2}[-\/]\d{4})\s+(\d{2}[-\/]\d{2}[-\/]\d{4})/gi;
   const hallados = []; let m;
   while((m = re.exec(t))) hallados.push({ m, ini: m.index, fin: m.index + m[0].length });
   const out = [];
   hallados.forEach((h, k) => {
     const cola = t.slice(h.fin, Math.min(h.fin + 400, k + 1 < hallados.length ? hallados[k + 1].ini : t.length));
     const n = cola.match(/Neto\s*:\s*([\d.,]+)\s*kg/i), br = cola.match(/Bruto\s*:\s*([\d.,]+)\s*kg/i);
-    const cj = cola.match(/(\d[\d.]*)\s*Cajas\s*x\s*([\d.,]+)\s*kg(?:\s*en\s*(\d+)\s*pallets?)?/i);
-    const dato = { codigo: h.m[1] || '', lote: h.m[2], elaboracion: h.m[3], vencimiento: h.m[4],
+    const cj = cola.match(/(\d[\d.]*)\s*(?:Cajas|Tambores|Bolsas|Big\s*bags?|Bags|Drums)\s*x\s*([\d.,]+)\s*kg(?:\s*en\s*(\d+)\s*pallets?)?/i);
+    const dato = { codigo: h.m[1] || '', lote: h.m[2].toUpperCase(), elaboracion: h.m[3], vencimiento: h.m[4],
       netoKg: n ? mcNumeroKg(n[1]) : NaN, brutoKg: br ? mcNumeroKg(br[1]) : NaN,
       cajas: cj ? mcNumeroKg(cj[1]) : NaN, kgCaja: cj ? mcNumeroKg(cj[2]) : NaN, pallets: cj && cj[3] ? Number(cj[3]) : NaN };
     const previo = out.find(l => l.lote === dato.lote);
@@ -16391,6 +16393,7 @@ function n8nAuditorHizo(e){
 }
 // Qué cambiamos en n8n y qué control se sumó en este panel. El más nuevo arriba. "version" = la que anota la Marca de corrida.
 const N8N_CAMBIOS = [
+  { fecha: '25/11/2026', versiones: ['carpetas-2026-11-25'], cambio: 'Carpetas de las cargas: en AXT ahora recorre producto → año → lote (Blanched, Tostado y Pasta de mani), no las carpetas «2026» directo, así no lee las «2026 / 2026» duplicadas. Si el lote está en su lugar, manda esa carpeta aunque la hoja _DriveFolders apunte a otra (una duplicada vieja); el link de _DriveFolders se usa solo si el lote no está ahí. Igual que el Apps Script de AXT, que además ahora tiene candado y usa la carpeta que ya existe (también en Italia)', control: '¿Está corriendo?: la misma tarjeta «Carpetas de Drive de las cargas», con la versión carpetas-2026-11-25' },
   { fecha: '24/11/2026', versiones: ['carpetas-2026-11-24'], cambio: 'Workflow nuevo «Carpetas de las cargas» (cada 15 min): recorre las carpetas de Drive de las cargas activas (sin cobrar y sin SI en DOCUMENTOS), AXT, Italia y Buzaram por separado, y anota en DOCUMENTOS los archivos que encuentra, también los subidos a mano. Los reconoce por el nombre; los que no (ej. "483843.pdf"), si son PDF o imagen, los lee por dentro Claude Haiku 5.5 y en el hub se ven con el nombre del archivo entre paréntesis. Solo lee Drive: no crea ni mueve carpetas. Tope de IA US$ 2 por mes, hasta 8 archivos por vuelta', control: '¿Está corriendo?: tarjeta «Carpetas de Drive de las cargas» con carpetas leídas, archivos nuevos, cuántos leyó la IA y el gasto del mes contra el tope' },
   { fecha: '24/11/2026', versiones: ['docs-2026-11-24'], cambio: 'Documentos: los reintentos de mails y la comparación de facturas con el Apps Script saltean lo que anotó «Carpetas de las cargas» (no viene de un mail)', control: 'FC_PARALELO y las etapas del circuito de mails no cuentan los archivos de las carpetas' },
   { fecha: '20/11/2026', versiones: ['etapa1-2026-11-20b'], cambio: 'Etapa 1: aviso por mail de cliente no reconocido. Si una carga preparada trae un cliente que no es ninguno de los ya cargados en la planilla de su negocio (mismas reglas que el hub, y si no atan, Claude Sonnet 5.5 elige solo entre esos clientes), manda un mail a los de Sí en Aviso_n8n (CONTACTOS), uno por negocio y una vez por carga. El negocio sale de la regla fija (Argen → AXT; Nutrin: harina → Buzaram, pasta → AXT, aceite no se mira, resto → Buzaram). No escribe nada. Tope de IA US$ 2 por mes (alcanzado, avisa sin consultarla)', control: 'Recuadro «Cliente no reconocido · aviso por mail (Etapa 1)»: a quién le llega, gasto del mes contra el tope, cuántos ató la IA y cuántos se avisaron' },
