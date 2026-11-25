@@ -551,6 +551,22 @@ body.t-redim{cursor:col-resize;user-select:none;}
 .docs-menu .dm-acc{border-top:1px solid var(--border);padding:4px 0;}
 .docs-menu .dm-acc button{display:block;width:100%;text-align:left;background:none;border:0;padding:7px 12px;font:inherit;color:var(--text);cursor:pointer;}
 .docs-menu .dm-acc button:hover,.docs-menu .dm-acc button:focus-visible{background:var(--bg3);outline:none;}
+.docs-menu .dm-carp{border-top:1px solid var(--border);padding:8px 12px 10px;background:var(--bg3);border-radius:0 0 12px 12px;}
+.docs-menu .dm-carp-t{display:flex;align-items:center;gap:6px;font-weight:600;color:var(--text);}
+.docs-menu .dm-link{margin-left:auto;background:none;border:0;padding:0;font:inherit;font-size:12px;color:var(--accent);cursor:pointer;}
+.docs-menu .dm-carp .dm-sub{margin:4px 0 8px;line-height:1.5;}
+.docs-menu .dm-carp-b{width:100%;padding:7px 10px;border:1px solid var(--border2);border-radius:8px;background:var(--bg2);font:inherit;color:var(--text);cursor:pointer;}
+.docs-menu .dm-carp-b:hover,.docs-menu .dm-carp-b:focus-visible{background:var(--bg);outline:none;}
+.carp-cab{padding-bottom:8px;margin-bottom:6px;border-bottom:1px solid var(--border);}
+.carp-cab .dm-sub{color:var(--text3);font-size:12px;}
+.carp-a{display:flex;flex-wrap:wrap;align-items:baseline;gap:6px;padding:5px 0;font-size:13px;color:var(--text2);border-bottom:1px solid var(--border);}
+.carp-a b{color:var(--text);font-weight:600;}
+.carp-a small{color:var(--text3);}
+.carp-b{font-size:11px;font-weight:600;padding:1px 7px;border-radius:6px;white-space:nowrap;}
+.carp-b.ya{background:var(--bg3);color:var(--text3);}
+.carp-b.nuevo{background:var(--ok-bg,rgba(22,163,74,.12));color:var(--ok);}
+.carp-b.nose{background:var(--warn-bg,rgba(217,119,6,.14));color:var(--warn,#b45309);}
+.carp-acc{display:flex;flex-wrap:wrap;gap:8px;margin-top:12px;}
 .docs-menu .dm-acc button.prim{color:var(--accent);font-weight:700;}
 /* Flete de una carga partida: va en la otra fila */
 .t-fl.en_otra{color:var(--text3);font-style:italic;}
@@ -1779,7 +1795,7 @@ const CFG_KEY = 'hub_latinut_config';
 let cfg = {...{sheetId:'',sheetName:'Cargas',apiKey:'',clientId:'',alerta_dias:10,hubSheetId:'11r3m9KuXWFRrSjdHf1an2xQDjNwnXhadWk5WbShuLms',appsScriptUrl:'',claudeApiKey:'',buzaramSheetId:'1vQaNeo595C3aK1KAF75UsOkbA5LNUMm16WoEpP9Z69w',buzaramAppsScriptUrl:'',resumenScriptUrl:''},...JSON.parse(localStorage.getItem(CFG_KEY)||'{}')};
 
 // ─── OAUTH ───────────────────────────────────────────────────────────────────
-const SCOPES = 'https://www.googleapis.com/auth/spreadsheets https://www.googleapis.com/auth/gmail.compose https://www.googleapis.com/auth/gmail.readonly https://www.googleapis.com/auth/gmail.settings.basic https://www.googleapis.com/auth/drive.file https://www.googleapis.com/auth/tasks';
+const SCOPES = 'https://www.googleapis.com/auth/spreadsheets https://www.googleapis.com/auth/gmail.compose https://www.googleapis.com/auth/gmail.readonly https://www.googleapis.com/auth/gmail.settings.basic https://www.googleapis.com/auth/drive.file https://www.googleapis.com/auth/drive.readonly https://www.googleapis.com/auth/tasks';
 let tokenClient = null;
 let accessToken = null;
 // ─── NEGOCIO ACTIVO ──────────────────────────────────────────────────────────
@@ -12486,6 +12502,10 @@ function abrirMenuDocs(row, x, y){
     _docsCargando = true;
     cargarDocumentos().catch(() => {}).then(() => { _docsCargando = false; const mm = document.querySelector('#docs-menu'); if(mm) mm.innerHTML = menuDocsHtml(row); docsPintarTabla(); });
   }
+  if(!_carp.listo && !_carp.cargando){
+    _carp.cargando = true;
+    carpCargarRegistro().catch(() => {}).then(() => { _carp.cargando = false; const mm = document.querySelector('#docs-menu'); if(mm && _docsListo) mm.innerHTML = menuDocsHtml(row); });
+  }
 }
 function _docsMenuFuera(e){ const m = document.querySelector('#docs-menu'); if(m && m.contains && m.contains(e.target)) return; cerrarMenuDocs(); }
 function _docsMenuEsc(e){ if(e.key === 'Escape') cerrarMenuDocs(); }
@@ -12514,8 +12534,228 @@ function menuDocsHtml(row){
   if(r.fcAxt.length && negocioActivo === 'axt') acc += b('📄 Solicitud de FC a AXT', 'solicitarFC(' + idx + ')');
   const nota = !r.faltan.length ? '<div class="dm-ok">✓ Están todos los documentos</div>'
     : '';
-  acc += b('📂 Carpeta de Drive', 'driveOpenFolder(' + idx + ')') + b('↗ Ver en Documentos', 'showView(\'documentos\')');
-  return cab + '<div class="dm-tit">Documentos · ' + e.hay + ' de ' + e.total + '</div><div class="dm-docs">' + docs + '</div>' + nota + '<div class="dm-acc">' + acc + '</div>';
+  acc += b('↗ Ver en Documentos', 'showView(\'documentos\')');
+  return cab + '<div class="dm-tit">Documentos · ' + e.hay + ' de ' + e.total + '</div><div class="dm-docs">' + docs + '</div>' + nota + '<div class="dm-acc">' + acc + '</div>' + carpPieMenu(row, idx);
+}
+// ── Leer la carpeta de Drive de una carga a pedido (clic derecho en Lots / DOCUMENTOS → "Leer la carpeta ahora") ──
+// Lista lo que hay en la carpeta en este momento (también lo subido a mano), lo reconoce por el NOMBRE con las mismas reglas que el lector
+// de carpetas de n8n (n8n/codigo/carpetas_clasificar.js; un test verifica que den lo mismo) y marca lo que todavía no está en DOCUMENTOS.
+// - La carpeta sale de la carga y del negocio activo, SIN crear nada: AXT por el Apps Script (getLoteUrl con soloBuscar=1: producto \ año \
+//   lote, o Italia \ CLIENTE \ CONTRATO); Buzaram: raíz de Buzaram \ producto \ año \ lote. AXT y Buzaram nunca se mezclan.
+// - Anotar los nuevos en DOCUMENTOS pide confirmación. Lo que no se reconoce se puede leer por dentro con IA (botón, centavos por archivo).
+// - Cuándo se leyó a mano (y quién) queda en la pestaña CARPETAS_LEIDAS de HUB LATINUT SIN confirmación (pedido del usuario: es solo una
+//   marca de fecha, no toca las cargas). La última lectura automática sale de la marca del workflow Carpetas en N8N_ESTADO (fila 8, "leidas").
+const HOJA_CARPETAS = 'CARPETAS_LEIDAS';
+const CARP_ENCABEZADOS = ['Negocio', 'Fila', 'Lote', 'Carpeta', 'Ruta', 'Última lectura a mano', 'Quién', 'Archivos', 'Nuevos'];
+let _carp = { listo: false, cargando: false, reg: [], auto: null, res: null };
+const carpClave = (neg, fila) => neg + ':' + fila;
+function carpTipoPorNombre(nombre, negocio){
+  const n = String(nombre || '').toUpperCase(), s = n.replace(/[_\-.]+/g, ' ').replace(/\s+/g, ' ').trim();
+  if(s.indexOf('BILL OF LADING') >= 0 || s.indexOf('HOUSE BILL') >= 0 || s.indexOf('B/L') >= 0 || /^BL\s/.test(s) || /(^|\s)\d{9}_CERTIFIEDTRUECOPY/.test(n)) return 'bl';
+  if(/^INVOICE\s*\d+/.test(n) && negocio === 'axt') return 'fc_axt';
+  if(/^FAC/.test(n) || /COMPTIPO/.test(n) || /^\d{1,2}-\d{3,5}(\s*\(\d+\))?\.PDF$/.test(n)) return 'fc_proveedor';
+  if(/PACKING/.test(n)) return 'packing';
+  if(/\bISF\b/.test(n)) return 'isf';
+  if(/FITO|PHYTO/.test(n)) return 'fito';
+  if(/ORIGEN|ORIGIN|\bC\.?O\.?\b/.test(n)) return 'origen';
+  if(/JLA|PROTOCOLO|ANALISIS|ANÁLISIS/.test(n)) return 'jla';
+  if(/INSURANCE|SEGURO/.test(n)) return 'seguro';
+  if(/AVISO DE SALIDA/.test(n)) return 'aviso_salida';
+  if(/SHIPPING/.test(n)) return 'shipping';
+  if(/PROFORMA/.test(n)) return 'proforma';
+  if(/PLANILLA/.test(n)) return 'planilla';
+  return '';
+}
+function carpNumeroPorNombre(nombre, tipo){
+  const n = String(nombre || '').toUpperCase();
+  if(tipo === 'bl') return (n.match(/\b(TRANSHBL\d{6,}|MEDU[A-Z0-9]{6,}|(?:HLCU|MAEU|ONEY|CMDU|COSU|EGLV|OOLU)[A-Z0-9]{6,})\b/) || n.match(/(?:^|[\s_])(\d{9})_CERTIFIEDTRUECOPY/) || [])[1] || '';
+  if(tipo === 'fc_axt') return (n.match(/INVOICE\s*(\d{4,7})/) || [])[1] || '';
+  if(tipo === 'fc_proveedor'){ const m = n.match(/COMPTIPO_\d+_\d+_0*(\d+)/) || n.match(/^\d{1,2}-(\d{3,5})/) || n.match(/\b(?:FC|FACT(?:URA)?)\s*(?:N\S{0,2}\s*)?0*(\d{3,6})\b/); return m ? m[1] : ''; }
+  return '';
+}
+// Un archivo de la carpeta: qué es por el nombre ("" = no se sabe) y si ya está en DOCUMENTOS
+function carpClasificar(a, negocio){
+  if(/VENTA[\s_-]*(CREDITO|CR[ÉE]DITO|CONTADO)/i.test(a.name)) return { tipo: 'otro', numero: '', detalle: 'factura de venta al cliente (por el nombre)', via: 'carpeta' };
+  const tipo = carpTipoPorNombre(a.name, negocio);
+  return tipo ? { tipo, numero: carpNumeroPorNombre(a.name, tipo), detalle: 'reconocido por el nombre del archivo', via: 'carpeta' } : { tipo: '', numero: '', detalle: '', via: '' };
+}
+const carpYaEnDocs = id => _docs.some(d => d.clave === 'carpeta|' + id || (d.drive && d.drive.indexOf('/d/' + id) >= 0));
+const carpLeible = a => /pdf|image\/(png|jpe?g|webp|gif)/i.test(a.mimeType || '') && Number(a.size || 0) <= 12e6;
+
+async function carpCargarRegistro(){
+  if(!accessToken || !cfg.hubSheetId) return;
+  const h = { headers: { Authorization: 'Bearer ' + accessToken } }, base = 'https://sheets.googleapis.com/v4/spreadsheets/' + cfg.hubSheetId + '/values/';
+  try{
+    const r = await fetch(base + encodeURIComponent(HOJA_CARPETAS + '!A2:I'), h);
+    _carp.reg = r.ok ? ((await r.json()).values || []).map((f, i) => ({ neg: f[0] || '', fila: String(f[1] || ''), lote: f[2] || '', carpeta: f[3] || '', ruta: f[4] || '', fecha: f[5] || '', quien: f[6] || '', archivos: f[7] || '', nuevos: f[8] || '', rn: i + 2 })) : [];
+  }catch(e){ _carp.reg = []; }
+  try{
+    const r = await fetch(base + encodeURIComponent('N8N_ESTADO!A8:J8'), h);
+    const f = r.ok ? (((await r.json()).values || [])[0] || []) : [];
+    let det = {}; try{ det = JSON.parse(f[9] || '{}') || {}; }catch(e){ det = {}; }
+    _carp.auto = f[0] === 'carpetas' && String(f[3] || '') === 'ok' ? { fecha: f[1] || '', leidas: new Set(Array.isArray(det.leidas) ? det.leidas : []) } : null;
+  }catch(e){ _carp.auto = null; }
+  _carp.listo = true;
+}
+function carpFechaCorta(iso){
+  const d = new Date(iso); if(isNaN(d)) return String(iso || '');
+  const hoy = new Date(), dd = x => x.toISOString().slice(0, 10), hm = String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0');
+  if(dd(d) === dd(hoy)) return 'hoy ' + hm;
+  const ay = new Date(hoy.getTime() - 864e5); if(dd(d) === dd(ay)) return 'ayer ' + hm;
+  return String(d.getDate()).padStart(2, '0') + '/' + String(d.getMonth() + 1).padStart(2, '0') + ' ' + hm;
+}
+// Pie del menú del lote: la carpeta, la última lectura (automática y a mano) y el botón
+function carpPieMenu(row, idx){
+  const k = carpClave(negocioActivo, row._sheetRow);
+  let auto = 'Automática: ' + (_carp.listo ? 'el lector de n8n no la está leyendo (cobrada, con SI o sin carpeta todavía)' : '…');
+  if(_carp.auto && _carp.auto.leidas.has(k)) auto = 'Automática: ' + carpFechaCorta(_carp.auto.fecha) + ' (n8n, cada 15 min)';
+  const m = _carp.reg.find(x => carpClave(docNegocioDeTexto(x.neg), x.fila) === k);   // en la hoja dice AXT / Buzaram
+  const mano = m && m.fecha ? 'A mano: ' + carpFechaCorta(m.fecha) + (m.quien ? ' por ' + escaparHtml(String(m.quien).split('@')[0]) : '') : 'A mano: nunca';
+  return '<div class="dm-carp"><div class="dm-carp-t">📂 Carpeta de Drive <button class="dm-link" role="menuitem" onclick="cerrarMenuDocs();driveOpenFolder(' + idx + ')">abrir</button></div>'
+    + '<div class="dm-sub">' + auto + '<br>' + mano + '</div>'
+    + '<button class="dm-carp-b" role="menuitem" onclick="cerrarMenuDocs();carpLeer(' + idx + ')">↻ Leer la carpeta ahora</button></div>';
+}
+// La carpeta de la carga SIN crear nada. null = todavía no existe.
+async function carpCarpetaDeFila(row){
+  if(negocioActivo !== 'buzaram'){
+    const f = await driveGetFolderForRow(row, true);
+    return f && f.id ? f : null;
+  }
+  return await driveGetFolderForRow(row, true);
+}
+function carpModal(titulo, html){
+  document.getElementById('cf-detail-title').textContent = titulo;
+  document.getElementById('cf-detail-body').innerHTML = html;
+  document.getElementById('cf-detail-overlay').classList.remove('hidden');
+}
+async function carpLeer(idx){
+  const row = filaPorIdx(idx);
+  if(!row) return;
+  if(!accessToken){ alert('Conectate con Google primero'); return; }
+  const neg = negocioActivo;
+  carpModal('Carpeta de Drive · fila ' + row._sheetRow, '<div style="padding:16px;color:var(--text3);">Leyendo la carpeta…</div>');
+  let carpeta;
+  try{ carpeta = await carpCarpetaDeFila(row); }
+  catch(e){ carpModal('Carpeta de Drive · fila ' + row._sheetRow, '<div style="padding:16px;">No pude ubicar la carpeta: ' + escaparHtml(e.message) + '</div>'); return; }
+  if(!carpeta){ carpModal('Carpeta de Drive · fila ' + row._sheetRow, '<div style="padding:16px;">Esta carga todavía no tiene carpeta en Drive (se crea cuando llega el primer documento o al subir uno).</div>'); return; }
+  const q = "'" + carpeta.id + "' in parents and trashed=false and mimeType!='application/vnd.google-apps.folder'";
+  const r = await fetch('https://www.googleapis.com/drive/v3/files?q=' + encodeURIComponent(q) + '&fields=files(id,name,mimeType,size,webViewLink,modifiedTime)&pageSize=200&orderBy=name&supportsAllDrives=true&includeItemsFromAllDrives=true',
+    { headers: { Authorization: 'Bearer ' + accessToken } });
+  if(r.status === 401 || r.status === 403){
+    carpModal('Carpeta de Drive · fila ' + row._sheetRow, '<div style="padding:16px;">Falta el permiso para leer carpetas de Drive. Desconectá y volvé a conectar con Google (arriba a la derecha) y aceptá el permiso nuevo de <b>ver los archivos de Drive</b>. Se hace una sola vez.</div>');
+    return;
+  }
+  if(!r.ok){ carpModal('Carpeta de Drive · fila ' + row._sheetRow, '<div style="padding:16px;">No pude leer la carpeta (HTTP ' + r.status + ').</div>'); return; }
+  if(!_docsListo){ try{ await cargarDocumentos(); }catch(e){} }
+  const archivos = ((await r.json()).files || []).map(a => Object.assign({}, a, carpClasificar(a, neg), { ya: carpYaEnDocs(a.id) }));
+  _carp.res = { neg, fila: row._sheetRow, idx, lote: String(row[COL.LOTS] || '').trim(), carpeta, ruta: carpeta.nombre || carpeta.ruta || '', archivos };
+  await carpRegistrar(_carp.res);
+  carpPintar();
+}
+// Marca de "leída a mano" en CARPETAS_LEIDAS (sin confirmación: pedido del usuario). Una fila por carga (negocio + fila); se pisa la anterior.
+async function carpRegistrar(res){
+  try{
+    if(!_carp.listo) await carpCargarRegistro();
+    const hd = { Authorization: 'Bearer ' + accessToken, 'Content-Type': 'application/json' }, base = 'https://sheets.googleapis.com/v4/spreadsheets/' + cfg.hubSheetId;
+    const fila = [res.neg === 'buzaram' ? 'Buzaram' : 'AXT', String(res.fila), res.lote, res.carpeta.id, res.ruta, new Date().toISOString(), getMiEmail() || '',
+      String(res.archivos.length), String(res.archivos.filter(a => !a.ya).length)];
+    const negTxt = fila[0], previo = _carp.reg.find(x => x.neg === negTxt && x.fila === fila[1]);
+    if(previo){
+      await fetch(base + '/values/' + encodeURIComponent(HOJA_CARPETAS + '!A' + previo.rn + ':I' + previo.rn) + '?valueInputOption=RAW', { method: 'PUT', headers: hd, body: JSON.stringify({ values: [fila] }) });
+      Object.assign(previo, { lote: fila[2], carpeta: fila[3], ruta: fila[4], fecha: fila[5], quien: fila[6], archivos: fila[7], nuevos: fila[8] });
+      return;
+    }
+    let r = await fetch(base + '/values/' + encodeURIComponent(HOJA_CARPETAS + '!A:I') + ':append?valueInputOption=RAW&insertDataOption=INSERT_ROWS', { method: 'POST', headers: hd, body: JSON.stringify({ values: [fila] }) });
+    if(r.status === 400 || r.status === 404){
+      // primera vez: se crea la pestaña con sus encabezados
+      await fetch(base + ':batchUpdate', { method: 'POST', headers: hd, body: JSON.stringify({ requests: [{ addSheet: { properties: { title: HOJA_CARPETAS } } }] }) });
+      await fetch(base + '/values/' + encodeURIComponent(HOJA_CARPETAS + '!A1:I1') + '?valueInputOption=RAW', { method: 'PUT', headers: hd, body: JSON.stringify({ values: [CARP_ENCABEZADOS] }) });
+      r = await fetch(base + '/values/' + encodeURIComponent(HOJA_CARPETAS + '!A:I') + ':append?valueInputOption=RAW&insertDataOption=INSERT_ROWS', { method: 'POST', headers: hd, body: JSON.stringify({ values: [fila] }) });
+    }
+    let rn = 0;
+    try{ const j = await r.json(); rn = +((((j || {}).updates || {}).updatedRange || '').match(/![A-Z]+(\d+)/) || [])[1] || 0; }catch(e){}
+    _carp.reg.push({ neg: fila[0], fila: fila[1], lote: fila[2], carpeta: fila[3], ruta: fila[4], fecha: fila[5], quien: fila[6], archivos: fila[7], nuevos: fila[8], rn: rn || (_carp.reg.length + 2) });
+  }catch(e){ console.warn('Registro de la carpeta:', e); }
+}
+function carpPintar(){
+  const res = _carp.res; if(!res) return;
+  const nuevos = res.archivos.filter(a => !a.ya), anotables = nuevos.filter(a => a.tipo), sinSaber = nuevos.filter(a => !a.tipo);
+  const paraIA = sinSaber.filter(carpLeible);
+  const etiqueta = a => a.tipo ? escaparHtml(DOC_TIPOS[a.tipo] || (a.tipo === 'otro' ? 'Otro' : a.tipo)) + (a.numero ? ' · ' + escaparHtml(a.numero) : '') : '';
+  const lin = a => '<div class="carp-a' + (a.ya ? '' : ' nuevo') + '">'
+    + (a.ya ? '<span class="carp-b ya">ya estaba</span>' : a.tipo ? '<span class="carp-b nuevo">nuevo</span>' : '<span class="carp-b nose">no sé qué es</span>')
+    + (a.tipo ? '<b>' + etiqueta(a) + '</b>' + (a.ia ? ' <small>(leído con IA)</small>' : '') + ' · ' : '')
+    + (docLinkSeguro(a.webViewLink) ? '<a href="' + escaparHtml(a.webViewLink) + '" target="_blank" rel="noopener">' + escaparHtml(a.name) + '</a>' : escaparHtml(a.name)) + '</div>';
+  const acc = (anotables.length ? '<button class="btn-primary" onclick="carpAnotar()">Anotar ' + (anotables.length === 1 ? 'el nuevo' : 'los ' + anotables.length + ' nuevos') + ' en DOCUMENTOS</button>' : '')
+    + (paraIA.length ? '<button onclick="carpLeerIA()">Leer ' + (paraIA.length === 1 ? escaparHtml(paraIA[0].name) : 'los ' + paraIA.length + ' que no sé') + ' con IA</button>' : '');
+  carpModal('Carpeta de Drive · fila ' + res.fila,
+    '<div class="carp-cab"><a href="' + escaparHtml(res.carpeta.url || ('https://drive.google.com/drive/folders/' + res.carpeta.id)) + '" target="_blank" rel="noopener"><b>' + escaparHtml(res.ruta || 'Carpeta') + '</b></a>'
+    + '<div class="dm-sub">leída recién · ' + res.archivos.length + ' archivo' + (res.archivos.length === 1 ? '' : 's') + (nuevos.length ? ' · ' + nuevos.length + ' sin anotar en DOCUMENTOS' : ' · todo anotado') + '</div></div>'
+    + (res.archivos.length ? res.archivos.map(lin).join('') : '<div style="padding:8px 0;color:var(--text3);">La carpeta está vacía.</div>')
+    + (sinSaber.length && !paraIA.length ? '<div class="dm-sub" style="margin-top:8px;">Lo que no sé qué es y no es PDF ni imagen queda sin anotar.</div>' : '')
+    + (acc ? '<div class="carp-acc">' + acc + '</div>' : ''));
+}
+const CARP_TIPOS_IA = ['bl', 'fc_proveedor', 'fc_axt', 'packing', 'origen', 'fito', 'isf', 'jla', 'seguro', 'shipping', 'aviso_salida', 'proforma', 'planilla', 'otro'];
+const ESQ_CARPETA_IA = { type: 'object', additionalProperties: false, required: ['tipo', 'numero', 'motivo'],
+  properties: { tipo: { type: 'string', enum: CARP_TIPOS_IA }, numero: { type: 'string' }, motivo: { type: 'string' } } };
+// Mismo pedido que el lector de carpetas de n8n (carpetas_pedido_ia.js): elegir el tipo de una lista y copiar el número si se lee seguro.
+const PEDIDO_CARPETA_IA = 'Este archivo es un documento de comercio exterior de una carga de maní. Decí qué documento es:\n'
+  + 'bl = conocimiento de embarque (Bill of Lading); fc_proveedor = factura del exportador argentino (Argen Peanuts, Nutrin); '
+  + 'fc_axt = factura de AXT Solutions Inc al cliente; packing = packing list; origen = certificado de origen; fito = certificado fitosanitario; '
+  + 'isf = Importer Security Filing; jla = análisis de laboratorio; seguro = póliza de seguro; shipping = shipping advice / booking confirmation; '
+  + 'aviso_salida = aviso de salida; proforma = factura proforma; planilla = planilla del despachante; otro = cualquier otra cosa.\n'
+  + '"numero": el número principal del documento si se lee con seguridad (número de BL, de factura o de certificado), copiado exacto; si no, "". '
+  + '"motivo": una frase corta en español de por qué es ese documento. No inventes.';
+async function carpLeerIA(){
+  const res = _carp.res; if(!res) return;
+  const lista = res.archivos.filter(a => !a.ya && !a.tipo && carpLeible(a)).slice(0, 5);
+  if(!lista.length) return;
+  showToast('Leyendo ' + lista.length + ' archivo' + (lista.length > 1 ? 's' : '') + ' con IA…', 'info');
+  let fallas = 0;
+  for(const a of lista){
+    try{
+      const r = await fetch('https://www.googleapis.com/drive/v3/files/' + a.id + '?alt=media&supportsAllDrives=true', { headers: { Authorization: 'Bearer ' + accessToken } });
+      if(!r.ok) throw new Error('HTTP ' + r.status);
+      const b64 = bufferABase64(await r.arrayBuffer());
+      const pdf = /pdf/i.test(a.mimeType || '');
+      const bloque = pdf ? { type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: b64 }, title: a.name }
+        : { type: 'image', source: { type: 'base64', media_type: /png/i.test(a.mimeType) ? 'image/png' : /webp/i.test(a.mimeType) ? 'image/webp' : /gif/i.test(a.mimeType) ? 'image/gif' : 'image/jpeg', data: b64 } };
+      const ia = await llamarClaude({ tarea: 'clasificar_doc', maxTokens: 400, detalle: a.name, schema: ESQ_CARPETA_IA, content: [bloque, { type: 'text', text: PEDIDO_CARPETA_IA }] });
+      const x = extraerJsonIA(ia.texto);
+      if(!x || CARP_TIPOS_IA.indexOf(x.tipo) < 0) throw new Error('la IA no contestó un tipo');
+      Object.assign(a, { tipo: x.tipo, numero: String(x.numero || '').trim(), ia: true, via: 'carpeta (contenido)',
+        detalle: 'leído por dentro con IA: ' + (DOC_TIPOS[x.tipo] || x.tipo) + (x.motivo ? ' (' + String(x.motivo).slice(0, 160) + ')' : '') });
+    }catch(e){ fallas++; console.warn('IA carpeta', a.name, e); }
+  }
+  if(fallas) showToast('No pude leer ' + fallas + ' archivo' + (fallas > 1 ? 's' : '') + ' con IA', 'err');
+  carpPintar();
+}
+// Anotar en DOCUMENTOS lo nuevo que se reconoció (con confirmación). Misma fila que el lector de n8n, así no lo vuelve a anotar.
+async function carpAnotar(){
+  const res = _carp.res; if(!res) return;
+  if(res.neg !== negocioActivo){ alert('Cambiaste de negocio desde que se leyó la carpeta. Volvé a leerla.'); return; }
+  const lista = res.archivos.filter(a => !a.ya && a.tipo);
+  if(!lista.length) return;
+  const ok = await showConfirm('Anotar en DOCUMENTOS', 'Se agrega' + (lista.length > 1 ? 'n ' + lista.length + ' documentos' : ' 1 documento') + ' de la carpeta a la pestaña DOCUMENTOS, en la fila ' + res.fila + ' de ' + (res.neg === 'buzaram' ? 'Buzaram' : 'AXT') + '.',
+    { icono: '📂', okLabel: 'Anotar', detalle: lista.map(a => '<div>• ' + escaparHtml(DOC_TIPOS[a.tipo] || a.tipo) + (a.numero ? ' ' + escaparHtml(a.numero) : '') + ' — ' + escaparHtml(a.name) + '</div>').join('') });
+  if(!ok) return;
+  await cargarDocumentos().catch(() => {});
+  const aun = lista.filter(a => !carpYaEnDocs(a.id));   // otro (o n8n) pudo anotarlo mientras tanto
+  if(!aun.length){ lista.forEach(a => { a.ya = true; }); carpPintar(); showToast('Ya estaban anotados', 'info'); return; }
+  const ahoraAR = new Date(Date.now() - 3 * 3600 * 1000).toISOString().slice(0, 16).replace('T', ' ');
+  const lotes = t => (String(t || '').toUpperCase().replace(/_/g, ' ').match(/(?<![A-Z0-9])[A-Z0-9]{2,5}-(?:\d{6}-AP|\d{4})(?![0-9])/g) || []).filter(l => /[A-Z]/.test(l.split('-')[0]));
+  const values = aun.map(a => ['carpeta|' + a.id, String(a.modifiedTime || '').slice(0, 16).replace('T', ' '), ahoraAR, res.neg === 'buzaram' ? 'Buzaram' : 'AXT', String(res.fila),
+    lotes(a.name).join(', ') || res.lote, a.tipo, a.numero || '', a.name, 'Carpeta de Drive (hub)', res.ruta, 'en carpeta', a.detalle, a.via || 'carpeta', '', a.webViewLink || '',
+    JSON.stringify({ origen: 'carpeta', folderId: res.carpeta.id, hub: true })]);
+  const r = await fetch('https://sheets.googleapis.com/v4/spreadsheets/' + cfg.hubSheetId + '/values/' + encodeURIComponent(HOJA_DOCUMENTOS + '!A:Q') + ':append?valueInputOption=RAW&insertDataOption=INSERT_ROWS',
+    { method: 'POST', headers: { Authorization: 'Bearer ' + accessToken, 'Content-Type': 'application/json' }, body: JSON.stringify({ values }) });
+  if(!r.ok){ alert('No pude anotar en DOCUMENTOS (HTTP ' + r.status + '). No se cambió nada.'); return; }
+  await appendLog({ fc: '', fcServ: '', bl: '', customer: '', accion: 'documentos de la carpeta', detalle: 'fila ' + res.fila + ' - ' + aun.map(a => (DOC_TIPOS[a.tipo] || a.tipo) + ' ' + a.name).join(' · ') });
+  aun.forEach(a => { a.ya = true; });
+  await cargarDocumentos().catch(() => {});
+  try{ docsPintarTabla(); }catch(e){}
+  showToast('✓ ' + aun.length + ' documento' + (aun.length > 1 ? 's' : '') + ' anotado' + (aun.length > 1 ? 's' : '') + ' en DOCUMENTOS', 'ok');
+  carpPintar();
 }
 // Borrador de reclamo. Destinatarios: la hoja CONTACTOS (exportador o forwarder de la carga); en copia los "CC siempre" del negocio y operaciones.
 async function docsReclamar(idx, que){
@@ -16393,6 +16633,7 @@ function n8nAuditorHizo(e){
 }
 // Qué cambiamos en n8n y qué control se sumó en este panel. El más nuevo arriba. "version" = la que anota la Marca de corrida.
 const N8N_CAMBIOS = [
+  { fecha: '25/11/2026', versiones: ['carpetas-2026-11-25b'], cambio: 'Carpetas de las cargas: la marca de cada vuelta anota qué cargas leyó (negocio:fila), para que el menú del lote en la tabla muestre cuándo se leyó su carpeta automáticamente. Nuevo en el hub: «Leer la carpeta ahora» (clic derecho en Lots o DOCUMENTOS) lee la carpeta a pedido, anota la lectura en CARPETAS_LEIDAS y deja anotar lo nuevo en DOCUMENTOS con confirmación (y leer con IA lo que no reconoce)', control: 'Menú del lote: «Automática: hoy hh:mm (n8n)» y «A mano: … por …»' },
   { fecha: '25/11/2026', versiones: ['carpetas-2026-11-25'], cambio: 'Carpetas de las cargas: en AXT ahora recorre producto → año → lote (Blanched, Tostado y Pasta de mani), no las carpetas «2026» directo, así no lee las «2026 / 2026» duplicadas. Si el lote está en su lugar, manda esa carpeta aunque la hoja _DriveFolders apunte a otra (una duplicada vieja); el link de _DriveFolders se usa solo si el lote no está ahí. Igual que el Apps Script de AXT, que además ahora tiene candado y usa la carpeta que ya existe (también en Italia)', control: '¿Está corriendo?: la misma tarjeta «Carpetas de Drive de las cargas», con la versión carpetas-2026-11-25' },
   { fecha: '24/11/2026', versiones: ['carpetas-2026-11-24'], cambio: 'Workflow nuevo «Carpetas de las cargas» (cada 15 min): recorre las carpetas de Drive de las cargas activas (sin cobrar y sin SI en DOCUMENTOS), AXT, Italia y Buzaram por separado, y anota en DOCUMENTOS los archivos que encuentra, también los subidos a mano. Los reconoce por el nombre; los que no (ej. "483843.pdf"), si son PDF o imagen, los lee por dentro Claude Haiku 5.5 y en el hub se ven con el nombre del archivo entre paréntesis. Solo lee Drive: no crea ni mueve carpetas. Tope de IA US$ 2 por mes, hasta 8 archivos por vuelta', control: '¿Está corriendo?: tarjeta «Carpetas de Drive de las cargas» con carpetas leídas, archivos nuevos, cuántos leyó la IA y el gasto del mes contra el tope' },
   { fecha: '24/11/2026', versiones: ['docs-2026-11-24'], cambio: 'Documentos: los reintentos de mails y la comparación de facturas con el Apps Script saltean lo que anotó «Carpetas de las cargas» (no viene de un mail)', control: 'FC_PARALELO y las etapas del circuito de mails no cuentan los archivos de las carpetas' },
@@ -19591,11 +19832,11 @@ function getAppScriptURL(){ return cfg.appsScriptUrl || ''; }
 // driveGetOrCreateFolder sigue disponible para Buzaram (API directa)
 async function driveGetOrCreateFolder(name, parentId){
   const q = encodeURIComponent(`name='${name}' and '${parentId}' in parents and mimeType='application/vnd.google-apps.folder' and trashed=false`);
-  const r = await fetch(`https://www.googleapis.com/drive/v3/files?q=${q}&fields=files(id,name)&supportsAllDrives=true&includeItemsFromAllDrives=true`, {
+  const r = await fetch(`https://www.googleapis.com/drive/v3/files?q=${q}&fields=files(id,name)&orderBy=createdTime&supportsAllDrives=true&includeItemsFromAllDrives=true`, {
     headers: { 'Authorization': `Bearer ${accessToken}` }
   });
   const data = await r.json();
-  if(data.files && data.files.length > 0) return data.files[0].id;
+  if(data.files && data.files.length > 0) return data.files[0].id;   // la más vieja (orderBy createdTime): si hay dos con el mismo nombre, la original
   const cr = await fetch('https://www.googleapis.com/drive/v3/files?supportsAllDrives=true', {
     method: 'POST',
     headers: { 'Authorization': `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
@@ -19605,7 +19846,15 @@ async function driveGetOrCreateFolder(name, parentId){
   return folder.id;
 }
 
-async function driveGetFolderForRow(row){
+// Solo busca (no crea): la carpeta más vieja con ese nombre, o null
+async function driveBuscarFolder(name, parentId){
+  const q = encodeURIComponent(`name='${String(name).replace(/\\/g, '\\\\').replace(/'/g, "\\'")}' and '${parentId}' in parents and mimeType='application/vnd.google-apps.folder' and trashed=false`);
+  const r = await fetch(`https://www.googleapis.com/drive/v3/files?q=${q}&fields=files(id,name)&orderBy=createdTime&supportsAllDrives=true&includeItemsFromAllDrives=true`, { headers: { 'Authorization': `Bearer ${accessToken}` } });
+  if(!r.ok) throw new Error('Drive HTTP ' + r.status);
+  const data = await r.json();
+  return data.files && data.files.length ? data.files[0].id : null;
+}
+async function driveGetFolderForRow(row, soloBuscar){
   const PRODUCT_MAP = {
     'blanched 38/42': 'Blanched', 'blanched 40/50': 'Blanched',
     'split blanched': 'Blanched', 'split blanched peanuts': 'Blanched', 'blanched': 'Blanched',
@@ -19621,26 +19870,28 @@ async function driveGetFolderForRow(row){
   const anio = etd ? String(etd.getFullYear()) : String(new Date().getFullYear());
   const lote = (row[COL.LOTS] || row[COL.NEGOCIO] || '').trim();
 
-  if(!lote && negocioActivo === 'buzaram') throw new Error('Sin lote');
+  if(!lote && negocioActivo === 'buzaram') throw new Error(soloBuscar ? 'la carga todavía no tiene lote (en Buzaram la carpeta es producto / año / lote)' : 'Sin lote');
 
   if(negocioActivo !== 'buzaram'){
     // Las cargas a Italia van a Italia \ CLIENTE \ CONTRATO: el Apps Script lo decide con el cliente, el puerto y el contrato (y no necesita lote).
     const url = getAppScriptURL() + '?accion=getLoteUrl&lote=' + encodeURIComponent(lote) + '&producto=' + encodeURIComponent(producto) + '&anio=' + anio
       + '&cliente=' + encodeURIComponent((row[COL.CUSTOMER] || '').toString().trim()) + '&puerto=' + encodeURIComponent((row[COL.PORT] || '').toString().trim())
-      + '&contrato=' + encodeURIComponent((row[COL.CONTRACT_CLIENTE] || '').toString().trim());
+      + '&contrato=' + encodeURIComponent((row[COL.CONTRACT_CLIENTE] || '').toString().trim()) + (soloBuscar ? '&soloBuscar=1' : '');
     const r = await fetch(url);
     const data = await r.json();
+    if(soloBuscar && data.noExiste) return null;   // para leer no se crea nada
     if(!data.ok) throw new Error(data.error || 'Error en AppScript Drive');
     // Devolver la URL limpia sin parámetros extra
-    return { id: data.id, url: data.url ? data.url.split('?')[0] : `https://drive.google.com/drive/folders/${data.id}` };
+    return { id: data.id, url: data.url ? data.url.split('?')[0] : `https://drive.google.com/drive/folders/${data.id}`, nombre: data.nombre || '' };
   }
 
   const DRIVE_BUZ_ROOT = '1wbh3fUph3P2Q8KzY0dFcfbFvcUSuCO_K';
   let folderId = DRIVE_BUZ_ROOT;
   for(const name of [producto, anio, lote]){
-    folderId = await driveGetOrCreateFolder(name, folderId);
+    folderId = soloBuscar ? await driveBuscarFolder(name, folderId) : await driveGetOrCreateFolder(name, folderId);
+    if(!folderId) return null;
   }
-  return { id: folderId, url: `https://drive.google.com/drive/folders/${folderId}` };
+  return { id: folderId, url: `https://drive.google.com/drive/folders/${folderId}`, nombre: [producto, anio, lote].join(' / ') };
 }
 
 
