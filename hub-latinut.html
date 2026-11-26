@@ -622,6 +622,19 @@ body.t-redim{cursor:col-resize;user-select:none;}
 /* VISTA DOCUMENTOS (lo que n8n lee de los mails) */
 .doc-sec{font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--text3);margin:16px 0 8px;}
 .doc-card{background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius-lg);padding:12px 14px;margin-bottom:10px;}
+.falt-res{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:10px;margin:4px 0 12px;}
+.falt-m{background:var(--bg3);border-radius:var(--radius);padding:10px 12px;display:flex;flex-direction:column;gap:2px;font-size:12px;color:var(--text2);}
+.falt-m b{font-size:22px;font-weight:600;color:var(--text);}
+.falt-m.rojo{background:var(--danger-light,rgba(185,51,42,.08));color:var(--danger);}
+.falt-m.rojo b{color:var(--danger);}
+.falt-cab{display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding-bottom:8px;border-bottom:1px solid var(--border);margin-bottom:6px;}
+.falt-b{border-color:var(--accent);color:var(--accent);font-weight:600;}
+.falt-t{display:grid;grid-template-columns:minmax(0,1.5fr) 80px minmax(0,1.6fr) minmax(0,1fr);gap:5px 12px;font-size:13px;align-items:baseline;}
+.falt-h{font-size:11px;color:var(--text3);}
+.falt-rojo{color:var(--danger);font-weight:600;}
+.falt-g.sin{border-style:dashed;}
+.falt-ver{display:inline-flex;align-items:center;gap:6px;margin-left:10px;font-size:12px;color:var(--text3);}
+@media (max-width:640px){.falt-t{grid-template-columns:minmax(0,1fr) 70px;}.falt-t .falt-h:nth-child(n+3){display:none;}}
 .doc-card.doc-rev{border-left:3px solid var(--warn);}
 .doc-card.doc-mal{border-left:3px solid var(--danger);}
 .doc-top{display:flex;gap:10px;align-items:baseline;flex-wrap:wrap;}
@@ -12256,6 +12269,117 @@ function docsTextoCarga(r){
 }
 
 // ── Pantalla ──
+// ── Documentos que faltan, por quién los tiene que mandar ──
+// Cada documento que falta (chip sin tildar) va a quien lo manda: el BL al forwarder, la factura al cliente a AXT / Buzaram (Solicitud de FC)
+// y el resto (factura del proveedor, packing, origen, fito, ISF, análisis, NON GMO, seguro) al exportador. Lo que no tiene a quién
+// (falta Exporter o forwarder en la planilla) queda aparte. Atrasada = zarpó hace más de 7 días y le falta algo (pedido del usuario).
+let _docsAgrupar = 'quien';
+const DOCS_DIAS_ATRASO = 7;
+const docsNormEmpresa = s => String(s || '').toUpperCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/\b(S\.?A\.?|S\.?R\.?L\.?|SRL|SA|INC|LLC|LTD)\b/g, '').replace(/[^A-Z0-9]/g, '');
+function docsDiasDesdeETD(row){ const d = parseDate(row[COL.ETD]); return d ? Math.floor((Date.now() - d.getTime()) / 864e5) : null; }
+const docsAtrasada = row => { const n = docsDiasDesdeETD(row); return n !== null && n > DOCS_DIAS_ATRASO; };
+// El último reclamo de esta carga en el LOG (lo anota docsReclamar / docsReclamarGrupo: "lote X: ..."), del negocio activo
+function docsUltimoReclamo(row, accion){
+  const lote = String(row[COL.LOTS] || '').trim(), fuente = String(getLogFuente()).toUpperCase();
+  if(!lote || typeof logRows === 'undefined') return null;
+  for(let i = logRows.length - 1; i >= 0; i--){
+    const f = logRows[i] || [];
+    if(String(f[7] || '') !== accion || String(f[2] || '').toUpperCase().indexOf(fuente) < 0) continue;
+    if(String(f[8] || '').indexOf('lote ' + lote + ':') === 0) return { fecha: String(f[0] || ''), quien: String(f[9] || '').split('@')[0] };
+  }
+  return null;
+}
+function docsHaceDias(fecha){
+  const d = parseDate(fecha); if(!d) return fecha || '';
+  const n = Math.floor((Date.now() - d.getTime()) / 864e5);
+  return n <= 0 ? 'hoy' : n === 1 ? 'ayer' : 'hace ' + n + ' d';
+}
+// Grupos: { clave, tipo: 'exp' | 'fwd' | 'fc' | 'sin', nombre, items: [{ row, idx, docs: [chip.k] }] }
+function docsFaltantesPorQuien(cargas){
+  const grupos = {}, add = (clave, tipo, nombre, row, k) => {
+    const g = grupos[clave] = grupos[clave] || { clave, tipo, nombre, items: [] };
+    let it = g.items.find(x => x.row === row); if(!it){ it = { row, idx: idxDeFila(row), docs: [] }; g.items.push(it); }
+    if(it.docs.indexOf(k) < 0) it.docs.push(k);
+  };
+  const fcK = ['fc_axt', 'fc_axt_serv', 'fc_buzaram', 'fc_buzaram_serv'];
+  cargas.forEach(({ r, e }) => e.chips.filter(c => c.estado === 'no').forEach(c => {
+    if(c.k === 'bl'){ const fw = forwarderDeFila(r); return fw ? add('fwd:' + grupoForwarder(fw), 'fwd', fw, r, c.k) : add('sin', 'sin', '', r, c.k); }
+    if(fcK.indexOf(c.k) >= 0) return add('fc', 'fc', negocioActivo === 'buzaram' ? 'Buzaram (Newsan)' : 'AXT (Ornella)', r, c.k);
+    if(DOC_RECLAMO[c.k]){ const ex = String(r[COL.EXPORTER] || '').trim(); return ex ? add('exp:' + docsNormEmpresa(ex), 'exp', ex, r, c.k) : add('sin', 'sin', '', r, c.k); }
+    add('sin', 'sin', '', r, c.k);
+  }));
+  const orden = { exp: 0, fwd: 1, fc: 2, sin: 3 };
+  return Object.values(grupos).sort((a, b) => (orden[a.tipo] - orden[b.tipo]) || (b.items.filter(x => docsAtrasada(x.row)).length - a.items.filter(x => docsAtrasada(x.row)).length) || (b.items.length - a.items.length))
+    .map(g => Object.assign(g, { items: g.items.sort((a, b) => (docsDiasDesdeETD(b.row) || -1e9) - (docsDiasDesdeETD(a.row) || -1e9)) }));
+}
+function docsGruposHtml(cargas){
+  const grupos = docsFaltantesPorQuien(cargas);
+  window._docsGrupos = grupos;
+  const atr = cargas.filter(x => docsAtrasada(x.r)).length;
+  const sinReclamo = cargas.filter(x => { const g = grupos.filter(gr => gr.tipo === 'exp' || gr.tipo === 'fwd').filter(gr => gr.items.some(it => it.row === x.r)); return g.length && g.every(gr => !docsUltimoReclamo(x.r, gr.tipo === 'fwd' ? 'pedido de BL' : 'reclamo de documentos')); }).length;
+  let h = '<div class="falt-res"><div class="falt-m"><span>Cargas con faltantes</span><b>' + cargas.length + '</b></div>'
+    + '<div class="falt-m' + (atr ? ' rojo' : '') + '"><span>Atrasadas (zarparon hace +' + DOCS_DIAS_ATRASO + ' días)</span><b>' + atr + '</b></div>'
+    + '<div class="falt-m"><span>Sin reclamar todavía</span><b>' + sinReclamo + '</b></div></div>';
+  if(!grupos.length) return h + '<div class="empty"><div class="empty-icon">✓</div>Ninguna carga con documentos faltantes.</div>';
+  grupos.forEach((g, gi) => {
+    const n = g.items.length, s = n === 1 ? '' : 's';
+    const titulo = g.tipo === 'sin' ? 'Sin a quién reclamar' : escaparHtml(g.nombre);
+    const sub = g.tipo === 'exp' ? 'exportador' : g.tipo === 'fwd' ? 'forwarder' : g.tipo === 'fc' ? 'factura al cliente' : 'falta el Exporter o el forwarder en la planilla';
+    const boton = g.tipo === 'exp' ? '<button class="btn falt-b" onclick="docsReclamarGrupo(' + gi + ')">✉ ' + (n === 1 ? 'Reclamar' : 'Reclamar las ' + n + ' en un mail') + '</button>'
+      : g.tipo === 'fwd' ? '<button class="btn falt-b" onclick="docsReclamarGrupo(' + gi + ')">✉ ' + (n === 1 ? 'Pedir el BL' : 'Pedir los ' + n + ' BL en un mail') + '</button>'
+      : g.tipo === 'fc' ? '<button class="btn" onclick="solicitarFCBulk([' + g.items.map(it => it.idx).join(',') + '])">📄 Solicitud de FC</button>' : '';
+    h += '<div class="doc-card falt-g' + (g.tipo === 'sin' ? ' sin' : '') + '"><div class="falt-cab"><span class="doc-tit">' + titulo + '</span><span class="doc-sub">' + sub + ' · ' + n + ' carga' + s + '</span><span style="flex:1"></span>' + boton + '</div>'
+      + '<div class="falt-t"><span class="falt-h">Carga</span><span class="falt-h">ETD</span><span class="falt-h">Falta</span><span class="falt-h">' + (g.tipo === 'fc' ? 'Solicitud' : g.tipo === 'sin' ? '' : 'Último reclamo') + '</span>';
+    g.items.forEach(it => {
+      const r = it.row, dias = docsDiasDesdeETD(r);
+      const ult = g.tipo === 'exp' || g.tipo === 'fwd' ? docsUltimoReclamo(r, g.tipo === 'fwd' ? 'pedido de BL' : 'reclamo de documentos') : null;
+      const ultTxt = g.tipo === 'fc' ? (String(r[COL.LOMBARD] || '').trim().toUpperCase() === 'SI' ? 'pedida' : 'sin pedir')
+        : g.tipo === 'sin' ? '' : ult ? docsHaceDias(ult.fecha) + (ult.quien ? ' (' + escaparHtml(ult.quien) + ')' : '') : 'nunca';
+      h += '<span><a href="#" onclick="abrirPanelCarga(' + it.idx + ');return false;">' + escaparHtml(String(r[COL.CUSTOMER] || '—')) + ' · ' + escaparHtml(String(r[COL.LOTS] || 'fila ' + r._sheetRow)) + '</a></span>'
+        + '<span class="' + (docsAtrasada(r) ? 'falt-rojo' : '') + '">' + (dias === null ? '—' : dias < 0 ? 'en ' + (-dias) + ' d' : dias === 0 ? 'hoy' : 'hace ' + dias + ' d') + '</span>'
+        + '<span>' + it.docs.map(k => escaparHtml(DOC_TIPOS[k] || k)).join(' · ') + '</span>'
+        + '<span class="doc-sub">' + ultTxt + '</span>';
+    });
+    h += '</div></div>';
+  });
+  return h;
+}
+// Un solo borrador para todas las cargas de una empresa (exportador o forwarder). No se manda: queda en tu Gmail.
+// Destinatarios: la hoja CONTACTOS (como el reclamo de una carga); en copia los "CC siempre" del negocio y operaciones.
+async function docsReclamarGrupo(gi){
+  const g = (window._docsGrupos || [])[gi];
+  if(!g || (g.tipo !== 'exp' && g.tipo !== 'fwd')) return;
+  const lista = g.tipo === 'fwd' ? contactosDeForwarder(g.nombre) : contactosDeExportador(g.nombre);
+  const para = [...new Set(lista.filter(c => !esDeOtroNegocio(c)).map(c => c.email).filter(Boolean))];
+  if(!para.length){ alert('No hay contactos de "' + g.nombre + '" en la hoja CONTACTOS. Agregalos ahí (en la columna Empresa, con ese nombre) y probá de nuevo.'); return; }
+  const cc = [...new Set(contacts.filter(c => c.ccSiempre && !esDeOtroNegocio(c)).map(c => c.email).concat([CC_EQUIPO]))].filter(e => e && para.indexOf(e) < 0);
+  const v = (r, c) => String(r[c] || '').trim();
+  const nomDoc = k => k === 'bl' ? 'BL (draft o final)' : (DOC_RECLAMO[k] || DOC_TIPOS[k] || k);
+  const lineas = g.items.map(it => {
+    const r = it.row, etd = r[COL.ETD] ? fmtDate(r[COL.ETD]) : '';
+    return '- ' + (v(r, COL.CUSTOMER) || 'carga') + (v(r, COL.LOTS) ? ', lote ' + v(r, COL.LOTS) : '') + (v(r, COL.CONTAINERS) ? ', contenedor ' + v(r, COL.CONTAINERS) : '')
+      + (etd ? ', ETD ' + etd : '') + ': ' + it.docs.map(nomDoc).join(', ');
+  });
+  const asunto = (g.tipo === 'fwd' ? 'BL pendientes' : 'Documentación pendiente') + ' - ' + g.items.length + ' carga' + (g.items.length > 1 ? 's' : '');
+  const cuerpo = 'Hola,\n\nDe las siguientes cargas todavía no recibimos:\n\n' + lineas.join('\n') + '\n\n¿Nos los pueden enviar?\n\nGracias.';
+  const ok = await showConfirm(g.tipo === 'fwd' ? 'Pedir los BL' : 'Reclamar documentos', 'Se crea UN borrador en tu Gmail con las ' + g.items.length + ' cargas (no se manda). Lo revisás y lo mandás vos.', {
+    okLabel: 'Crear borrador', icono: '✉️',
+    detalle: '<div><span style="color:var(--text3);">Para:</span> <b>' + escaparHtml(para.join(', ')) + '</b></div>'
+      + (cc.length ? '<div><span style="color:var(--text3);">CC:</span> ' + escaparHtml(cc.join(', ')) + '</div>' : '')
+      + '<div><span style="color:var(--text3);">Asunto:</span> <b>' + escaparHtml(asunto) + '</b></div>'
+      + '<div style="white-space:pre-wrap;margin-top:6px;font-size:12px;">' + escaparHtml(cuerpo) + '</div>' });
+  if(!ok) return;
+  if(!(await createGmailDraft(para.join(', '), cc.join(', '), asunto, cuerpo))) return;
+  // una línea de LOG por carga, con el mismo formato que el reclamo de una carga ("lote X: ..."), así "Último reclamo" la encuentra
+  for(const it of g.items){
+    const r = it.row;
+    await appendLog({ bl: v(r, COL.BL), customer: v(r, COL.CUSTOMER), accion: g.tipo === 'fwd' ? 'pedido de BL' : 'reclamo de documentos',
+      detalle: (v(r, COL.LOTS) ? 'lote ' + v(r, COL.LOTS) + ': ' : '') + it.docs.map(nomDoc).join(', ') + ' → ' + g.nombre + ' (mail con ' + g.items.length + ' cargas)' }).catch(() => {});
+  }
+  try{ await loadLog(); }catch(e){}
+  if(currentView === 'documentos') renderDocumentos();
+}
+function docsAgrupar(m){ _docsAgrupar = m; renderDocumentos(); }
 function renderDocumentos(){
   const cont = document.getElementById('content');
   if(!accessToken){ cont.innerHTML = '<div class="empty"><div class="empty-icon">🔒</div>Conectate con Google para ver los documentos.</div>'; return; }
@@ -12286,8 +12410,10 @@ function renderDocumentos(){
   const chip = (k, t, n) => '<button class="chip-f' + (_docsFiltro === k ? ' on' : '') + '" onclick="docsFiltrar(\'' + k + '\')">' + t + ' <b>' + n + '</b></button>';
   html += '<div class="doc-sec">Set de documentos por carga · ' + lab + '</div>'
     + '<div class="doc-barra">' + chip('faltantes', 'Con faltantes', falt.length) + chip('completas', 'Completas', comp.length) + chip('todas', 'Todas', enBusca.length)
+    + (_docsFiltro === 'faltantes' ? '<span class="falt-ver">Ver: <button class="chip-f' + (_docsAgrupar === 'quien' ? ' on' : '') + '" onclick="docsAgrupar(\'quien\')">Por quién los manda</button><button class="chip-f' + (_docsAgrupar === 'carga' ? ' on' : '') + '" onclick="docsAgrupar(\'carga\')">Por carga</button></span>' : '')
     + '<span style="flex:1"></span><input id="docs-busca" class="doc-buscar" placeholder="Buscar lote, BL, contenedor, cliente…" value="' + escaparHtml(_docsBusca) + '" oninput="docsBuscar(this.value)">'
     + '<button class="btn" onclick="docsRecargar()">↻ Actualizar</button></div>';
+  if(_docsFiltro === 'faltantes' && _docsAgrupar === 'quien'){ html += docsGruposHtml(lista); cont.innerHTML = html; const b0 = document.getElementById('docs-busca'); if(b0 && window._docsFocoBusca){ b0.focus(); b0.setSelectionRange(b0.value.length, b0.value.length); window._docsFocoBusca = false; } return; }
   if(!lista.length) html += '<div class="empty"><div class="empty-icon">✓</div>' + (_docsFiltro === 'faltantes' ? 'Ninguna carga con documentos faltantes.' : 'No hay cargas para mostrar.') + '</div>';
   lista.slice(0, 150).forEach(x => { html += docCardCarga(x.r, x.e); });
   if(lista.length > 150) html += '<div class="doc-sub" style="padding:8px 0;">Se muestran las primeras 150: usá el buscador para encontrar las demás.</div>';
