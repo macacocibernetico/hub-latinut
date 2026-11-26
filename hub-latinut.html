@@ -633,6 +633,13 @@ body.t-redim{cursor:col-resize;user-select:none;}
 .falt-h{font-size:11px;color:var(--text3);}
 .falt-rojo{color:var(--danger);font-weight:600;}
 .falt-g.sin{border-style:dashed;}
+.docs-menu.mfe{width:340px;}
+.mfe-por{padding:6px 12px;font-size:13px;line-height:1.5;color:var(--text2);}
+.mfe-e.ok{color:var(--ok);font-weight:600;}
+.mfe-e.mano{color:var(--warn);}
+.docs-menu .mfe-b{margin:4px 12px;width:calc(100% - 24px);}
+.mfe-mano{display:flex;align-items:center;gap:6px;flex-wrap:wrap;padding:8px 12px 12px;font-size:12px;color:var(--text3);}
+.mfe-mano input{padding:5px 6px;border:1px solid var(--border2);border-radius:var(--radius);background:var(--bg2);color:var(--text);font:inherit;}
 .dcli-sec{margin-top:24px;text-transform:none;letter-spacing:0;}
 .dcli-b{font-weight:600;}
 .dcli-t{display:grid;grid-template-columns:minmax(0,1.3fr) minmax(0,1.2fr) 100px minmax(0,1.4fr) 36px;gap:6px 12px;align-items:center;font-size:13px;margin-bottom:12px;}
@@ -12194,6 +12201,15 @@ function docsCliEsDe(regla, cliente){
   const a = docsCliNorm(regla.cliente), b = docsCliNorm(cliente);
   return !!a && !!b && (a === b || (a.length >= 4 && b.indexOf(a) >= 0) || (b.length >= 4 && a.indexOf(b) >= 0));
 }
+// Documento nuevo (x_...) de este negocio cuyo nombre aparece en el nombre del archivo ("Kosher" en "KOSHER_CERT_BLS0.pdf"). El más largo gana.
+// Mismas reglas que n8n (extraPorNombre en docs_leer.js y carpetas_clasificar.js).
+const docsCliNormNombre = s => String(s || '').toUpperCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^A-Z0-9]/g, '');
+function docsCliExtraPorNombre(nombre, negocio){
+  if(typeof _docsCli === 'undefined') return '';
+  const n = docsCliNormNombre(nombre);
+  const m = docsCliReglas().filter(r => /^x_/.test(r.k) && r.regla === 'pide' && (!negocio || r.neg === negocio) && docsCliNormNombre(r.nombre || DOC_TIPOS[r.k]).length >= 3 && n.indexOf(docsCliNormNombre(r.nombre || DOC_TIPOS[r.k])) >= 0);
+  return m.length ? m.sort((a, b) => docsCliNormNombre(b.nombre).length - docsCliNormNombre(a.nombre).length)[0].k : '';
+}
 function docsCliDeCarga(row){
   const cli = String(row[COL.CUSTOMER] || '');
   return docsCliReglas().filter(r => r.neg === negocioActivo && docsCliEsDe(r, cli));
@@ -12871,12 +12887,13 @@ function tablaMenuDocs(ev){
   const td = ev && ev.target && ev.target.closest ? ev.target.closest('td[data-c]') : null;
   if(!td) return;
   const c = +td.getAttribute('data-c');
-  const flete = esColFleteMenu(c);
-  if(c !== COL.LOTS && c !== COL.DOCUMENTOS && !flete) return;         // en las demás celdas sigue el menú del navegador
+  const flete = esColFleteMenu(c), fechaEst = c === COL.FECHA_EST_COBRO && COL.FECHA_EST_COBRO >= 0;
+  if(c !== COL.LOTS && c !== COL.DOCUMENTOS && !flete && !fechaEst) return;         // en las demás celdas sigue el menú del navegador
   const row = _tablaRows[+td.getAttribute('data-r')];
   if(!row) return;
   ev.preventDefault();
-  if(flete) abrirMenuFlete(row, c, ev.clientX, ev.clientY);
+  if(fechaEst) abrirMenuFechaEst(row, ev.clientX, ev.clientY);
+  else if(flete) abrirMenuFlete(row, c, ev.clientX, ev.clientY);
   else abrirMenuDocs(row, ev.clientX, ev.clientY);
 }
 function abrirMenuDocs(row, x, y){
@@ -12960,6 +12977,7 @@ function carpTipoPorNombre(nombre, negocio){
   if(/PACKING/.test(n)) return 'packing';
   if(/\bISF\b/.test(n)) return 'isf';
   if(/NON[\s_-]*G\.?M\.?O|NON[\s_-]*OGM|\bNO[\s_-]*OGM\b|GMO[\s_-]*FREE|LIBRE[\s_-]*DE[\s_-]*OGM/.test(n)) return 'non_gmo';
+  const ex = docsCliExtraPorNombre(nombre, negocio); if(ex) return ex;   // documentos nuevos de "Documentos por cliente" ("Kosher cert.pdf" -> x_kosher)
   if(/FITO|PHYTO/.test(n)) return 'fito';
   if(/ORIGEN|ORIGIN|\bC\.?O\.?\b/.test(n)) return 'origen';
   if(/JLA|PROTOCOLO|ANALISIS|ANÁLISIS/.test(n)) return 'jla';
@@ -13783,6 +13801,71 @@ function abrirMenuFlete(row, c, x, y){
   m.style.left = Math.max(8, Math.min(x, window.innerWidth - w - 8)) + 'px';
   m.style.top = Math.max(8, Math.min(y, window.innerHeight - h - 8)) + 'px';
   setTimeout(() => { document.addEventListener('mousedown', _docsMenuFuera, true); document.addEventListener('keydown', _docsMenuEsc, true); }, 0);
+}
+// ── Clic derecho en "Fecha estimada" (de cobro): por qué es esa fecha y cambiarla ──
+// Dice de dónde sale (contrato, fórmula "ETD+90", la ETD de la carga y el resultado), si la celda coincide con la fórmula o está puesta
+// a mano, y deja usar la de la fórmula o poner otra. Se guarda como cualquier edición de la tabla (sola, con aviso y Ctrl+Z).
+let _mfeRow = null, _mfeCalc = '', _mfeNota = '';
+function abrirMenuFechaEst(row, x, y){
+  cerrarMenuDocs();
+  _mfeRow = row; _mfeCalc = ''; _mfeNota = '';
+  const m = document.createElement('div');
+  m.id = 'docs-menu'; m.className = 'docs-menu mfe'; m.setAttribute('role', 'menu');
+  m.innerHTML = '<div class="dm-cab"><b>Fecha estimada de cobro</b><div class="dm-sub">Mirando el contrato…</div></div>';
+  document.body.appendChild(m);
+  const pos = () => { const w = m.offsetWidth || 340, h = m.offsetHeight || 260;
+    m.style.left = Math.max(8, Math.min(x, window.innerWidth - w - 8)) + 'px'; m.style.top = Math.max(8, Math.min(y, window.innerHeight - h - 8)) + 'px'; };
+  pos();
+  setTimeout(() => { document.addEventListener('mousedown', _docsMenuFuera, true); document.addEventListener('keydown', _docsMenuEsc, true); }, 0);
+  return menuFechaEstHtml(row).then(h => { if(_mfeRow === row && document.querySelector('#docs-menu') === m){ m.innerHTML = h; pos(); } });
+}
+async function menuFechaEstHtml(row){
+  const actual = valorVisible(row, COL.FECHA_EST_COBRO).trim(), numero = valorVisible(row, COL.CONTRACT_CLIENTE).trim();
+  const etd = valorVisible(row, COL.ETD).trim(), eta = valorVisible(row, COL.ETA).trim();
+  let por = '', motivo = '', calc = '';
+  if(!numero) motivo = 'La carga no tiene contrato (Contract Cliente): no hay fórmula para calcularla.';
+  else {
+    let r = {}; try{ r = await formulaPagoDeContrato(numero) || {}; }catch(e){ r = { motivo: e.message }; }
+    if(!r.texto) motivo = (r.motivo ? r.motivo.charAt(0).toUpperCase() + r.motivo.slice(1) : 'El contrato ' + numero + ' no tiene "Formula pago"') + '.';
+    else {
+      const f = parsearFormulaPago(r.texto);
+      if(!f) motivo = 'El contrato ' + numero + ' dice "' + r.texto + '" en Formula pago y no lo entiendo (tiene que ser ETD o ETA ± días).';
+      else {
+        calc = fechaDesdeFormulaPago(f, etd, eta);
+        por = 'Contrato <b>' + escaparHtml(numero) + '</b> · fórmula <b>' + escaparHtml(r.texto) + '</b><br>' + escaparHtml(explicarCalculoFecha(f, etd, eta)) + (calc ? ' → <b>' + calc + '</b>' : ' <span class="falt-rojo">(falta la ' + f.base + ' de la carga)</span>');
+        _mfeNota = 'Calculada: ' + explicarCalculoFecha(f, etd, eta) + ' · contrato ' + numero + ' (fórmula "' + r.texto + '")';
+      }
+    }
+  }
+  _mfeCalc = calc;
+  const estado = !actual ? '<span class="mfe-e">La celda está vacía.</span>'
+    : calc && actual === calc ? '<span class="mfe-e ok">✓ Coincide con la fórmula.</span>'
+    : calc ? '<span class="mfe-e mano">Está puesta a mano: la fórmula da <b>' + calc + '</b>.</span>'
+    : '<span class="mfe-e">No se puede comparar con la fórmula.</span>';
+  const puede = _colEstCobroOk();
+  return '<div class="dm-cab"><b>Fecha estimada de cobro</b>: ' + (actual ? '<b>' + escaparHtml(actual) + '</b>' : '—')
+    + '<div class="dm-sub">fila ' + row._sheetRow + ' · ' + escaparHtml(String(row[COL.CUSTOMER] || '')) + (row[COL.LOTS] ? ' · lote ' + escaparHtml(String(row[COL.LOTS])) : '') + '</div></div>'
+    + '<div class="mfe-por">' + (por || escaparHtml(motivo)) + '</div><div class="mfe-por">' + estado + '</div>'
+    + (!puede ? '<div class="dm-sub" style="padding:8px 12px;">Esta columna no se puede cambiar desde el hub (es una fórmula de la planilla o no está).</div>'
+      : (calc && actual !== calc ? '<button class="dm-carp-b mfe-b" role="menuitem" onclick="mfeUsarFormula()">Usar la de la fórmula (' + calc + ')</button>' : '')
+        + '<div class="mfe-mano"><span>Cambiar a mano:</span><input type="date" id="mfe-fecha" value="' + (parseDate(actual) ? toInputDate(actual) : '') + '"><button class="btn" onclick="mfeGuardarMano()">Guardar</button></div>');
+}
+function mfeUsarFormula(){
+  const row = _mfeRow, calc = _mfeCalc, nota = _mfeNota;
+  cerrarMenuDocs();
+  if(!row || !calc || !_colEstCobroOk()) return;
+  aplicarFechaEstimada(row, calc, nota);
+  showToast('Fecha estimada de cobro: ' + calc + ' (la de la fórmula). Se guarda sola; Ctrl+Z la deshace.', 'ok');
+}
+function mfeGuardarMano(){
+  const row = _mfeRow, el = document.getElementById('mfe-fecha');
+  const nueva = el && el.value ? fromInputDate(el.value) : '';
+  if(!nueva){ showToast('Elegí una fecha', 'err'); return; }
+  cerrarMenuDocs();
+  if(!row || !_colEstCobroOk()) return;
+  if(valorVisible(row, COL.FECHA_EST_COBRO).trim() === nueva){ showToast('Ya tenía esa fecha', 'info'); return; }
+  aplicarFechaEstimada(row, nueva, 'Puesta a mano' + (_mfeCalc && _mfeCalc !== nueva ? ' (la fórmula da ' + _mfeCalc + ')' : ''));
+  showToast('Fecha estimada de cobro: ' + nueva + '. Se guarda sola; Ctrl+Z la deshace.', 'ok');
 }
 function mfPonerTarifa(){
   const row = _mfRow, c = _mfCol;
@@ -17158,6 +17241,7 @@ function n8nAuditorHizo(e){
 }
 // Qué cambiamos en n8n y qué control se sumó en este panel. El más nuevo arriba. "version" = la que anota la Marca de corrida.
 const N8N_CAMBIOS = [
+  { fecha: '26/11/2026', versiones: ['docs-2026-11-26c', 'carpetas-2026-11-26c'], cambio: 'Documentos nuevos de «Documentos por cliente» (ej. Kosher): los dos workflows leen la pestaña DOCS_CLIENTES del hub (paso nuevo «Leer DOCS_CLIENTES», que sigue aunque la pestaña no exista) y reconocen esos documentos por el nombre del archivo. Cada negocio solo los suyos: en las carpetas se mira el negocio de la carga y en los mails Atar los busca solo en el negocio que definió el documento', control: 'Documentos: un archivo «Kosher ….pdf» de una carga de ese cliente aparece tildado en Kosher; tarjetas: versiones docs-2026-11-26c y carpetas-2026-11-26c' },
   { fecha: '26/11/2026', versiones: ['docs-2026-11-26b'], cambio: 'Facturas de Buzaram: el packing se lee también cuando la factura dice «Packing: bags» (con dos puntos). La A4820 de Farm Trading había quedado «no coincide» solo por eso; como las que no coinciden se reintentan 7 días, se vuelve a controlar sola', control: 'Documentos: la A4820 (fila 236 de Buzaram) tendría que pasar a verde en la próxima vuelta; tarjeta Documentos: versión docs-2026-11-26b' },
   { fecha: '26/11/2026', versiones: ['docs-2026-11-26', 'carpetas-2026-11-26b'], cambio: 'Certificado NON GMO (lo pide Nutitaly): los dos workflows lo reconocen como documento propio (por el nombre del archivo: NON GMO, No OGM, GMO free; Documentos también por el texto del PDF), lo atan a la carga y lo guardan en su carpeta de Drive como los demás; la IA de las carpetas también lo conoce', control: 'Documentos: en las cargas de Nutitaly aparece el chip «Non GMO» (sin tildar hasta que llega); tarjetas: versiones docs-2026-11-26 y carpetas-2026-11-26b' },
   { fecha: '26/11/2026', versiones: ['carpetas-2026-11-26'], cambio: 'Carpetas de las cargas: la IA ahora dice TODOS los documentos que trae un archivo (un PDF con el set completo escaneado junto: BL, factura, packing, origen, fito...) y se anota una fila por documento en DOCUMENTOS (la primera con la clave de siempre, las demás carpeta|id|tipo), igual que «Leer con IA» del hub. La factura del otro negocio que conteste la IA se descarta (AXT y Buzaram nunca se mezclan)', control: 'Documentos: los chips de un set escaneado junto muestran el mismo archivo en cada documento; tarjeta Carpetas: versión carpetas-2026-11-26' },
