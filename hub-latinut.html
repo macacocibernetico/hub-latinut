@@ -6468,17 +6468,19 @@ function renderCargas(showAll, sort){
     // asi no hay que ir hasta la punta derecha de la tabla para dispararlas.
     // Cada una con su color: antes "Aviso al cliente" y "Liberación" eran dos
     // botones blancos identicos y habia que leerlos para saber cual era cual.
-    const btnBarra = (accion, texto, color) =>
-      '<button onclick="' + accion + '" ' + (r.bloqueo?'disabled':'')
+    // siempre=true: el botón no depende del bloqueo de la FC / aviso (que exige un solo cliente). La liberación se puede pedir con
+    // cualquier selección, falten los días que falten para el ETA: sale un borrador por forwarder.
+    const btnBarra = (accion, texto, color, siempre) => { const b = r.bloqueo && !siempre;
+      return '<button onclick="' + accion + '" ' + (b?'disabled':'')
       + ' style="padding:8px 16px;border-radius:20px;border:none;font-size:13px;font-weight:600;'
-      + 'font-family:var(--font);white-space:nowrap;cursor:' + (r.bloqueo?'not-allowed':'pointer')
-      + ';background:' + (r.bloqueo?'var(--border2)':color) + ';color:#fff;'
-      + (r.bloqueo?'opacity:.5;':'') + '">' + texto + '</button>';
+      + 'font-family:var(--font);white-space:nowrap;cursor:' + (b?'not-allowed':'pointer')
+      + ';background:' + (b?'var(--border2)':color) + ';color:#fff;'
+      + (b?'opacity:.5;':'') + '">' + texto + '</button>'; };
 
     bar.innerHTML = '<div style="display:flex;flex-direction:column;gap:2px;align-items:flex-start;">' + resumen + '</div>'
       + btnBarra('requestBulkFC()', '📄 Solicitud FC (' + n + ')', 'var(--accent)')
       + btnBarra('bulkAvisoCliente()', '📦 Aviso al cliente', '#f7941d')
-      + btnBarra('bulkLiberacion()', '🚢 Liberación', '#2e7d32')
+      + btnBarra('bulkLiberacion()', '🚢 Liberación', '#2e7d32', true)
       + '<button onclick="limpiarSelFC()" style="padding:8px 14px;border-radius:20px;border:1px solid var(--border2);background:var(--bg2);color:var(--text3);font-size:13px;font-family:var(--font);cursor:pointer;white-space:nowrap;">Limpiar</button>';
   };
 
@@ -9024,6 +9026,7 @@ async function solicitarLiberacionViaAppScript(rowIdx){
 async function solicitarLiberacionBulkViaAppScript(rowIndices){
   if(!rowIndices.length) return;
   // Un mail por forwarder: cada uno lleva a su gente. Si hay cargas de varios, salen varios borradores (cada uno con su confirmacion).
+  // Se puede pedir con cualquier selección (aunque falten más de 7 días para el ETA, o sean de varios clientes).
   const porFwd = new Map();
   rowIndices.forEach(ix => { const r = filaPorIdx(ix); if(!r) return; const g = grupoForwarder(forwarderDeFila(r)); if(!porFwd.has(g)) porFwd.set(g, []); porFwd.get(g).push(r._sheetRow); });
   if(porFwd.size > 1){
@@ -17818,7 +17821,7 @@ function actualizarToolbarCargas(){
   tb.innerHTML = res + '<span style="flex:1;"></span>' +
     '<button class="tb-btn prim"' + dis + ' onclick="requestBulkFC()">📄 FC</button>' +
     '<button class="tb-btn"' + dis + ' onclick="bulkAvisoCliente()">📦 Aviso cliente</button>' +
-    '<button class="tb-btn"' + dis + ' onclick="bulkLiberacion()">🚢 Liberación</button>' +
+    '<button class="tb-btn" onclick="bulkLiberacion()" title="Pide la liberación de las cargas tildadas, falten los días que falten para el ETA (un borrador por forwarder)">🚢 Liberación</button>' +
     (getNegocioConfig().sinPagares ? '' : '<button class="tb-btn" onclick="generarPagareDeTabla()" title="Genera el pagaré de las cargas tildadas (te muestra el resumen y los avisos antes de generar)">📝 Pagaré</button>') +
     '<button class="tb-btn" onclick="reclamoCobroDeSeleccion()">✉ Cobro</button>' +
     '<button class="tb-btn" onclick="abrirFacturaForwarder(window._selFCaGlobal())">🚚 Factura fwd</button>' +
