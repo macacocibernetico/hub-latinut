@@ -12097,7 +12097,7 @@ const HOJA_DOCUMENTOS = 'DOCUMENTOS';
 let _docs = [], _docsListo = false, _docsError = '', _docsCargando = false;
 let _docsFiltro = 'faltantes', _docsBusca = '', _docsAsignar = -1, _docsBuscaCarga = '';
 const DOC_TIPOS = { bl: 'BL', fc_proveedor: 'FC proveedor', fc_axt: 'FC AXT', fc_axt_serv: 'FC servicios', fc_buzaram: 'FC Buzaram', fc_buzaram_serv: 'FC servicios', nota_credito: 'Nota de crédito', packing: 'Packing list', origen: 'Origen',
-  fito: 'Fito', isf: 'ISF', jla: 'Análisis JLA', seguro: 'Seguro', shipping: 'Shipping advice', aviso_salida: 'Aviso de salida', proforma: 'Proforma', planilla: 'Planilla despachante' };
+  fito: 'Fito', isf: 'ISF', jla: 'Análisis JLA', non_gmo: 'Non GMO', seguro: 'Seguro', shipping: 'Shipping advice', aviso_salida: 'Aviso de salida', proforma: 'Proforma', planilla: 'Planilla despachante' };
 const DOC_PUERTOS_EEUU = ['norfolk', 'new york', 'newark', 'savannah', 'charleston', 'baltimore', 'philadelphia', 'boston', 'miami', 'port everglades', 'jacksonville',
   'houston', 'new orleans', 'los angeles', 'long beach', 'oakland', 'seattle', 'tacoma', 'usa', 'estados unidos'];
 const DOC_PUERTOS_ITALIA = ['livorno', 'leghorn', 'genova', 'genoa', 'la spezia', 'spezia', 'salerno', 'napoli', 'naples', 'venezia', 'venice', 'trieste', 'ravenna',
@@ -12144,6 +12144,8 @@ function docsSetDeCarga(row){
   set.push({ k: 'packing' }, { k: 'origen' }, { k: 'fito' });
   set.push(DOC_PUERTOS_EEUU.some(p => port.indexOf(p) >= 0) ? { k: 'isf' } : { k: 'isf', na: 'solo EE.UU.' });
   if(DOC_PUERTOS_ITALIA.some(p => port.indexOf(p) >= 0)) set.push({ k: 'jla' });
+  // Nutitaly pide el certificado NON GMO (pedido del usuario, 26/11/2026)
+  if(/NUTITALY/i.test(String(row[COL.CUSTOMER] || ''))) set.push({ k: 'non_gmo' });
   if(/\bCIF\b/.test(inco)) set.push({ k: 'seguro' });
   return set;
 }
@@ -12511,7 +12513,7 @@ function docsPintarTabla(){
     if(h && td.insertAdjacentHTML) td.insertAdjacentHTML('beforeend', h);
   });
 }
-const DOC_RECLAMO = { fc_proveedor: 'Factura', packing: 'Packing list', origen: 'Certificado de origen', fito: 'Certificado fitosanitario', isf: 'ISF', jla: 'Análisis JLA', seguro: 'Póliza de seguro' };
+const DOC_RECLAMO = { fc_proveedor: 'Factura', packing: 'Packing list', origen: 'Certificado de origen', fito: 'Certificado fitosanitario', isf: 'ISF', jla: 'Análisis JLA', non_gmo: 'Certificado NON GMO', seguro: 'Póliza de seguro' };
 function contactosDeExportador(nombre){
   const n = s => String(s || '').toUpperCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^A-Z0-9]/g, '');
   const k = n(nombre);
@@ -12614,6 +12616,7 @@ function carpTipoPorNombre(nombre, negocio){
   if(/^FAC/.test(n) || /COMPTIPO/.test(n) || /^\d{1,2}-\d{3,5}(\s*\(\d+\))?\.PDF$/.test(n)) return 'fc_proveedor';
   if(/PACKING/.test(n)) return 'packing';
   if(/\bISF\b/.test(n)) return 'isf';
+  if(/NON[\s_-]*G\.?M\.?O|NON[\s_-]*OGM|\bNO[\s_-]*OGM\b|GMO[\s_-]*FREE|LIBRE[\s_-]*DE[\s_-]*OGM/.test(n)) return 'non_gmo';
   if(/FITO|PHYTO/.test(n)) return 'fito';
   if(/ORIGEN|ORIGIN|\bC\.?O\.?\b/.test(n)) return 'origen';
   if(/JLA|PROTOCOLO|ANALISIS|ANÁLISIS/.test(n)) return 'jla';
@@ -12711,7 +12714,7 @@ async function carpLeer(idx){
   }
   if(!r.ok){ carpModal('Carpeta de Drive · fila ' + row._sheetRow, '<div style="padding:16px;">No pude leer la carpeta (HTTP ' + r.status + ').</div>'); return; }
   if(!_docsListo){ try{ await cargarDocumentos(); }catch(e){} }
-  const archivos = ((await r.json()).files || []).map(a => Object.assign({}, a, carpClasificar(a, neg), { ya: carpYaEnDocs(a.id) }));
+  const archivos = ((await r.json()).files || []).map(a => carpConAnotado(Object.assign({}, a, carpClasificar(a, neg), { ya: carpYaEnDocs(a.id) })));
   _carp.res = { neg, fila: row._sheetRow, idx, lote: String(row[COL.LOTS] || '').trim(), carpeta, ruta: carpeta.nombre || carpeta.ruta || '', archivos };
   _carp.ensenando = null;
   await carpAnotar();   // lo que se reconoce se anota solo en DOCUMENTOS (pedido del usuario)
@@ -12755,20 +12758,30 @@ async function carpRegistrar(res){
   }catch(e){ console.warn('Registro de la carpeta:', e); }
 }
 // Los documentos de un archivo: uno solo, o varios si es un PDF con el set junto (lo dijo la IA o se le indicó a mano)
-const carpDocsArchivo = a => Array.isArray(a.docs) && a.docs.length ? a.docs : (a.tipo ? [{ tipo: a.tipo, numero: a.numero || '' }] : []);
+const carpDocsArchivo = a => a.descartado ? [] : Array.isArray(a.docs) && a.docs.length ? a.docs : (a.tipo ? [{ tipo: a.tipo, numero: a.numero || '' }] : []);
+// Las filas de DOCUMENTOS que salieron de la carpeta para este archivo (carpeta|id y carpeta|id|tipo). Lo que vino por mail no se corrige acá.
+const carpFilasDe = a => _docs.filter(d => d.clave === 'carpeta|' + a.id || String(d.clave || '').indexOf('carpeta|' + a.id + '|') === 0);
+// Un archivo ya anotado desde la carpeta: sus documentos son los de DOCUMENTOS (con las correcciones a mano), no lo que dice el nombre
+function carpConAnotado(a){
+  const fs = carpFilasDe(a); if(!fs.length) return a;
+  const act = fs.filter(d => d.estado !== 'descartado' && d.tipo);
+  if(!act.length) return Object.assign(a, { docs: [], descartado: true });
+  return Object.assign(a, { docs: act.map(d => ({ tipo: d.tipo, numero: d.numero || '' })), tipo: act[0].tipo, numero: act[0].numero || '', aMano: act.some(d => /a mano/.test(d.via || '')) });
+}
 // Tipos que se pueden elegir a mano o que puede contestar la IA, según el negocio (la factura al cliente es de AXT o de Buzaram, nunca de los dos)
-const carpTiposDe = neg => ['bl', 'fc_proveedor', neg === 'buzaram' ? 'fc_buzaram' : 'fc_axt', neg === 'buzaram' ? 'fc_buzaram_serv' : 'fc_axt_serv', 'packing', 'origen', 'fito', 'isf', 'jla', 'seguro', 'shipping', 'aviso_salida', 'proforma', 'planilla'];
+const carpTiposDe = neg => ['bl', 'fc_proveedor', neg === 'buzaram' ? 'fc_buzaram' : 'fc_axt', neg === 'buzaram' ? 'fc_buzaram_serv' : 'fc_axt_serv', 'packing', 'origen', 'fito', 'isf', 'jla', 'non_gmo', 'seguro', 'shipping', 'aviso_salida', 'proforma', 'planilla'];
 function carpPintar(){
   const res = _carp.res; if(!res) return;
-  const sinSaber = res.archivos.filter(a => !carpDocsArchivo(a).length);
+  const sinSaber = res.archivos.filter(a => !a.descartado && !carpDocsArchivo(a).length);
   const paraIA = sinSaber.filter(a => !a.ya && carpLeible(a));
   const etiqueta = a => carpDocsArchivo(a).map(d => escaparHtml(DOC_TIPOS[d.tipo] || (d.tipo === 'otro' ? 'Otro' : d.tipo)) + (d.numero ? ' · ' + escaparHtml(d.numero) : '')).join(' + ');
-  const puedeEnsenar = a => !carpDocsArchivo(a).length || carpDocsArchivo(a).every(d => d.tipo === 'otro');
+  const puedeEnsenar = a => !a.descartado && (!carpDocsArchivo(a).length || carpDocsArchivo(a).every(d => d.tipo === 'otro'));
   const lin = (a, i) => '<div class="carp-a' + (a.ya ? '' : ' nuevo') + '">'
-    + (a.anotadoRecien ? '<span class="carp-b nuevo">anotado</span>' : a.ya ? '<span class="carp-b ya">ya estaba</span>' : carpDocsArchivo(a).length ? '<span class="carp-b nuevo">nuevo</span>' : '<span class="carp-b nose">no sé qué es</span>')
+    + (a.descartado ? '<span class="carp-b ya">no va</span>' : a.anotadoRecien ? '<span class="carp-b nuevo">anotado</span>' : a.ya ? '<span class="carp-b ya">ya estaba</span>' : carpDocsArchivo(a).length ? '<span class="carp-b nuevo">nuevo</span>' : '<span class="carp-b nose">no sé qué es</span>')
     + (carpDocsArchivo(a).length ? '<b>' + etiqueta(a) + '</b>' + (a.ia ? ' <small>(leído con IA)</small>' : a.aMano ? ' <small>(indicado a mano)</small>' : '') + ' · ' : '')
     + (docLinkSeguro(a.webViewLink) ? '<a href="' + escaparHtml(a.webViewLink) + '" target="_blank" rel="noopener">' + escaparHtml(a.name) + '</a>' : escaparHtml(a.name))
-    + (puedeEnsenar(a) && _carp.ensenando !== i ? ' <button type="button" class="btn carp-ens-b" onclick="carpEnsenar(' + i + ')">Decir qué es</button>' : '')
+    + (_carp.ensenando === i ? '' : a.ya && carpFilasDe(a).length ? ' <button type="button" class="btn carp-ens-b" onclick="carpEnsenar(' + i + ')" title="Corregir qué documento es (o marcar que no va)">Cambiar</button>'
+      : !a.ya && puedeEnsenar(a) ? ' <button type="button" class="btn carp-ens-b" onclick="carpEnsenar(' + i + ')">Decir qué es</button>' : '')
     + '</div>' + (_carp.ensenando === i ? carpEnsenarHtml(a, i) : '');
   const acc = paraIA.length ? '<button type="button" class="btn primary" onclick="carpLeerIA()">Leer ' + (paraIA.length === 1 ? escaparHtml(paraIA[0].name) : 'los ' + paraIA.length + ' que no sé') + ' con IA</button>' : '';
   const pend = res.archivos.filter(a => !a.ya).length;
@@ -12781,16 +12794,20 @@ function carpPintar(){
 }
 // Decirle a mano qué es un archivo (uno o varios documentos)
 function carpEnsenarHtml(a, i){
-  const res = _carp.res;
-  return '<div class="carp-ens" id="carp-ens"><div class="carp-ens-t">¿Qué tiene <b>' + escaparHtml(a.name) + '</b>? Marcá todos los que trae (si es el set completo escaneado junto, marcá cada uno).</div>'
-    + '<div class="carp-ens-l">' + carpTiposDe(res.neg).map(t => '<label class="carp-ens-o"><input type="checkbox" value="' + t + '"> ' + escaparHtml(DOC_TIPOS[t] || t) + '</label>').join('') + '</div>'
-    + '<div class="carp-acc"><button type="button" class="btn primary" onclick="carpEnsenarGuardar(' + i + ')">Guardar</button><button type="button" class="btn" onclick="_carp.ensenando=null;carpPintar()">Cancelar</button></div></div>';
+  const res = _carp.res, corrige = a.ya && carpFilasDe(a).length > 0;
+  const actuales = corrige ? carpDocsArchivo(a).map(d => d.tipo) : [];
+  return '<div class="carp-ens" id="carp-ens"><div class="carp-ens-t">' + (corrige ? 'Corregir <b>' + escaparHtml(a.name) + '</b>: marcá lo que trae de verdad.' : '¿Qué tiene <b>' + escaparHtml(a.name) + '</b>? Marcá todos los que trae (si es el set completo escaneado junto, marcá cada uno).') + '</div>'
+    + '<div class="carp-ens-l">' + carpTiposDe(res.neg).map(t => '<label class="carp-ens-o"><input type="checkbox" value="' + t + '"' + (actuales.indexOf(t) >= 0 ? ' checked' : '') + '> ' + escaparHtml(DOC_TIPOS[t] || t) + '</label>').join('') + '</div>'
+    + '<div class="carp-acc"><button type="button" class="btn primary" onclick="carpEnsenarGuardar(' + i + ')">Guardar</button>'
+    + (corrige ? '<button type="button" class="btn" onclick="carpCorregir(' + i + ',[])" title="No es un documento de esta carga: deja de contar">No va</button>' : '')
+    + '<button type="button" class="btn" onclick="_carp.ensenando=null;carpPintar()">Cancelar</button></div></div>';
 }
 function carpEnsenar(i){ _carp.ensenando = i; carpPintar(); }
 async function carpEnsenarGuardar(i){
   const res = _carp.res, a = res && res.archivos[i]; if(!a) return;
   const marcados = Array.from(document.querySelectorAll('#carp-ens input[type=checkbox]') || []).filter(x => x.checked).map(x => x.value).filter(t => carpTiposDe(res.neg).indexOf(t) >= 0);
-  if(!marcados.length){ showToast('Marcá al menos un documento', 'err'); return; }
+  if(!marcados.length){ showToast(a.ya && carpFilasDe(a).length ? 'Marcá al menos un documento, o tocá "No va"' : 'Marcá al menos un documento', 'err'); return; }
+  if(a.ya && carpFilasDe(a).length) return carpCorregir(i, marcados);
   Object.assign(a, { docs: marcados.map(t => ({ tipo: t, numero: '' })), tipo: marcados[0], numero: '', aMano: true, ensenado: true, via: 'carpeta (a mano)',
     detalle: 'indicado a mano en el hub' + (getMiEmail() ? ' por ' + getMiEmail() : '') + ': ' + marcados.map(t => DOC_TIPOS[t] || t).join(' + ') });
   _carp.ensenando = null;
@@ -12799,14 +12816,14 @@ async function carpEnsenarGuardar(i){
   carpPintar();
   carpRepintarTildes();
 }
-const CARP_TIPOS_IA = ['bl', 'fc_proveedor', 'fc_axt', 'fc_buzaram', 'packing', 'origen', 'fito', 'isf', 'jla', 'seguro', 'shipping', 'aviso_salida', 'proforma', 'planilla', 'otro'];
+const CARP_TIPOS_IA = ['bl', 'fc_proveedor', 'fc_axt', 'fc_buzaram', 'packing', 'origen', 'fito', 'isf', 'jla', 'non_gmo', 'seguro', 'shipping', 'aviso_salida', 'proforma', 'planilla', 'otro'];
 const ESQ_CARPETA_IA = { type: 'object', additionalProperties: false, required: ['documentos', 'motivo'],
   properties: { documentos: { type: 'array', items: { type: 'object', additionalProperties: false, required: ['tipo', 'numero'], properties: { tipo: { type: 'string', enum: CARP_TIPOS_IA }, numero: { type: 'string' } } } },
     motivo: { type: 'string' } } };
 const PEDIDO_CARPETA_IA = 'Este archivo es de una carga de maní (comercio exterior). Decí qué documento o documentos trae:\n'
   + 'bl = conocimiento de embarque (Bill of Lading); fc_proveedor = factura del exportador argentino (Argen Peanuts, Nutrin); '
   + 'fc_axt = factura de AXT Solutions Inc al cliente; fc_buzaram = factura de Buzaram (e-Ticket) al cliente; packing = packing list; origen = certificado de origen; fito = certificado fitosanitario; '
-  + 'isf = Importer Security Filing; jla = análisis de laboratorio; seguro = póliza de seguro; shipping = shipping advice / booking confirmation; '
+  + 'isf = Importer Security Filing; jla = análisis de laboratorio; non_gmo = certificado NON GMO (producto no genéticamente modificado); seguro = póliza de seguro; shipping = shipping advice / booking confirmation; '
   + 'aviso_salida = aviso de salida; proforma = factura proforma; planilla = planilla del despachante; otro = cualquier otra cosa.\n'
   + 'Un mismo PDF puede traer VARIOS documentos (por ejemplo, todo el set escaneado junto: BL, factura, packing, origen, fito...). Mirá todas las páginas y poné en "documentos" cada uno que aparezca, una sola vez por tipo.\n'
   + '"numero": el número principal de cada documento si se lee con seguridad (número de BL, de factura o de certificado), copiado exacto; si no, "". '
@@ -12841,6 +12858,46 @@ async function carpLeerIA(){
   if(fallas) showToast('No pude leer ' + fallas + ' archivo' + (fallas > 1 ? 's' : '') + ' con IA', 'err');
   await carpAnotar();   // lo que reconoció la IA se anota solo, como lo que se reconoce por el nombre
   await carpRegistrar(res);   // y también cuenta para los tildes
+  carpPintar();
+  carpRepintarTildes();
+}
+// Corregir a mano lo que se anotó desde la carpeta (tipos = [] es "no va"). Sin confirmación, como "Decir qué es" (pedido del usuario):
+// solo toca la pestaña DOCUMENTOS (nunca las cargas), no borra filas (lo que no va queda "descartado", así n8n no lo vuelve a anotar), toast y LOG.
+async function carpCorregir(i, tipos){
+  const res = _carp.res, a = res && res.archivos[i]; if(!a) return;
+  if(res.neg !== negocioActivo){ showToast('Cambiaste de negocio desde que se leyó la carpeta: volvé a leerla.', 'err'); return; }
+  tipos = (tipos || []).filter(t => carpTiposDe(res.neg).indexOf(t) >= 0);
+  await cargarDocumentos().catch(() => {});
+  const filas = carpFilasDe(a);
+  if(!filas.length || filas.some(d => d.negocio && d.negocio !== res.neg)){ showToast('No encontré lo anotado de este archivo en DOCUMENTOS: volvé a leer la carpeta.', 'err'); return; }
+  const quien = docsQuien(), cambios = [];
+  for(const d of filas){
+    const sigue = tipos.indexOf(d.tipo) >= 0;
+    if(!sigue && d.estado !== 'descartado') cambios.push([d, { L: 'descartado', M: 'corregido a mano por ' + quien + ': ' + (tipos.length ? 'no era ' + (DOC_TIPOS[d.tipo] || d.tipo || 'eso') : 'no va con la carga') }]);
+    if(sigue && d.estado === 'descartado') cambios.push([d, { L: 'en carpeta', M: 'corregido a mano por ' + quien }]);
+  }
+  for(const [d, c] of cambios){ if(!(await docsEscribir(d, c))) return; }
+  // lo que se marcó y no tenía fila: se agrega (carpeta|id|tipo)
+  const tiene = new Set(filas.map(d => d.tipo));
+  const faltan = tipos.filter(t => !tiene.has(t));
+  if(faltan.length){
+    const ahoraAR = new Date(Date.now() - 3 * 3600 * 1000).toISOString().slice(0, 16).replace('T', ' ');
+    const values = faltan.map(t => ['carpeta|' + a.id + '|' + t, String(a.modifiedTime || '').slice(0, 16).replace('T', ' '), ahoraAR, res.neg === 'buzaram' ? 'Buzaram' : 'AXT', String(res.fila),
+      res.lote, t, '', a.name, 'Carpeta de Drive (hub)', res.ruta, 'en carpeta', 'corregido a mano por ' + quien, 'carpeta (a mano)', '', a.webViewLink || '', JSON.stringify({ origen: 'carpeta', folderId: res.carpeta.id, hub: true })]);
+    const r = await fetch('https://sheets.googleapis.com/v4/spreadsheets/' + cfg.hubSheetId + '/values/' + encodeURIComponent(HOJA_DOCUMENTOS + '!A:Q') + ':append?valueInputOption=RAW&insertDataOption=INSERT_ROWS',
+      { method: 'POST', headers: { Authorization: 'Bearer ' + accessToken, 'Content-Type': 'application/json' }, body: JSON.stringify({ values }) });
+    if(!r.ok){ showToast('No pude agregar en DOCUMENTOS (HTTP ' + r.status + ')', 'err'); return; }
+  }
+  if(!cambios.length && !faltan.length){ _carp.ensenando = null; carpPintar(); showToast('No había nada que cambiar', 'info'); return; }
+  const antes = filas.filter(d => d.estado !== 'descartado').map(d => DOC_TIPOS[d.tipo] || d.tipo).join(' + ') || 'nada';
+  const ahora = tipos.map(t => DOC_TIPOS[t] || t).join(' + ') || 'no va';
+  await appendLog({ fc: '', fcServ: '', bl: '', customer: '', accion: 'documento de la carpeta corregido', detalle: 'fila ' + res.fila + ' - ' + a.name + ': ' + antes + ' -> ' + ahora });
+  await cargarDocumentos().catch(() => {});
+  carpConAnotado(Object.assign(a, { descartado: false, docs: null, anotadoRecien: false }));
+  _carp.ensenando = null;
+  await carpRegistrar(res);   // los tildes de la carga siguen a la corrección
+  try{ docsPintarTabla(); }catch(e){}
+  showToast('✓ ' + a.name + ': ' + ahora, 'ok');
   carpPintar();
   carpRepintarTildes();
 }
@@ -16757,6 +16814,7 @@ function n8nAuditorHizo(e){
 }
 // Qué cambiamos en n8n y qué control se sumó en este panel. El más nuevo arriba. "version" = la que anota la Marca de corrida.
 const N8N_CAMBIOS = [
+  { fecha: '26/11/2026', versiones: ['docs-2026-11-26', 'carpetas-2026-11-26b'], cambio: 'Certificado NON GMO (lo pide Nutitaly): los dos workflows lo reconocen como documento propio (por el nombre del archivo: NON GMO, No OGM, GMO free; Documentos también por el texto del PDF), lo atan a la carga y lo guardan en su carpeta de Drive como los demás; la IA de las carpetas también lo conoce', control: 'Documentos: en las cargas de Nutitaly aparece el chip «Non GMO» (sin tildar hasta que llega); tarjetas: versiones docs-2026-11-26 y carpetas-2026-11-26b' },
   { fecha: '26/11/2026', versiones: ['carpetas-2026-11-26'], cambio: 'Carpetas de las cargas: la IA ahora dice TODOS los documentos que trae un archivo (un PDF con el set completo escaneado junto: BL, factura, packing, origen, fito...) y se anota una fila por documento en DOCUMENTOS (la primera con la clave de siempre, las demás carpeta|id|tipo), igual que «Leer con IA» del hub. La factura del otro negocio que conteste la IA se descarta (AXT y Buzaram nunca se mezclan)', control: 'Documentos: los chips de un set escaneado junto muestran el mismo archivo en cada documento; tarjeta Carpetas: versión carpetas-2026-11-26' },
   { fecha: '25/11/2026', versiones: ['docs-2026-11-25c', 'carpetas-2026-11-25e'], cambio: 'Carpetas de Drive de BUZARAM como las arma el equipo: Harina / año / la carpeta con todos los lotes de la carga; Aceite en tambores / lote (sin año); Aceite flexis / cliente (la carpeta cuyo nombre está en el Customer: Tianxiang) / contrato del proveedor (LT133-2026). El producto y el cliente no se crean nunca; otros productos o packings (peanut butter, blanched, bines) quedan sin Drive. Antes todo el aceite iba a «Aceite flexis / 2026 / lote», una carpeta que no corresponde. Lo mismo en el lector de carpetas y en el hub. Las facturas que no coinciden se vuelven a controlar 7 días (si se corrige la planilla, se anotan solas)', control: 'Documentos: los PDF de Buzaram quedan en su carpeta; Hub: «Leer la carpeta ahora» de una carga de Buzaram muestra la carpeta del equipo' },
   { fecha: '25/11/2026', versiones: ['docs-2026-11-25b', 'carpetas-2026-11-25d'], cambio: 'Facturas de BUZARAM (las emite Newsan y las manda Pablo Hojman): n8n las lee (newsan.com.ar entra en la búsqueda), distingue la de mercadería + flete de la de servicios («LOGISTIC COST»), las ata a la carga por el OV (aunque esté partida en varias filas), las controla contra la planilla de Buzaram (cliente, contenedor, lote, packing, incoterm, toneladas, Price CFR, Flete y Price Serv) y si todo coincide anota «A4887» en Invoice Cliente / Invoice Serv de las filas vacías. Las notas de crédito se guardan y se registran, sin anotar nada. El lector de carpetas reconoce «…VENTA_CREDITO_A4887…» como factura de Buzaram', control: 'Hub, carga de Buzaram: chips «FC Buzaram» y «FC servicios» (si tiene Price Serv); Documentos: las que no coinciden, con su tabla de diferencias' },
