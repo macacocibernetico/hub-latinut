@@ -5808,6 +5808,19 @@ function getAlerts(){
       });
     }
 
+    // W5: FC al cliente pedida hace 3+ días hábiles y no llegó
+    const fcEst = fcEstadoPedido(row);
+    if(fcEst && fcEst.atrasada){
+      alerts.push({
+        level:'warning', subtype:'fc_atrasada', rowIdx:idx, dETA,
+        title:`FC pedida que no llegó — ${customer}`,
+        meta:`Pedida hace ${fcEst.habiles} días hábiles${fcEst.quien ? ' (' + fcEst.quien + ')' : ''}  ·  Lote: ${row[COL.LOTS] || '—'}`,
+        tags:[{label:customer,cls:'customer'},{label:fcEst.habiles + ' d hábiles',cls:'days-warn'}],
+        logistics, invLogLine,
+        actions:[{label:'✉ Recordar la factura',onclick:`recordarFC([${idx}])`}]
+      });
+    }
+
     // W4: Docs pendientes + ETA ≤ 21d
     if(docs && docs.toUpperCase()!=='SI' && dETA !== null && dETA <= 21 && dETA >= 0){
       alerts.push({
@@ -6012,6 +6025,7 @@ function renderAlertas(){
       {key:'cobro_prox',label:'Cobro próximo'},
       {key:'pagare_firma',label:'Pagaré sin firma'},
       {key:'docs_pendientes',label:'Docs pendientes'},
+      {key:'fc_atrasada',label:'FC que no llega'},
     ],
     info:[
       {key:'pagare_envio',label:'Pagaré sin enviar'},
@@ -6057,7 +6071,7 @@ function renderAlertas(){
       const tagsHtml=(a.tags||[]).map(t=>`<span class="tag ${t.cls}">${t.label}</span>`).join('');
       const actionsHtml=(a.actions||[]).map(act=>{
         const cls=act.isWrite?'write':'secondary-action';
-        return `<button class="action-btn ${cls}" onclick="openMailModal(${a.rowIdx},'${act.mailType}')">${act.label}</button>`;
+        return act.onclick ? `<button class="action-btn ${cls}" onclick="${act.onclick}">${act.label}</button>` : `<button class="action-btn ${cls}" onclick="openMailModal(${a.rowIdx},'${act.mailType}')">${act.label}</button>`;
       }).join('');
       const dN=a.dETA!==undefined?a.dETA:null;
       const cobroFecha = fmtDate(a.detail?.cobro || getCobroFecha(filaPorIdx(a.rowIdx)));
@@ -12269,6 +12283,67 @@ function docsTextoCarga(r){
 }
 
 // ── Pantalla ──
+// ── FC pedida que no llega ──
+// Cuándo se pidió: la última "Solicitud de FC" de la carga en el LOG (del negocio activo; se reconoce por el lote o, si no hay lote, por la fila).
+// Llegó: la celda Invoice Cliente tiene algo o hay una factura al cliente en DOCUMENTOS (aunque no coincida: eso se ve aparte).
+// Atrasada: pasaron 3 días hábiles (lunes a viernes, sin contar el día del pedido) y no llegó (pedido del usuario, 26/11/2026). Solo en el hub.
+const FC_DIAS_HABILES = 3;
+function diasHabilesDesde(desde, hasta){
+  const d = new Date(desde.getFullYear(), desde.getMonth(), desde.getDate()), h = hasta || new Date();
+  const fin = new Date(h.getFullYear(), h.getMonth(), h.getDate());
+  let n = 0;
+  while(d < fin){ d.setDate(d.getDate() + 1); const w = d.getDay(); if(w !== 0 && w !== 6) n++; }
+  return n;
+}
+// Índice de las solicitudes de FC del LOG (la última por lote y por fila), armado una sola vez por versión del LOG y negocio
+let _fcIdx = null;
+function fcIndicePedidos(){
+  const fuente = String(getLogFuente()).toUpperCase(), clave = (typeof logRows === 'undefined' ? 0 : logRows.length) + '|' + fuente;
+  if(_fcIdx && _fcIdx.clave === clave) return _fcIdx;
+  const ix = { clave, lote: {}, fila: {} };
+  (typeof logRows === 'undefined' ? [] : logRows).forEach(f => {
+    f = f || [];
+    if(!/^solicitud FC/i.test(String(f[7] || '')) || String(f[2] || '').toUpperCase().indexOf(fuente) < 0) return;
+    const fecha = parseDate(String(f[0] || '').trim()); if(!fecha) return;
+    const det = String(f[8] || '').toUpperCase(), p = { fecha, quien: String(f[9] || '').split('@')[0] };
+    ((det.match(/LOTES:\s*(.*)$/) || [])[1] || '').split(/[,\s]+/).filter(x => x && x !== '—').forEach(l => { ix.lote[l] = p; });   // el LOG está en orden: la última pisa
+    ((det.match(/FILAS\s+([\d,\s]+)/) || [])[1] || '').split(/[^\d]+/).filter(Boolean).forEach(n => { ix.fila[n] = p; });
+  });
+  return (_fcIdx = ix);
+}
+function fcPedidoDe(row){
+  if(!row) return null;
+  const ix = fcIndicePedidos(), lote = String(row[COL.LOTS] || '').trim().toUpperCase();
+  return lote ? (ix.lote[lote] || null) : (ix.fila[String(row._sheetRow)] || null);
+}
+const fcLlego = row => !!String(row[COL.INVOICE_CLIENTE] || '').trim() || (typeof _docs !== 'undefined' && _docsListo && docsDeCarga(row).some(d => /^fc_(axt|buzaram)/.test(d.tipo)));
+function fcEstadoPedido(row){
+  if(fcLlego(row)) return null;
+  const p = fcPedidoDe(row); if(!p) return null;
+  const habiles = diasHabilesDesde(p.fecha);
+  return { fecha: p.fecha, quien: p.quien, habiles, atrasada: habiles >= FC_DIAS_HABILES };
+}
+// Recordatorio a quien recibe la Solicitud de FC (mismos destinatarios que la solicitud: hoja CONTACTOS). Borrador, no se manda.
+async function recordarFC(idxs){
+  const filas = (idxs || []).map(i => filaPorIdx(i)).filter(Boolean);
+  if(!filas.length) return;
+  const mail = armarSolicitudFC(filas);
+  if(!mail.dest){ alert('No hay a quién mandarle el recordatorio: revisá en CONTACTOS quién recibe la Solicitud de FC.'); return; }
+  const cc = sanitizarCC(mail.cc);
+  const v = (r, c) => String(r[c] || '').trim();
+  const lineas = filas.map(r => { const e = fcEstadoPedido(r);
+    return '- ' + (v(r, COL.CUSTOMER) || 'carga') + (v(r, COL.LOTS) ? ', lote ' + v(r, COL.LOTS) : '') + (v(r, COL.CONTAINERS) ? ', contenedor ' + v(r, COL.CONTAINERS) : '')
+      + (e ? ' (pedida el ' + String(e.fecha.getDate()).padStart(2, '0') + '/' + String(e.fecha.getMonth() + 1).padStart(2, '0') + ')' : ''); });
+  const asunto = 'Recordatorio: factura pendiente - ' + (filas.length === 1 ? (v(filas[0], COL.CUSTOMER) + (v(filas[0], COL.LOTS) ? ' - lote ' + v(filas[0], COL.LOTS) : '')) : filas.length + ' cargas');
+  const cuerpo = 'Hola,\n\nTe recuerdo que todavía no nos llegó la factura de:\n\n' + lineas.join('\n') + '\n\n¿Nos la podés enviar?\n\nGracias.';
+  const ok = await showConfirm('Recordar la factura', 'Se crea un borrador en tu Gmail (no se manda). Lo revisás y lo mandás vos.', { okLabel: 'Crear borrador', icono: '✉️',
+    detalle: '<div><span style="color:var(--text3);">Para:</span> <b>' + escaparHtml(mail.dest) + '</b></div>' + (cc ? '<div><span style="color:var(--text3);">CC:</span> ' + escaparHtml(cc) + '</div>' : '')
+      + '<div><span style="color:var(--text3);">Asunto:</span> <b>' + escaparHtml(asunto) + '</b></div><div style="white-space:pre-wrap;margin-top:6px;font-size:12px;">' + escaparHtml(cuerpo) + '</div>' });
+  if(!ok) return;
+  if(!(await createGmailDraft(mail.dest, cc, asunto, cuerpo))) return;
+  for(const r of filas) await appendLog({ fc: '', fcServ: '', bl: v(r, COL.BL), customer: v(r, COL.CUSTOMER), accion: 'recordatorio FC', detalle: (v(r, COL.LOTS) ? 'lote ' + v(r, COL.LOTS) + ': ' : '') + 'factura pendiente' }).catch(() => {});
+  showToast('✓ Borrador del recordatorio creado', 'ok');
+}
 // ── Documentos que faltan, por quién los tiene que mandar ──
 // Cada documento que falta (chip sin tildar) va a quien lo manda: el BL al forwarder, la factura al cliente a AXT / Buzaram (Solicitud de FC)
 // y el resto (factura del proveedor, packing, origen, fito, ISF, análisis, NON GMO, seguro) al exportador. Lo que no tiene a quién
@@ -12327,13 +12402,16 @@ function docsGruposHtml(cargas){
     const sub = g.tipo === 'exp' ? 'exportador' : g.tipo === 'fwd' ? 'forwarder' : g.tipo === 'fc' ? 'factura al cliente' : 'falta el Exporter o el forwarder en la planilla';
     const boton = g.tipo === 'exp' ? '<button class="btn falt-b" onclick="docsReclamarGrupo(' + gi + ')">✉ ' + (n === 1 ? 'Reclamar' : 'Reclamar las ' + n + ' en un mail') + '</button>'
       : g.tipo === 'fwd' ? '<button class="btn falt-b" onclick="docsReclamarGrupo(' + gi + ')">✉ ' + (n === 1 ? 'Pedir el BL' : 'Pedir los ' + n + ' BL en un mail') + '</button>'
-      : g.tipo === 'fc' ? '<button class="btn" onclick="solicitarFCBulk([' + g.items.map(it => it.idx).join(',') + '])">📄 Solicitud de FC</button>' : '';
+      : g.tipo === 'fc' ? (() => { const atr = g.items.filter(it => (fcEstadoPedido(it.row) || {}).atrasada), sinPedir = g.items.filter(it => !fcPedidoDe(it.row));
+          return (atr.length ? '<button class="btn falt-b" onclick="recordarFC([' + atr.map(it => it.idx).join(',') + '])">✉ Recordar ' + (atr.length === 1 ? 'la factura atrasada' : 'las ' + atr.length + ' atrasadas') + '</button>' : '')
+            + (sinPedir.length ? '<button class="btn" onclick="solicitarFCBulk([' + sinPedir.map(it => it.idx).join(',') + '])">📄 Solicitud de FC' + (sinPedir.length < g.items.length ? ' (' + sinPedir.length + ' sin pedir)' : '') + '</button>' : ''); })() : '';
     h += '<div class="doc-card falt-g' + (g.tipo === 'sin' ? ' sin' : '') + '"><div class="falt-cab"><span class="doc-tit">' + titulo + '</span><span class="doc-sub">' + sub + ' · ' + n + ' carga' + s + '</span><span style="flex:1"></span>' + boton + '</div>'
       + '<div class="falt-t"><span class="falt-h">Carga</span><span class="falt-h">ETD</span><span class="falt-h">Falta</span><span class="falt-h">' + (g.tipo === 'fc' ? 'Solicitud' : g.tipo === 'sin' ? '' : 'Último reclamo') + '</span>';
     g.items.forEach(it => {
       const r = it.row, dias = docsDiasDesdeETD(r);
       const ult = g.tipo === 'exp' || g.tipo === 'fwd' ? docsUltimoReclamo(r, g.tipo === 'fwd' ? 'pedido de BL' : 'reclamo de documentos') : null;
-      const ultTxt = g.tipo === 'fc' ? (String(r[COL.LOMBARD] || '').trim().toUpperCase() === 'SI' ? 'pedida' : 'sin pedir')
+      const fcE = g.tipo === 'fc' ? fcEstadoPedido(r) : null;
+      const ultTxt = g.tipo === 'fc' ? (fcE ? '<span class="' + (fcE.atrasada ? 'falt-rojo' : '') + '">pedida hace ' + fcE.habiles + ' d hábiles' + (fcE.atrasada ? ', no llegó' : '') + '</span>' : String(r[COL.LOMBARD] || '').trim().toUpperCase() === 'SI' ? 'pedida' : 'sin pedir')
         : g.tipo === 'sin' ? '' : ult ? docsHaceDias(ult.fecha) + (ult.quien ? ' (' + escaparHtml(ult.quien) + ')' : '') : 'nunca';
       h += '<span><a href="#" onclick="abrirPanelCarga(' + it.idx + ');return false;">' + escaparHtml(String(r[COL.CUSTOMER] || '—')) + ' · ' + escaparHtml(String(r[COL.LOTS] || 'fila ' + r._sheetRow)) + '</a></span>'
         + '<span class="' + (docsAtrasada(r) ? 'falt-rojo' : '') + '">' + (dias === null ? '—' : dias < 0 ? 'en ' + (-dias) + ' d' : dias === 0 ? 'hoy' : 'hace ' + dias + ' d') + '</span>'
