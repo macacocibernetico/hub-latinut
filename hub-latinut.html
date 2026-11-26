@@ -633,6 +633,15 @@ body.t-redim{cursor:col-resize;user-select:none;}
 .falt-h{font-size:11px;color:var(--text3);}
 .falt-rojo{color:var(--danger);font-weight:600;}
 .falt-g.sin{border-style:dashed;}
+.dcli-sec{margin-top:24px;text-transform:none;letter-spacing:0;}
+.dcli-b{font-weight:600;}
+.dcli-t{display:grid;grid-template-columns:minmax(0,1.3fr) minmax(0,1.2fr) 100px minmax(0,1.4fr) 36px;gap:6px 12px;align-items:center;font-size:13px;margin-bottom:12px;}
+.dcli-r{justify-self:start;border-radius:var(--radius);padding:1px 8px;font-size:12px;font-weight:600;}
+.dcli-r.pide{background:var(--ok-light);color:var(--ok);}
+.dcli-r.no{background:var(--bg3);color:var(--text2);}
+.dcli-add{border:1px dashed var(--border2);border-radius:var(--radius);padding:10px 12px;display:flex;flex-direction:column;gap:8px;}
+.dcli-f{display:flex;flex-wrap:wrap;gap:8px;align-items:center;}
+.dcli-f select,.dcli-f input{padding:6px 8px;border:1px solid var(--border2);border-radius:var(--radius);background:var(--bg2);color:var(--text);font:inherit;min-width:140px;}
 .falt-ver{display:inline-flex;align-items:center;gap:6px;margin-left:10px;font-size:12px;color:var(--text3);}
 @media (max-width:640px){.falt-t{grid-template-columns:minmax(0,1fr) 70px;}.falt-t .falt-h:nth-child(n+3){display:none;}}
 .doc-card.doc-rev{border-left:3px solid var(--warn);}
@@ -12154,11 +12163,133 @@ async function cargarDocumentos(){
   _docsListo = true; _docsError = '';
   _docs = (j.values || []).map((f, i) => docDeFila(f, i + 2)).filter(d => d.clave);
   if(!_carp.listo && !_carp.cargando){ _carp.cargando = true; try{ await carpCargarRegistro(); }catch(e){} _carp.cargando = false; }
+  if(!_docsCli.listo){ try{ await cargarDocsClientes(); }catch(e){} }
 }
 
 // ── Qué documentos forman el set de una carga ──
 // BL, FC del proveedor, packing, origen y fito siempre. AXT: además la FC al cliente y la de servicios si la carga tiene Price serv.
 // ISF solo si va a EE.UU., análisis JLA solo si va a Italia, seguro solo si es CIF.
+// ── Documentos por cliente (pestaña DOCS_CLIENTES del hub) ──
+// Lo que un cliente pide además del set de siempre ("pide") o lo que no lleva ("no lleva"), por negocio. Lo carga el equipo desde
+// Documentos > "Documentos por cliente" (con confirmación) y vale para todas las cargas de ese cliente en ese negocio: el chip aparece
+// (o deja de contar) en el set, en los faltantes y en el reclamo. Un documento que no existe ("Kosher") se crea con su nombre: clave x_kosher.
+// Columnas: Negocio | Cliente | Documento (clave) | Nombre | Regla | Nota | Quién | Fecha. Una fila borrada queda vacía y no cuenta.
+const HOJA_DOCS_CLIENTES = 'DOCS_CLIENTES';
+const DOCS_CLI_ENC = ['Negocio', 'Cliente', 'Documento', 'Nombre', 'Regla', 'Nota', 'Quién', 'Fecha'];
+// Mientras la pestaña no exista, vale la regla que había en el código (Nutitaly pide el NON GMO, pedido del usuario del 26/11/2026)
+const DOCS_CLI_INICIAL = [{ neg: 'axt', cliente: 'Nutitaly', k: 'non_gmo', nombre: 'Non GMO', regla: 'pide', nota: 'pedido del cliente', rn: 0 }];
+let _docsCli = { listo: false, existe: false, reglas: [], abierto: false };
+const docsCliNorm = s => String(s || '').toUpperCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/\b(S\.?\s?P\.?\s?A|S\.?\s?R\.?\s?L|SRL|SPA|S\.?\s?A|SA|INC|LLC|LTD|LIMITED|CO)\b\.?/g, '').replace(/[^A-Z0-9]/g, '');
+const docsCliClave = nombre => 'x_' + String(nombre || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '').slice(0, 30);
+function docsCliReglas(){ return _docsCli.existe ? _docsCli.reglas : DOCS_CLI_INICIAL; }
+// Los documentos nuevos (x_...) se suman a los nombres y al reclamo, así se ven y se pueden reclamar como los demás
+function docsCliRegistrarTipos(){
+  docsCliReglas().forEach(r => { if(/^x_/.test(r.k) && r.nombre){ DOC_TIPOS[r.k] = r.nombre; if(!DOC_RECLAMO[r.k]) DOC_RECLAMO[r.k] = r.nombre; } });
+}
+// ¿La regla es de este cliente? Mismo nombre sin "S.R.L." / "S.p.A." / mayúsculas, o uno contiene al otro (4 letras o más)
+function docsCliEsDe(regla, cliente){
+  const a = docsCliNorm(regla.cliente), b = docsCliNorm(cliente);
+  return !!a && !!b && (a === b || (a.length >= 4 && b.indexOf(a) >= 0) || (b.length >= 4 && a.indexOf(b) >= 0));
+}
+function docsCliDeCarga(row){
+  const cli = String(row[COL.CUSTOMER] || '');
+  return docsCliReglas().filter(r => r.neg === negocioActivo && docsCliEsDe(r, cli));
+}
+async function cargarDocsClientes(){
+  if(!accessToken || !cfg.hubSheetId) return;
+  try{
+    const r = await fetch('https://sheets.googleapis.com/v4/spreadsheets/' + cfg.hubSheetId + '/values/' + encodeURIComponent(HOJA_DOCS_CLIENTES + '!A2:H'), { headers: { Authorization: 'Bearer ' + accessToken } });
+    if(r.status === 400 || r.status === 404){ _docsCli.existe = false; _docsCli.reglas = []; _docsCli.listo = true; docsCliRegistrarTipos(); return; }
+    if(!r.ok) return;
+    const filas = (await r.json()).values || [];
+    _docsCli.reglas = filas.map((f, i) => ({ neg: docNegocioDeTexto(f[0]), cliente: String(f[1] || '').trim(), k: String(f[2] || '').trim(), nombre: String(f[3] || '').trim(),
+      regla: /no/i.test(String(f[4] || '')) ? 'no lleva' : 'pide', nota: String(f[5] || ''), quien: String(f[6] || ''), fecha: String(f[7] || ''), rn: i + 2 }))
+      .filter(x => x.neg && x.cliente && x.k);
+    _docsCli.existe = true; _docsCli.listo = true;
+    docsCliRegistrarTipos();
+  }catch(e){ console.warn('DOCS_CLIENTES:', e); }
+}
+function docsCliToggle(){ _docsCli.abierto = !_docsCli.abierto; if(_docsCli.abierto && !_docsCli.listo) cargarDocsClientes().then(() => renderDocumentos()); renderDocumentos(); }
+function docsClientesHtml(){
+  const lab = docTextoDeNegocio(negocioActivo);
+  let h = '<div class="doc-sec dcli-sec"><button class="btn dcli-b" onclick="docsCliToggle()">' + (_docsCli.abierto ? '▾' : '▸') + ' Documentos por cliente · ' + lab + '</button></div>';
+  if(!_docsCli.abierto) return h;
+  const reglas = docsCliReglas().filter(r => r.neg === negocioActivo);
+  h += '<div class="doc-card dcli"><div class="doc-sub" style="margin-bottom:8px;">Lo que un cliente pide además del set de siempre, o lo que no lleva. Vale para todas sus cargas de ' + lab + '.'
+    + (_docsCli.existe ? '' : ' <b>Todavía no existe la pestaña ' + HOJA_DOCS_CLIENTES + ':</b> se crea al guardar la primera regla (con la de Nutitaly que ya estaba).') + '</div>';
+  h += '<div class="dcli-t"><span class="falt-h">Cliente</span><span class="falt-h">Documento</span><span class="falt-h">Regla</span><span class="falt-h">Nota</span><span></span>';
+  if(!reglas.length) h += '<span class="doc-sub" style="grid-column:1/-1;">Ninguna regla todavía.</span>';
+  reglas.forEach(r => {
+    h += '<span>' + escaparHtml(r.cliente) + '</span><span>' + escaparHtml(DOC_TIPOS[r.k] || r.nombre || r.k) + '</span>'
+      + '<span class="dcli-r ' + (r.regla === 'pide' ? 'pide' : 'no') + '">' + (r.regla === 'pide' ? 'lo pide' : 'no lo lleva') + '</span>'
+      + '<span class="doc-sub">' + escaparHtml(r.nota || '') + '</span>'
+      + (_docsCli.existe ? '<button class="btn" title="Sacar la regla" onclick="docsCliBorrar(' + r.rn + ')">✕</button>' : '<span></span>');
+  });
+  h += '</div>';
+  const clientes = [...new Set((allRowsAll || []).map(x => String(x[COL.CUSTOMER] || '').trim()).filter(Boolean))].sort((a, b) => a.localeCompare(b));
+  const tipos = carpTiposDe(negocioActivo).filter(k => !/^x_/.test(k));
+  h += '<div class="dcli-add"><b>Agregar regla</b><div class="dcli-f">'
+    + '<select id="dcli-cli"><option value="">Cliente…</option>' + clientes.map(c => '<option>' + escaparHtml(c) + '</option>').join('') + '</select>'
+    + '<select id="dcli-doc" onchange="var o=document.getElementById(\'dcli-otro\');if(o)o.style.display=this.value===\'__otro\'?\'\':\'none\'"><option value="">Documento…</option>'
+    + tipos.map(k => '<option value="' + k + '">' + escaparHtml(DOC_TIPOS[k] || k) + '</option>').join('')
+    + [...new Set(docsCliReglas().filter(r => /^x_/.test(r.k)).map(r => r.k))].map(k => '<option value="' + k + '">' + escaparHtml(DOC_TIPOS[k] || k) + '</option>').join('')
+    + '<option value="__otro">Otro (escribir el nombre)…</option></select>'
+    + '<input id="dcli-otro" placeholder="Nombre del documento (ej. Kosher)" style="display:none">'
+    + '<select id="dcli-regla"><option value="pide">lo pide</option><option value="no lleva">no lo lleva</option></select>'
+    + '<input id="dcli-nota" placeholder="Nota (opcional)">'
+    + '<button class="btn falt-b" onclick="docsCliGuardar()">Guardar</button></div>'
+    + '<div class="doc-sub">Guardar pide confirmación y escribe en la pestaña ' + HOJA_DOCS_CLIENTES + ' del hub (no toca las cargas).</div></div></div>';
+  return h;
+}
+async function docsCliGuardar(){
+  const val = id => String((document.getElementById(id) || {}).value || '').trim();
+  const cliente = val('dcli-cli'), doc = val('dcli-doc'), otro = val('dcli-otro'), regla = val('dcli-regla') === 'no lleva' ? 'no lleva' : 'pide', nota = val('dcli-nota');
+  if(!cliente){ showToast('Elegí el cliente', 'err'); return; }
+  if(!doc || (doc === '__otro' && !otro)){ showToast('Elegí el documento (o escribí el nombre)', 'err'); return; }
+  const k = doc === '__otro' ? docsCliClave(otro) : doc, nombre = doc === '__otro' ? otro : (DOC_TIPOS[doc] || doc);
+  if(k === 'x_'){ showToast('Ese nombre no sirve: usá letras o números', 'err'); return; }
+  if(docsCliReglas().some(r => r.neg === negocioActivo && docsCliNorm(r.cliente) === docsCliNorm(cliente) && r.k === k)){ showToast('Ya hay una regla para ese cliente y ese documento: sacala primero si querés cambiarla', 'err'); return; }
+  const lab = docTextoDeNegocio(negocioActivo);
+  const ok = await showConfirm('Guardar regla de documentos', 'Se agrega a la pestaña ' + HOJA_DOCS_CLIENTES + ' del hub. Vale para todas las cargas de ' + cliente + ' en ' + lab + '.', { okLabel: 'Guardar', icono: '📄',
+    detalle: '<div><b>' + escaparHtml(cliente) + '</b> ' + (regla === 'pide' ? 'pide' : 'no lleva') + ' <b>' + escaparHtml(nombre) + '</b>' + (nota ? ' · ' + escaparHtml(nota) : '') + '</div>'
+      + (_docsCli.existe ? '' : '<div class="doc-sub" style="margin-top:6px;">Es la primera: se crea la pestaña con la regla de Nutitaly (Non GMO) que ya estaba.</div>') });
+  if(!ok) return;
+  const base = 'https://sheets.googleapis.com/v4/spreadsheets/' + cfg.hubSheetId, hd = { Authorization: 'Bearer ' + accessToken, 'Content-Type': 'application/json' };
+  const ahora = new Date().toISOString().slice(0, 16).replace('T', ' ');
+  const fila = r => [r.neg === 'buzaram' ? 'Buzaram' : 'AXT', r.cliente, r.k, r.nombre, r.regla, r.nota || '', r.quien || getMiEmail() || '', r.fecha || ahora];
+  const nuevas = (_docsCli.existe ? [] : DOCS_CLI_INICIAL.map(fila)).concat([fila({ neg: negocioActivo, cliente, k, nombre, regla, nota })]);
+  try{
+    if(!_docsCli.existe){
+      await fetch(base + ':batchUpdate', { method: 'POST', headers: hd, body: JSON.stringify({ requests: [{ addSheet: { properties: { title: HOJA_DOCS_CLIENTES } } }] }) });
+      await fetch(base + '/values/' + encodeURIComponent(HOJA_DOCS_CLIENTES + '!A1:H1') + '?valueInputOption=RAW', { method: 'PUT', headers: hd, body: JSON.stringify({ values: [DOCS_CLI_ENC] }) });
+    }
+    const r = await fetch(base + '/values/' + encodeURIComponent(HOJA_DOCS_CLIENTES + '!A:H') + ':append?valueInputOption=RAW&insertDataOption=INSERT_ROWS', { method: 'POST', headers: hd, body: JSON.stringify({ values: nuevas }) });
+    if(!r.ok){ showToast('No pude guardar (HTTP ' + r.status + '). No se cambió nada.', 'err'); return; }
+  }catch(e){ showToast('No pude guardar: ' + e.message, 'err'); return; }
+  await appendLog({ customer: cliente, accion: 'documentos por cliente', detalle: cliente + ' ' + (regla === 'pide' ? 'pide' : 'no lleva') + ' ' + nombre + (nota ? ' (' + nota + ')' : '') }).catch(() => {});
+  await cargarDocsClientes();
+  showToast('✓ Regla guardada', 'ok');
+  try{ docsPintarTabla(); }catch(e){}
+  renderDocumentos();
+}
+async function docsCliBorrar(rn){
+  const r = _docsCli.reglas.find(x => x.rn === rn); if(!r) return;
+  const ok = await showConfirm('Sacar la regla', 'Se borra de la pestaña ' + HOJA_DOCS_CLIENTES + ' del hub.', { okLabel: 'Sacar', icono: '🗑️', peligro: true,
+    detalle: '<div><b>' + escaparHtml(r.cliente) + '</b> ' + (r.regla === 'pide' ? 'pide' : 'no lleva') + ' <b>' + escaparHtml(DOC_TIPOS[r.k] || r.nombre || r.k) + '</b></div>' });
+  if(!ok) return;
+  const base = 'https://sheets.googleapis.com/v4/spreadsheets/' + cfg.hubSheetId, hd = { Authorization: 'Bearer ' + accessToken, 'Content-Type': 'application/json' };
+  // se relee la fila: tiene que seguir siendo esta regla (otro pudo cambiar la pestaña)
+  const chk = await fetch(base + '/values/' + encodeURIComponent(HOJA_DOCS_CLIENTES + '!A' + rn + ':C' + rn), { headers: hd });
+  const f = chk.ok ? (((await chk.json()).values || [])[0] || []) : [];
+  if(String(f[1] || '').trim() !== r.cliente || String(f[2] || '').trim() !== r.k){ showToast('La pestaña cambió: actualizá y probá de nuevo.', 'err'); await cargarDocsClientes(); renderDocumentos(); return; }
+  const x = await fetch(base + '/values/' + encodeURIComponent(HOJA_DOCS_CLIENTES + '!A' + rn + ':H' + rn) + ':clear', { method: 'POST', headers: hd, body: '{}' });
+  if(!x.ok){ showToast('No pude sacarla (HTTP ' + x.status + ')', 'err'); return; }
+  await appendLog({ customer: r.cliente, accion: 'documentos por cliente', detalle: 'se sacó: ' + r.cliente + ' ' + (r.regla === 'pide' ? 'pide' : 'no lleva') + ' ' + (DOC_TIPOS[r.k] || r.nombre || r.k) }).catch(() => {});
+  await cargarDocsClientes();
+  showToast('✓ Regla sacada', 'ok');
+  try{ docsPintarTabla(); }catch(e){}
+  renderDocumentos();
+}
 function docsSetDeCarga(row){
   const port = String(row[COL.PORT] || '').toLowerCase(), inco = String(row[COL.INCOTERM] || '').toUpperCase();
   const axt = negocioActivo !== 'buzaram';
@@ -12171,9 +12302,13 @@ function docsSetDeCarga(row){
   set.push({ k: 'packing' }, { k: 'origen' }, { k: 'fito' });
   set.push(DOC_PUERTOS_EEUU.some(p => port.indexOf(p) >= 0) ? { k: 'isf' } : { k: 'isf', na: 'solo EE.UU.' });
   if(DOC_PUERTOS_ITALIA.some(p => port.indexOf(p) >= 0)) set.push({ k: 'jla' });
-  // Nutitaly pide el certificado NON GMO (pedido del usuario, 26/11/2026)
-  if(/NUTITALY/i.test(String(row[COL.CUSTOMER] || ''))) set.push({ k: 'non_gmo' });
   if(/\bCIF\b/.test(inco)) set.push({ k: 'seguro' });
+  // Lo que pide (o no lleva) cada cliente: pestaña DOCS_CLIENTES (ej. Nutitaly pide el NON GMO)
+  docsCliDeCarga(row).forEach(r => {
+    const i = set.findIndex(x => x.k === r.k);
+    if(r.regla === 'pide'){ if(i < 0) set.push({ k: r.k }); else if(set[i].na) set[i] = { k: r.k }; }
+    else if(i >= 0) set[i] = { k: r.k, na: 'no lo lleva' };
+  });
   return set;
 }
 // Si en la planilla se insertan o reordenan filas, el número de fila que anotó n8n en DOCUMENTOS queda viejo (pasó: 33 documentos
@@ -12491,10 +12626,11 @@ function renderDocumentos(){
     + (_docsFiltro === 'faltantes' ? '<span class="falt-ver">Ver: <button class="chip-f' + (_docsAgrupar === 'quien' ? ' on' : '') + '" onclick="docsAgrupar(\'quien\')">Por quién los manda</button><button class="chip-f' + (_docsAgrupar === 'carga' ? ' on' : '') + '" onclick="docsAgrupar(\'carga\')">Por carga</button></span>' : '')
     + '<span style="flex:1"></span><input id="docs-busca" class="doc-buscar" placeholder="Buscar lote, BL, contenedor, cliente…" value="' + escaparHtml(_docsBusca) + '" oninput="docsBuscar(this.value)">'
     + '<button class="btn" onclick="docsRecargar()">↻ Actualizar</button></div>';
-  if(_docsFiltro === 'faltantes' && _docsAgrupar === 'quien'){ html += docsGruposHtml(lista); cont.innerHTML = html; const b0 = document.getElementById('docs-busca'); if(b0 && window._docsFocoBusca){ b0.focus(); b0.setSelectionRange(b0.value.length, b0.value.length); window._docsFocoBusca = false; } return; }
+  if(_docsFiltro === 'faltantes' && _docsAgrupar === 'quien'){ html += docsGruposHtml(lista) + docsClientesHtml(); cont.innerHTML = html; const b0 = document.getElementById('docs-busca'); if(b0 && window._docsFocoBusca){ b0.focus(); b0.setSelectionRange(b0.value.length, b0.value.length); window._docsFocoBusca = false; } return; }
   if(!lista.length) html += '<div class="empty"><div class="empty-icon">✓</div>' + (_docsFiltro === 'faltantes' ? 'Ninguna carga con documentos faltantes.' : 'No hay cargas para mostrar.') + '</div>';
   lista.slice(0, 150).forEach(x => { html += docCardCarga(x.r, x.e); });
   if(lista.length > 150) html += '<div class="doc-sub" style="padding:8px 0;">Se muestran las primeras 150: usá el buscador para encontrar las demás.</div>';
+  html += docsClientesHtml();
   cont.innerHTML = html;
   const b = document.getElementById('docs-busca');
   if(b && window._docsFocoBusca){ b.focus(); b.setSelectionRange(b.value.length, b.value.length); window._docsFocoBusca = false; }
@@ -12973,7 +13109,8 @@ function carpConAnotado(a){
   return Object.assign(a, { docs: act.map(d => ({ tipo: d.tipo, numero: d.numero || '' })), tipo: act[0].tipo, numero: act[0].numero || '', aMano: act.some(d => /a mano/.test(d.via || '')) });
 }
 // Tipos que se pueden elegir a mano o que puede contestar la IA, según el negocio (la factura al cliente es de AXT o de Buzaram, nunca de los dos)
-const carpTiposDe = neg => ['bl', 'fc_proveedor', neg === 'buzaram' ? 'fc_buzaram' : 'fc_axt', neg === 'buzaram' ? 'fc_buzaram_serv' : 'fc_axt_serv', 'packing', 'origen', 'fito', 'isf', 'jla', 'non_gmo', 'seguro', 'shipping', 'aviso_salida', 'proforma', 'planilla'];
+const carpTiposDe = neg => ['bl', 'fc_proveedor', neg === 'buzaram' ? 'fc_buzaram' : 'fc_axt', neg === 'buzaram' ? 'fc_buzaram_serv' : 'fc_axt_serv', 'packing', 'origen', 'fito', 'isf', 'jla', 'non_gmo', 'seguro', 'shipping', 'aviso_salida', 'proforma', 'planilla']
+  .concat([...new Set(docsCliReglas().filter(r => r.neg === neg && /^x_/.test(r.k)).map(r => r.k))]);   // los documentos nuevos de "Documentos por cliente"
 function carpPintar(){
   const res = _carp.res; if(!res) return;
   const sinSaber = res.archivos.filter(a => !a.descartado && !carpDocsArchivo(a).length);
@@ -17018,6 +17155,7 @@ function n8nAuditorHizo(e){
 }
 // Qué cambiamos en n8n y qué control se sumó en este panel. El más nuevo arriba. "version" = la que anota la Marca de corrida.
 const N8N_CAMBIOS = [
+  { fecha: '26/11/2026', versiones: ['docs-2026-11-26b'], cambio: 'Facturas de Buzaram: el packing se lee también cuando la factura dice «Packing: bags» (con dos puntos). La A4820 de Farm Trading había quedado «no coincide» solo por eso; como las que no coinciden se reintentan 7 días, se vuelve a controlar sola', control: 'Documentos: la A4820 (fila 236 de Buzaram) tendría que pasar a verde en la próxima vuelta; tarjeta Documentos: versión docs-2026-11-26b' },
   { fecha: '26/11/2026', versiones: ['docs-2026-11-26', 'carpetas-2026-11-26b'], cambio: 'Certificado NON GMO (lo pide Nutitaly): los dos workflows lo reconocen como documento propio (por el nombre del archivo: NON GMO, No OGM, GMO free; Documentos también por el texto del PDF), lo atan a la carga y lo guardan en su carpeta de Drive como los demás; la IA de las carpetas también lo conoce', control: 'Documentos: en las cargas de Nutitaly aparece el chip «Non GMO» (sin tildar hasta que llega); tarjetas: versiones docs-2026-11-26 y carpetas-2026-11-26b' },
   { fecha: '26/11/2026', versiones: ['carpetas-2026-11-26'], cambio: 'Carpetas de las cargas: la IA ahora dice TODOS los documentos que trae un archivo (un PDF con el set completo escaneado junto: BL, factura, packing, origen, fito...) y se anota una fila por documento en DOCUMENTOS (la primera con la clave de siempre, las demás carpeta|id|tipo), igual que «Leer con IA» del hub. La factura del otro negocio que conteste la IA se descarta (AXT y Buzaram nunca se mezclan)', control: 'Documentos: los chips de un set escaneado junto muestran el mismo archivo en cada documento; tarjeta Carpetas: versión carpetas-2026-11-26' },
   { fecha: '25/11/2026', versiones: ['docs-2026-11-25c', 'carpetas-2026-11-25e'], cambio: 'Carpetas de Drive de BUZARAM como las arma el equipo: Harina / año / la carpeta con todos los lotes de la carga; Aceite en tambores / lote (sin año); Aceite flexis / cliente (la carpeta cuyo nombre está en el Customer: Tianxiang) / contrato del proveedor (LT133-2026). El producto y el cliente no se crean nunca; otros productos o packings (peanut butter, blanched, bines) quedan sin Drive. Antes todo el aceite iba a «Aceite flexis / 2026 / lote», una carpeta que no corresponde. Lo mismo en el lector de carpetas y en el hub. Las facturas que no coinciden se vuelven a controlar 7 días (si se corrige la planilla, se anotan solas)', control: 'Documentos: los PDF de Buzaram quedan en su carpeta; Hub: «Leer la carpeta ahora» de una carga de Buzaram muestra la carpeta del equipo' },
