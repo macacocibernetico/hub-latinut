@@ -5970,10 +5970,10 @@ function renderAlertas(){
     <div class="stat-card warn-card"><div class="stat-label">Advertencias</div><div class="stat-value" style="color:var(--warn)">${warnCount}</div><div class="stat-sub">A monitorear</div></div>
     <div class="stat-card"><div class="stat-label">ETA próximos 7d</div><div class="stat-value" style="color:var(--info)">${proxETA}</div><div class="stat-sub">Sin liberación solicitada</div></div>
   </div>`;
-  // Botones del resumen operativo de los dos negocios
+  // Botones del resumen operativo del negocio abierto (cada negocio tiene su propio mail)
   html+=`<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:14px;padding:10px 12px;background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius-lg);box-shadow:var(--shadow);">
-    <span style="font-size:12px;font-weight:600;color:var(--text2);">Resumen operativo AXT + Buzaram</span>
-    <span style="font-size:11px;color:var(--text3);flex:1;min-width:120px;">Llega por mail a ${CC_EQUIPO} todos los días a las 7 AM${cfg.resumenScriptUrl?'':' — falta configurar la URL del Apps Script'}</span>
+    <span style="font-size:12px;font-weight:600;color:var(--text2);">Resumen operativo ${negocioActivo==='buzaram'?'Buzaram':'AXT'}</span>
+    <span style="font-size:11px;color:var(--text3);flex:1;min-width:120px;">Llega por mail a ${CC_EQUIPO} todos los días a las 7 AM, un mail para AXT y otro para Buzaram${cfg.resumenScriptUrl?'':' — falta configurar la URL del Apps Script'}</span>
     <button class="btn" onclick="resumenOperativo(false)">📋 Ver ahora</button>
     <button class="btn" onclick="resumenOperativo(true)">✉ Enviar resumen al equipo</button>
   </div>`;
@@ -12040,8 +12040,10 @@ function hideSearch(){
 // El mail diario lo manda solo el Apps Script con su trigger de las 7 AM. Estos dos
 // botones son para verlo a demanda sin esperar, y usan EL MISMO codigo del lado del
 // script, asi no hay dos versiones del resumen que se puedan desincronizar.
+// Es siempre el resumen del negocio abierto: AXT y Buzaram van en mails separados (el script manda uno por negocio).
 async function resumenOperativo(enviar){
   const url = (cfg.resumenScriptUrl||'').trim();
+  const nomNeg = negocioActivo === 'buzaram' ? 'Buzaram' : 'AXT';
   if(!url){
     showToast('Falta la URL del Apps Script del resumen. Cargala en Configuración.', 'err');
     showView('config');
@@ -12050,19 +12052,19 @@ async function resumenOperativo(enviar){
   if(enviar){
     const ok0 = await showConfirm(
       'Enviar el resumen al equipo',
-      'Se manda el resumen operativo de AXT y Buzaram ahora mismo. Esto sí envía el mail, no crea un borrador.',
+      'Se manda ahora mismo el resumen operativo de ' + nomNeg + ' (solo de ' + nomNeg + '). Esto sí envía el mail, no crea un borrador.',
       { icono:'📤', okLabel:'Enviar el mail ahora', peligro:true,
         detalle:'<div><span style="color:var(--text3);">Para:</span> <b>'+CC_EQUIPO+'</b></div>' }
     );
     if(!ok0) return;
   }
-  showToast(enviar ? 'Enviando el resumen al equipo...' : 'Generando el resumen de los dos negocios...', 'info');
+  showToast(enviar ? 'Enviando el resumen de ' + nomNeg + ' al equipo...' : 'Generando el resumen de ' + nomNeg + '...', 'info');
   try{
-    const r = await fetch(url + '?accion=' + (enviar ? 'enviar' : 'ver'), {method:'GET', redirect:'follow'});
+    const r = await fetch(url + '?accion=' + (enviar ? 'enviar' : 'ver') + '&negocio=' + (negocioActivo === 'buzaram' ? 'buzaram' : 'axt'), {method:'GET', redirect:'follow'});
     const data = await r.json();
     if(!data.ok) throw new Error(data.error || 'el script devolvió un error');
     if(enviar){
-      showToast('✓ Resumen enviado a ' + (data.para || CC_EQUIPO) + (data.cc ? ' (CC: ' + data.cc + ')' : ''), 'ok');
+      showToast('✓ Resumen de ' + nomNeg + ' enviado a ' + (data.para || CC_EQUIPO) + (data.cc ? ' (CC: ' + data.cc + ')' : ''), 'ok');
       return;
     }
     const avisos = (data.avisos && data.avisos.length)
@@ -12071,7 +12073,7 @@ async function resumenOperativo(enviar){
       : '';
     const enviarBtn = '<div style="display:flex;justify-content:flex-end;margin-bottom:12px;">'
       + '<button class="btn primary" onclick="closeDayDetail();resumenOperativo(true)">✉ Enviar al equipo ahora</button></div>';
-    document.getElementById('cf-detail-title').textContent = 'Resumen operativo — ' + (data.fecha || '');
+    document.getElementById('cf-detail-title').textContent = 'Resumen operativo de ' + nomNeg + ' — ' + (data.fecha || '');
     document.getElementById('cf-detail-body').innerHTML = enviarBtn + avisos + (data.html || '<div style="padding:20px;text-align:center;color:var(--text3);">Sin datos.</div>');
     document.getElementById('cf-detail-overlay').classList.remove('hidden');
   }catch(e){
@@ -12119,6 +12121,7 @@ async function cargarDocumentos(){
   const j = await r.json();
   _docsListo = true; _docsError = '';
   _docs = (j.values || []).map((f, i) => docDeFila(f, i + 2)).filter(d => d.clave);
+  if(!_carp.listo && !_carp.cargando){ _carp.cargando = true; try{ await carpCargarRegistro(); }catch(e){} _carp.cargando = false; }
 }
 
 // ── Qué documentos forman el set de una carga ──
@@ -12186,7 +12189,11 @@ function docsEstadoCarga(row){
   const docs = docsDeCarga(row), set = docsSetDeCarga(row);
   const enPlanilla = { bl: COL.BL, fc_proveedor: COL.INVOICE_PROVEEDOR, fc_axt: COL.INVOICE_CLIENTE, fc_axt_serv: COL.INVOICE_FC_SERV, fc_buzaram: COL.INVOICE_CLIENTE, fc_buzaram_serv: COL.INVOICE_FC_SERV };
   const valor = c => (c !== undefined && c !== null && c >= 0) ? String(row[c] || '').trim() : '';
-  const todoSi = valor(COL.DOCUMENTOS).toUpperCase() === 'SI';
+  const lectura = carpLecturaDe(row);
+  // Con "SI" en DOCUMENTOS se daba todo por recibido. Si la carpeta se leyó, mandan los archivos que hay de verdad (pedido del usuario):
+  // lo que está en la carpeta se tilda y lo que no está queda sin tildar, aunque diga SI.
+  const todoSi = !lectura && valor(COL.DOCUMENTOS).toUpperCase() === 'SI';
+  const enCarpeta = lectura ? lectura.docs.map(x => Object.assign({}, x, { k: docTipoEfectivo({ tipo: x.k, numero: x.n }, row) })) : [];
   const usados = new Set();
   const chips = set.map(s => {
     if(s.na) return { k: s.k, estado: 'na', nota: s.na };
@@ -12197,8 +12204,10 @@ function docsEstadoCarga(row){
     if(bueno) return { k: s.k, estado: 'ok', link: docLinkSeguro(bueno.drive), num: bueno.numero, arch: /contenido/.test(bueno.via || '') ? bueno.nombre : '' };
     const mal = ds.find(d => d.estado === 'no_coincide');
     if(mal) return { k: s.k, estado: 'mal', link: docLinkSeguro(mal.drive), num: mal.numero };
+    const fc = enCarpeta.find(x => x.k === s.k);
+    if(fc) return { k: s.k, estado: 'ok', link: docLinkSeguro(fc.l), num: fc.n, arch: fc.a, carpeta: lectura.fecha };
     const pl = valor(enPlanilla[s.k]);
-    if(pl && pl !== '-' && pl !== '--') return { k: s.k, estado: 'planilla', num: pl };
+    if(pl && pl !== '-' && pl !== '--' && !lectura) return { k: s.k, estado: 'planilla', num: pl };
     if(todoSi) return { k: s.k, estado: 'planilla' };
     return { k: s.k, estado: 'no' };
   });
@@ -12210,6 +12219,8 @@ function docChip(c){
   const lab = DOC_TIPOS[c.k] || c.k, num = (c.num ? ' <small>· ' + escaparHtml(String(c.num)) + '</small>' : '') + (c.arch ? ' <small>(' + escaparHtml(String(c.arch)) + ')</small>' : '');
   if(c.estado === 'na') return '<span class="dc dc-na">' + lab + ' <small>(' + escaparHtml(c.nota) + ')</small></span>';
   if(c.estado === 'no') return '<span class="dc dc-no" title="Todavía no llegó">' + lab + '</span>';
+  if(c.carpeta) return (c.link ? '<a class="dc dc-ok" href="' + escaparHtml(c.link) + '" target="_blank" rel="noopener"' : '<span class="dc dc-ok"')
+    + ' title="Está en la carpeta de Drive (leída ' + escaparHtml(carpFechaCorta(c.carpeta)) + ')' + (c.arch ? ': ' + escaparHtml(c.arch) : '') + '">' + lab + (c.num ? ' <small>· ' + escaparHtml(String(c.num)) + '</small>' : '') + (c.link ? '</a>' : '</span>');
   if(c.estado === 'planilla') return '<span class="dc dc-pl" title="Está anotado en la planilla, pero el PDF no pasó por n8n">' + lab + num + '</span>';
   const cls = c.estado === 'mal' ? 'dc-mal' : c.estado === 'otro' ? 'dc-otro' : 'dc-ok';
   const tit = c.estado === 'mal' ? 'Llegó pero no coincide con lo pedido' : 'Llegó';
@@ -12576,7 +12587,19 @@ function menuDocsHtml(row){
 // - Cuándo se leyó a mano (y quién) queda en la pestaña CARPETAS_LEIDAS de HUB LATINUT SIN confirmación (pedido del usuario: es solo una
 //   marca de fecha, no toca las cargas). La última lectura automática sale de la marca del workflow Carpetas en N8N_ESTADO (fila 8, "leidas").
 const HOJA_CARPETAS = 'CARPETAS_LEIDAS';
-const CARP_ENCABEZADOS = ['Negocio', 'Fila', 'Lote', 'Carpeta', 'Ruta', 'Última lectura a mano', 'Quién', 'Archivos', 'Nuevos'];
+const CARP_ENCABEZADOS = ['Negocio', 'Fila', 'Lote', 'Carpeta', 'Ruta', 'Última lectura a mano', 'Quién', 'Archivos', 'Nuevos', 'Documentos en la carpeta'];
+// Lo que se reconoció en la carpeta (para los tildes del set de documentos): [{ k: tipo, n: número, a: archivo, l: link }]
+const carpDocsDe = archivos => archivos.filter(a => a.tipo && a.tipo !== 'otro').map(a => ({ k: a.tipo, n: a.numero || '', a: a.name || '', l: a.webViewLink || '' }));
+function carpDocsLeer(txt){ try{ const v = JSON.parse(txt || ''); return Array.isArray(v) ? v : null; }catch(e){ return null; } }
+// La última lectura a mano de la carpeta de esta carga (null si nunca se leyó con el hub nuevo, o si la fila ya tiene otro lote)
+function carpLecturaDe(row){
+  if(!_carp.listo) return null;
+  const lote = String(row[COL.LOTS] || '').trim().toUpperCase();
+  const m = _carp.reg.find(x => docNegocioDeTexto(x.neg) === negocioActivo && x.fila === String(row._sheetRow));
+  if(!m || !Array.isArray(m.docs)) return null;
+  if(m.lote && lote && String(m.lote).trim().toUpperCase() !== lote) return null;
+  return m;
+}
 let _carp = { listo: false, cargando: false, reg: [], auto: null, res: null };
 const carpClave = (neg, fila) => neg + ':' + fila;
 function carpTipoPorNombre(nombre, negocio){
@@ -12622,8 +12645,8 @@ async function carpCargarRegistro(){
   if(!accessToken || !cfg.hubSheetId) return;
   const h = { headers: { Authorization: 'Bearer ' + accessToken } }, base = 'https://sheets.googleapis.com/v4/spreadsheets/' + cfg.hubSheetId + '/values/';
   try{
-    const r = await fetch(base + encodeURIComponent(HOJA_CARPETAS + '!A2:I'), h);
-    _carp.reg = r.ok ? ((await r.json()).values || []).map((f, i) => ({ neg: f[0] || '', fila: String(f[1] || ''), lote: f[2] || '', carpeta: f[3] || '', ruta: f[4] || '', fecha: f[5] || '', quien: f[6] || '', archivos: f[7] || '', nuevos: f[8] || '', rn: i + 2 })) : [];
+    const r = await fetch(base + encodeURIComponent(HOJA_CARPETAS + '!A2:J'), h);
+    _carp.reg = r.ok ? ((await r.json()).values || []).map((f, i) => ({ neg: f[0] || '', fila: String(f[1] || ''), lote: f[2] || '', carpeta: f[3] || '', ruta: f[4] || '', fecha: f[5] || '', quien: f[6] || '', archivos: f[7] || '', nuevos: f[8] || '', docs: carpDocsLeer(f[9]), rn: i + 2 })) : [];
   }catch(e){ _carp.reg = []; }
   try{
     const r = await fetch(base + encodeURIComponent('N8N_ESTADO!A8:J8'), h);
@@ -12687,30 +12710,41 @@ async function carpLeer(idx){
   _carp.res = { neg, fila: row._sheetRow, idx, lote: String(row[COL.LOTS] || '').trim(), carpeta, ruta: carpeta.nombre || carpeta.ruta || '', archivos };
   await carpRegistrar(_carp.res);
   carpPintar();
+  carpRepintarTildes();
+}
+// Los tildes del set de documentos salen de la última lectura de la carpeta: se repinta lo que esté abierto
+function carpRepintarTildes(){
+  try{ docsPintarTabla(); }catch(e){}
+  try{ if(currentView === 'documentos' && typeof renderDocumentos === 'function') renderDocumentos(); }catch(e){}
 }
 // Marca de "leída a mano" en CARPETAS_LEIDAS (sin confirmación: pedido del usuario). Una fila por carga (negocio + fila); se pisa la anterior.
 async function carpRegistrar(res){
   try{
     if(!_carp.listo) await carpCargarRegistro();
+    if(!_carp.encJ){   // pestaña creada antes de la columna "Documentos en la carpeta": se le pone el encabezado (una vez)
+      _carp.encJ = true;
+      fetch('https://sheets.googleapis.com/v4/spreadsheets/' + cfg.hubSheetId + '/values/' + encodeURIComponent(HOJA_CARPETAS + '!J1') + '?valueInputOption=RAW',
+        { method: 'PUT', headers: { Authorization: 'Bearer ' + accessToken, 'Content-Type': 'application/json' }, body: JSON.stringify({ values: [[CARP_ENCABEZADOS[9]]] }) }).catch(() => {});
+    }
     const hd = { Authorization: 'Bearer ' + accessToken, 'Content-Type': 'application/json' }, base = 'https://sheets.googleapis.com/v4/spreadsheets/' + cfg.hubSheetId;
     const fila = [res.neg === 'buzaram' ? 'Buzaram' : 'AXT', String(res.fila), res.lote, res.carpeta.id, res.ruta, new Date().toISOString(), getMiEmail() || '',
-      String(res.archivos.length), String(res.archivos.filter(a => !a.ya).length)];
+      String(res.archivos.length), String(res.archivos.filter(a => !a.ya).length), JSON.stringify(carpDocsDe(res.archivos))];
     const negTxt = fila[0], previo = _carp.reg.find(x => x.neg === negTxt && x.fila === fila[1]);
     if(previo){
-      await fetch(base + '/values/' + encodeURIComponent(HOJA_CARPETAS + '!A' + previo.rn + ':I' + previo.rn) + '?valueInputOption=RAW', { method: 'PUT', headers: hd, body: JSON.stringify({ values: [fila] }) });
-      Object.assign(previo, { lote: fila[2], carpeta: fila[3], ruta: fila[4], fecha: fila[5], quien: fila[6], archivos: fila[7], nuevos: fila[8] });
+      await fetch(base + '/values/' + encodeURIComponent(HOJA_CARPETAS + '!A' + previo.rn + ':J' + previo.rn) + '?valueInputOption=RAW', { method: 'PUT', headers: hd, body: JSON.stringify({ values: [fila] }) });
+      Object.assign(previo, { lote: fila[2], carpeta: fila[3], ruta: fila[4], fecha: fila[5], quien: fila[6], archivos: fila[7], nuevos: fila[8], docs: carpDocsLeer(fila[9]) });
       return;
     }
-    let r = await fetch(base + '/values/' + encodeURIComponent(HOJA_CARPETAS + '!A:I') + ':append?valueInputOption=RAW&insertDataOption=INSERT_ROWS', { method: 'POST', headers: hd, body: JSON.stringify({ values: [fila] }) });
+    let r = await fetch(base + '/values/' + encodeURIComponent(HOJA_CARPETAS + '!A:J') + ':append?valueInputOption=RAW&insertDataOption=INSERT_ROWS', { method: 'POST', headers: hd, body: JSON.stringify({ values: [fila] }) });
     if(r.status === 400 || r.status === 404){
       // primera vez: se crea la pestaña con sus encabezados
       await fetch(base + ':batchUpdate', { method: 'POST', headers: hd, body: JSON.stringify({ requests: [{ addSheet: { properties: { title: HOJA_CARPETAS } } }] }) });
-      await fetch(base + '/values/' + encodeURIComponent(HOJA_CARPETAS + '!A1:I1') + '?valueInputOption=RAW', { method: 'PUT', headers: hd, body: JSON.stringify({ values: [CARP_ENCABEZADOS] }) });
-      r = await fetch(base + '/values/' + encodeURIComponent(HOJA_CARPETAS + '!A:I') + ':append?valueInputOption=RAW&insertDataOption=INSERT_ROWS', { method: 'POST', headers: hd, body: JSON.stringify({ values: [fila] }) });
+      await fetch(base + '/values/' + encodeURIComponent(HOJA_CARPETAS + '!A1:J1') + '?valueInputOption=RAW', { method: 'PUT', headers: hd, body: JSON.stringify({ values: [CARP_ENCABEZADOS] }) });
+      r = await fetch(base + '/values/' + encodeURIComponent(HOJA_CARPETAS + '!A:J') + ':append?valueInputOption=RAW&insertDataOption=INSERT_ROWS', { method: 'POST', headers: hd, body: JSON.stringify({ values: [fila] }) });
     }
     let rn = 0;
     try{ const j = await r.json(); rn = +((((j || {}).updates || {}).updatedRange || '').match(/![A-Z]+(\d+)/) || [])[1] || 0; }catch(e){}
-    _carp.reg.push({ neg: fila[0], fila: fila[1], lote: fila[2], carpeta: fila[3], ruta: fila[4], fecha: fila[5], quien: fila[6], archivos: fila[7], nuevos: fila[8], rn: rn || (_carp.reg.length + 2) });
+    _carp.reg.push({ neg: fila[0], fila: fila[1], lote: fila[2], carpeta: fila[3], ruta: fila[4], fecha: fila[5], quien: fila[6], archivos: fila[7], nuevos: fila[8], docs: carpDocsLeer(fila[9]), rn: rn || (_carp.reg.length + 2) });
   }catch(e){ console.warn('Registro de la carpeta:', e); }
 }
 function carpPintar(){
@@ -12764,7 +12798,9 @@ async function carpLeerIA(){
     }catch(e){ fallas++; console.warn('IA carpeta', a.name, e); }
   }
   if(fallas) showToast('No pude leer ' + fallas + ' archivo' + (fallas > 1 ? 's' : '') + ' con IA', 'err');
+  await carpRegistrar(res);   // lo que reconoció la IA también cuenta para los tildes
   carpPintar();
+  carpRepintarTildes();
 }
 // Anotar en DOCUMENTOS lo nuevo que se reconoció (con confirmación). Misma fila que el lector de n8n, así no lo vuelve a anotar.
 async function carpAnotar(){
