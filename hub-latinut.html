@@ -557,7 +557,9 @@ body.t-redim{cursor:col-resize;user-select:none;}
 .t-grid .t-np{display:inline-flex;align-items:baseline;gap:4px;padding:0 6px;border-radius:4px;background:var(--bg3);color:var(--text2);font-size:11.5px;line-height:18px;white-space:nowrap;transition:background .12s;}
 .t-grid .t-np b{font-weight:600;color:var(--text);font-variant-numeric:tabular-nums;}
 .t-grid .t-negs:hover .t-np{background:color-mix(in srgb,var(--accent) 14%,var(--bg3));}
-.t-grid tr.t-junta.abierto>td{border-bottom-color:transparent;}
+.t-grid tr.t-junta.abierto>td{border-bottom-color:transparent;background:color-mix(in srgb,var(--accent) 11%,var(--bg2));}
+.t-grid tr.t-junta.abierto>td.t-gnum{box-shadow:inset 3px 0 0 var(--accent);}
+.t-grid tr.t-junta.abierto>td.t-gnum .t-car{transform:none;}
 .t-grid tr.t-parte>td{background:color-mix(in srgb,var(--accent) 3%,var(--bg2));}
 .t-grid tr.t-parte-in>td{animation:tParteIn .14s ease-out;}
 @keyframes tParteIn{from{opacity:0;transform:translateY(-3px);}to{opacity:1;transform:none;}}
@@ -566,9 +568,10 @@ body.t-redim{cursor:col-resize;user-select:none;}
 .t-grid td.t-dif{color:var(--warn);}
 .t-grid td.t-suma{font-weight:600;}
 .t-grid td.t-sumada{color:var(--text);}
-.t-grid tr.t-parte>td.t-num{border-left:3px solid var(--accent);}
+.t-grid tr.t-parte>td.t-num{box-shadow:inset 3px 0 0 var(--accent);color:var(--text2);text-align:left;padding-left:8px;white-space:nowrap;}
+.t-grid .t-tree{display:inline-block;width:12px;color:var(--text3);font-family:var(--mono);}
 .t-grid tr.t-parte>td.t-comp{color:var(--text3);opacity:.55;}
-.t-grid tr.t-parte-ult>td{border-bottom:2px solid var(--border);}
+.t-grid tr.t-parte-ult>td{border-bottom:1.5px solid color-mix(in srgb,var(--accent) 55%,transparent);}
 .t-btn.on{color:var(--accent);border-color:var(--accent);}
 .dp-mal{display:flex;align-items:center;gap:8px;font-size:12px;color:var(--danger);margin:2px 0 8px;}
 .dp-mal b{font-weight:800;}
@@ -7374,10 +7377,10 @@ function filaTablaHtml(row, r, ctx){
       const fija = kk < TABLA_FIJAS;
       const tmI = totMalCelda(row, c);   // total que no cierra con las Tns de esta fila
       const pfI = c === COL.FECHA_PAGO_FWD ? pfInfoCelda(row) : null;   // de donde sale la fecha de pago al forwarder (hover)
-      return `<td data-r="${r}" data-c="${c}" class="${fija ? 'fija' : ''}${kk === TABLA_FIJAS - 1 ? ' fija-ult' : ''}${parteDe && colCompartida(c) ? ' t-comp' : ''}${p ? ' chg' : ''}${esColFormula(c) ? ' formula' : ''}${celdaMarcada(row, c) ? ' t-marca' : ''}${(c === COL.PRODUCT && enDudaNOP(row)) ? ' t-duda' : ''}${comAbiertosCelda(row, c).length ? ' t-com' : ''}${colorDeCelda(row, c) ? ' t-pint' : ''}${pfI && pfI.dif ? ' t-pf-dif' : ''}${tmI ? ' t-tot-mal' : ''}" style="${colorDeCelda(row, c) ? '--pin:' + hexColor(colorPaleta(colorDeCelda(row, c)).rgb) + ';' : ''}${fija ? 'left:' + left[c] + 'px;' : ''}max-width:${anchos[c]}px;" title="${pfI ? esc(pfI.tip) : tmI ? esc('⚠ ' + tmI.tip) : esc(v)}${p ? ' · antes: ' + esc(p.antes || '(vacío)') + (p.nota ? ' · ' + esc(p.nota) : '') : ''}"${corte[c] ? ' data-corte="1"' : ''}>${esc(v)}${extra}</td>`;
+      return `<td data-r="${r}" data-c="${c}" class="${fija ? 'fija' : ''}${kk === TABLA_FIJAS - 1 ? ' fija-ult' : ''}${parteDe && colCompartida(c) ? ' t-comp' : ''}${p ? ' chg' : ''}${esColFormula(c) ? ' formula' : ''}${celdaMarcada(row, c) ? ' t-marca' : ''}${(c === COL.PRODUCT && enDudaNOP(row)) ? ' t-duda' : ''}${comAbiertosCelda(row, c).length ? ' t-com' : ''}${colorDeCelda(row, c) ? ' t-pint' : ''}${pfI && pfI.dif ? ' t-pf-dif' : ''}${tmI ? ' t-tot-mal' : ''}" style="${colorDeCelda(row, c) ? '--pin:' + hexColor(colorPaleta(colorDeCelda(row, c)).rgb) + ';' : ''}${fija ? 'left:' + left[c] + 'px;' : ''}max-width:${anchos[c]}px;" title="${pfI ? esc(pfI.tip) : tmI ? esc('⚠ ' + tmI.tip) : esc(v)}${p ? ' · antes: ' + esc(p.antes || '(vacío)') + (p.nota ? ' · ' + esc(p.nota) : '') : ''}"${corte[c] ? ' data-corte="1"' : ''}>${parteDe && colCompartida(c) ? '' : esc(v) + extra}</td>`;
     }).join('');
     return `<tr id="fc-tr-${localIdx}" class="${sel ? 'sel' : ''}${filaVista(row) ? ' vista' : ''}${parteDe ? ' t-parte' + (parteDe[parteDe.length - 1] === row ? ' t-parte-ult' : '') : ''}">
-      <td class="t-num" role="button" aria-label="Marcar o desmarcar la fila ${row._sheetRow || ''} como vista" title="Clic para marcar / desmarcar la fila como vista" onclick="toggleFilaVista(${localIdx},event)">${row._sheetRow || ''}</td>
+      <td class="t-num" role="button" aria-label="Marcar o desmarcar la fila ${row._sheetRow || ''} como vista" title="Clic para marcar / desmarcar la fila como vista" onclick="toggleFilaVista(${localIdx},event)">${parteDe ? '<span class="t-tree" aria-hidden="true">' + (parteDe[parteDe.length - 1] === row ? '└' : '├') + '</span>' : ''}${row._sheetRow || ''}</td>
       <td class="t-cb"><input type="checkbox" id="fc-cb-${localIdx}" aria-label="Tildar la carga de la fila ${row._sheetRow || ''}" ${sel ? 'checked' : ''} onclick="toggleFCSelection(${localIdx})">${chip}</td>
       ${celdas}
       <td class="col-acciones"><button class="t-acc" onclick="abrirPanelCarga(${idx})" aria-label="Abrir la ficha de la fila ${row._sheetRow || ''}" title="Ver la ficha con todas las acciones">Abrir</button><button class="t-acc" onclick="abrirFacturaForwarder([${idx}])" aria-label="Factura de forwarder, fila ${row._sheetRow || ''}" title="Factura de forwarder"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 7h11v9H3z"/><path d="M14 10h4l3 3v3h-7z"/><circle cx="7" cy="18" r="2"/><circle cx="17" cy="18" r="2"/></svg></button><button class="t-acc" onclick="solicitarFC(${idx})" aria-label="Solicitud de FC, fila ${row._sheetRow || ''}" title="Solicitud de FC a ${empresaDelNegocio() === 'AXT' ? 'AXT' : 'Buzaram'}"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/><path d="M14 2v6h6M16 13H8M16 17H8"/></svg></button></td>
