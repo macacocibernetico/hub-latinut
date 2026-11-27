@@ -6891,8 +6891,7 @@ function aplicarFiltrosColumna(rows){
 
 function htmlFiltroColumna(c){
   const base = window._tablaBaseRows || allRows;
-  const cuenta = {};
-  base.forEach(r => { const v = valorCelda(r, c).trim(); cuenta[v] = (cuenta[v] || 0) + 1; });
+  const cuenta = valoresFiltroColumna(c, base);
   const valores = Object.keys(cuenta).sort((a, b) => a === '' ? 1 : b === '' ? -1 : a.localeCompare(b, 'es', { numeric: true }));
   const activos = cargasColFiltros[c];
   const esc = s => String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/"/g,'&quot;');
@@ -7135,7 +7134,8 @@ function filaJuntada(g){
     if(c === COL.TNS){ const t = g.reduce((a, r) => a + tnParte(r), 0); v[c] = t ? fmtCntN(t) : ''; continue; }
     const vals = g.map(r => valorVisible(r, c).trim());
     if(colFleteRepartido(c)){ const ns = vals.map(x => parseSheetNum(x)).filter(x => !isNaN(x) && x); v[c] = ns.length ? fmtNumAr(ns.reduce((a, b) => a + b, 0)) : ''; continue; }
-    const dist = [...new Set(vals.filter(Boolean))];
+    const llenos = vals.filter(Boolean), conDato = llenos.filter(x => !/^[-–—]+$/.test(x));
+    const dist = [...new Set(conDato.length ? conDato : llenos)];   // "-" en una fila = "está en la otra": no se muestra si alguna tiene el dato
     if(colSumada(c) && dist.length > 1){
       const ns = vals.map(x => parseSheetNum(x));
       if(ns.every((x, k) => !vals[k] || !isNaN(x))){ v[c] = numComoMuestra(ns.filter(x => !isNaN(x)).reduce((a, b) => a + b, 0), dist[0]); continue; }
@@ -7165,6 +7165,82 @@ function juntarFilasTabla(rows){
     if(_tablaAbiertos.has(claveGrupoTabla(g))) g.forEach(x => { _tablaParteDe.set(x, g); out.push(x); });
   });
   return out;
+}
+// Filtros con la vista juntada: se filtra lo que se ve. Un contenedor partido es una sola "unidad":
+// - lo del contenedor y los importes sumados se miran en la fila juntada (si una fila dice "-" y la otra tiene el dato, NO está vacía);
+// - lo de cada negocio (factura, contrato, Tns...) pasa si alguna de sus filas cumple, y el reparto se abre solo para ver cuál.
+// El orden por columna también usa lo que se ve. Devuelve las filas reales (para tildar) y lo que se muestra.
+function nivelJuntadoCol(c){ return colCompartida(c) || colSumada(c) || colFleteRepartido(c); }
+function unidadesTabla(rows){
+  const m = mapaGruposPartidos(), vistos = new Set(), out = [];
+  rows.forEach(r => {
+    const g = m.get(r);
+    if(!g){ out.push({ vis: r, g: null }); return; }
+    if(vistos.has(g)) return;
+    vistos.add(g); out.push({ vis: filaJuntada(g), g });
+  });
+  return out;
+}
+function unidadCumple(u, c, test){
+  if(!u.g || nivelJuntadoCol(c)) return test(valorCelda(u.vis, c).trim());
+  return u.g.some(x => test(valorCelda(x, c).trim()));
+}
+function filtrarConJuntadas(rows){
+  _tablaParteDe = new Map();
+  let us = unidadesTabla(rows);
+  const porParte = new Set();
+  // Filtro por Negocio: de un contenedor partido se ve solo la fila del negocio elegido, suelta y con SUS números (la fila juntada
+  // sumaría los del otro negocio). Si el filtro incluye a todos los negocios del contenedor, queda junto como siempre.
+  const nf = COL.NEGOCIO >= 0 ? cargasColFiltros[COL.NEGOCIO] : null, ncond = COL.NEGOCIO >= 0 ? cargasColCond[COL.NEGOCIO] : null;
+  if(nf || ncond){
+    const pasaNeg = x => { const v = valorCelda(x, COL.NEGOCIO).trim(); return (!nf || nf.has(v)) && (!ncond || condCumple(v, ncond)); };
+    us = [].concat(...us.map(u => {
+      if(!u.g) return pasaNeg(u.vis) ? [u] : [];
+      const si = u.g.filter(pasaNeg);
+      return si.length === u.g.length ? [u] : si.map(x => ({ vis: x, g: null }));
+    }));
+  }
+  Object.keys(cargasColFiltros).forEach(k => {
+    const c = parseInt(k), ok = cargasColFiltros[k];
+    if(c === COL.NEGOCIO) return;
+    us = us.filter(u => unidadCumple(u, c, v => ok.has(v)));
+    if(!nivelJuntadoCol(c)) us.forEach(u => { if(u.g) porParte.add(u); });
+  });
+  Object.keys(cargasColCond).forEach(k => {
+    const c = parseInt(k), cond = cargasColCond[k];
+    if(c === COL.NEGOCIO) return;
+    us = us.filter(u => unidadCumple(u, c, v => condCumple(v, cond)));
+    if(!nivelJuntadoCol(c)) us.forEach(u => { if(u.g) porParte.add(u); });
+  });
+  porParte.forEach(u => { if(us.indexOf(u) >= 0) _tablaAbiertos.add(claveGrupoTabla(u.g)); });   // filtrado por algo de cada negocio: se ve cuál
+  if(cargasColSort){
+    const { col, dir } = cargasColSort;
+    const clave = u => {
+      const v = valorCelda(u.vis, col).trim();
+      const d = /\d{1,2}\/\d{1,2}\/\d{2,4}/.test(v) ? parseDate(v) : null;
+      if(d) return { t: 0, v: d.getTime() };
+      const n = parseSheetNum(v);
+      if(!isNaN(n) && v !== '' && !/ \/ /.test(v)) return { t: 0, v: n };
+      return { t: v === '' ? 2 : 1, v: v.toLowerCase() };
+    };
+    us = us.slice().sort((a, b) => { const x = clave(a), y = clave(b); if(x.t !== y.t) return x.t - y.t; if(x.v < y.v) return -dir; if(x.v > y.v) return dir; return 0; });
+  }
+  const mostrar = [], reales = [];
+  us.forEach(u => {
+    if(!u.g){ mostrar.push(u.vis); reales.push(u.vis); return; }
+    mostrar.push(u.vis); u.g.forEach(x => reales.push(x));
+    if(_tablaAbiertos.has(claveGrupoTabla(u.g))) u.g.forEach(x => { _tablaParteDe.set(x, u.g); mostrar.push(x); });
+  });
+  return { mostrar, reales };
+}
+// Los valores que ofrece el filtro de una columna: con la vista juntada, los de la fila juntada para lo del contenedor (así "-" y
+// "(vacías)" cuentan contenedores, no filas sueltas) y los de cada fila para lo de cada negocio.
+function valoresFiltroColumna(c, base){
+  const cuenta = {};
+  const sumar = v => { v = String(v === undefined || v === null ? '' : v).trim(); cuenta[v] = (cuenta[v] || 0) + 1; };
+  if(tablaJuntarActivo()) unidadesTabla(base).forEach(u => { if(!u.g || nivelJuntadoCol(c)) sumar(valorCelda(u.vis, c)); else u.g.forEach(x => sumar(valorCelda(x, c))); });
+  else base.forEach(r => sumar(valorCelda(r, c)));
+  return cuenta;
 }
 function toggleRepartoTabla(clave, ev){
   if(ev && ev.stopPropagation) ev.stopPropagation();
@@ -7261,10 +7337,12 @@ function renderCargasTabla(rows){
   rows = rows.slice().sort((a, b) => (a._sheetRow || 0) - (b._sheetRow || 0));
   if(ordenTablaActual() === 'eta') rows = ordenarPorETA(rows);
   window._tablaBaseRows = rows;
-  rows = aplicarFiltrosColumna(rows);
   // Contenedores partidos por negocio: una sola fila (ver juntarFilasTabla). Las filas reales siguen en "rows" (selección, grupos de FC).
+  // Con la vista juntada, los filtros y el orden miran lo que se ve (filtrarConJuntadas); si no, cada fila de la planilla.
   const juntar = tablaJuntarActivo();
-  const mostrar = juntar ? juntarFilasTabla(rows) : (_tablaParteDe = new Map(), rows);
+  let mostrar;
+  if(juntar){ const fj = filtrarConJuntadas(rows); rows = fj.reales; mostrar = fj.mostrar; }
+  else { rows = aplicarFiltrosColumna(rows); _tablaParteDe = new Map(); mostrar = rows; }
   // Con o sin orden por columna se ve el FINAL de la lista (la que llega ultima, abajo de todo) y "anteriores" trae las de arriba.
   const visibles = mostrar.slice(Math.max(0, mostrar.length - cargasTablaLimite));
   _tablaRows = visibles;
