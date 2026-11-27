@@ -544,6 +544,33 @@ body.t-redim{cursor:col-resize;user-select:none;}
 .docs-menu .dm-doc.ok .i,.docs-menu .dm-doc.planilla .i{color:var(--ok);}
 .docs-menu .dm-doc.no{color:var(--text3);}
 .docs-menu .dm-doc.no .i,.docs-menu .dm-doc.mal .i{color:var(--danger);}
+.docs-menu .dm-mal{margin:0 12px 8px;padding:7px 10px;border:1px solid var(--danger);border-radius:8px;font-size:11.5px;color:var(--text2);line-height:1.45;}
+.docs-menu .dm-mal b{color:var(--danger);font-weight:700;}
+.docs-menu .dm-mal-it+.dm-mal-it{margin-top:6px;}
+.docs-menu .dm-doc .dm-por{margin-left:auto;flex-shrink:0;font:inherit;font-size:11px;font-weight:600;color:var(--danger);background:none;border:1px solid currentColor;border-radius:6px;padding:1px 7px;cursor:pointer;}
+.docs-menu .dm-doc .dm-por:hover{background:var(--danger);color:#fff;}
+.t-grid tr.t-junta>td{background:color-mix(in srgb,var(--accent) 6%,var(--bg2));}
+.t-grid td.t-gnum{cursor:pointer;color:var(--accent);font-weight:600;white-space:nowrap;padding-left:2px;padding-right:2px;font-size:11px;text-overflow:clip;}
+.t-grid td.t-gnum .t-car{display:inline-block;width:9px;}
+.t-grid td.t-gnum sup{font-size:10px;margin-left:1px;}
+.t-grid .t-neg{display:inline-flex;align-items:center;gap:4px;padding:1px 8px;border:1px solid var(--accent);border-radius:999px;color:var(--accent);font-weight:600;font-size:11.5px;cursor:pointer;}
+.t-grid .t-neg:hover{background:var(--accent);color:#fff;}
+.t-grid td.t-varia{color:var(--text3);font-style:italic;}
+.t-grid td.t-dif{color:var(--warn);}
+.t-grid td.t-suma{font-weight:600;}
+.t-grid tr.t-parte>td.t-num{border-left:3px solid var(--accent);}
+.t-grid tr.t-parte>td.t-comp{color:var(--text3);opacity:.55;}
+.t-grid tr.t-parte-ult>td{border-bottom:2px solid var(--border);}
+.t-btn.on{color:var(--accent);border-color:var(--accent);}
+.dp-mal{display:flex;align-items:center;gap:8px;font-size:12px;color:var(--danger);margin:2px 0 8px;}
+.dp-mal b{font-weight:800;}
+.dp-mal .btn{margin-left:auto;font-size:11px;padding:3px 9px;}
+.dv-detalle{font-family:var(--font);color:var(--text);}
+.confirm-detalle:has(.dv-detalle){max-height:55vh;}
+.dv-detalle .doc-tabla{margin:0 0 8px;font-size:12px;}
+.dv-detalle .doc-tabla tr.x td{color:var(--danger);font-weight:600;}
+.dv-acc{display:flex;gap:10px;align-items:center;flex-wrap:wrap;}
+.dv-acc a{color:var(--accent);font-weight:600;}
 .docs-menu .dm-ok{color:var(--ok);font-weight:600;padding:0 12px 8px;}
 .docs-menu .mf-l{display:flex;justify-content:space-between;gap:12px;padding:2px 12px;color:var(--text2);}
 .docs-menu .mf-l b{color:var(--text);font-weight:600;text-align:right;}
@@ -673,6 +700,7 @@ a.dc:hover{text-decoration:underline;}
 .dc-no{background:var(--bg3);color:var(--text3);border-color:var(--border);}
 .dc-na{color:var(--text3);border:1px dashed var(--border2);font-weight:400;}
 .dc-mal{background:var(--danger-light);color:var(--danger);}
+.dc-aviso{color:var(--warn);font-weight:700;}
 .dc-otro{background:var(--bg2);color:var(--text2);border-color:var(--border);font-weight:400;}
 .doc-barra{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:10px;}
 .doc-barra .chip-f{border:1px solid var(--border2);border-radius:99px;padding:4px 12px;background:var(--bg2);font:600 13px var(--font);color:var(--text2);cursor:pointer;}
@@ -4563,7 +4591,8 @@ function feParaCelda(row, c){
 // lleva el flete (la que ya tiene importe en esa columna, o la primera), o null si la carga no esta partida.
 // Filas de la misma carga partida por negocio (mismo contenedor o lote, distinto Negocio), ordenadas; null si no esta partida.
 function grupoCargaPartida(row){
-  const lote = (row[COL.LOTS] || '').toString().trim().toUpperCase();
+  let lote = (row[COL.LOTS] || '').toString().trim().toUpperCase();
+  if(/^-+$/.test(lote) || /A\s*DEFINIR/.test(lote)) lote = '';   // "A DEFINIR" no es un lote: dos cargas sin lote todavía no son la misma
   const conts = r => (r[COL.CONTAINERS] || '').toString().toUpperCase().split(/[,;\/\n|]+/).map(x => x.replace(/[\s\-]/g, '')).filter(x => /^[A-Z]{4}\d{6,7}$/.test(x));
   const mios = conts(row);
   if(!lote && !mios.length) return null;
@@ -5308,7 +5337,7 @@ async function aplicarColor(id){
   const celdas = []; let respetadas = 0;
   for(let r = g.r1; r <= g.r2; r++) for(let k = g.k1; k <= g.k2; k++){
     const row = _tablaRows[r], c = _tablaCols[k];
-    if(!row) continue;
+    if(!row || row._grupo) continue;   // la fila juntada no es una fila de la planilla: se pinta en el reparto
     if(celdaMarcada(row, c) || (c === COL.PRODUCT && enDudaNOP(row))){ respetadas++; continue; }
     if(!pal && !colorDeCelda(row, c)) continue;   // sacar color: solo donde hay uno
     celdas.push({ r, c, fila: row._sheetRow });
@@ -7005,6 +7034,155 @@ function mapaTintes(){
   }
   return m;
 }
+// ── Cargas partidas por negocio: UNA fila por contenedor en la tabla (pedido del usuario, 27/11/2026) ──
+// En la planilla un contenedor repartido entre negocios (MSU1C 16 tn + MSU1B 6 tn) son dos filas que repiten BL, ETA, TELEX y flete.
+// En la tabla operativa se ven juntas: una fila "juntada" con lo del contenedor (se edita una vez y el hub lo escribe en todas las filas),
+// las toneladas sumadas y el flete del contenedor entero. Lo de cada negocio (toneladas, contrato, precio, factura, cobro) se edita en el
+// reparto: tocando "N negocios" (o el número de fila) se abren abajo las filas de la planilla, que se editan como siempre.
+// El total flete que se carga en la fila juntada se reparte por toneladas entre las filas (como Buzaram); el importe usd/fcl va entero en
+// todas. La planilla no cambia: sigue siendo una fila por negocio. "Ver filas separadas" (barra de la tabla) vuelve a la vista de antes.
+// Qué junta: mismo contenedor, o mismo lote, con distinto Negocio (las mismas reglas que grupoCargaPartida; "A DEFINIR" no es lote).
+function tablaJuntarActivo(){ try{ return localStorage.getItem('hub_tabla_juntar') !== '0'; }catch(e){ return true; } }
+function toggleTablaJuntar(){
+  const nuevo = !tablaJuntarActivo();
+  try{ localStorage.setItem('hub_tabla_juntar', nuevo ? '1' : '0'); }catch(e){}
+  _tablaAbiertos.clear(); _tablaSel = null; _tablaAncla = null;
+  renderCargas();
+  showToast(nuevo ? 'Contenedores juntados: una fila por contenedor' : 'Filas separadas, como en la planilla', 'info');
+}
+let _tablaAbiertos = new Set();      // contenedores con el reparto abierto (clave: fila de la planilla de la primera parte)
+let _tablaParteDe = new Map();       // fila real que se muestra como parte de un reparto abierto -> su grupo
+let _gpCache = null;
+// Columnas del contenedor: se editan una vez en la fila juntada y se escriben iguales en todas las filas.
+const JUNTAR_COMPARTIDAS = ['POL', 'PRODUCT', 'PACKING', 'LOTS', 'CONTAINERS', 'BOOKING', 'BL', 'SHIPPING', 'VESSEL', 'CONSOLIDACION', 'ETD', 'ETA', 'PORT',
+  'DOCUMENTOS', 'CLIENTE_ENV', 'TELEX', 'EXPORTER', 'CUSTOMER', 'FC_FLETE', 'PROVEEDOR_FLETE', 'MONTO_FLETE', 'FC_COURIER', 'FECHA_PAGO_FWD', 'FECHA_PAGO_FWD_REAL',
+  'CONSOL_ETD', 'MES_CONSOL', 'ANIO_ETD'];
+function colCompartida(c){
+  if(c === undefined || c === null || c < 0) return false;
+  if(JUNTAR_COMPARTIDAS.some(k => COL[k] !== undefined && COL[k] === c)) return true;
+  const pp = getNegocioConfig().PAGO_PROVEEDOR;
+  return pp !== undefined && pp !== null && pp >= 0 && c === pp;
+}
+// "total flete": en la fila juntada es el del contenedor entero; al guardarlo se reparte por toneladas.
+function colFleteRepartido(c){ return COL.TOTAL_PAGO !== undefined && COL.TOTAL_PAGO >= 0 && c === COL.TOTAL_PAGO; }
+function celdaEditableJuntada(c){ return c !== COL.TNS && c !== COL.NEGOCIO && (colCompartida(c) || colFleteRepartido(c)); }
+const tnParte = r => { const v = numeroCelda(valorVisible(r, COL.TNS)); return v > 0 ? v : 0; };
+const fmtNumAr = x => (Math.round(x * 100) / 100).toLocaleString('es-AR', { maximumFractionDigits: 2 });
+const claveGrupoTabla = g => String(g[0]._sheetRow);
+// Grupos de filas partidas por negocio (índice por contenedor y por lote, para no comparar todas contra todas).
+function mapaGruposPartidos(){
+  const base = allRowsAll || [];
+  const k = _dataVersion + '|' + base.length + '|' + negocioActivo;
+  if(_gpCache && _gpCache.k === k) return _gpCache.m;
+  const loteDe = r => { const l = (r[COL.LOTS] || '').toString().trim().toUpperCase(); return (!l || /^-+$/.test(l) || /A\s*DEFINIR/.test(l)) ? '' : l; };
+  const contsDe = r => (r[COL.CONTAINERS] || '').toString().toUpperCase().split(/[,;\/\n|]+/).map(x => x.replace(/[\s\-]/g, '')).filter(x => /^[A-Z]{4}\d{6,7}$/.test(x));
+  const porLote = new Map(), porCont = new Map();
+  const meter = (mp, key, r) => { if(!mp.has(key)) mp.set(key, []); mp.get(key).push(r); };
+  base.forEach(r => { if(!r || !r._sheetRow) return; const l = loteDe(r); if(l) meter(porLote, l, r); contsDe(r).forEach(c => meter(porCont, c, r)); });
+  const m = new Map();
+  base.forEach(r => {
+    if(!r || !r._sheetRow || m.has(r)) return;
+    const set = new Set([r]); const l = loteDe(r);
+    if(l) (porLote.get(l) || []).forEach(x => set.add(x));
+    contsDe(r).forEach(c => (porCont.get(c) || []).forEach(x => set.add(x)));
+    if(set.size < 2) return;
+    const g = [...set].filter(x => !m.has(x));
+    if(g.length < 2) return;
+    if(COL.NEGOCIO === undefined || COL.NEGOCIO < 0) return;
+    if(new Set(g.map(x => (x[COL.NEGOCIO] || '').toString().trim())).size < 2) return;   // mismo Negocio: no es un reparto
+    g.sort((a, b) => (a._sheetRow || 0) - (b._sheetRow || 0));
+    g.forEach(x => m.set(x, g));
+  });
+  _gpCache = { k, m };
+  return m;
+}
+// La fila que se ve en la tabla por un contenedor partido. No es una fila de la planilla: no tiene _sheetRow (nada se escribe en ella).
+function filaJuntada(g){
+  const v = [];
+  const n = Math.max(encabezadosCargas().length, ...g.map(r => r.length));
+  for(let c = 0; c < n; c++){
+    if(c === COL.TNS){ const t = g.reduce((a, r) => a + tnParte(r), 0); v[c] = t ? fmtCntN(t) : ''; continue; }
+    const vals = g.map(r => valorVisible(r, c).trim());
+    if(colFleteRepartido(c)){ const ns = vals.map(x => parseSheetNum(x)).filter(x => !isNaN(x) && x); v[c] = ns.length ? fmtNumAr(ns.reduce((a, b) => a + b, 0)) : ''; continue; }
+    const dist = [...new Set(vals.filter(Boolean))];
+    v[c] = dist.length <= 1 ? (dist[0] || '') : dist.join(' / ');
+  }
+  if(COL.NEGOCIO >= 0) v[COL.NEGOCIO] = g.map(r => valorVisible(r, COL.NEGOCIO).trim() || '—').join(' + ');
+  v._grupo = g;
+  return v;
+}
+// Lo que se muestra: las filas sueltas como siempre y cada contenedor partido una sola vez (donde aparece su primera parte),
+// con sus partes abajo si el reparto está abierto.
+function juntarFilasTabla(rows){
+  _tablaParteDe = new Map();
+  const m = mapaGruposPartidos(), vistos = new Set(), out = [];
+  rows.forEach(r => {
+    const g = m.get(r);
+    if(!g){ out.push(r); return; }
+    if(vistos.has(g)) return;
+    vistos.add(g);
+    out.push(filaJuntada(g));
+    if(_tablaAbiertos.has(claveGrupoTabla(g))) g.forEach(x => { _tablaParteDe.set(x, g); out.push(x); });
+  });
+  return out;
+}
+function toggleRepartoTabla(clave, ev){
+  if(ev && ev.stopPropagation) ev.stopPropagation();
+  clave = String(clave);
+  if(_tablaAbiertos.has(clave)) _tablaAbiertos.delete(clave); else _tablaAbiertos.add(clave);
+  const sel = _tablaSel; renderCargas();
+  if(sel && _tablaRows[sel.r]) marcarCelda(sel.r, sel.c);
+}
+function textoRepartoTabla(g){ return g.map(r => (valorVisible(r, COL.NEGOCIO).trim() || '—') + ' ' + fmtCntN(tnParte(r)) + ' tn (fila ' + r._sheetRow + ')').join(' + '); }
+// Una columna de cada negocio, tocada en la fila juntada: se abre el reparto para editarla en la fila que corresponde.
+function avisoParteTabla(g, c, silencioso){
+  if(silencioso) return;
+  const nom = encabezadosCargas()[c] || colIndexToLetter(c);
+  if(!_tablaAbiertos.has(claveGrupoTabla(g))){ _tablaAbiertos.add(claveGrupoTabla(g)); renderCargas(); }
+  showToast('«' + String(nom).trim() + '» es de cada negocio: abrí el reparto abajo y cambialo en la fila que corresponde.', 'info', 5000);
+}
+// Total flete del contenedor -> la parte de cada fila por sus toneladas (la última se lleva los centavos, así la suma da exacta).
+function repartirFleteGrupo(g, c, v, nota){
+  const txt = String(v === undefined || v === null ? '' : v).trim();
+  if(!txt){ g.forEach(r => anotarCambioTabla(r, c, '', nota)); return true; }
+  const tot = parseSheetNum(txt);
+  if(isNaN(tot)){ showToast('El total flete tiene que ser un número', 'warn'); return false; }
+  const tns = g.map(tnParte), suma = tns.reduce((a, b) => a + b, 0);
+  if(!(suma > 0) || tns.some(t => !(t > 0))){ showToast('Para repartir el flete por toneladas, todas las filas del contenedor tienen que tener Tns. Abrí el reparto y completalas.', 'warn', 6000); return false; }
+  let acum = 0; const partes = [];
+  g.forEach((r, i) => {
+    const parte = i === g.length - 1 ? redondear2(tot - acum) : redondear2(tot * tns[i] / suma);
+    acum = redondear2(acum + parte);
+    partes.push('fila ' + r._sheetRow + ': ' + fmtUsd2(parte));
+    anotarCambioTabla(r, c, String(parte).replace('.', ','), nota || ('Flete del contenedor ' + fmtUsd2(tot) + ' × ' + fmtCntN(tns[i]) + '/' + fmtCntN(suma) + ' tn'));
+  });
+  showToast('Flete del contenedor USD ' + fmtUsd2(tot) + ' repartido por toneladas · ' + partes.join(' · '), 'info', 6000);
+  return true;
+}
+// Toda edición que sale de la grilla pasa por acá. Una fila juntada escribe en sus filas reales; las demás, como siempre.
+function anotarCeldaTabla(row, c, v, nota, silencioso){
+  const g = row && row._grupo;
+  if(g){
+    if(!celdaEditableJuntada(c)){ avisoParteTabla(g, c, silencioso); return false; }
+    if(colFleteRepartido(c)) return repartirFleteGrupo(g, c, v, nota);
+    g.forEach(r => anotarCambioTabla(r, c, v, nota));
+    return true;
+  }
+  const pg = _tablaParteDe.get(row);
+  if(pg && colCompartida(c)){
+    if(!silencioso) showToast('«' + String(encabezadosCargas()[c] || colIndexToLetter(c)).trim() + '» es del contenedor: cambialo en la fila juntada de arriba y se escribe en las ' + pg.length + ' filas.', 'info', 5000);
+    return false;
+  }
+  anotarCambioTabla(row, c, v, nota);
+  return true;
+}
+window.toggleFCGrupoTabla = function(ids, ev){
+  if(ev && ev.stopPropagation) ev.stopPropagation();
+  const todos = ids.every(i => window._fcSelectedRows.has(i));
+  ids.forEach(i => { if(todos) window._fcSelectedRows.delete(i); else window._fcSelectedRows.add(i); if(window._pintarFilaFC) window._pintarFilaFC(i); });
+  if(window.actualizarBarraFC) window.actualizarBarraFC();
+};
+
 function renderCargasTabla(rows){
   const hdr = encabezadosCargas();
   // Replica de la hoja: mismo orden que la planilla (el selector de orden de
@@ -7014,8 +7192,11 @@ function renderCargasTabla(rows){
   if(ordenTablaActual() === 'eta') rows = ordenarPorETA(rows);
   window._tablaBaseRows = rows;
   rows = aplicarFiltrosColumna(rows);
+  // Contenedores partidos por negocio: una sola fila (ver juntarFilasTabla). Las filas reales siguen en "rows" (selección, grupos de FC).
+  const juntar = tablaJuntarActivo();
+  const mostrar = juntar ? juntarFilasTabla(rows) : (_tablaParteDe = new Map(), rows);
   // Con o sin orden por columna se ve el FINAL de la lista (la que llega ultima, abajo de todo) y "anteriores" trae las de arriba.
-  const visibles = rows.slice(Math.max(0, rows.length - cargasTablaLimite));
+  const visibles = mostrar.slice(Math.max(0, mostrar.length - cargasTablaLimite));
   _tablaRows = visibles;
   // La tabla reordena y filtra: la seleccion y los grupos de embarque se vuelven
   // a calcular sobre ESTA lista, si no el chip de un grupo tildaba otras cargas.
@@ -7052,6 +7233,8 @@ function renderCargasTabla(rows){
 
   const _colFleteEsp = (COL.TOTAL_PAGO !== undefined && COL.TOTAL_PAGO >= 0) ? COL.TOTAL_PAGO : COL.MONTO_FLETE;
   const cuerpo = visibles.map((row, r) => {
+    const gj = row._grupo || null, parteDe = _tablaParteDe.get(row) || null;
+    if(gj) return filaJuntadaHtml(row, r, rows, anchos, left, corte, esc, _colFleteEsp);
     const localIdx = rows.indexOf(row);
     const idx = idxDeFila(row);
     const sel = window._fcSelectedRows && window._fcSelectedRows.has(localIdx);
@@ -7061,7 +7244,7 @@ function renderCargasTabla(rows){
       const p = pendDe(row, c);
       let v = valorVisible(row, c);
       let extra = '';
-      if(c === _colFleteEsp || c === COL.MONTO_FLETE){
+      if((c === _colFleteEsp || c === COL.MONTO_FLETE) && !parteDe){
         const fe = feParaCelda(row, c);
         if(fe && fe.estado === 'sin_importe' && fe.escribible && !(v + '').trim())
           extra = '<span class="t-gh" title="' + esc(fe.titulo) + ' Enter o clic en Usar para cargarlo."><span class="t-gh-usar" role="button" tabindex="-1" onmousedown="event.stopPropagation()" onclick="usarFleteSugerido(event)">Usar <kbd>↵</kbd></span><span class="t-gh-v">' + esc(fe.numTxt) + '</span>' + (fe.cuentaTxt ? '<span class="t-gh-cta">' + esc(fe.cuentaTxt) + '</span>' : '') + '</span>';
@@ -7075,9 +7258,9 @@ function renderCargasTabla(rows){
       const fija = kk < TABLA_FIJAS;
       const tmI = totMalCelda(row, c);   // total que no cierra con las Tns de esta fila
       const pfI = c === COL.FECHA_PAGO_FWD ? pfInfoCelda(row) : null;   // de donde sale la fecha de pago al forwarder (hover)
-      return `<td data-r="${r}" data-c="${c}" class="${fija ? 'fija' : ''}${kk === TABLA_FIJAS - 1 ? ' fija-ult' : ''}${p ? ' chg' : ''}${esColFormula(c) ? ' formula' : ''}${celdaMarcada(row, c) ? ' t-marca' : ''}${(c === COL.PRODUCT && enDudaNOP(row)) ? ' t-duda' : ''}${comAbiertosCelda(row, c).length ? ' t-com' : ''}${colorDeCelda(row, c) ? ' t-pint' : ''}${pfI && pfI.dif ? ' t-pf-dif' : ''}${tmI ? ' t-tot-mal' : ''}" style="${colorDeCelda(row, c) ? '--pin:' + hexColor(colorPaleta(colorDeCelda(row, c)).rgb) + ';' : ''}${fija ? 'left:' + left[c] + 'px;' : ''}max-width:${anchos[c]}px;" title="${pfI ? esc(pfI.tip) : tmI ? esc('⚠ ' + tmI.tip) : esc(v)}${p ? ' · antes: ' + esc(p.antes || '(vacío)') + (p.nota ? ' · ' + esc(p.nota) : '') : ''}"${corte[c] ? ' data-corte="1"' : ''}>${esc(v)}${extra}</td>`;
+      return `<td data-r="${r}" data-c="${c}" class="${fija ? 'fija' : ''}${kk === TABLA_FIJAS - 1 ? ' fija-ult' : ''}${parteDe && colCompartida(c) ? ' t-comp' : ''}${p ? ' chg' : ''}${esColFormula(c) ? ' formula' : ''}${celdaMarcada(row, c) ? ' t-marca' : ''}${(c === COL.PRODUCT && enDudaNOP(row)) ? ' t-duda' : ''}${comAbiertosCelda(row, c).length ? ' t-com' : ''}${colorDeCelda(row, c) ? ' t-pint' : ''}${pfI && pfI.dif ? ' t-pf-dif' : ''}${tmI ? ' t-tot-mal' : ''}" style="${colorDeCelda(row, c) ? '--pin:' + hexColor(colorPaleta(colorDeCelda(row, c)).rgb) + ';' : ''}${fija ? 'left:' + left[c] + 'px;' : ''}max-width:${anchos[c]}px;" title="${pfI ? esc(pfI.tip) : tmI ? esc('⚠ ' + tmI.tip) : esc(v)}${p ? ' · antes: ' + esc(p.antes || '(vacío)') + (p.nota ? ' · ' + esc(p.nota) : '') : ''}"${corte[c] ? ' data-corte="1"' : ''}>${esc(v)}${extra}</td>`;
     }).join('');
-    return `<tr id="fc-tr-${localIdx}" class="${sel ? 'sel' : ''}${filaVista(row) ? ' vista' : ''}">
+    return `<tr id="fc-tr-${localIdx}" class="${sel ? 'sel' : ''}${filaVista(row) ? ' vista' : ''}${parteDe ? ' t-parte' + (parteDe[parteDe.length - 1] === row ? ' t-parte-ult' : '') : ''}">
       <td class="t-num" role="button" aria-label="Marcar o desmarcar la fila ${row._sheetRow || ''} como vista" title="Clic para marcar / desmarcar la fila como vista" onclick="toggleFilaVista(${localIdx},event)">${row._sheetRow || ''}</td>
       <td class="t-cb"><input type="checkbox" id="fc-cb-${localIdx}" aria-label="Tildar la carga de la fila ${row._sheetRow || ''}" ${sel ? 'checked' : ''} onclick="toggleFCSelection(${localIdx})">${chip}</td>
       ${celdas}
@@ -7090,7 +7273,8 @@ function renderCargasTabla(rows){
     (cargasColSort ? `<span class="t-chip" onclick="quitarOrdenColumna()" title="Quitar orden">Orden: ${esc(hdr[cargasColSort.col] || '')} ${cargasColSort.dir > 0 ? 'A→Z' : 'Z→A'} ×</span>` : '');
   const nPend = Object.values(cargasPend).reduce((a, o) => a + Object.keys(o).length, 0);
   if(!nPend) _avisoTabla = '';
-  const quedan = rows.length - visibles.length;
+  const quedan = mostrar.length - visibles.length;
+  const nJuntadas = juntar ? mostrar.filter(x => x._grupo).length : 0;
 
   return `<div id="tabla-cargas" class="tabla-cargas dens-${densidadTabla()}${cargasTablaFull ? ' full' : ''}">
     <div class="t-top">
@@ -7104,7 +7288,8 @@ function renderCargasTabla(rows){
         ${chips}
         <span style="flex:1;"></span>
         <span class="t-ayuda">Doble clic o Enter para editar · flechas para moverte · Esc cancela</span>
-        <span class="t-filas">${rows.length} fila${rows.length === 1 ? '' : 's'}${quedan > 0 ? ' · mostrando ' + visibles.length : ''}</span>
+        <button class="t-btn${juntar ? ' on' : ''}" onclick="toggleTablaJuntar()" title="${juntar ? 'Cada contenedor repartido entre negocios se ve en una sola fila. Clic para ver las filas separadas, como en la planilla.' : 'Ver cada contenedor repartido entre negocios en una sola fila (el reparto se abre abajo).'}">${juntar ? '⧉ Ver filas separadas' : '⧉ Juntar contenedores'}</button>
+        <span class="t-filas">${rows.length} fila${rows.length === 1 ? '' : 's'}${nJuntadas ? ' · ' + nJuntadas + ' contenedor' + (nJuntadas === 1 ? '' : 'es') + ' juntado' + (nJuntadas === 1 ? '' : 's') : ''}${quedan > 0 ? ' · mostrando ' + visibles.length : ''}</span>
         <button class="t-btn" data-pop="config" onclick="abrirPopTabla('config', this)" title="Orden, densidad, columnas fijas y anchos">${ICO_BARRA.config} Configuración</button>
       </div>
       <div id="tabla-pend" class="t-pend" style="${nPend && (_guardoFallo || window.__sinAutoGuardado) ? '' : 'display:none;'}">
@@ -7124,6 +7309,44 @@ function renderCargasTabla(rows){
     <div id="t-stats" class="t-stats"><span class="t-stats-h">Seleccioná varias celdas (arrastrá o Shift + clic) para ver suma, promedio y más</span></div>
   </div>
   <div id="panel-carga" class="panel-carga"></div>`;
+}
+
+// La fila juntada de un contenedor partido: lo del contenedor como cualquier celda, Tns sumadas, total flete del contenedor
+// (con lo que dice el tarifario para el contenedor entero), "N negocios" en Negocio y lo de cada negocio atenuado (se edita en el reparto).
+function filaJuntadaHtml(row, r, rows, anchos, left, corte, esc, colFleteEsp){
+  const g = row._grupo, clave = claveGrupoTabla(g), abierto = _tablaAbiertos.has(clave);
+  const ids = g.map(x => rows.indexOf(x)).filter(i => i >= 0);
+  const sel = ids.length && ids.every(i => window._fcSelectedRows && window._fcSelectedRows.has(i));
+  const filas = g.map(x => x._sheetRow).join('·');
+  const reparto = textoRepartoTabla(g);
+  const celdas = _tablaCols.map((c, kk) => {
+    const v = valorCelda(row, c);
+    let txt = esc(v), extra = '', cls = '';
+    if(c === COL.NEGOCIO){
+      txt = '<span class="t-neg" role="button" onclick="toggleRepartoTabla(\'' + clave + '\',event)" title="' + esc(reparto) + ' · clic para ' + (abierto ? 'cerrar' : 'abrir') + ' el reparto">' + g.length + ' negocios <span aria-hidden="true">' + (abierto ? '▴' : '▾') + '</span></span>';
+    } else if(c === COL.TNS){
+      cls = ' t-suma';
+    } else if(colFleteRepartido(c) || c === COL.MONTO_FLETE){
+      const fe = (c === colFleteEsp || c === COL.MONTO_FLETE) ? feParaCelda(row, c) : null;
+      if(fe && fe.estado === 'sin_importe' && fe.escribible && !(v + '').trim())
+        extra = '<span class="t-gh" title="' + esc(fe.titulo) + ' Se reparte por toneladas entre las filas del contenedor. Enter o clic en Usar para cargarlo."><span class="t-gh-usar" role="button" tabindex="-1" onmousedown="event.stopPropagation()" onclick="usarFleteSugerido(event)">Usar <kbd>↵</kbd></span><span class="t-gh-v">' + esc(fe.numTxt) + '</span>' + (fe.cuentaTxt ? '<span class="t-gh-cta">' + esc(fe.cuentaTxt) + '</span>' : '') + '</span>';
+      else if(fe) extra = '<span class="t-fl ' + fe.estado + '" title="' + esc(fe.titulo) + '">' + esc(fe.texto) + '</span>';
+    } else if(!colCompartida(c)) cls = ' t-varia';
+    else if(/ \/ /.test(v)) cls = ' t-dif';
+    if(c === COL.DOCUMENTOS) extra += docsContadorCelda(g[0]);
+    const fija = kk < TABLA_FIJAS;
+    const tit = c === COL.NEGOCIO ? reparto : !celdaEditableJuntada(c) ? 'De cada negocio: ' + g.map(x => (valorVisible(x, COL.NEGOCIO).trim() || '—') + ' ' + (valorVisible(x, c).trim() || '(vacío)')).join(' · ') + '. Se cambia en el reparto.'
+      : colFleteRepartido(c) ? 'Flete del contenedor entero: ' + g.map(x => 'fila ' + x._sheetRow + ' ' + (valorVisible(x, c).trim() || '(vacío)')).join(' + ') + '. Lo que escribas acá se reparte por toneladas.'
+      : (v + (/ \/ /.test(v) ? ' · las filas no dicen lo mismo: lo que escribas acá va a todas' : ' · se escribe en las ' + g.length + ' filas'));
+    return `<td data-r="${r}" data-c="${c}" class="${fija ? 'fija' : ''}${kk === TABLA_FIJAS - 1 ? ' fija-ult' : ''}${esColFormula(c) ? ' formula' : ''}${cls}" style="${fija ? 'left:' + left[c] + 'px;' : ''}max-width:${anchos[c]}px;" title="${esc(tit)}"${corte[c] ? ' data-corte="1"' : ''}>${txt}${extra}</td>`;
+  }).join('');
+  const idxs = g.map(x => idxDeFila(x)).filter(i => i >= 0);
+  return `<tr id="fc-trg-${r}" class="t-junta${sel ? ' sel' : ''}${abierto ? ' abierto' : ''}">
+      <td class="t-num t-gnum" role="button" aria-expanded="${abierto}" aria-label="Contenedor de las filas ${filas}: ${abierto ? 'cerrar' : 'abrir'} el reparto entre negocios" title="Filas ${filas} de la planilla (${esc(reparto)}). Clic para ${abierto ? 'cerrar' : 'abrir'} el reparto." onclick="toggleRepartoTabla('${clave}',event)"><span class="t-car" aria-hidden="true">${abierto ? '▾' : '▸'}</span>${g[0]._sheetRow}<sup>+${g.length - 1}</sup></td>
+      <td class="t-cb"><input type="checkbox" aria-label="Tildar las ${g.length} filas del contenedor" ${sel ? 'checked' : ''} onclick="toggleFCGrupoTabla([${ids.join(',')}],event)"></td>
+      ${celdas}
+      <td class="col-acciones"><button class="t-acc" onclick="abrirPanelCarga(${idxs[0]})" aria-label="Abrir la ficha de la fila ${g[0]._sheetRow}" title="Ver la ficha (primera fila del contenedor)">Abrir</button><button class="t-acc" onclick="abrirFacturaForwarder([${idxs.join(',')}])" aria-label="Factura de forwarder del contenedor" title="Factura de forwarder (todas las filas del contenedor)"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 7h11v9H3z"/><path d="M14 10h4l3 3v3h-7z"/><circle cx="7" cy="18" r="2"/><circle cx="17" cy="18" r="2"/></svg></button></td>
+    </tr>`;
 }
 
 // ── Filas "vistas": marca verde que queda guardada en este navegador ──
@@ -7342,6 +7565,8 @@ function editarCelda(r, c, inicial){
   const row = _tablaRows[r];
   if(!row) return;
   if(esColFormula(c)){ showToast('Esa columna tiene fórmula: se calcula sola en la planilla', 'info'); return; }
+  if(row._grupo && !celdaEditableJuntada(c)){ avisoParteTabla(row._grupo, c); return; }
+  if(_tablaParteDe.get(row) && colCompartida(c)){ anotarCeldaTabla(row, c, valorVisible(row, c)); return; }   // solo avisa: es del contenedor
   if(c === COL.CONTRACT_CLIENTE && inicial === undefined && editarContratoEnTabla(r, c)) return;
   marcarCelda(r, c);
   const td = celdaTd(r, c);
@@ -7358,8 +7583,8 @@ function editarCelda(r, c, inicial){
   const fin = (guardar, mover) => {
     if(terminado) return; terminado = true;
     if(guardar){
-      anotarCambioTabla(row, c, inp.value);
-      if(c === COL.PRODUCT) propagarProductoATabla(row, inp.value);
+      anotarCeldaTabla(row, c, inp.value);
+      if(c === COL.PRODUCT) (row._grupo || [row]).forEach(x => propagarProductoATabla(x, inp.value));
       if(c === COL.CONTRACT_CLIENTE) propagarContratoATabla(row, inp.value);
     }
     const filaDebajo = _tablaRows[r + 1];
@@ -7722,7 +7947,7 @@ function usarFleteSugerido(ev){
   const row = _tablaRows[r];
   const fe = row ? feParaCelda(row, c) : null;
   if(!fe || fe.col !== c || fe.estado !== 'sin_importe' || !fe.escribible || valorVisible(row, c).trim()) return;
-  anotarCambioTabla(row, c, fe.valor);
+  anotarCeldaTabla(row, c, fe.valor);
   renderCargas();
   marcarCelda(r, c);
 }
@@ -7754,7 +7979,7 @@ function tablaTeclado(e){
     e.preventDefault();
     if(esColFormula(_tablaSel.c)) return true;
     const filaVaciada = _tablaRows[_tablaSel.r];
-    anotarCambioTabla(filaVaciada, _tablaSel.c, '');
+    if(!anotarCeldaTabla(filaVaciada, _tablaSel.c, '')) return true;
     const s = _tablaSel; renderCargas();
     if(s.c === COL.ETA && ordenPorETAActivo()) seguirFilaTras(filaVaciada, s.c, null, null); else marcarCelda(s.r, s.c);
     autoGuardarTabla();
@@ -7838,7 +8063,7 @@ function tablaPegar(e){
   const unico = m.length === 1 && m[0].length === 1;
   const filasDest = unico ? g.r2 - g.r1 + 1 : m.length;
   const colsDest  = unico ? g.k2 - g.k1 + 1 : Math.max.apply(null, m.map(f => f.length));
-  let puestas = 0, formulas = 0, fuera = 0;
+  let puestas = 0, formulas = 0, fuera = 0, deNegocio = 0;
   const productos = [], contratosPegados = [];
   for(let i = 0; i < filasDest; i++){
     const r = g.r1 + i, row = _tablaRows[r];
@@ -7849,9 +8074,9 @@ function tablaPegar(e){
       if(esColFormula(c)){ formulas++; continue; }
       const v = unico ? m[0][0] : (m[i][j] === undefined ? '' : m[i][j]);
       if(!unico && m[i][j] === undefined) continue;
-      anotarCambioTabla(row, c, v);
+      if(!anotarCeldaTabla(row, c, v, '', true)){ deNegocio++; continue; }
       puestas++;
-      if(c === COL.PRODUCT) productos.push([row, v]);
+      if(c === COL.PRODUCT) (row._grupo || [row]).forEach(x => productos.push([x, v]));
       if(c === COL.CONTRACT_CLIENTE) contratosPegados.push([row, v]);
     }
   }
@@ -7867,7 +8092,8 @@ function tablaPegar(e){
   if(productos.length > 3) msg += ' Cambiaste el Producto en ' + productos.length + ' cargas: los precios del contrato no se recalcularon.';
   if(formulas) msg += ' ' + formulas + ' con fórmula no se tocaron.';
   if(fuera) msg += ' ' + fuera + ' quedaron fuera de la tabla.';
-  showToast(msg, (formulas || fuera || productos.length > 3) ? 'warn' : 'info', 6000);
+  if(deNegocio) msg += ' ' + deNegocio + ' no se tocaron: en un contenedor juntado, lo de cada negocio va en el reparto y lo del contenedor en la fila juntada.';
+  showToast(msg, (formulas || fuera || deNegocio || productos.length > 3) ? 'warn' : 'info', 6000);
   autoGuardarTabla();
   return true;
 }
@@ -7882,7 +8108,7 @@ function tablaCortar(e){
     for(let k = g.k1; k <= g.k2; k++){
       const c = _tablaCols[k];
       if(esColFormula(c)){ formulas++; continue; }
-      anotarCambioTabla(row, c, ''); n++;
+      if(anotarCeldaTabla(row, c, '', '', true)) n++;
     }
   }
   const a = _tablaAncla, sel = _tablaSel;
@@ -7942,6 +8168,7 @@ function irAFilaTabla(sheetRow, c){
 async function duplicarFilaTabla(){
   if(!accessToken){ alert('Conectate con Google primero para escribir en la planilla.'); return; }
   if(!_tablaSel || !_tablaRows[_tablaSel.r]){ showToast('Tocá una celda de la fila que querés duplicar', 'info'); return; }
+  if(_tablaRows[_tablaSel.r]._grupo){ showToast('Esa fila junta varias filas de la planilla: abrí el reparto (▸) y duplicá la del negocio que quieras.', 'info'); return; }
   const origen = _tablaRows[_tablaSel.r];
   if(!origen._sheetRow) return;
   if(Object.keys(cargasPend).length) await guardarCambiosTabla();   // que la copia lleve lo ultimo que editaste
@@ -12373,6 +12600,12 @@ function docTipoEfectivo(d, row){
 const docLinkSeguro = u => /^https:\/\/(drive|docs)\.google\.com\//.test(String(u || '')) ? String(u) : '';
 // Estado de cada documento del set: ok (llego, con su PDF), mal (llego y no coincide), planilla (el dato esta en la planilla pero
 // el PDF no paso por n8n: cargas de antes), no (falta), na (esta carga no lo lleva).
+// "Toneladas: pedimos 21,7, la factura dice 22" por cada control que falló; si n8n no dejó la tabla, su detalle.
+function docsMotivosNoCoincide(d){
+  const m = (d.controles || []).filter(c => c && !c.ok);
+  if(m.length) return m.map(c => String(c.control || 'Control') + ': pedimos ' + (String(c.esperado || '').trim() || '(vacío)') + ', la factura dice ' + (String(c.factura || '').trim() || '(vacío)'));
+  return [String(d.detalle || '').trim() || 'n8n no dejó el detalle de qué no coincide'];
+}
 function docsEstadoCarga(row){
   const docs = docsDeCarga(row), set = docsSetDeCarga(row);
   const enPlanilla = { bl: COL.BL, fc_proveedor: COL.INVOICE_PROVEEDOR, fc_axt: COL.INVOICE_CLIENTE, fc_axt_serv: COL.INVOICE_FC_SERV, fc_buzaram: COL.INVOICE_CLIENTE, fc_buzaram_serv: COL.INVOICE_FC_SERV };
@@ -12389,9 +12622,10 @@ function docsEstadoCarga(row){
     ds.forEach(d => usados.add(d));
     const bueno = ds.filter(d => d.estado !== 'no_coincide').sort((a, b) => (b.drive ? 1 : 0) - (a.drive ? 1 : 0))[0];
     // reconocido por dentro (el nombre no decía qué era, ej. "483843.pdf"): se muestra el nombre del archivo entre paréntesis
-    if(bueno) return { k: s.k, estado: 'ok', link: docLinkSeguro(bueno.drive), num: bueno.numero, arch: /contenido/.test(bueno.via || '') ? bueno.nombre : '' };
+    if(bueno) return { k: s.k, estado: 'ok', link: docLinkSeguro(bueno.drive), num: bueno.numero, arch: /contenido/.test(bueno.via || '') ? bueno.nombre : '',
+      aviso: (bueno.controles || []).filter(c => c && c.aviso).map(c => String(c.aviso)).join(' · ') };
     const mal = ds.find(d => d.estado === 'no_coincide');
-    if(mal) return { k: s.k, estado: 'mal', link: docLinkSeguro(mal.drive), num: mal.numero };
+    if(mal) return { k: s.k, estado: 'mal', link: docLinkSeguro(mal.drive), num: mal.numero, clave: mal.clave, motivos: docsMotivosNoCoincide(mal) };
     const fc = enCarpeta.find(x => x.k === s.k);
     if(fc) return { k: s.k, estado: 'ok', link: docLinkSeguro(fc.l), num: fc.n, arch: fc.a, carpeta: lectura.fecha };
     const pl = valor(enPlanilla[s.k]);
@@ -12404,14 +12638,15 @@ function docsEstadoCarga(row){
   return { chips, otros, total: req.length, hay: hay.length, completa: hay.length === req.length, docs };
 }
 function docChip(c){
-  const lab = DOC_TIPOS[c.k] || c.k, num = (c.num ? ' <small>· ' + escaparHtml(String(c.num)) + '</small>' : '') + (c.arch ? ' <small>(' + escaparHtml(String(c.arch)) + ')</small>' : '');
+  const lab = DOC_TIPOS[c.k] || c.k; let num = (c.num ? ' <small>· ' + escaparHtml(String(c.num)) + '</small>' : '') + (c.arch ? ' <small>(' + escaparHtml(String(c.arch)) + ')</small>' : '');
   if(c.estado === 'na') return '<span class="dc dc-na">' + lab + ' <small>(' + escaparHtml(c.nota) + ')</small></span>';
   if(c.estado === 'no') return '<span class="dc dc-no" title="Todavía no llegó">' + lab + '</span>';
   if(c.carpeta) return (c.link ? '<a class="dc dc-ok" href="' + escaparHtml(c.link) + '" target="_blank" rel="noopener"' : '<span class="dc dc-ok"')
     + ' title="Está en la carpeta de Drive (leída ' + escaparHtml(carpFechaCorta(c.carpeta)) + ')' + (c.arch ? ': ' + escaparHtml(c.arch) : '') + '">' + lab + (c.num ? ' <small>· ' + escaparHtml(String(c.num)) + '</small>' : '') + (c.link ? '</a>' : '</span>');
   if(c.estado === 'planilla') return '<span class="dc dc-pl" title="Está anotado en la planilla, pero el PDF no pasó por n8n">' + lab + num + '</span>';
   const cls = c.estado === 'mal' ? 'dc-mal' : c.estado === 'otro' ? 'dc-otro' : 'dc-ok';
-  const tit = c.estado === 'mal' ? 'Llegó pero no coincide con lo pedido' : 'Llegó';
+  const tit = escaparHtml((c.estado === 'mal' ? 'No coincide con la planilla: ' + ((c.motivos || []).join(' · ') || 'sin detalle') : 'Llegó') + (c.aviso ? '. Ojo: ' + c.aviso : ''));
+  if(c.aviso) num += ' <small class="dc-aviso" title="' + escaparHtml(c.aviso) + '">⚠</small>';
   return c.link ? '<a class="dc ' + cls + '" href="' + escaparHtml(c.link) + '" target="_blank" rel="noopener" title="' + tit + ' · abrir el PDF en Drive">' + lab + num + '</a>'
                 : '<span class="dc ' + cls + '" title="' + tit + ' (todavía sin link de Drive)">' + lab + num + '</span>';
 }
@@ -12745,14 +12980,33 @@ function docsAbrirAsignar(i){
   const inp = document.getElementById('docs-asig-q'); if(inp) inp.focus();
 }
 function docsBuscarCarga(v){ _docsBuscaCarga = v; const el = document.getElementById('docs-asig-res'); if(el) el.innerHTML = docsResultadosAsignar(_docsAsignar); }
-function docCardNoCoincide(d, i){
+function docsTablaControles(d){
   const ctl = d.controles || [];
-  let tabla = '';
-  if(ctl.length){
-    tabla = '<table class="doc-tabla"><tr><th>Control</th><th>Pedimos (planilla)</th><th>Dice la factura</th><th></th></tr>'
-      + ctl.map(c => '<tr' + (c.ok ? '' : ' class="x"') + '><td>' + escaparHtml(c.control) + '</td><td>' + escaparHtml(c.esperado) + '</td><td>' + escaparHtml(c.factura) + '</td><td>' + (c.ok ? '✓' : '✗') + '</td></tr>').join('')
-      + '</table>';
-  } else tabla = '<div class="doc-motivo">' + escaparHtml(d.detalle) + '</div>';
+  if(!ctl.length) return '<div class="doc-motivo">' + escaparHtml(d.detalle || 'n8n no dejó el detalle de los controles.') + '</div>';
+  return '<table class="doc-tabla"><tr><th>Control</th><th>Pedimos (planilla)</th><th>Dice la factura</th><th></th></tr>'
+    + ctl.map(c => '<tr' + (c.ok ? '' : ' class="x"') + '><td>' + escaparHtml(c.control) + '</td><td>' + escaparHtml(c.esperado) + '</td><td>' + escaparHtml(c.factura) + '</td><td>' + (c.ok ? '✓' : '✗') + '</td></tr>').join('')
+    + '</table>';
+}
+// "Ver por qué" desde el "!" del menú del lote o del panel de la carga: la misma tablita de controles que en Documentos, ahí mismo,
+// con "Ya lo resolví" (escribe solo en la pestaña DOCUMENTOS del HUB; el cuadro dice qué se toca) y, en AXT, el borrador con la diferencia.
+// las claves van por número en el onclick (pueden traer comillas y escaparHtml no las escapa)
+const _docsRefs = [];
+function docsRefClave(clave){ let i = _docsRefs.indexOf(clave); if(i < 0){ _docsRefs.push(clave); i = _docsRefs.length - 1; } return i; }
+function docsPorClave(clave){ return _docs.find(d => d.clave === clave && d.estado === 'no_coincide') || null; }
+async function docsVerPorQue(clave){
+  const d = docsPorClave(clave);
+  if(!d){ showToast('Ese documento ya no figura como "no coincide": actualizá la vista.', 'info'); return; }
+  const l = docLinkSeguro(d.drive), malos = (d.controles || []).filter(c => !c.ok).length;
+  const detalle = '<div class="dv-detalle">' + docsTablaControles(d)
+    + '<div class="dv-acc">' + (l ? '<a href="' + escaparHtml(l) + '" target="_blank" rel="noopener">📄 Abrir el PDF</a>' : '')
+    + (negocioActivo === 'axt' && d.negocio === 'axt' ? '<button class="btn" onclick="resolveConfirm(false);docsBorradorDe(docsPorClave(_docsRefs[' + docsRefClave(clave) + ']))">✉ Armar borrador con la diferencia</button>' : '') + '</div></div>';
+  const ok = await showConfirm('Por qué no coincide: ' + (DOC_TIPOS[d.tipo] || 'documento') + (d.numero ? ' ' + d.numero : ''),
+    (malos ? malos + (malos > 1 ? ' controles no dan' : ' control no da') + ' con la planilla (marcados con ✗). ' : '') + 'Si ya lo arreglaste, "Ya lo resolví" la saca de "No coinciden": se escribe en la pestaña DOCUMENTOS del HUB, no en la planilla. Si llega la versión corregida, n8n la controla de nuevo sola.',
+    { icono: '!', okLabel: 'Ya lo resolví', detalle });
+  if(ok) await docsResueltoDe(d, true);
+}
+function docCardNoCoincide(d, i){
+  const tabla = docsTablaControles(d);
   return '<div class="doc-card doc-mal"><div class="doc-top"><span class="doc-tit">' + docTituloHtml(d) + '</span><span class="doc-sub">fila ' + d.filas.join(', ') + ' · lote ' + escaparHtml(d.lotes || '—') + ' · '
     + escaparHtml(docsRemitenteCorto(d.remitente)) + ' · ' + escaparHtml(docsFechaCorta(d.fechaMail)) + '</span><span class="doc-prog" style="color:var(--danger);">no se anotó</span></div>' + tabla
     + '<div class="doc-acc">' + (negocioActivo === 'axt' ? '<button class="btn" onclick="docsBorradorDiferencia(' + i + ')">Armar borrador con la diferencia</button>' : '')
@@ -12775,6 +13029,8 @@ function docsPanelHtml(row){
   const e = docsEstadoCarga(row);
   return '<div style="font-size:11px;font-weight:600;color:var(--text3);text-transform:uppercase;margin:12px 0 4px;">Documentos · ' + e.hay + ' de ' + e.total + '</div>'
     + '<div class="doc-chips">' + e.chips.map(docChip).join('') + e.otros.map(docChip).join('') + '</div>'
+    + e.chips.filter(c => c.estado === 'mal' && c.clave).map(c => '<div class="dp-mal"><b>!</b> ' + escaparHtml(DOC_TIPOS[c.k] || c.k) + (c.num ? ' ' + escaparHtml(String(c.num)) : '') + ' no coincide: ' + escaparHtml((c.motivos || []).join(' · '))
+      + '<button class="btn" onclick="docsVerPorQue(_docsRefs[' + docsRefClave(c.clave) + '])">Ver por qué</button></div>').join('')
     + '<div style="font-size:12px;"><a href="#" onclick="cerrarPanelCarga();showView(\'documentos\');return false;" style="color:var(--accent);font-weight:600;">Ver en Documentos →</a></div>';
 }
 
@@ -12822,18 +13078,21 @@ async function docsDescartar(i){
   appendLog({ accion: 'documento descartado', detalle: d.nombre }).catch(() => {});
   updateBadges(); renderDocumentos();
 }
-async function docsResuelto(i){
-  const d = (window._docsVista || [])[i]; if(!d) return;
-  const ok = await showConfirm('Marcar como resuelta', 'La Invoice ' + d.numero + ' sale de "No coinciden". No se anota en la planilla: si después llega la versión corregida, n8n la controla de nuevo sola. Se escribe en la pestaña DOCUMENTOS del HUB.', { okLabel: 'Ya lo resolví' });
+async function docsResuelto(i){ const d = (window._docsVista || [])[i]; if(d) return docsResueltoDe(d); }
+async function docsResueltoDe(d, yaConfirmado){
+  if(!d) return;
+  const ok = yaConfirmado || await showConfirm('Marcar como resuelta', 'La Invoice ' + d.numero + ' sale de "No coinciden". No se anota en la planilla: si después llega la versión corregida, n8n la controla de nuevo sola. Se escribe en la pestaña DOCUMENTOS del HUB.', { okLabel: 'Ya lo resolví' });
   if(!ok) return;
   if(!await docsEscribir(d, { L: 'resuelto', M: (d.detalle ? d.detalle + ' · ' : '') + 'resuelto a mano por ' + docsQuien() + ' el ' + new Date().toLocaleString('es-AR') })) return;
   d.estado = 'resuelto';
-  appendLog({ fc: d.numero, accion: 'factura AXT resuelta a mano', detalle: d.nombre }).catch(() => {});
-  updateBadges(); renderDocumentos();
+  appendLog({ fc: d.numero, accion: 'factura ' + docTextoDeNegocio(d.negocio || negocioActivo) + ' resuelta a mano', detalle: d.nombre }).catch(() => {});
+  showToast('✓ Listo: salió de "No coinciden".', 'ok');
+  updateBadges(); if(currentView === 'documentos') renderDocumentos(); else docsPintarTabla();
 }
 // Borrador para quien recibe la solicitud de FC (hoja CONTACTOS). Solo si lo pedís; no se manda solo.
-async function docsBorradorDiferencia(i){
-  const d = (window._docsVista || [])[i]; if(!d || negocioActivo !== 'axt') return;
+async function docsBorradorDiferencia(i){ return docsBorradorDe((window._docsVista || [])[i]); }
+async function docsBorradorDe(d){
+  if(!d || negocioActivo !== 'axt') return;
   const para = destinatariosFCHoja();
   if(!para.length){ alert('No hay nadie marcado para la solicitud de FC de AXT en la hoja CONTACTOS: no sé a quién dirigir el borrador.'); return; }
   const malos = (d.controles || []).filter(c => !c.ok);
@@ -12865,7 +13124,7 @@ function docsPintarTabla(){
   let tds = [];
   try { tds = Array.from(document.querySelectorAll('#t-grid td[data-c="' + COL.DOCUMENTOS + '"]') || []); } catch(e){ tds = []; }
   tds.forEach(td => {
-    const row = _tablaRows[+td.getAttribute('data-r')];
+    const r0 = _tablaRows[+td.getAttribute('data-r')], row = r0 && r0._grupo ? r0._grupo[0] : r0;
     const viejo = td.querySelector && td.querySelector('.t-docs');
     if(viejo && viejo.remove) viejo.remove();
     const h = docsContadorCelda(row);
@@ -12892,6 +13151,12 @@ function tablaMenuDocs(ev){
   const row = _tablaRows[+td.getAttribute('data-r')];
   if(!row) return;
   ev.preventDefault();
+  if(row._grupo){   // fila juntada: documentos y lote son del contenedor (su primera fila); la fecha de cobro es de cada negocio
+    if(fechaEst) avisoParteTabla(row._grupo, c);
+    else if(flete) abrirMenuFlete(row, c, ev.clientX, ev.clientY);
+    else abrirMenuDocs(row._grupo[0], ev.clientX, ev.clientY);
+    return;
+  }
   if(fechaEst) abrirMenuFechaEst(row, ev.clientX, ev.clientY);
   else if(flete) abrirMenuFlete(row, c, ev.clientX, ev.clientY);
   else abrirMenuDocs(row, ev.clientX, ev.clientY);
@@ -12931,8 +13196,9 @@ function menuDocsHtml(row){
   const icono = { ok: '✓', planilla: '✓', no: '✗', mal: '!' };
   const docs = e.chips.filter(c => c.estado !== 'na').map(c => {
     const lab = escaparHtml(DOC_TIPOS[c.k] || c.k) + (c.num ? ' <small>· ' + escaparHtml(String(c.num)) + '</small>' : '');
-    const tit = c.estado === 'no' ? 'Falta' : c.estado === 'mal' ? 'Llegó pero no coincide con lo pedido' : c.estado === 'planilla' ? 'Está en la planilla (el PDF no pasó por n8n)' : 'Llegó';
-    return '<div class="dm-doc ' + c.estado + '" title="' + tit + '"><span class="i">' + icono[c.estado] + '</span>' + (c.link ? '<a href="' + escaparHtml(c.link) + '" target="_blank" rel="noopener">' + lab + '</a>' : '<span>' + lab + '</span>') + '</div>';
+    const tit = c.estado === 'no' ? 'Falta' : c.estado === 'mal' ? escaparHtml('No coincide con la planilla: ' + ((c.motivos || []).join(' · ') || 'sin detalle')) : c.estado === 'planilla' ? 'Está en la planilla (el PDF no pasó por n8n)' : 'Llegó';
+    const por = c.estado === 'mal' && c.clave ? '<button class="dm-por" role="menuitem" onclick="cerrarMenuDocs();docsVerPorQue(_docsRefs[' + docsRefClave(c.clave) + '])">Ver por qué</button>' : '';
+    return '<div class="dm-doc ' + c.estado + '" title="' + tit + '"><span class="i">' + icono[c.estado] + '</span>' + (c.link ? '<a href="' + escaparHtml(c.link) + '" target="_blank" rel="noopener">' + lab + '</a>' : '<span>' + lab + '</span>') + por + '</div>';
   }).join('');
   const exp = String(row[COL.EXPORTER] || '').trim(), fwd = forwarderDeFila(row);
   const b = (txt, js, prim) => '<button class="' + (prim ? 'prim' : '') + '" role="menuitem" onclick="cerrarMenuDocs();' + js + '">' + txt + '</button>';
@@ -12943,7 +13209,10 @@ function menuDocsHtml(row){
   const nota = !r.faltan.length ? '<div class="dm-ok">✓ Están todos los documentos</div>'
     : '';
   acc += b('↗ Ver en Documentos', 'showView(\'documentos\')');
-  return cab + '<div class="dm-tit">Documentos · ' + e.hay + ' de ' + e.total + '</div><div class="dm-docs">' + docs + '</div>' + nota + '<div class="dm-acc">' + acc + '</div>' + carpPieMenu(row, idx);
+  const malos = e.chips.filter(c => c.estado === 'mal');
+  const queMal = malos.length ? '<div class="dm-mal">' + malos.map(c => '<div class="dm-mal-it"><b>! ' + escaparHtml(DOC_TIPOS[c.k] || c.k) + (c.num ? ' ' + escaparHtml(String(c.num)) : '') + ' no coincide:</b>'
+    + (c.motivos || []).map(t => '<div>· ' + escaparHtml(t) + '</div>').join('') + '</div>').join('') + '</div>' : '';
+  return cab + '<div class="dm-tit">Documentos · ' + e.hay + ' de ' + e.total + '</div><div class="dm-docs">' + docs + '</div>' + queMal + nota + '<div class="dm-acc">' + acc + '</div>' + carpPieMenu(row, idx);
 }
 // ── Leer la carpeta de Drive de una carga a pedido (clic derecho en Lots / DOCUMENTOS → "Leer la carpeta ahora") ──
 // Lista lo que hay en la carpeta en este momento (también lo subido a mano), lo reconoce por el NOMBRE con las mismas reglas que el lector
@@ -13873,7 +14142,7 @@ function mfPonerTarifa(){
   if(!row || !esColFleteMenu(c)) return;
   const fe = c === feColPrincipal() && c !== COL.MONTO_FLETE ? fleteEsperadoTabla(row) : fleteEsperadoTabla(row, 'monto');
   if(!fe || isNaN(fe.esperado) || esColFormula(c)) return;
-  anotarCambioTabla(row, c, String(Math.round(fe.esperado * 100) / 100).replace('.', ','), 'Tarifario: ' + fe.titulo.replace(/^Sugerido, no escrito: /, '').replace(/\. .*$/, ''));
+  anotarCeldaTabla(row, c, String(Math.round(fe.esperado * 100) / 100).replace('.', ','), 'Tarifario: ' + fe.titulo.replace(/^Sugerido, no escrito: /, '').replace(/\. .*$/, ''));
   if(currentView === 'cargas') renderCargas();
 }
 
@@ -14143,6 +14412,7 @@ function comPintar(){
 function abrirComentarios(r, c){
   const cel = (r === undefined) ? comCelda() : { r, c, row: _tablaRows[r] };
   if(!cel || !cel.row){ showToast('Elegí primero una celda de la tabla', 'info'); return; }
+  if(cel.row._grupo){ showToast('Esta fila junta ' + cel.row._grupo.length + ' filas de la planilla: abrí el reparto (▸) y comentá en la fila del negocio.', 'info'); return; }
   _comPop = { r: cel.r, c: cel.c };
   comDibujarGlobo();
   setTimeout(() => { const t = document.getElementById('com-txt-nuevo') || document.querySelector('#com-globo textarea'); if(t && t.focus) t.focus(); }, 0);
@@ -17241,6 +17511,7 @@ function n8nAuditorHizo(e){
 }
 // Qué cambiamos en n8n y qué control se sumó en este panel. El más nuevo arriba. "version" = la que anota la Marca de corrida.
 const N8N_CAMBIOS = [
+  { fecha: '26/11/2026', versiones: ['docs-2026-11-26d'], cambio: 'Facturas de Buzaram (A4903 y A4904 de IDI, fila 250): el cliente se lee aunque venga en la línea de abajo de FINAL CONSUMER, y se entiende el PDF que pone los importes al final, separados de las cantidades (antes tomaba los números del contenedor como toneladas). Si la planilla no tiene contenedor, ya no frena la factura: queda un aviso para completarlo (si tiene OTRO contenedor, sí frena). Las «no coincide» se reintentan solas', control: 'Documentos: A4903 y A4904 de la fila 250 pasan a verde con un ⚠ «falta el contenedor en la planilla»; tarjeta Documentos: versión docs-2026-11-26d' },
   { fecha: '26/11/2026', versiones: ['docs-2026-11-26c', 'carpetas-2026-11-26c'], cambio: 'Documentos nuevos de «Documentos por cliente» (ej. Kosher): los dos workflows leen la pestaña DOCS_CLIENTES del hub (paso nuevo «Leer DOCS_CLIENTES», que sigue aunque la pestaña no exista) y reconocen esos documentos por el nombre del archivo. Cada negocio solo los suyos: en las carpetas se mira el negocio de la carga y en los mails Atar los busca solo en el negocio que definió el documento', control: 'Documentos: un archivo «Kosher ….pdf» de una carga de ese cliente aparece tildado en Kosher; tarjetas: versiones docs-2026-11-26c y carpetas-2026-11-26c' },
   { fecha: '26/11/2026', versiones: ['docs-2026-11-26b'], cambio: 'Facturas de Buzaram: el packing se lee también cuando la factura dice «Packing: bags» (con dos puntos). La A4820 de Farm Trading había quedado «no coincide» solo por eso; como las que no coinciden se reintentan 7 días, se vuelve a controlar sola', control: 'Documentos: la A4820 (fila 236 de Buzaram) tendría que pasar a verde en la próxima vuelta; tarjeta Documentos: versión docs-2026-11-26b' },
   { fecha: '26/11/2026', versiones: ['docs-2026-11-26', 'carpetas-2026-11-26b'], cambio: 'Certificado NON GMO (lo pide Nutitaly): los dos workflows lo reconocen como documento propio (por el nombre del archivo: NON GMO, No OGM, GMO free; Documentos también por el texto del PDF), lo atan a la carga y lo guardan en su carpeta de Drive como los demás; la IA de las carpetas también lo conoce', control: 'Documentos: en las cargas de Nutitaly aparece el chip «Non GMO» (sin tildar hasta que llega); tarjetas: versiones docs-2026-11-26 y carpetas-2026-11-26b' },
