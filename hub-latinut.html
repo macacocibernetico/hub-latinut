@@ -551,13 +551,21 @@ body.t-redim{cursor:col-resize;user-select:none;}
 .docs-menu .dm-doc .dm-por:hover{background:var(--danger);color:#fff;}
 .t-grid tr.t-junta>td{background:color-mix(in srgb,var(--accent) 6%,var(--bg2));}
 .t-grid td.t-gnum{cursor:pointer;color:var(--accent);font-weight:600;white-space:nowrap;padding-left:2px;padding-right:2px;font-size:11px;text-overflow:clip;}
-.t-grid td.t-gnum .t-car{display:inline-block;width:9px;}
+.t-grid td.t-gnum .t-car{display:inline-block;width:9px;transition:transform .14s;}
 .t-grid td.t-gnum sup{font-size:10px;margin-left:1px;}
-.t-grid .t-neg{display:inline-flex;align-items:center;gap:4px;padding:1px 8px;border:1px solid var(--accent);border-radius:999px;color:var(--accent);font-weight:600;font-size:11.5px;cursor:pointer;}
-.t-grid .t-neg:hover{background:var(--accent);color:#fff;}
+.t-grid .t-negs{display:inline-flex;gap:4px;cursor:pointer;vertical-align:middle;max-width:100%;}
+.t-grid .t-np{display:inline-flex;align-items:baseline;gap:4px;padding:0 6px;border-radius:4px;background:var(--bg3);color:var(--text2);font-size:11.5px;line-height:18px;white-space:nowrap;transition:background .12s;}
+.t-grid .t-np b{font-weight:600;color:var(--text);font-variant-numeric:tabular-nums;}
+.t-grid .t-negs:hover .t-np{background:color-mix(in srgb,var(--accent) 14%,var(--bg3));}
+.t-grid tr.t-junta.abierto>td{border-bottom-color:transparent;}
+.t-grid tr.t-parte>td{background:color-mix(in srgb,var(--accent) 3%,var(--bg2));}
+.t-grid tr.t-parte-in>td{animation:tParteIn .14s ease-out;}
+@keyframes tParteIn{from{opacity:0;transform:translateY(-3px);}to{opacity:1;transform:none;}}
+@media (prefers-reduced-motion:reduce){.t-grid tr.t-parte-in>td{animation:none;}}
 .t-grid td.t-varia{color:var(--text3);font-style:italic;}
 .t-grid td.t-dif{color:var(--warn);}
 .t-grid td.t-suma{font-weight:600;}
+.t-grid td.t-sumada{color:var(--text);}
 .t-grid tr.t-parte>td.t-num{border-left:3px solid var(--accent);}
 .t-grid tr.t-parte>td.t-comp{color:var(--text3);opacity:.55;}
 .t-grid tr.t-parte-ult>td{border-bottom:2px solid var(--border);}
@@ -7059,12 +7067,32 @@ const JUNTAR_COMPARTIDAS = ['POL', 'PRODUCT', 'PACKING', 'LOTS', 'CONTAINERS', '
   'CONSOL_ETD', 'MES_CONSOL', 'ANIO_ETD'];
 function colCompartida(c){
   if(c === undefined || c === null || c < 0) return false;
+  if(colFleteRepartido(c)) return false;   // Buzaram: el importe usd/fcl es de cada fila (prorrateado)
   if(JUNTAR_COMPARTIDAS.some(k => COL[k] !== undefined && COL[k] === c)) return true;
   const pp = getNegocioConfig().PAGO_PROVEEDOR;
   return pp !== undefined && pp !== null && pp >= 0 && c === pp;
 }
+// Importes de cada negocio que en la fila juntada se ven SUMADOS (un solo valor: el del contenedor); el detalle queda en el reparto.
+// Pedido del usuario: "Total CFR" y "VALOR TOTAL" salían "usd60,112 / usd17,000". Siguen siendo de cada negocio: se editan en el reparto.
+const JUNTAR_SUMAR = ['TOTAL_FCA', 'TOTAL_CFR_ORIG', 'PRICE_SERV', 'TOTAL_CFR', 'MONTO_COURIER', 'COMISION_BROKER', 'MONTO_LT', 'PAGO_90', 'PAGO_SALDO', 'COSTO_STENN'];
+function colSumada(c){ return c !== undefined && c !== null && c >= 0 && JUNTAR_SUMAR.some(k => COL[k] !== undefined && COL[k] === c); }
+// El número con el mismo formato que trae la planilla en esa columna ("usd60,112", "54.425,00", "7200").
+function numComoMuestra(n, muestra){
+  const m = String(muestra || '').trim(), pre = (m.match(/^usd\s*/i) || [''])[0], cu = m.slice(pre.length);
+  const en = /,\d{3}(\D|$)/.test(cu) || /\.\d{1,2}$/.test(cu), ar = /\.\d{3}(\D|$)/.test(cu) || /,\d{1,2}$/.test(cu);
+  const dm = en ? cu.match(/\.(\d{1,2})$/) : ar ? cu.match(/,(\d{1,2})$/) : null, dec = dm ? dm[1].length : 0;
+  const txt = (en || ar) ? n.toLocaleString(en ? 'en-US' : 'es-AR', { minimumFractionDigits: dec, maximumFractionDigits: dec }) : String(Math.round(n * 100) / 100);
+  return pre + txt;
+}
 // "total flete": en la fila juntada es el del contenedor entero; al guardarlo se reparte por toneladas.
-function colFleteRepartido(c){ return COL.TOTAL_PAGO !== undefined && COL.TOTAL_PAGO >= 0 && c === COL.TOTAL_PAGO; }
+// En Buzaram también el "importe usd/fcl": ahí cada fila lleva su parte del contenedor (lo prorratea la planilla de Buzaram), así que
+// la fila juntada lo muestra sumado (el precio del contenedor, que es lo que se compara con el tarifario) y al cargarlo lo reparte.
+// En AXT el importe usd/fcl va entero en cada fila (es del contenedor).
+function colFleteRepartido(c){
+  if(c === undefined || c === null || c < 0) return false;
+  if(COL.TOTAL_PAGO !== undefined && COL.TOTAL_PAGO >= 0 && c === COL.TOTAL_PAGO) return true;
+  return negocioActivo === 'buzaram' && COL.MONTO_FLETE !== undefined && c === COL.MONTO_FLETE;
+}
 function celdaEditableJuntada(c){ return c !== COL.TNS && c !== COL.NEGOCIO && (colCompartida(c) || colFleteRepartido(c)); }
 const tnParte = r => { const v = numeroCelda(valorVisible(r, COL.TNS)); return v > 0 ? v : 0; };
 const fmtNumAr = x => (Math.round(x * 100) / 100).toLocaleString('es-AR', { maximumFractionDigits: 2 });
@@ -7105,9 +7133,18 @@ function filaJuntada(g){
     const vals = g.map(r => valorVisible(r, c).trim());
     if(colFleteRepartido(c)){ const ns = vals.map(x => parseSheetNum(x)).filter(x => !isNaN(x) && x); v[c] = ns.length ? fmtNumAr(ns.reduce((a, b) => a + b, 0)) : ''; continue; }
     const dist = [...new Set(vals.filter(Boolean))];
+    if(colSumada(c) && dist.length > 1){
+      const ns = vals.map(x => parseSheetNum(x));
+      if(ns.every((x, k) => !vals[k] || !isNaN(x))){ v[c] = numComoMuestra(ns.filter(x => !isNaN(x)).reduce((a, b) => a + b, 0), dist[0]); continue; }
+    }
     v[c] = dist.length <= 1 ? (dist[0] || '') : dist.join(' / ');
   }
-  if(COL.NEGOCIO >= 0) v[COL.NEGOCIO] = g.map(r => valorVisible(r, COL.NEGOCIO).trim() || '—').join(' + ');
+  // Precio final por tonelada del contenedor = valor total / toneladas (si cada negocio tiene el suyo)
+  if(COL.PRECIO_FINAL_TN >= 0 && / \/ /.test(v[COL.PRECIO_FINAL_TN] || '') && COL.TOTAL_CFR >= 0){
+    const tot = parseSheetNum(v[COL.TOTAL_CFR]), tn = g.reduce((a, r) => a + tnParte(r), 0);
+    if(!isNaN(tot) && tn > 0) v[COL.PRECIO_FINAL_TN] = numComoMuestra(tot / tn, g.map(r => valorVisible(r, COL.PRECIO_FINAL_TN).trim()).find(Boolean));
+  }
+  if(COL.NEGOCIO >= 0) v[COL.NEGOCIO] = g.map(r => (valorVisible(r, COL.NEGOCIO).trim() || '—') + ' ' + fmtCntN(tnParte(r))).join('  ');
   v._grupo = g;
   return v;
 }
@@ -7129,16 +7166,46 @@ function juntarFilasTabla(rows){
 function toggleRepartoTabla(clave, ev){
   if(ev && ev.stopPropagation) ev.stopPropagation();
   clave = String(clave);
-  if(_tablaAbiertos.has(clave)) _tablaAbiertos.delete(clave); else _tablaAbiertos.add(clave);
+  const abrir = !_tablaAbiertos.has(clave);
+  if(abrir) _tablaAbiertos.add(clave); else _tablaAbiertos.delete(clave);
+  if(repartoEnSitio(clave, abrir)) return;
   const sel = _tablaSel; renderCargas();
   if(sel && _tablaRows[sel.r]) marcarCelda(sel.r, sel.c);
+}
+// Inserta (o saca) las filas del reparto debajo de la fila juntada y renumera las de abajo. Antes se redibujaba toda la tabla
+// y se notaba el tirón. Si algo no está en pantalla como se espera, devuelve false y se redibuja como siempre.
+function repartoEnSitio(clave, abrir){
+  const ctx = window._tablaCtx;
+  const tr = ctx && document.querySelector ? document.querySelector('#fc-trg-' + clave) : null;
+  if(!tr || !tr.insertAdjacentHTML || !tr.parentNode || !tr.parentNode.rows) return false;
+  const i = _tablaRows.findIndex(x => x && x._grupo && claveGrupoTabla(x._grupo) === clave);
+  if(i < 0) return false;
+  const g = _tablaRows[i]._grupo, estaAbierto = _tablaRows[i + 1] === g[0];
+  if(abrir === estaAbierto) return true;
+  if(abrir){
+    _tablaRows.splice(i + 1, 0, ...g);
+    g.forEach(x => _tablaParteDe.set(x, g));
+    tr.insertAdjacentHTML('afterend', g.map((x, k) => filaTablaHtml(x, i + 1 + k, ctx)).join('').replace(/class="([^"]*\bt-parte)/g, 'class="$1 t-parte-in'));
+  } else {
+    for(let k = 0; k < g.length; k++){ const sig = tr.nextElementSibling; if(sig && sig.remove) sig.remove(); }
+    _tablaRows.splice(i + 1, g.length);
+    g.forEach(x => _tablaParteDe.delete(x));
+  }
+  tr.outerHTML = filaJuntadaHtml(_tablaRows[i], i, ctx);
+  const filas = document.querySelector('#fc-trg-' + clave).parentNode.rows;
+  for(let k = i + 1; k < filas.length; k++) filas[k].querySelectorAll('td[data-r]').forEach(td => { if(td.getAttribute('data-r') !== String(k)) td.setAttribute('data-r', k); });
+  // la celda elegida sigue siendo la misma
+  const n = g.length, mover = x => { if(!x) return; if(abrir){ if(x.r > i) x.r += n; } else if(x.r > i + n) x.r -= n; else if(x.r > i) x.r = i; };
+  mover(_tablaSel); mover(_tablaAncla);
+  if(_tablaSel && _tablaRows[_tablaSel.r]){ const a = _tablaAncla; marcarCelda(_tablaSel.r, _tablaSel.c); if(a) _tablaAncla = a; }
+  return true;
 }
 function textoRepartoTabla(g){ return g.map(r => (valorVisible(r, COL.NEGOCIO).trim() || '—') + ' ' + fmtCntN(tnParte(r)) + ' tn (fila ' + r._sheetRow + ')').join(' + '); }
 // Una columna de cada negocio, tocada en la fila juntada: se abre el reparto para editarla en la fila que corresponde.
 function avisoParteTabla(g, c, silencioso){
   if(silencioso) return;
   const nom = encabezadosCargas()[c] || colIndexToLetter(c);
-  if(!_tablaAbiertos.has(claveGrupoTabla(g))){ _tablaAbiertos.add(claveGrupoTabla(g)); renderCargas(); }
+  if(!_tablaAbiertos.has(claveGrupoTabla(g))) toggleRepartoTabla(claveGrupoTabla(g));
   showToast('«' + String(nom).trim() + '» es de cada negocio: abrí el reparto abajo y cambialo en la fila que corresponde.', 'info', 5000);
 }
 // Total flete del contenedor -> la parte de cada fila por sus toneladas (la última se lleva los centavos, así la suma da exacta).
@@ -7232,41 +7299,9 @@ function renderCargasTabla(rows){
   }).join('');
 
   const _colFleteEsp = (COL.TOTAL_PAGO !== undefined && COL.TOTAL_PAGO >= 0) ? COL.TOTAL_PAGO : COL.MONTO_FLETE;
-  const cuerpo = visibles.map((row, r) => {
-    const gj = row._grupo || null, parteDe = _tablaParteDe.get(row) || null;
-    if(gj) return filaJuntadaHtml(row, r, rows, anchos, left, corte, esc, _colFleteEsp);
-    const localIdx = rows.indexOf(row);
-    const idx = idxDeFila(row);
-    const sel = window._fcSelectedRows && window._fcSelectedRows.has(localIdx);
-    const k = grupoKeyFC(row), et = window._fcEtiqueta[k], man = esGrupoManual(k);
-    const chip = et ? `<span class="t-grp${man ? ' man' : ''}" onclick="event.stopPropagation();seleccionarGrupoFC('${k.replace(/\\/g,'\\\\').replace(/'/g,"\\'")}')" title="${man ? 'Estas cargas se pidieron juntas en una solicitud de FC anterior' : 'Salieron juntas: mismo cliente, buque, ETD y puerto. Un toque las selecciona a todas.'}">${man ? '✋' : ''}${et}·${window._fcGrupos[k].length}</span>` : '';
-    const celdas = _tablaCols.map((c, kk) => {
-      const p = pendDe(row, c);
-      let v = valorVisible(row, c);
-      let extra = '';
-      if((c === _colFleteEsp || c === COL.MONTO_FLETE) && !parteDe){
-        const fe = feParaCelda(row, c);
-        if(fe && fe.estado === 'sin_importe' && fe.escribible && !(v + '').trim())
-          extra = '<span class="t-gh" title="' + esc(fe.titulo) + ' Enter o clic en Usar para cargarlo."><span class="t-gh-usar" role="button" tabindex="-1" onmousedown="event.stopPropagation()" onclick="usarFleteSugerido(event)">Usar <kbd>↵</kbd></span><span class="t-gh-v">' + esc(fe.numTxt) + '</span>' + (fe.cuentaTxt ? '<span class="t-gh-cta">' + esc(fe.cuentaTxt) + '</span>' : '') + '</span>';
-        else if(fe) extra = '<span class="t-fl ' + fe.estado + '" title="' + esc(fe.titulo) + '">' + esc(fe.texto) + '</span>';
-      }
-      // En la columna de pagare enviado se aclara por que esta vacia cuando la
-      // carga viaja con BL Original (no lleva pagare). No se escribe nada.
-      if(!v && c === COL.PAGARE_ENVIADO && !nc.sinPagares && motivoSinPagare(row) === 'BL Original'){ extra = '<span class="t-nota">N/A · BL Orig</span>'; }
-      // Documentos que llegaron (los que registra n8n): contador chico, el detalle sale con clic derecho en el lote
-      if(c === COL.DOCUMENTOS) extra += docsContadorCelda(row);
-      const fija = kk < TABLA_FIJAS;
-      const tmI = totMalCelda(row, c);   // total que no cierra con las Tns de esta fila
-      const pfI = c === COL.FECHA_PAGO_FWD ? pfInfoCelda(row) : null;   // de donde sale la fecha de pago al forwarder (hover)
-      return `<td data-r="${r}" data-c="${c}" class="${fija ? 'fija' : ''}${kk === TABLA_FIJAS - 1 ? ' fija-ult' : ''}${parteDe && colCompartida(c) ? ' t-comp' : ''}${p ? ' chg' : ''}${esColFormula(c) ? ' formula' : ''}${celdaMarcada(row, c) ? ' t-marca' : ''}${(c === COL.PRODUCT && enDudaNOP(row)) ? ' t-duda' : ''}${comAbiertosCelda(row, c).length ? ' t-com' : ''}${colorDeCelda(row, c) ? ' t-pint' : ''}${pfI && pfI.dif ? ' t-pf-dif' : ''}${tmI ? ' t-tot-mal' : ''}" style="${colorDeCelda(row, c) ? '--pin:' + hexColor(colorPaleta(colorDeCelda(row, c)).rgb) + ';' : ''}${fija ? 'left:' + left[c] + 'px;' : ''}max-width:${anchos[c]}px;" title="${pfI ? esc(pfI.tip) : tmI ? esc('⚠ ' + tmI.tip) : esc(v)}${p ? ' · antes: ' + esc(p.antes || '(vacío)') + (p.nota ? ' · ' + esc(p.nota) : '') : ''}"${corte[c] ? ' data-corte="1"' : ''}>${esc(v)}${extra}</td>`;
-    }).join('');
-    return `<tr id="fc-tr-${localIdx}" class="${sel ? 'sel' : ''}${filaVista(row) ? ' vista' : ''}${parteDe ? ' t-parte' + (parteDe[parteDe.length - 1] === row ? ' t-parte-ult' : '') : ''}">
-      <td class="t-num" role="button" aria-label="Marcar o desmarcar la fila ${row._sheetRow || ''} como vista" title="Clic para marcar / desmarcar la fila como vista" onclick="toggleFilaVista(${localIdx},event)">${row._sheetRow || ''}</td>
-      <td class="t-cb"><input type="checkbox" id="fc-cb-${localIdx}" aria-label="Tildar la carga de la fila ${row._sheetRow || ''}" ${sel ? 'checked' : ''} onclick="toggleFCSelection(${localIdx})">${chip}</td>
-      ${celdas}
-      <td class="col-acciones"><button class="t-acc" onclick="abrirPanelCarga(${idx})" aria-label="Abrir la ficha de la fila ${row._sheetRow || ''}" title="Ver la ficha con todas las acciones">Abrir</button><button class="t-acc" onclick="abrirFacturaForwarder([${idx}])" aria-label="Factura de forwarder, fila ${row._sheetRow || ''}" title="Factura de forwarder"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 7h11v9H3z"/><path d="M14 10h4l3 3v3h-7z"/><circle cx="7" cy="18" r="2"/><circle cx="17" cy="18" r="2"/></svg></button><button class="t-acc" onclick="solicitarFC(${idx})" aria-label="Solicitud de FC, fila ${row._sheetRow || ''}" title="Solicitud de FC a ${empresaDelNegocio() === 'AXT' ? 'AXT' : 'Buzaram'}"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/><path d="M14 2v6h6M16 13H8M16 17H8"/></svg></button></td>
-    </tr>`;
-  }).join('');
+  const ctx = { rows, anchos, left, corte, esc, nc, colFleteEsp: _colFleteEsp };
+  window._tablaCtx = ctx;
+  const cuerpo = visibles.map((row, r) => filaTablaHtml(row, r, ctx)).join('');
 
   const chips = Object.keys(cargasColFiltros).map(c => `<span class="t-chip" onclick="quitarFiltroColumna(${c})" title="Quitar filtro">${esc(hdr[c] || colIndexToLetter(c))}: ${cargasColFiltros[c].size} valor${cargasColFiltros[c].size === 1 ? '' : 'es'} ×</span>`).join('') +
     Object.keys(cargasColCond).map(c => `<span class="t-chip" onclick="quitarCondColumna(${c})" title="Quitar filtro">${esc(hdr[c] || colIndexToLetter(c))} ${esc(condDescribir(cargasColCond[c]))} ×</span>`).join('') +
@@ -7311,9 +7346,47 @@ function renderCargasTabla(rows){
   <div id="panel-carga" class="panel-carga"></div>`;
 }
 
+// Un renglón de la tabla de Cargas (ctx: lo que arma renderCargasTabla: filas, anchos, columnas fijas...).
+function filaTablaHtml(row, r, ctx){
+  const { rows, anchos, left, corte, esc, nc } = ctx, _colFleteEsp = ctx.colFleteEsp;
+    const gj = row._grupo || null, parteDe = _tablaParteDe.get(row) || null;
+    if(gj) return filaJuntadaHtml(row, r, ctx);
+    const localIdx = rows.indexOf(row);
+    const idx = idxDeFila(row);
+    const sel = window._fcSelectedRows && window._fcSelectedRows.has(localIdx);
+    const k = grupoKeyFC(row), et = window._fcEtiqueta[k], man = esGrupoManual(k);
+    const chip = et ? `<span class="t-grp${man ? ' man' : ''}" onclick="event.stopPropagation();seleccionarGrupoFC('${k.replace(/\\/g,'\\\\').replace(/'/g,"\\'")}')" title="${man ? 'Estas cargas se pidieron juntas en una solicitud de FC anterior' : 'Salieron juntas: mismo cliente, buque, ETD y puerto. Un toque las selecciona a todas.'}">${man ? '✋' : ''}${et}·${window._fcGrupos[k].length}</span>` : '';
+    const celdas = _tablaCols.map((c, kk) => {
+      const p = pendDe(row, c);
+      let v = valorVisible(row, c);
+      let extra = '';
+      if((c === _colFleteEsp || c === COL.MONTO_FLETE) && !parteDe){
+        const fe = feParaCelda(row, c);
+        if(fe && fe.estado === 'sin_importe' && fe.escribible && !(v + '').trim())
+          extra = '<span class="t-gh" title="' + esc(fe.titulo) + ' Enter o clic en Usar para cargarlo."><span class="t-gh-usar" role="button" tabindex="-1" onmousedown="event.stopPropagation()" onclick="usarFleteSugerido(event)">Usar <kbd>↵</kbd></span><span class="t-gh-v">' + esc(fe.numTxt) + '</span>' + (fe.cuentaTxt ? '<span class="t-gh-cta">' + esc(fe.cuentaTxt) + '</span>' : '') + '</span>';
+        else if(fe) extra = '<span class="t-fl ' + fe.estado + '" title="' + esc(fe.titulo) + '">' + esc(fe.texto) + '</span>';
+      }
+      // En la columna de pagare enviado se aclara por que esta vacia cuando la
+      // carga viaja con BL Original (no lleva pagare). No se escribe nada.
+      if(!v && c === COL.PAGARE_ENVIADO && !nc.sinPagares && motivoSinPagare(row) === 'BL Original'){ extra = '<span class="t-nota">N/A · BL Orig</span>'; }
+      // Documentos que llegaron (los que registra n8n): contador chico, el detalle sale con clic derecho en el lote
+      if(c === COL.DOCUMENTOS) extra += docsContadorCelda(row);
+      const fija = kk < TABLA_FIJAS;
+      const tmI = totMalCelda(row, c);   // total que no cierra con las Tns de esta fila
+      const pfI = c === COL.FECHA_PAGO_FWD ? pfInfoCelda(row) : null;   // de donde sale la fecha de pago al forwarder (hover)
+      return `<td data-r="${r}" data-c="${c}" class="${fija ? 'fija' : ''}${kk === TABLA_FIJAS - 1 ? ' fija-ult' : ''}${parteDe && colCompartida(c) ? ' t-comp' : ''}${p ? ' chg' : ''}${esColFormula(c) ? ' formula' : ''}${celdaMarcada(row, c) ? ' t-marca' : ''}${(c === COL.PRODUCT && enDudaNOP(row)) ? ' t-duda' : ''}${comAbiertosCelda(row, c).length ? ' t-com' : ''}${colorDeCelda(row, c) ? ' t-pint' : ''}${pfI && pfI.dif ? ' t-pf-dif' : ''}${tmI ? ' t-tot-mal' : ''}" style="${colorDeCelda(row, c) ? '--pin:' + hexColor(colorPaleta(colorDeCelda(row, c)).rgb) + ';' : ''}${fija ? 'left:' + left[c] + 'px;' : ''}max-width:${anchos[c]}px;" title="${pfI ? esc(pfI.tip) : tmI ? esc('⚠ ' + tmI.tip) : esc(v)}${p ? ' · antes: ' + esc(p.antes || '(vacío)') + (p.nota ? ' · ' + esc(p.nota) : '') : ''}"${corte[c] ? ' data-corte="1"' : ''}>${esc(v)}${extra}</td>`;
+    }).join('');
+    return `<tr id="fc-tr-${localIdx}" class="${sel ? 'sel' : ''}${filaVista(row) ? ' vista' : ''}${parteDe ? ' t-parte' + (parteDe[parteDe.length - 1] === row ? ' t-parte-ult' : '') : ''}">
+      <td class="t-num" role="button" aria-label="Marcar o desmarcar la fila ${row._sheetRow || ''} como vista" title="Clic para marcar / desmarcar la fila como vista" onclick="toggleFilaVista(${localIdx},event)">${row._sheetRow || ''}</td>
+      <td class="t-cb"><input type="checkbox" id="fc-cb-${localIdx}" aria-label="Tildar la carga de la fila ${row._sheetRow || ''}" ${sel ? 'checked' : ''} onclick="toggleFCSelection(${localIdx})">${chip}</td>
+      ${celdas}
+      <td class="col-acciones"><button class="t-acc" onclick="abrirPanelCarga(${idx})" aria-label="Abrir la ficha de la fila ${row._sheetRow || ''}" title="Ver la ficha con todas las acciones">Abrir</button><button class="t-acc" onclick="abrirFacturaForwarder([${idx}])" aria-label="Factura de forwarder, fila ${row._sheetRow || ''}" title="Factura de forwarder"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 7h11v9H3z"/><path d="M14 10h4l3 3v3h-7z"/><circle cx="7" cy="18" r="2"/><circle cx="17" cy="18" r="2"/></svg></button><button class="t-acc" onclick="solicitarFC(${idx})" aria-label="Solicitud de FC, fila ${row._sheetRow || ''}" title="Solicitud de FC a ${empresaDelNegocio() === 'AXT' ? 'AXT' : 'Buzaram'}"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/><path d="M14 2v6h6M16 13H8M16 17H8"/></svg></button></td>
+    </tr>`;
+}
 // La fila juntada de un contenedor partido: lo del contenedor como cualquier celda, Tns sumadas, total flete del contenedor
 // (con lo que dice el tarifario para el contenedor entero), "N negocios" en Negocio y lo de cada negocio atenuado (se edita en el reparto).
-function filaJuntadaHtml(row, r, rows, anchos, left, corte, esc, colFleteEsp){
+function filaJuntadaHtml(row, r, ctx){
+  const { rows, anchos, left, corte, esc } = ctx, colFleteEsp = ctx.colFleteEsp;
   const g = row._grupo, clave = claveGrupoTabla(g), abierto = _tablaAbiertos.has(clave);
   const ids = g.map(x => rows.indexOf(x)).filter(i => i >= 0);
   const sel = ids.length && ids.every(i => window._fcSelectedRows && window._fcSelectedRows.has(i));
@@ -7323,7 +7396,8 @@ function filaJuntadaHtml(row, r, rows, anchos, left, corte, esc, colFleteEsp){
     const v = valorCelda(row, c);
     let txt = esc(v), extra = '', cls = '';
     if(c === COL.NEGOCIO){
-      txt = '<span class="t-neg" role="button" onclick="toggleRepartoTabla(\'' + clave + '\',event)" title="' + esc(reparto) + ' · clic para ' + (abierto ? 'cerrar' : 'abrir') + ' el reparto">' + g.length + ' negocios <span aria-hidden="true">' + (abierto ? '▴' : '▾') + '</span></span>';
+      txt = '<span class="t-negs" role="button" onclick="toggleRepartoTabla(\'' + clave + '\',event)" title="' + esc(reparto) + ' · clic para ' + (abierto ? 'cerrar' : 'abrir') + ' el reparto">'
+        + g.map(x => '<span class="t-np">' + esc(valorVisible(x, COL.NEGOCIO).trim() || '—') + '<b>' + esc(fmtCntN(tnParte(x))) + '</b></span>').join('') + '</span>';
     } else if(c === COL.TNS){
       cls = ' t-suma';
     } else if(colFleteRepartido(c) || c === COL.MONTO_FLETE){
@@ -7331,17 +7405,19 @@ function filaJuntadaHtml(row, r, rows, anchos, left, corte, esc, colFleteEsp){
       if(fe && fe.estado === 'sin_importe' && fe.escribible && !(v + '').trim())
         extra = '<span class="t-gh" title="' + esc(fe.titulo) + ' Se reparte por toneladas entre las filas del contenedor. Enter o clic en Usar para cargarlo."><span class="t-gh-usar" role="button" tabindex="-1" onmousedown="event.stopPropagation()" onclick="usarFleteSugerido(event)">Usar <kbd>↵</kbd></span><span class="t-gh-v">' + esc(fe.numTxt) + '</span>' + (fe.cuentaTxt ? '<span class="t-gh-cta">' + esc(fe.cuentaTxt) + '</span>' : '') + '</span>';
       else if(fe) extra = '<span class="t-fl ' + fe.estado + '" title="' + esc(fe.titulo) + '">' + esc(fe.texto) + '</span>';
-    } else if(!colCompartida(c)) cls = ' t-varia';
+    } else if(colSumada(c) || (c === COL.PRECIO_FINAL_TN && !/ \/ /.test(v))) cls = ' t-sumada';
+    else if(!colCompartida(c)) cls = ' t-varia';
     else if(/ \/ /.test(v)) cls = ' t-dif';
     if(c === COL.DOCUMENTOS) extra += docsContadorCelda(g[0]);
     const fija = kk < TABLA_FIJAS;
-    const tit = c === COL.NEGOCIO ? reparto : !celdaEditableJuntada(c) ? 'De cada negocio: ' + g.map(x => (valorVisible(x, COL.NEGOCIO).trim() || '—') + ' ' + (valorVisible(x, c).trim() || '(vacío)')).join(' · ') + '. Se cambia en el reparto.'
+    const tit = c === COL.NEGOCIO ? reparto : (cls === ' t-sumada' && g.some(x => valorVisible(x, c).trim() !== v)) ? (c === COL.PRECIO_FINAL_TN ? 'Del contenedor (valor total / toneladas). ' : 'Suma del contenedor. ') + 'De cada negocio: ' + g.map(x => (valorVisible(x, COL.NEGOCIO).trim() || '—') + ' ' + (valorVisible(x, c).trim() || '(vacío)')).join(' · ') + '. Se cambia en el reparto.'
+      : !celdaEditableJuntada(c) ? 'De cada negocio: ' + g.map(x => (valorVisible(x, COL.NEGOCIO).trim() || '—') + ' ' + (valorVisible(x, c).trim() || '(vacío)')).join(' · ') + '. Se cambia en el reparto.'
       : colFleteRepartido(c) ? 'Flete del contenedor entero: ' + g.map(x => 'fila ' + x._sheetRow + ' ' + (valorVisible(x, c).trim() || '(vacío)')).join(' + ') + '. Lo que escribas acá se reparte por toneladas.'
       : (v + (/ \/ /.test(v) ? ' · las filas no dicen lo mismo: lo que escribas acá va a todas' : ' · se escribe en las ' + g.length + ' filas'));
     return `<td data-r="${r}" data-c="${c}" class="${fija ? 'fija' : ''}${kk === TABLA_FIJAS - 1 ? ' fija-ult' : ''}${esColFormula(c) ? ' formula' : ''}${cls}" style="${fija ? 'left:' + left[c] + 'px;' : ''}max-width:${anchos[c]}px;" title="${esc(tit)}"${corte[c] ? ' data-corte="1"' : ''}>${txt}${extra}</td>`;
   }).join('');
   const idxs = g.map(x => idxDeFila(x)).filter(i => i >= 0);
-  return `<tr id="fc-trg-${r}" class="t-junta${sel ? ' sel' : ''}${abierto ? ' abierto' : ''}">
+  return `<tr id="fc-trg-${clave}" class="t-junta${sel ? ' sel' : ''}${abierto ? ' abierto' : ''}">
       <td class="t-num t-gnum" role="button" aria-expanded="${abierto}" aria-label="Contenedor de las filas ${filas}: ${abierto ? 'cerrar' : 'abrir'} el reparto entre negocios" title="Filas ${filas} de la planilla (${esc(reparto)}). Clic para ${abierto ? 'cerrar' : 'abrir'} el reparto." onclick="toggleRepartoTabla('${clave}',event)"><span class="t-car" aria-hidden="true">${abierto ? '▾' : '▸'}</span>${g[0]._sheetRow}<sup>+${g.length - 1}</sup></td>
       <td class="t-cb"><input type="checkbox" aria-label="Tildar las ${g.length} filas del contenedor" ${sel ? 'checked' : ''} onclick="toggleFCGrupoTabla([${ids.join(',')}],event)"></td>
       ${celdas}
